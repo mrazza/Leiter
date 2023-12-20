@@ -1,9 +1,12 @@
+namespace Leiter.Algorithms;
+
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 
-namespace Leiter.Algorithms;
-
+/// <summary>
+/// Provides extension methods to convert between pixel types.
+/// </summary>
 public static class PixelConversion
 {
     public static Rgb8 ToRgb8(this Xyz32 self, RgbColorSpace colorSpace) =>
@@ -46,15 +49,15 @@ public static class PixelConversion
         self.ToRgb64().ToXyz32(colorSpace);
 
     /// <summary>
-    ///
+    /// Converts from <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/> to an <see cref="Xyz32"/> pixel.
     /// </summary>
     /// <remarks>
     /// This method assumes a D65 white point for the RGB pixel.
     /// </remarks>
-    /// <param name="self"></param>
-    /// <param name="colorSpace"></param>
-    /// <returns></returns>
-    /// <exception cref="NotImplementedException"></exception>
+    /// <param name="self">The RGB pixel to operate on.</param>
+    /// <param name="colorSpace">The RGB color space the RGB pixel is in.</param>
+    /// <returns>An XYZ pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
     public static Xyz32 ToXyz32(this Rgb64 self, RgbColorSpace colorSpace)
     {
         var rgb64 = colorSpace switch
@@ -92,13 +95,13 @@ public static class PixelConversion
     private static readonly Xyz32 XyzReferenceWhiteD65 = new(0.9504f, 1.0000f, 1.0888f);
 
     /// <summary>
-    ///
+    /// Converts from an <see cref="Xyz32"/> pixel to a <see cref="Lab32"/> pixel.
     /// </summary>
     /// <remarks>
     /// This method assumes a D65 white point for the XYZ pixel.
     /// </remarks>
-    /// <param name="self"></param>
-    /// <returns></returns>
+    /// <param name="self">The XYZ pixel on which to operate.</param>
+    /// <returns>A LAB pixel of the same color as the XYZ pixel.</returns>
     public static Lab32 ToLab32(this Xyz32 self)
     {
         const float espilon = 0.008856f; // (6/29)^3
