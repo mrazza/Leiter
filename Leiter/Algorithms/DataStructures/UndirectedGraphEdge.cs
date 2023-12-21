@@ -1,5 +1,6 @@
 namespace Leiter.Algorithms.DataStructures;
 
+using System.Collections;
 using System.Text;
 
 public sealed class UndirectedGraphEdge<T> : IComparable<UndirectedGraphEdge<T>>, IComparable
@@ -51,10 +52,11 @@ public sealed class UndirectedGraphEdge<T> : IComparable<UndirectedGraphEdge<T>>
 
     public int CompareTo(UndirectedGraphEdge<T>? other)
     {
+        if (other == null) return 1;
+        if (Weight > other.Weight) return 1;
+        if (Weight < other.Weight) return -1;
         if (Equals(other)) return 0;
-        if (other == null) return 1; // All instances are greater than null
-        if (Weight == other.Weight) return 1;
-        return Weight.CompareTo(other.Weight);
+        return 1;
     }
 
     public override string ToString()
