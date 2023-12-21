@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using Leiter.Core;
 
 [StructLayout(LayoutKind.Sequential)]
-public readonly record struct DoublePixel(double Value) : ITypedPixel<DoublePixel, double>, IScalar<DoublePixel, double>
+public readonly record struct DoublePixel(double Value) : ITypedPixel<DoublePixel, double>, ITypedScalar<DoublePixel, double>
 {
     private static readonly DoublePixel INTERNAL_ZERO = new();
     public static DoublePixel Zero => INTERNAL_ZERO;
@@ -56,16 +56,16 @@ public readonly record struct DoublePixel(double Value) : ITypedPixel<DoublePixe
 
     public DoublePixel Divide(double right) => ComponentMap(channel => channel / right);
 
-    public DoublePixel Add<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : notnull, IScalar<S, R> =>
+    public DoublePixel Add<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
         Add(right.AsDouble());
 
-    public DoublePixel Subtract<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : notnull, IScalar<S, R> =>
+    public DoublePixel Subtract<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
         Subtract(right.AsDouble());
 
-    public DoublePixel Multiply<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : notnull, IScalar<S, R> =>
+    public DoublePixel Multiply<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
         Multiply(right.AsDouble());
 
-    public DoublePixel Divide<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : notnull, IScalar<S, R> =>
+    public DoublePixel Divide<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
         Divide(right.AsDouble());
 
     public double AsDouble() => Value;

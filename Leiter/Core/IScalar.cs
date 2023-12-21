@@ -1,10 +1,7 @@
 namespace Leiter.Core;
 
-public interface IScalar<Self, T> : ISelfOperable<Self>, INumericOperable<Self>
-    where T : unmanaged, IConvertible
+public interface IScalar<Self> : ISelfOperable<Self>, INumericOperable<Self>
     where Self : notnull
 {
-    T Value {get;}
-
     double AsDouble();
 }

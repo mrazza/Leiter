@@ -2,11 +2,11 @@ namespace Leiter.Core;
 
 public interface IScalarOperable<T>
 {
-    T Add<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : IScalar<S, R>;
+    T Add<S>(IScalar<S> right) where S : IScalar<S>;
 
-    T Subtract<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : IScalar<S, R>;
+    T Subtract<S>(IScalar<S> right) where S : IScalar<S>;
 
-    T Multiply<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : IScalar<S, R>;
+    T Multiply<S>(IScalar<S> right) where S : IScalar<S>;
 
-    T Divide<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : IScalar<S, R>;
+    T Divide<S>(IScalar<S> right) where S : IScalar<S>;
 }
