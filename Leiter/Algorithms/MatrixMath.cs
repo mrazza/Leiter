@@ -19,10 +19,9 @@ public static class MatrixMath
         return result;
     }
 
-    public static Matrix<T> HadamardProduct<T, R, V>(this Matrix<T> self, IReadOnlyMatrix<R> right)
+    public static Matrix<T> HadamardProduct<T, R>(this Matrix<T> self, IReadOnlyMatrix<R> right)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
-        where R : struct, IScalar<R, V>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
-        where V : unmanaged, IConvertible
+        where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
     {
         if (self.Height != right.Height || self.Width != right.Width)
             throw new ArgumentException("Hadamard multiplication requires matrices of the same dimensions.");
@@ -47,10 +46,9 @@ public static class MatrixMath
                            (currentValue, elements) => currentValue + (elements.First.ToDoubleVector() * elements.Second.ToDoubleVector())));
     }
 
-    public static T FrobeniusProduct<T, R, V>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<R> right)
+    public static T FrobeniusProduct<T, R>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<R> right)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
-        where R : struct, IScalar<R, V>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
-        where V : unmanaged, IConvertible
+        where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
     {
         if (self.Height != right.Height || self.Width != right.Width)
             throw new ArgumentException("Frobenius multiplication requires matrices of the same dimensions.");
@@ -61,10 +59,9 @@ public static class MatrixMath
                            (currentValue, elements) => currentValue + (elements.First.ToDoubleVector() * elements.Second.AsDouble())));
     }
 
-    public static Matrix<T> Convolve<T, R, V>(this Matrix<T> self, IReadOnlyMatrix<R> kernel)
+    public static Matrix<T> Convolve<T, R>(this Matrix<T> self, IReadOnlyMatrix<R> kernel)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
-        where R : struct, IScalar<R, V>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
-        where V : unmanaged, IConvertible
+        where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
     {
         var result = self.Clone();
 
@@ -72,7 +69,7 @@ public static class MatrixMath
             .AsParallel()
             .SelectMany((_) => Enumerable.Range(0, self.Height),
                         (x, y) => new{ x, y, view = new MatrixView<T>(self, x - (kernel.Width / 2), y - (kernel.Height / 2), kernel.Width, kernel.Height, EdgeHandling.EXTEND) })
-            .ForAll((data) => result[data.x, data.y] = data.view.FrobeniusProduct<T, R, V>(kernel));
+            .ForAll((data) => result[data.x, data.y] = data.view.FrobeniusProduct(kernel));
 
         return result;
     }

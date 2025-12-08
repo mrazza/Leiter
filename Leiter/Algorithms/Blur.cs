@@ -37,7 +37,7 @@ public static class Blur
             for (int y = 0; y < kernelDimension; ++y)
                 kernel[x, y] /= sum;
 
-        return image.Convolve<T, DoublePixel, double>(kernel);
+        return image.Convolve(kernel);
     }
 
     /// <summary>
@@ -57,6 +57,6 @@ public static class Blur
         var kernelDimension = radius * 2 + 1;
         var kernel = new SequentialMatrix<DoublePixel>(kernelDimension, kernelDimension);
         kernel.SetAll(1.0 / (kernelDimension * kernelDimension));
-        return image.Convolve<T, DoublePixel, double>(kernel);
+        return image.Convolve(kernel);
     }
 }

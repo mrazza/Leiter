@@ -23,6 +23,9 @@ public class BucketingHistogram<T> : IHistogram<T> where T : notnull
     public int GetCount(T value)
         => histogram.GetValueOrDefault(bucketer(value));
 
+    public double GetDensity(T value)
+        => GetCount(value) / (double)total;
+
     public int Increment(T value, int count = 1)
     {
         var bucketedValue = bucketer(value);
@@ -31,6 +34,19 @@ public class BucketingHistogram<T> : IHistogram<T> where T : notnull
     }
 
     public int Total() => total;
+
+    public IReadOnlyHistogram<N> MapBuckets<N>(Func<T, N> mapFunc)
+        where N : notnull
+    {
+        var result = new DictionaryHistogram<N>();
+
+        foreach (var element in histogram)
+        {
+            result.Increment(mapFunc(element.Key), element.Value);
+        }
+
+        return result;
+    }
 
     public override string ToString()
         => "{" + string.Join(", ", histogram.Select(kv => kv.Key + "=" + kv.Value).ToArray()) + "}";

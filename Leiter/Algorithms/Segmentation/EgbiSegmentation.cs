@@ -6,7 +6,6 @@ using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Algorithms;
 using System.Linq;
-using System.Diagnostics;
 
 /// <summary>
 /// Efficient Graph-Based Image Segmentation
@@ -22,26 +21,58 @@ using System.Diagnostics;
 public static class EgbiSegmentation
 {
     /// <summary>
-    /// Internal extension of <see cref="Region{T}"/> to store the internal difference
-    /// threshold needed to group an edge with this component.
+    /// Internal structure to manage disjoint sets for image segmentation.
     /// </summary>
-    private sealed class Component : Region<Coord>
+    private struct DisjointSet
     {
-        /// <summary>
-        /// The internal difference threshold needed to group an edge with this component.
-        /// </summary>
-        /// <remarks>
-        /// This value should be the max weight of all the edges in the minimum spanning tree for this
-        /// partial region of the overall graph plus the kFactor over the number of elements in the graph.
-        /// </remarks>
-        public double InternalDifference {get; set;}
+        private readonly int[] parent;
+        private readonly int[] size;
+        private readonly double[] internalDifference;
 
-        /// <summary>
-        /// Creates a Component with the specified pixel coordinate.
-        /// </summary>
-        /// <param name="pixel">The initial pixel for this component.</param>
-        public Component(Coord pixel)
-            : base(pixel) => InternalDifference = 0;
+        public DisjointSet(int count, double kFactor)
+        {
+            parent = new int[count];
+            size = new int[count];
+            internalDifference = new double[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                parent[i] = i;
+                size[i] = 1;
+                internalDifference[i] = kFactor; // k/1 = k
+            }
+        }
+
+        public int Find(int i)
+        {
+            if (parent[i] == i)
+                return i;
+            
+            parent[i] = Find(parent[i]); // Path compression
+            return parent[i];
+        }
+
+        public void Union(int i, int j, double weight, double kFactor)
+        {
+            int rootI = Find(i);
+            int rootJ = Find(j);
+
+            if (rootI != rootJ)
+            {
+                // Union by size
+                if (size[rootI] < size[rootJ])
+                {
+                    (rootI, rootJ) = (rootJ, rootI);
+                }
+
+                parent[rootJ] = rootI;
+                size[rootI] += size[rootJ];
+                internalDifference[rootI] = weight + (kFactor / size[rootI]);
+            }
+        }
+
+        public int GetSize(int i) => size[Find(i)];
+        public double GetInternalDifference(int i) => internalDifference[Find(i)];
     }
 
     /// <summary>
@@ -75,20 +106,13 @@ public static class EgbiSegmentation
         where T : struct, IPixel<T>
     {
         var neighbors = new[]{new Coord(0, 1), new Coord(1, 1), new Coord(1, 0), new Coord(1, -1)};
-        var components = new Component[image.Count];
-        List<UndirectedGraphEdge<Coord>> graphEdges = new(image.Count * 2);
+        List<UndirectedGraphEdge<Coord>> graphEdges = new(image.Count * 4);
 
         for (int y = 0; y < image.Height; y++)
         {
-            var heightOffset = y * image.Width;
             for (int x = 0; x < image.Width; x++)
             {
                 var self = new Coord(x, y);
-                components[x + heightOffset] = new Component(self)
-                {
-                    InternalDifference = kFactor
-                };
-
                 foreach (var neighbor in neighbors)
                 {
                     var other = new Coord(x + neighbor.X, y + neighbor.Y);
@@ -108,57 +132,64 @@ public static class EgbiSegmentation
         }
         graphEdges.Sort();
 
+        var dsu = new DisjointSet(image.Count, kFactor);
+
         foreach (var edge in graphEdges)
         {
-            var first = components[edge.First.X + edge.First.Y * image.Width];
-            var second = components[edge.Second.X + edge.Second.Y * image.Width];
+            int idx1 = edge.First.X + edge.First.Y * image.Width;
+            int idx2 = edge.Second.X + edge.Second.Y * image.Width;
 
-            if (first == second)
-                continue;
+            int root1 = dsu.Find(idx1);
+            int root2 = dsu.Find(idx2);
 
-            if (edge.Weight > epsilon && (edge.Weight > first.InternalDifference || edge.Weight > second.InternalDifference))
-                continue;
-
-            if (first.Pixels.Count < second.Pixels.Count)
+            if (root1 != root2)
             {
-                (first, second) = (second, first);
+                if (edge.Weight <= epsilon || (edge.Weight <= dsu.GetInternalDifference(root1) && edge.Weight <= dsu.GetInternalDifference(root2)))
+                {
+                    dsu.Union(root1, root2, edge.Weight, kFactor);
+                }
             }
-
-            foreach (var pixel in second.Pixels)
-                 components[pixel.X + pixel.Y * image.Width] = first;
-
-            first.Pixels.UnionWith(second.Pixels);
-            second.Pixels.Clear();
-            first.InternalDifference = edge.Weight + (kFactor / first.Pixels.Count);
         }
 
         if (minSegmentSize > 0)
         {
             foreach (var edge in graphEdges)
             {
-                var first = components[edge.First.X + edge.First.Y * image.Width];
-                var second = components[edge.Second.X + edge.Second.Y * image.Width];
+                int idx1 = edge.First.X + edge.First.Y * image.Width;
+                int idx2 = edge.Second.X + edge.Second.Y * image.Width;
 
-                if (first == second)
-                    continue;
+                int root1 = dsu.Find(idx1);
+                int root2 = dsu.Find(idx2);
 
-                if (first.Pixels.Count < minSegmentSize || second.Pixels.Count < minSegmentSize)
+                if (root1 != root2)
                 {
-                    if (first.Pixels.Count < second.Pixels.Count)
+                    if (dsu.GetSize(root1) < minSegmentSize || dsu.GetSize(root2) < minSegmentSize)
                     {
-                        (first, second) = (second, first);
+                        dsu.Union(root1, root2, edge.Weight, kFactor);
                     }
-
-                    foreach (var pixel in second.Pixels)
-                        components[pixel.X + pixel.Y * image.Width] = first;
-
-                    first.Pixels.UnionWith(second.Pixels);
-                    second.Pixels.Clear();
                 }
             }
         }
 
-        return components.Cast<Region<Coord>>().ToImmutableHashSet();
+        // Group pixels by component
+        var components = new Dictionary<int, Region<Coord>>();
+        for (int y = 0; y < image.Height; y++)
+        {
+            for (int x = 0; x < image.Width; x++)
+            {
+                int idx = x + y * image.Width;
+                int root = dsu.Find(idx);
+
+                if (!components.TryGetValue(root, out var region))
+                {
+                    region = new Region<Coord>();
+                    components[root] = region;
+                }
+                region.Pixels.Add(new Coord(x, y));
+            }
+        }
+
+        return components.Values.ToImmutableHashSet();
     }
 
     /// <summary>

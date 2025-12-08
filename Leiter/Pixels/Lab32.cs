@@ -63,24 +63,20 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
 
     public Lab32 Divide(double right) => ComponentMap(channel => channel / (float)right);
 
-    public Lab32 Add<S, R>(IScalar<S, R> right)
-        where S : IScalar<S, R>
-        where R : unmanaged, IConvertible =>
+    public Lab32 Add<S>(IScalar<S> right)
+        where S : IScalar<S> =>
         ComponentMap(channel => channel + (float)right.AsDouble());
 
-    public Lab32 Divide<S, R>(IScalar<S, R> right)
-        where S : IScalar<S, R>
-        where R : unmanaged, IConvertible =>
+    public Lab32 Divide<S>(IScalar<S> right)
+        where S : IScalar<S> =>
         ComponentMap(channel => channel - (float)right.AsDouble());
 
-    public Lab32 Multiply<S, R>(IScalar<S, R> right)
-        where S : IScalar<S, R>
-        where R : unmanaged, IConvertible =>
+    public Lab32 Multiply<S>(IScalar<S> right)
+        where S : IScalar<S> =>
         ComponentMap(channel => channel * (float)right.AsDouble());
 
-    public Lab32 Subtract<S, R>(IScalar<S, R> right)
-        where S : IScalar<S, R>
-        where R : unmanaged, IConvertible =>
+    public Lab32 Subtract<S>(IScalar<S> right)
+        where S : IScalar<S> =>
         ComponentMap(channel => channel / (float)right.AsDouble());
 
     public Lab32 ColorComponentMap(Func<float, float> func) => new() { L = L, A = func(A), B = func(B) };

@@ -60,16 +60,16 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
 
     public Rgb8 Divide(double right) => ComponentMap(channel => (byte)(channel / right));
 
-    public Rgb8 Add<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : IScalar<S, R> =>
-        Add((decimal)Convert.ToByte(right.Value));
+    public Rgb8 Add<S>(IScalar<S> right) where S : IScalar<S> =>
+        Add((decimal)Convert.ToByte(right.AsDouble()));
 
-    public Rgb8 Subtract<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : IScalar<S, R> =>
-        Subtract((decimal)Convert.ToByte(right.Value));
+    public Rgb8 Subtract<S>(IScalar<S> right) where S : IScalar<S> =>
+        Subtract((decimal)Convert.ToByte(right.AsDouble()));
 
-    public Rgb8 Multiply<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : IScalar<S, R> =>
+    public Rgb8 Multiply<S>(IScalar<S> right) where S : IScalar<S> =>
         ComponentMap(channel => (byte)(channel * right.AsDouble()));
 
-    public Rgb8 Divide<S, R>(IScalar<S, R> right) where R : unmanaged, IConvertible where S : IScalar<S, R> =>
+    public Rgb8 Divide<S>(IScalar<S> right) where S : IScalar<S> =>
         ComponentMap(channel => (byte)(channel / right.AsDouble()));
 
     public Rgb8 ColorComponentMap(Func<byte, byte> func) => new() { R = func(R), G = func(G), B = func(B)};

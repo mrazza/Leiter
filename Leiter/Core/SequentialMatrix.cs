@@ -43,7 +43,7 @@ public class SequentialMatrix<T> : Matrix<T>
 
     public override void SetElement(int index, T value)
     {
-        if (index < 0 || index > data.Length)
+        if (index < 0 || index >= data.Length)
             throw new IndexOutOfRangeException($"{index} exceeds Matrix size of {Count}");
 
         data[index] = value;
