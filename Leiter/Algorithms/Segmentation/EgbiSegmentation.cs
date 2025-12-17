@@ -1,11 +1,11 @@
 namespace Leiter.Algorithms.Segmentation;
 
 using System.Collections.Immutable;
+using System.Linq;
+using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
 using Leiter.Pixels;
-using Leiter.Algorithms;
-using System.Linq;
 
 /// <summary>
 /// Efficient Graph-Based Image Segmentation
@@ -47,7 +47,7 @@ public static class EgbiSegmentation
         {
             if (parent[i] == i)
                 return i;
-            
+
             parent[i] = Find(parent[i]); // Path compression
             return parent[i];
         }
@@ -105,7 +105,7 @@ public static class EgbiSegmentation
     public static IImmutableSet<Region<Coord>> Segment<T>(IReadOnlyMatrix<T> image, double kFactor = 100.0, double epsilon = 1.0, int minSegmentSize = 100)
         where T : struct, IPixel<T>
     {
-        var neighbors = new[]{new Coord(0, 1), new Coord(1, 1), new Coord(1, 0), new Coord(1, -1)};
+        var neighbors = new[] { new Coord(0, 1), new Coord(1, 1), new Coord(1, 0), new Coord(1, -1) };
         List<UndirectedGraphEdge<Coord>> graphEdges = new(image.Count * 4);
 
         for (int y = 0; y < image.Height; y++)

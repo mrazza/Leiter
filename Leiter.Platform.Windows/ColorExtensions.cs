@@ -18,7 +18,7 @@ public static class ColorExtensions
     /// <param name="pixel">The pixel to convert.</param>
     /// <returns>The Leiter Rgb8 value with the same data.</returns>
     public static Rgb8 ToRgb8(this Color pixel)
-        => new Rgb8(pixel.R, pixel.G, pixel.B);
+        => new(pixel.R, pixel.G, pixel.B);
 
     /// <summary>
     /// Converts a Leiter <see cref="Rgb8"/> to a <see cref="Color"/>.

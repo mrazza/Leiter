@@ -149,11 +149,11 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
 
         double partialDeltaHPrime = (selfCPrime, otherCPrime, diffHPrime: otherHPrime - selfHPrime, absDiffHPrime: Math.Abs(otherHPrime - selfHPrime)) switch
         {
-            {selfCPrime: 0.0} => 0.0,
-            {otherCPrime: 0.0} => 0.0,
-            {diffHPrime: var diffHPrime, absDiffHPrime: <= 180.0} => diffHPrime,
-            {diffHPrime: var diffHPrime, diffHPrime: > 180.0} => diffHPrime - 360,
-            {diffHPrime: var diffHPrime, diffHPrime: < -180.0} => diffHPrime + 360,
+            { selfCPrime: 0.0 } => 0.0,
+            { otherCPrime: 0.0 } => 0.0,
+            { diffHPrime: var diffHPrime, absDiffHPrime: <= 180.0 } => diffHPrime,
+            { diffHPrime: var diffHPrime, diffHPrime: > 180.0 } => diffHPrime - 360,
+            { diffHPrime: var diffHPrime, diffHPrime: < -180.0 } => diffHPrime + 360,
             (_) => throw new UnreachableException()
         };
         double deltaHPrime = 2 * Math.Sqrt(selfCPrime * otherCPrime) * Math.Sin(partialDeltaHPrime / 180.0 * Math.PI / 2.0);
@@ -163,10 +163,10 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
 
         double meanHPrime = (mulCPrime: selfCPrime * otherCPrime, sumHPrime: selfHPrime + otherHPrime, absDiffHPrime: Math.Abs(selfHPrime - otherHPrime)) switch
         {
-            {mulCPrime: 0.0, sumHPrime: var sumHPrime} => sumHPrime,
-            {absDiffHPrime: <= 180, sumHPrime: var sumHPrime} => sumHPrime / 2.0,
-            {sumHPrime: < 360, sumHPrime: var sumHPrime} => (sumHPrime + 360) / 2.0,
-            {sumHPrime: >= 360, sumHPrime: var sumHPrime} => (sumHPrime - 360) / 2.0,
+            { mulCPrime: 0.0, sumHPrime: var sumHPrime } => sumHPrime,
+            { absDiffHPrime: <= 180, sumHPrime: var sumHPrime } => sumHPrime / 2.0,
+            { sumHPrime: < 360, sumHPrime: var sumHPrime } => (sumHPrime + 360) / 2.0,
+            { sumHPrime: >= 360, sumHPrime: var sumHPrime } => (sumHPrime - 360) / 2.0,
             (_) => throw new UnreachableException()
         };
 

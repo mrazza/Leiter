@@ -8,13 +8,13 @@ public class SequentialMatrix<T> : Matrix<T>
     private readonly T[] data;
 
     public SequentialMatrix(int width, int height)
-        : this(width, height, new T[width * height]) {}
+        : this(width, height, new T[width * height]) { }
 
     public SequentialMatrix(Size size)
-        : this(size.Width, size.Height) {}
+        : this(size.Width, size.Height) { }
 
     public SequentialMatrix(T[,] values)
-        : this(values.GetLength(1), values.GetLength(0), values.Cast<T>().ToArray()) {}
+        : this(values.GetLength(1), values.GetLength(0), values.Cast<T>().ToArray()) { }
 
     private SequentialMatrix(int width, int height, T[] data)
         : base(width, height)
@@ -35,7 +35,7 @@ public class SequentialMatrix<T> : Matrix<T>
 
     public override T GetElement(int x, int y)
     {
-        if (x < 0 || x >= Width ||  y < 0 || y >= Height)
+        if (x < 0 || x >= Width || y < 0 || y >= Height)
             throw new IndexOutOfRangeException($"Element index must be between {{0, 0}} (inclusive) and {{{Width}, {Height}}} (exclusive) but was {{{x}, {y}}}.");
 
         return data[x + (y * Width)];
@@ -51,10 +51,10 @@ public class SequentialMatrix<T> : Matrix<T>
 
     public override void SetElement(int x, int y, T value)
     {
-        if (x < 0 || x >= Width ||  y < 0 || y >= Height)
+        if (x < 0 || x >= Width || y < 0 || y >= Height)
             throw new IndexOutOfRangeException($"Element index must be between {{0, 0}} (inclusive) and {{{Width}, {Height}}} (exclusive) but was {{{x}, {y}}}.");
 
-        data[x  + (y * Width)] = value;
+        data[x + (y * Width)] = value;
     }
 
     public override void SetAll(T value)
