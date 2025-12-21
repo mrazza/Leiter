@@ -8,9 +8,9 @@ namespace Leiter.Algorithms.DataStructures;
 /// <typeparam name="T">The type to use when representing elements in the region.</typeparam>
 public class Region<T>
 {
-    public HashSet<T> Pixels {get;} = new HashSet<T>();
+    public HashSet<T> Pixels { get; } = [];
 
-    public Region() {}
+    public Region() { }
 
     public Region(T initialElement)
         : this()

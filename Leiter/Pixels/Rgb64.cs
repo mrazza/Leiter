@@ -77,7 +77,7 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
         where S : IScalar<S> =>
         ComponentMap(channel => channel / right.AsDouble());
 
-    public Rgb64 ColorComponentMap(Func<double, double> func) => new() { R = func(R), G = func(G), B = func(B)};
+    public Rgb64 ColorComponentMap(Func<double, double> func) => new() { R = func(R), G = func(G), B = func(B) };
 
     public Rgb64 ComponentMap(Func<double, double> func) => ColorComponentMap(func);
 

@@ -3,7 +3,7 @@ namespace Leiter.Core;
 public interface ISelfOperable<T>
 {
     // TODO: Does this belong here or somewhere else?
-    static abstract T Zero {get;}
+    static abstract T Zero { get; }
 
     T Add(T right);
 

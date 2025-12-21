@@ -72,7 +72,7 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
     public Rgb8 Divide<S>(IScalar<S> right) where S : IScalar<S> =>
         ComponentMap(channel => (byte)(channel / right.AsDouble()));
 
-    public Rgb8 ColorComponentMap(Func<byte, byte> func) => new() { R = func(R), G = func(G), B = func(B)};
+    public Rgb8 ColorComponentMap(Func<byte, byte> func) => new() { R = func(R), G = func(G), B = func(B) };
 
     public Rgb8 ComponentMap(Func<byte, byte> func) => ColorComponentMap(func);
 

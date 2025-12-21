@@ -68,7 +68,7 @@ public static class MatrixMath
         Enumerable.Range(0, self.Width)
             .AsParallel()
             .SelectMany((_) => Enumerable.Range(0, self.Height),
-                        (x, y) => new{ x, y, view = new MatrixView<T>(self, x - (kernel.Width / 2), y - (kernel.Height / 2), kernel.Width, kernel.Height, EdgeHandling.EXTEND) })
+                        (x, y) => new { x, y, view = new MatrixView<T>(self, x - (kernel.Width / 2), y - (kernel.Height / 2), kernel.Width, kernel.Height, EdgeHandling.EXTEND) })
             .ForAll((data) => result[data.x, data.y] = data.view.FrobeniusProduct(kernel));
 
         return result;

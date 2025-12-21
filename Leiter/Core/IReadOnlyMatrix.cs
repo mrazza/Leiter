@@ -5,10 +5,10 @@ using System.Text;
 public interface IReadOnlyMatrix<T> : IReadOnlyCollection<T>, IReadOnlyList<T>, IEnumerable<T>
     where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
 {
-    int Width {get;}
-    int Height {get;}
+    int Width { get; }
+    int Height { get; }
 
-    Size Size {get;}
+    Size Size { get; }
 
     T this[int x, int y]
     {
@@ -23,6 +23,10 @@ public interface IReadOnlyMatrix<T> : IReadOnlyCollection<T>, IReadOnlyList<T>, 
     T GetElement(int index);
 
     T GetElement(int width, int height);
+
+    Coord CoordFromIndex(int index);
+
+    int IndexFromCoord(Coord coord);
 
     protected static string ToString(IReadOnlyMatrix<T> matrix)
     {
@@ -46,4 +50,8 @@ public interface IReadOnlyMatrix<T> : IReadOnlyCollection<T>, IReadOnlyList<T>, 
         builder.Append('}');
         return builder.ToString();
     }
+
+    protected static Coord CoordFromIndex(IReadOnlyMatrix<T> matrix, int index) => new(index % matrix.Width, index / matrix.Width);
+
+    protected static int IndexFromCoord(IReadOnlyMatrix<T> matrix, Coord coord) => coord.X + coord.Y * matrix.Width;
 }

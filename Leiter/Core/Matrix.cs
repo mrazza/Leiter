@@ -5,8 +5,8 @@ using System.Collections;
 public abstract class Matrix<T> : IReadOnlyMatrix<T>
     where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
 {
-    public int Width {get; private init;}
-    public int Height {get; private init;}
+    public int Width { get; private init; }
+    public int Height { get; private init; }
 
     protected Matrix(int width, int height)
     {
@@ -52,6 +52,10 @@ public abstract class Matrix<T> : IReadOnlyMatrix<T>
         where R : struct, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>;
 
     public abstract Matrix<T> Clone();
+
+    public Coord CoordFromIndex(int index) => new(index % Width, index / Width);
+
+    public int IndexFromCoord(Coord coord) => coord.X + coord.Y * Width;
 
     public override string? ToString() => IReadOnlyMatrix<T>.ToString(this);
 

@@ -16,7 +16,7 @@ public class BucketingHistogram<T> : IHistogram<T> where T : notnull
 
     public BucketingHistogram(Bucketer<T> bucketer)
     {
-        histogram = new();
+        histogram = [];
         this.bucketer = bucketer;
     }
 
@@ -47,6 +47,10 @@ public class BucketingHistogram<T> : IHistogram<T> where T : notnull
 
         return result;
     }
+
+    public IEnumerable<T> Buckets => histogram.Keys;
+
+    public int BucketCount => histogram.Count;
 
     public override string ToString()
         => "{" + string.Join(", ", histogram.Select(kv => kv.Key + "=" + kv.Value).ToArray()) + "}";

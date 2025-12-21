@@ -2,7 +2,7 @@ namespace Leiter.Algorithms.DataStructures;
 
 public interface IReadOnlyHistogram<T> : IEnumerable<KeyValuePair<T, int>>
 {
-    public int this[T value] {get;}
+    public int this[T value] { get; }
 
     int GetCount(T value);
 

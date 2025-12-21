@@ -8,7 +8,7 @@ public struct UndirectedGraphEdge<T> : IComparable<UndirectedGraphEdge<T>>
     public T Second { get; set; }
     public double Weight { get; set; }
 
-    public int CompareTo(UndirectedGraphEdge<T> other)
+    public readonly int CompareTo(UndirectedGraphEdge<T> other)
     {
         return Weight.CompareTo(other.Weight);
     }
