@@ -2,9 +2,8 @@ namespace Leiter.Algorithms.Segmentation;
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Diagnostics;
 using System.Linq;
-using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
@@ -58,33 +57,44 @@ public static class EgbiSegmentation
     public static IDisjointSet Segment<T>(IReadOnlyMatrix<T> image, double kFactor = 100.0, double epsilon = 1.0, int minSegmentSize = 100)
         where T : struct, IPixel<T>
     {
-        Stopwatch stopwatch = Stopwatch.StartNew();
         var neighbors = new[] { new Coord(0, 1), new Coord(1, 1), new Coord(1, 0), new Coord(1, -1) };
         List<UndirectedGraphEdge<Coord>> graphEdges = new(image.Count * 4);
-
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
+        Parallel.For(
+            0,
+            image.Height,
+            () => new List<UndirectedGraphEdge<Coord>>(image.Width * 4),
+            (y, _, localEdges) =>
             {
-                var self = new Coord(x, y);
-                T selfPixel = image[self];
-                foreach (var neighbor in neighbors)
+                for (int x = 0; x < image.Width; x++)
                 {
-                    var other = new Coord(x + neighbor.X, y + neighbor.Y);
-                    if (other.X >= image.Width || other.Y >= image.Height || other.X < 0 || other.Y < 0)
-                        continue;
-
-                    T otherPixel = image[other];
-                    graphEdges.Add(new UndirectedGraphEdge<Coord>
+                    var self = new Coord(x, y);
+                    T selfPixel = image[self];
+                    foreach (var neighbor in neighbors)
                     {
-                        First = self,
-                        Second = other,
-                        Weight = selfPixel.Distance(otherPixel)
-                    });
+                        var other = self + neighbor;
+                        if (other.X < 0 || other.X >= image.Width || other.Y < 0 || other.Y >= image.Height)
+                        {
+                            continue;
+                        }
+                        T otherPixel = image[other];
+                        localEdges.Add(new UndirectedGraphEdge<Coord>
+                        {
+                            First = self,
+                            Second = other,
+                            Weight = selfPixel.Distance(otherPixel)
+                        });
+                    }
                 }
-            }
-        }
-        Console.WriteLine($"Graph edge creation: {stopwatch.Elapsed}");
+
+                return localEdges;
+            },
+            (localEdges) =>
+            {
+                lock (graphEdges)
+                {
+                    graphEdges.AddRange(localEdges);
+                }
+            });
 
         var disjointSet = new DisjointSet<PartitionInfo>(image, (_) => new PartitionInfo(kFactor));
         var sortedGraphEdges = new LinkedList<UndirectedGraphEdge<Coord>>(graphEdges.OrderBy(edge => edge.Weight));
