@@ -97,12 +97,9 @@ public static class EgbiSegmentation
             });
 
         var disjointSet = new DisjointSet<PartitionInfo>(image, (_) => new PartitionInfo(kFactor));
-        var sortedGraphEdges = new LinkedList<UndirectedGraphEdge<Coord>>(graphEdges.OrderBy(edge => edge.Weight));
-        var currentNode = sortedGraphEdges.First;
-        while (currentNode != null)
+        var deferredEdges = new LinkedList<UndirectedGraphEdge<Coord>>();
+        foreach (var edge in graphEdges.AsParallel().OrderBy(edge => edge.Weight))
         {
-            var edge = currentNode.Value;
-            var nextNode = currentNode.Next;
             var firstPartition = disjointSet.GetPartition(edge.First);
             var secondPartition = disjointSet.GetPartition(edge.Second);
 
@@ -111,19 +108,17 @@ public static class EgbiSegmentation
                 if (edge.Weight <= epsilon || (edge.Weight <= firstPartition.Value.InternalDifference && edge.Weight <= secondPartition.Value.InternalDifference))
                 {
                     disjointSet.Union(firstPartition, secondPartition, new PartitionInfo(edge.Weight + (kFactor / (firstPartition.Size + secondPartition.Size))));
-                    sortedGraphEdges.Remove(currentNode);
+                }
+                else
+                {
+                    deferredEdges.AddLast(edge);
                 }
             }
-            else
-            {
-                sortedGraphEdges.Remove(currentNode);
-            }
-            currentNode = nextNode;
         }
 
         if (minSegmentSize > 0)
         {
-            foreach (var edge in sortedGraphEdges)
+            foreach (var edge in deferredEdges)
             {
                 var firstPartition = disjointSet.GetPartition(edge.First);
                 var secondPartition = disjointSet.GetPartition(edge.Second);
