@@ -1,7 +1,10 @@
 namespace Leiter.Algorithms.Segmentation;
 
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
@@ -21,143 +24,9 @@ using Leiter.Pixels;
 public static class EgbiSegmentation
 {
     /// <summary>
-    /// Disjoint Set Union (DSU) data structure for use with the EGBI algorithm, also known as Union-Find or Merge-Find.
+    /// Internal data structure used to track the internal difference of partitions/regions of the segmented image.
     /// </summary>
-    /// <remarks>
-    /// This is written explicitly for the purposes of placing individual pixels into sets and calculating the
-    /// internal difference (color variation) of the pixels inside each set. Further, this implementation is
-    /// optimized for speed and memory usage. As a result, it is not a general purpose Disjoint Set Union
-    /// data structure.
-    /// 
-    /// Roots/set IDs are arbitrary integers. They are not guaranteed to be sequential or in any particular order.
-    /// The only guarantee is that pixels in the same set will have the same root ID.
-    /// 
-    /// For background on the datastructure, see: https://en.wikipedia.org/wiki/Disjoint-set_data_structure
-    /// </remarks>
-    private class DisjointSet<T>
-        where T : struct, IPixel<T>
-    {
-        private readonly IReadOnlyMatrix<T> image;
-        private readonly int[] parent;
-        private readonly int[] size;
-        private readonly double[] internalDifference;
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="DisjointSet{T}"/> class.
-        /// </summary>
-        /// <param name="image">The image to segment.</param>
-        /// <param name="kFactor">The k factor of the EGBI algorithm.</param>
-        public DisjointSet(IReadOnlyMatrix<T> image, double kFactor)
-        {
-            this.image = image;
-            parent = new int[image.Count];
-            size = new int[image.Count];
-            internalDifference = new double[image.Count];
-
-            for (int index = 0; index < image.Count; index++)
-            {
-                parent[index] = index;
-                size[index] = 1;
-                internalDifference[index] = kFactor;
-            }
-        }
-
-        /// <summary>
-        /// Finds the root of the set the provided pixel is in.
-        /// </summary>
-        /// <param name="pixel">The pixel to find the root of.</param>
-        /// <returns>The root of the set the pixel is in.</returns>
-        public int Find(Coord pixel)
-        {
-            return Find(image.IndexFromCoord(pixel));
-        }
-
-        /// <summary>
-        /// Finds the root of the set the provided pixel is in.
-        /// </summary>
-        /// <param name="index">The index of the pixel.</param>
-        /// <returns>The root of the set the pixel is in.</returns>
-        public int Find(int index)
-        {
-            if (parent[index] == index)
-                return index;
-
-            parent[index] = Find(parent[index]);
-            return parent[index];
-        }
-
-        /// <summary>
-        /// Unions the two sets the provided pixels are in.
-        /// </summary>
-        /// <remarks>
-        /// The union operation is performed using the union by size algorithm.
-        /// If both pixels are already in the same set, no action is taken.
-        /// </remarks>
-        /// <param name="firstPixel">The first pixel.</param>
-        /// <param name="secondPixel">The second pixel.</param>
-        /// <param name="weight">The weight of the edge between the two pixels.</param>
-        /// <param name="kFactor">The k factor of the EGBI algorithm.</param>
-        public void Union(Coord firstPixel, Coord secondPixel, double weight, double kFactor)
-        {
-            Union(image.IndexFromCoord(firstPixel), image.IndexFromCoord(secondPixel), weight, kFactor);
-        }
-
-        /// <summary>
-        /// Unions the two sets the provided pixels are in.
-        /// </summary>
-        /// <remarks>
-        /// The union operation is performed using the union by size algorithm.
-        /// If both pixels are already in the same set, no action is taken.
-        /// </remarks>
-        /// <param name="firstIndex">The index of the first pixel.</param>
-        /// <param name="secondIndex">The index of the second pixel.</param>
-        /// <param name="weight">The weight of the edge between the two sets.</param>
-        /// <param name="kFactor">The k factor of the EGBI algorithm.</param>
-        public void Union(int firstIndex, int secondIndex, double weight, double kFactor)
-        {
-            int firstSetRoot = Find(firstIndex);
-            int secondSetRoot = Find(secondIndex);
-            if (firstSetRoot == secondSetRoot)
-                return;
-
-            if (size[firstSetRoot] < size[secondSetRoot])
-            {
-                (firstSetRoot, secondSetRoot) = (secondSetRoot, firstSetRoot);
-            }
-
-            parent[secondSetRoot] = firstSetRoot;
-            size[firstSetRoot] += size[secondSetRoot];
-            internalDifference[firstSetRoot] = weight + (kFactor / size[firstSetRoot]);
-        }
-
-        /// <summary>
-        /// Gets the size of the set the provided pixel is in.
-        /// </summary>
-        /// <param name="pixel">The pixel whose set to get the size of.</param>
-        /// <returns>The size of the set the pixel is in.</returns>
-        public int GetSize(Coord pixel) => GetSize(image.IndexFromCoord(pixel));
-
-        /// <summary>
-        /// Gets the internal difference of the set the provided pixel is in.
-        /// </summary>
-        /// <param name="pixel">The pixel whose set to get the internal difference of.</param>
-        /// <returns>The internal difference of the set the pixel is in.</returns>
-        public double GetInternalDifference(Coord pixel) => GetInternalDifference(image.IndexFromCoord(pixel));
-
-        /// <summary>
-        /// Gets the size of the set the provided index is in.
-        /// </summary>
-        /// <param name="index">The index to get the size of.</param>
-        /// <returns>The size of the set the index is in.</returns>
-        public int GetSize(int index) => size[Find(index)];
-
-        /// <summary>
-        /// Gets the internal difference of the set the provided index is in.
-        /// </summary>
-        /// <param name="index">The index to get the internal difference of.</param>
-        /// <returns>The internal difference of the set the index is in.</returns>
-        public double GetInternalDifference(int index) => internalDifference[Find(index)];
-    }
+    private readonly record struct PartitionInfo(double InternalDifference);
 
     /// <summary>
     /// Segments an image using the Efficient Graph-Based Image Segmentation (EGBI) algorithm.
@@ -186,9 +55,10 @@ public static class EgbiSegmentation
     /// <param name="epsilon">Specifies the minimum distance for two pixels to be considered different.</param>
     /// <param name="minSegmentSize">The minimum size for any one segment.</param>
     /// <returns>A collection of regions (themselves a collection of pixel coordinates); one for each segment.</returns>
-    public static IImmutableSet<Region<Coord>> Segment<T>(IReadOnlyMatrix<T> image, double kFactor = 100.0, double epsilon = 1.0, int minSegmentSize = 100)
+    public static IDisjointSet Segment<T>(IReadOnlyMatrix<T> image, double kFactor = 100.0, double epsilon = 1.0, int minSegmentSize = 100)
         where T : struct, IPixel<T>
     {
+        Stopwatch stopwatch = Stopwatch.StartNew();
         var neighbors = new[] { new Coord(0, 1), new Coord(1, 1), new Coord(1, 0), new Coord(1, -1) };
         List<UndirectedGraphEdge<Coord>> graphEdges = new(image.Count * 4);
 
@@ -197,13 +67,13 @@ public static class EgbiSegmentation
             for (int x = 0; x < image.Width; x++)
             {
                 var self = new Coord(x, y);
+                T selfPixel = image[self];
                 foreach (var neighbor in neighbors)
                 {
                     var other = new Coord(x + neighbor.X, y + neighbor.Y);
                     if (other.X >= image.Width || other.Y >= image.Height || other.X < 0 || other.Y < 0)
                         continue;
 
-                    T selfPixel = image[self];
                     T otherPixel = image[other];
                     graphEdges.Add(new UndirectedGraphEdge<Coord>
                     {
@@ -214,66 +84,51 @@ public static class EgbiSegmentation
                 }
             }
         }
-        graphEdges.Sort();
+        Console.WriteLine($"Graph edge creation: {stopwatch.Elapsed}");
 
-        var disjointSet = new DisjointSet<T>(image, kFactor);
-
-        foreach (var edge in graphEdges)
+        var disjointSet = new DisjointSet<PartitionInfo>(image, (_) => new PartitionInfo(kFactor));
+        var sortedGraphEdges = new LinkedList<UndirectedGraphEdge<Coord>>(graphEdges.OrderBy(edge => edge.Weight));
+        var currentNode = sortedGraphEdges.First;
+        while (currentNode != null)
         {
-            int firstIndex = image.IndexFromCoord(edge.First);
-            int secondIndex = image.IndexFromCoord(edge.Second);
+            var edge = currentNode.Value;
+            var nextNode = currentNode.Next;
+            var firstPartition = disjointSet.GetPartition(edge.First);
+            var secondPartition = disjointSet.GetPartition(edge.Second);
 
-            int firstRoot = disjointSet.Find(firstIndex);
-            int secondRoot = disjointSet.Find(secondIndex);
-
-            if (firstRoot != secondRoot)
+            if (firstPartition.RootIndex != secondPartition.RootIndex)
             {
-                if (edge.Weight <= epsilon || (edge.Weight <= disjointSet.GetInternalDifference(firstRoot) && edge.Weight <= disjointSet.GetInternalDifference(secondRoot)))
+                if (edge.Weight <= epsilon || (edge.Weight <= firstPartition.Value.InternalDifference && edge.Weight <= secondPartition.Value.InternalDifference))
                 {
-                    disjointSet.Union(firstRoot, secondRoot, edge.Weight, kFactor);
+                    disjointSet.Union(firstPartition, secondPartition, new PartitionInfo(edge.Weight + (kFactor / (firstPartition.Size + secondPartition.Size))));
+                    sortedGraphEdges.Remove(currentNode);
                 }
             }
+            else
+            {
+                sortedGraphEdges.Remove(currentNode);
+            }
+            currentNode = nextNode;
         }
 
         if (minSegmentSize > 0)
         {
-            foreach (var edge in graphEdges)
+            foreach (var edge in sortedGraphEdges)
             {
-                int firstIndex = image.IndexFromCoord(edge.First);
-                int secondIndex = image.IndexFromCoord(edge.Second);
+                var firstPartition = disjointSet.GetPartition(edge.First);
+                var secondPartition = disjointSet.GetPartition(edge.Second);
 
-                int firstRoot = disjointSet.Find(firstIndex);
-                int secondRoot = disjointSet.Find(secondIndex);
-
-                if (firstRoot != secondRoot)
+                if (firstPartition.RootIndex != secondPartition.RootIndex)
                 {
-                    if (disjointSet.GetSize(firstRoot) < minSegmentSize || disjointSet.GetSize(secondRoot) < minSegmentSize)
+                    if (firstPartition.Size < minSegmentSize || secondPartition.Size < minSegmentSize)
                     {
-                        disjointSet.Union(firstRoot, secondRoot, edge.Weight, kFactor);
+                        disjointSet.Union(firstPartition, secondPartition, new PartitionInfo(edge.Weight + (kFactor / (firstPartition.Size + secondPartition.Size))));
                     }
                 }
             }
         }
 
-        // Group pixels by component
-        var components = new Dictionary<int, Region<Coord>>();
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                int index = image.IndexFromCoord(new Coord(x, y));
-                int root = disjointSet.Find(index);
-
-                if (!components.TryGetValue(root, out var region))
-                {
-                    region = new Region<Coord>();
-                    components[root] = region;
-                }
-                region.Pixels.Add(new Coord(x, y));
-            }
-        }
-
-        return components.Values.ToImmutableHashSet();
+        return disjointSet;
     }
 
     /// <summary>

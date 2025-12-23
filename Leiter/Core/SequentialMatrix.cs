@@ -1,7 +1,5 @@
 namespace Leiter.Core;
 
-using System.Linq;
-
 public class SequentialMatrix<T> : Matrix<T>
     where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
 {
@@ -15,6 +13,9 @@ public class SequentialMatrix<T> : Matrix<T>
 
     public SequentialMatrix(T[,] values)
         : this(values.GetLength(1), values.GetLength(0), values.Cast<T>().ToArray()) { }
+
+    public SequentialMatrix(Size size, T[] values)
+        : this(size.Width, size.Height, values.ToArray()) { }
 
     private SequentialMatrix(int width, int height, T[] data)
         : base(width, height)

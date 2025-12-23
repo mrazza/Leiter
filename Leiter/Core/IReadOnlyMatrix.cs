@@ -2,14 +2,9 @@ namespace Leiter.Core;
 
 using System.Text;
 
-public interface IReadOnlyMatrix<T> : IReadOnlyCollection<T>, IReadOnlyList<T>, IEnumerable<T>
+public interface IReadOnlyMatrix<T> : IUntypedMatrix, IReadOnlyCollection<T>, IReadOnlyList<T>, IEnumerable<T>
     where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
 {
-    int Width { get; }
-    int Height { get; }
-
-    Size Size { get; }
-
     T this[int x, int y]
     {
         get;
@@ -24,9 +19,11 @@ public interface IReadOnlyMatrix<T> : IReadOnlyCollection<T>, IReadOnlyList<T>, 
 
     T GetElement(int width, int height);
 
-    Coord CoordFromIndex(int index);
+    int IUntypedMatrix.Count => Count;
 
-    int IndexFromCoord(Coord coord);
+    int IReadOnlyCollection<T>.Count => Count;
+
+    new int Count { get; }
 
     protected static string ToString(IReadOnlyMatrix<T> matrix)
     {

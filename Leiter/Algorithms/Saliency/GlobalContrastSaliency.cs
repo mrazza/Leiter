@@ -71,7 +71,9 @@ public static class GlobalContrastSaliency
         foreach (var bucket in truncatedHistogram)
         {
             Lab32 bucketColor = rgbToLabLookupTable[bucket.Key];
-            saliencyMap[bucket.Key] = truncatedHistogram.Where(targetBucket => targetBucket.Key != bucket.Key).Sum(targetBucket => bucketColor.Distance(rgbToLabLookupTable[targetBucket.Key]) * targetBucket.Value);
+            saliencyMap[bucket.Key] =
+                truncatedHistogram.Where(targetBucket => targetBucket.Key != bucket.Key)
+                    .Sum(targetBucket => bucketColor.Distance(rgbToLabLookupTable[targetBucket.Key]) * targetBucket.Value) / image.Count;
         }
 
         if (enableColorSpaceSmoothing)
@@ -82,6 +84,8 @@ public static class GlobalContrastSaliency
             {
                 // Computes [c, D(c, c sub i)] for m nearest neighbors of bucket.Key.
                 var nearestNeighbors = unsmoothedSaliencyMap.Keys
+                    .Where(targetBucket => targetBucket != bucket.Key) // TODO: Unclear if we should include ourselves here or not;
+                                                                       // paper seems to imply OTHER so we're skipping ourselves.
                     .Select(key => (color: key, distance: rgbToLabLookupTable[bucket.Key].Distance(rgbToLabLookupTable[key])))
                     .OrderBy(neighbor => neighbor.distance).Take(nearestColorCount).ToList();
 
