@@ -83,9 +83,10 @@ public static class GlobalContrastSaliency
             foreach (var bucket in unsmoothedSaliencyMap)
             {
                 // Computes [c, D(c, c sub i)] for m nearest neighbors of bucket.Key.
+                // Note that we include our own color here. The paper says "other colors" and "other pixels"
+                // but the equations seem to explicitly include the color or pixel under evaluation and so
+                // we do so here.
                 var nearestNeighbors = unsmoothedSaliencyMap.Keys
-                    .Where(targetBucket => targetBucket != bucket.Key) // TODO: Unclear if we should include ourselves here or not;
-                                                                       // paper seems to imply OTHER so we're skipping ourselves.
                     .Select(key => (color: key, distance: rgbToLabLookupTable[bucket.Key].Distance(rgbToLabLookupTable[key])))
                     .OrderBy(neighbor => neighbor.distance).Take(nearestColorCount).ToList();
 

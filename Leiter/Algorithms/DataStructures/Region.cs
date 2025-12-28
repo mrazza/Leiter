@@ -8,6 +8,7 @@ namespace Leiter.Algorithms.DataStructures;
 /// <typeparam name="T">The type to use when representing elements in the region.</typeparam>
 public class Region<T>
 {
+    public long Id { get; init; } = -1;
     public HashSet<T> Pixels { get; init; }
 
     public Region()

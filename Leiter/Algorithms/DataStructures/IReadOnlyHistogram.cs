@@ -10,5 +10,7 @@ public interface IReadOnlyHistogram<T> : IEnumerable<KeyValuePair<T, int>>
 
     int Total();
 
+    int BucketCount { get; }
+
     IReadOnlyHistogram<N> MapBuckets<N>(Func<T, N> mapFunc) where N : notnull;
 }

@@ -7,7 +7,7 @@ using Leiter.Pixels;
 /// <summary>
 /// Disjoint Set Union (DSU) data structure, also known as Union-Find or Merge-Find.
 /// </summary>
-public interface IDisjointSet
+public interface IDisjointSet : IReadOnlyMatrix<LongPixel>
 {
     public interface IPartition
     {
@@ -20,6 +20,18 @@ public interface IDisjointSet
         /// The size of the partition.
         /// </summary>
         int Size { get; }
+
+        /// <summary>
+        /// Gets the indices of the pixels in the partition.
+        /// </summary>
+        /// <returns>The indices of the pixels in the partition.</returns>
+        IEnumerable<int> GetIndices();
+
+        /// <summary>
+        /// Gets the coordinates of the pixels in the partition.
+        /// </summary>
+        /// <returns>The coordinates of the pixels in the partition.</returns>
+        IEnumerable<Coord> GetCoords();
     }
 
     /// <summary>
@@ -44,18 +56,25 @@ public interface IDisjointSet
     Region<Coord> GetRegion(int index);
 
     /// <summary>
-    /// Returns a matrix where each pixel is a unique identifier representing the partition it belongs to.
+    /// Returns a materialized matrix where each pixel is a unique identifier representing the partition it belongs to.
     /// </summary>
     /// <remarks>
     /// Pixels in the same partition (disjoin set) will have the same value. Pixels with different values
     /// are, necessarily, in different partitions.
+    /// 
+    /// As a result of the materialization, this method is preferred over treating the DisjointSet as a matrix for
+    /// computations where many lookups will be required or you will need to iterate more than once.
     /// </remarks>
-    /// <returns>A matrix where each pixel is a unique identifier representing the partition it belongs to.</returns>
-    Matrix<LongPixel> AsMatrix();
+    /// <returns>A materialized matrix where each pixel is a unique identifier representing the partition it belongs to.</returns>
+    Matrix<LongPixel> ToMatrix();
 
     /// <summary>
-    /// Returns a set of regions, where each region is a set of pixels that are in the same partition.
+    /// Returns a materialized set of regions, where each region is a set of pixels that are in the same partition.
     /// </summary>
-    /// <returns>A set of regions, where each region is a set of pixels that are in the same partition.</returns>
-    IImmutableSet<Region<Coord>> AsRegions();
+    /// <remarks>
+    /// As a result of the materialization, this method is preferred over getting paritions and iterating over the
+    /// {GetCoords()} or {GetIndices()} methods if multiple reads will take place.
+    /// </remarks>
+    /// <returns>A materialized set of regions, where each region is a set of pixels that are in the same partition.</returns>
+    IImmutableSet<Region<Coord>> ToRegions();
 }

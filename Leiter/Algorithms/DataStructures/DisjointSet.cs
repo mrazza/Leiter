@@ -1,5 +1,7 @@
 namespace Leiter.Algorithms.DataStructures;
 
+using System.Collections;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
 using Leiter.Core;
@@ -26,13 +28,65 @@ public class DisjointSet<T> : IDisjointSet
     /// </summary>
     /// <typeparam name="T">The arbitrary data associated with the partition.</typeparam>
     [StructLayout(LayoutKind.Sequential)]
-    public readonly record struct Partition(int RootIndex, int Size, T Value) : IDisjointSet.IPartition;
+    public readonly struct Partition : IDisjointSet.IPartition
+    {
+        internal Partition(DisjointSet<T> disjointSet, int rootIndex, int size, T value)
+        {
+            this.disjointSet = disjointSet;
+            this.RootIndex = rootIndex;
+            this.Size = size;
+            this.Value = value;
+        }
+
+        private readonly DisjointSet<T> disjointSet;
+
+        public int RootIndex { get; }
+
+        public int Size { get; }
+
+        public T Value { get; }
+
+        public IEnumerable<Coord> GetCoords()
+        {
+            var currIndex = RootIndex;
+            do
+            {
+                yield return disjointSet.image.CoordFromIndex(currIndex);
+                currIndex = disjointSet.elements[currIndex].NextIndex;
+            } while (currIndex != RootIndex);
+        }
+
+        public IEnumerable<int> GetIndices()
+        {
+            var currIndex = RootIndex;
+            do
+            {
+                yield return currIndex;
+                currIndex = disjointSet.elements[currIndex].NextIndex;
+            } while (currIndex != RootIndex);
+        }
+    }
+
 
     [StructLayout(LayoutKind.Sequential)]
     private record struct Element(int SelfIndex, int ParentIndex, int NextIndex, int Size, T Value);
 
     private readonly IUntypedMatrix image;
     private readonly Element[] elements;
+
+    public int Count => image.Count;
+
+    public int Width => image.Width;
+
+    public int Height => image.Height;
+
+    public Size Size => image.Size;
+
+    public LongPixel this[int index] => Find(index);
+
+    public LongPixel this[Coord coord] => Find(image.IndexFromCoord(coord));
+
+    public LongPixel this[int x, int y] => Find(image.IndexFromCoord(new Coord(x, y)));
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DisjointSet{T}" /> class.
@@ -71,7 +125,7 @@ public class DisjointSet<T> : IDisjointSet
     public Partition GetPartition(int index)
     {
         var rootIndex = Find(index);
-        return new Partition(rootIndex, elements[rootIndex].Size, elements[rootIndex].Value);
+        return new Partition(this, rootIndex, elements[rootIndex].Size, elements[rootIndex].Value);
     }
 
     /// <inheritdoc/>
@@ -154,18 +208,18 @@ public class DisjointSet<T> : IDisjointSet
     }
 
     /// <inheritdoc/>
-    public Matrix<LongPixel> AsMatrix()
+    public Matrix<LongPixel> ToMatrix()
     {
         var matrix = new SequentialMatrix<LongPixel>(image.Size);
         for (int pixelIndex = 0; pixelIndex < image.Count; pixelIndex++)
         {
-            matrix[pixelIndex] = new LongPixel(Find(pixelIndex));
+            matrix[pixelIndex] = Find(pixelIndex);
         }
         return matrix;
     }
 
     /// <inheritdoc/>
-    public IImmutableSet<Region<Coord>> AsRegions()
+    public IImmutableSet<Region<Coord>> ToRegions()
     {
         var components = new Dictionary<int, Region<Coord>>();
         for (int pixelIndex = 0; pixelIndex < image.Count; pixelIndex++)
@@ -174,7 +228,10 @@ public class DisjointSet<T> : IDisjointSet
 
             if (!components.TryGetValue(root, out var region))
             {
-                region = new Region<Coord>();
+                region = new Region<Coord>()
+                {
+                    Id = root
+                };
                 components[root] = region;
             }
             region.Pixels.Add(image.CoordFromIndex(pixelIndex));
@@ -191,4 +248,22 @@ public class DisjointSet<T> : IDisjointSet
         elements[index].ParentIndex = Find(elements[index].ParentIndex);
         return elements[index].ParentIndex;
     }
+
+    public LongPixel GetElement(int index) => Find(index);
+
+    public LongPixel GetElement(int width, int height) => Find(image.IndexFromCoord(new Coord(width, height)));
+
+    public Coord CoordFromIndex(int index) => image.CoordFromIndex(index);
+
+    public int IndexFromCoord(Coord coord) => image.IndexFromCoord(coord);
+
+    public IEnumerator<LongPixel> GetEnumerator()
+    {
+        for (int pixelIndex = 0; pixelIndex < image.Count; pixelIndex++)
+        {
+            yield return Find(pixelIndex);
+        }
+    }
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
