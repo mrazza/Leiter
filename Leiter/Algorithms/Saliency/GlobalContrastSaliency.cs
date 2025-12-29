@@ -14,7 +14,7 @@ using Leiter.Pixels.ColorSpaces;
 /// <remarks>
 /// This algorithm computes per-pixel saliency based on contrast with the rest of the image.
 /// This is implemented via the histogram-based global contrast saliency algorithm described in
-/// section 3 of Global Contrast based Salient Region Detection by Ming-Ming Cheng, et al.
+/// Section 3 of Global Contrast based Salient Region Detection by Ming-Ming Cheng, et al.
 /// </remarks>
 public static class GlobalContrastSaliency
 {

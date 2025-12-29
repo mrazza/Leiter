@@ -6,8 +6,35 @@ using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 
+/// <summary>
+/// A regional contrast saliency algorithm.
+/// </summary>
+/// <remarks>
+/// This algorithm computes per-region saliency based on an image and a segmentation.
+/// This implements the "Region Based Contrast" saliency algorithm described in Section 4
+/// of Global Contrast based Salient Region Detection by Ming-Ming Cheng, et al.
+/// </remarks>
 public static class RegionalContrastSaliency
 {
+    /// <summary>
+    /// Computes the saliency map for the given image based on the provided segmentation.
+    /// </summary>
+    /// <remarks>
+    /// A value of 1 indicates a salient pixel, while a value of 0 indicates a non-salient pixel.
+    /// 
+    /// Optionally, color space smoothing can be enabled to smooth out saliency values across
+    /// similar colors in the image. This helps produce more uniformity in saliency across regions
+    /// with similar colors. This is enabled by default.
+    /// 
+    /// Additionally, border regions can be computed and rejected from the saliency map.
+    /// The idea being that regions whose pixels are primarily on the border of the image
+    /// are unlikely to be salient regions. This is enabled by default.
+    /// </remarks>
+    /// <param name="image">The input image.</param>
+    /// <param name="segmentation">The segmentation to use.</param>
+    /// <param name="enableSmoothing">Whether to enable region-based saliency smoothing.</param>
+    /// <param name="computeBorderRegions">Whether to compute border regions.</param>
+    /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
     public static Matrix<DoublePixel> ComputeSaliency(Matrix<Rgb8> image, IDisjointSet segmentation, bool enableSmoothing = true, bool computeBorderRegions = true)
     {
         var colorQuantizedImage = image.Map(color => UniformQuantizer.QuantizeToMidpoint(color, 12));
