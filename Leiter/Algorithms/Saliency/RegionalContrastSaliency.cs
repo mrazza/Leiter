@@ -2,58 +2,70 @@ namespace Leiter.Algorithms.Saliency;
 
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Quantization;
-using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 
 public static class RegionalContrastSaliency
 {
-    private record struct RegionCentroid(double X, double Y)
-    {
-        public readonly double Distance(RegionCentroid other)
-        {
-            return Math.Sqrt(Math.Pow(this.X - other.X, 2) + Math.Pow(this.Y - other.Y, 2));
-        }
-    };
-
-    public static Matrix<DoublePixel> ComputeSaliency(Matrix<Rgb8> image, bool enableSmoothing, bool computeBorderRegions)
+    public static Matrix<DoublePixel> ComputeSaliency(Matrix<Rgb8> image, IDisjointSet segmentation, bool enableSmoothing = true, bool computeBorderRegions = true)
     {
         var colorQuantizedImage = image.Map(color => UniformQuantizer.QuantizeToMidpoint(color, 12));
-        var segmentation = EgbiSegmentation.Segment(Blur.GaussianBlur(image, 0.8f, 2).Map(pixel => pixel.ToLab32(RgbColorSpace.sRGB)), kFactor: 100, minSegmentSize: 50);
         var segmentationMatrix = segmentation.ToMatrix();
         var regions = segmentation.ToRegions();
-        var regionCentroids = regions.ToDictionary(
-            region => region.Id,
-            region => region.Pixels.Select(pixel => new RegionCentroid((double)pixel.X / image.Width, (double)pixel.Y / image.Height)).Aggregate(
-                new RegionCentroid(0, 0),
-                (current, next) => new RegionCentroid(current.X + next.X, current.Y + next.Y),
-                (regionCentroid) => new RegionCentroid(regionCentroid.X / region.Pixels.Count, regionCentroid.Y / region.Pixels.Count)));
-        var averageRegionDistance = regions.ToDictionary(
-            region => region.Id,
-            region => region.Pixels.Select(pixel => Math.Sqrt(Math.Pow(((double)pixel.X / image.Width) - .5, 2) + Math.Pow(((double)pixel.Y / image.Height) - .5, 2))).Average());
-        Dictionary<long, IHistogram<Rgb8>> histograms = new();
 
+        var normalizedRegionCentroids = regions.ToDictionary(
+            region => region.Id,
+            region => region.Pixels.Select(pixel => image.NormalizeCoord(pixel)).Aggregate(
+                new NormalizedCoord(0, 0),
+                (current, next) => current + next,
+                (regionCentroid) => new NormalizedCoord(regionCentroid.X / region.Pixels.Count, regionCentroid.Y / region.Pixels.Count)));
+        var normalizedAverageRegionDistance = regions.ToDictionary(
+            region => region.Id,
+            region => region.Pixels.Select(pixel => image.NormalizeCoord(pixel) - 0.5).Select(
+                normalizedCoord => Math.Sqrt(normalizedCoord.X * normalizedCoord.X + normalizedCoord.Y * normalizedCoord.Y)).Average());
+
+        Dictionary<long, IHistogram<Rgb8>> regionColorHistograms = new(regions.Count);
         foreach (var (Segment, Color) in segmentationMatrix.Zip(colorQuantizedImage, (segment, color) => (Segment: segment, Color: color)))
         {
-            if (!histograms.TryGetValue(Segment.Value, out IHistogram<Rgb8>? histogram))
+            if (!regionColorHistograms.TryGetValue(Segment.Value, out IHistogram<Rgb8>? histogram))
             {
                 histogram = new DictionaryHistogram<Rgb8>();
-                histograms.Add(Segment.Value, histogram);
+                regionColorHistograms.Add(Segment.Value, histogram);
             }
             histogram.Increment(Color);
         }
-        Console.WriteLine("Segment histograms complete.");
 
-        Dictionary<Rgb8, Lab32> rgbToLabLookupTable = histograms.Values.SelectMany(histogram => histogram.Select(bucket => bucket.Key)).Distinct().ToDictionary(bucket => bucket, bucket => bucket.ToLab32(RgbColorSpace.sRGB));
-        Console.WriteLine("RGB to Lab lookup table complete.");
+        // Computing region-based saliency requires many nested loops. As a result, precomputation of
+        // critical information dramatically improves performance.
+        // We precompute the following:
+        // 1. A lookup table for RGB to LAB conversion.
+        // 2. A lookup table for the distance between all possible color pairs.
+        // 3. The collection of region information that we need to iterate over.
+        //
+        // Note that these loops are so tight that Dictionary<>/hash map lookups end up being expensive.
+        // As a result, we construct a single dictionary to resolve an RGB value to an array index and
+        // use array lookups using that index instead of dictionaries for lookups within the loop.
+        Dictionary<Rgb8, Lab32> rgbToLabLookupTable = regionColorHistograms.Values.SelectMany(histogram => histogram.Select(bucket => bucket.Key)).Distinct().ToDictionary(bucket => bucket, bucket => bucket.ToLab32(RgbColorSpace.sRGB));
+        int rgbToIndexLookupTableIndex = 0;
+        Dictionary<Rgb8, int> rgbToIndexLookupTable = rgbToLabLookupTable.ToDictionary(entry => entry.Key, entry => rgbToIndexLookupTableIndex++);
+        double[] labDistanceLookupTable = rgbToLabLookupTable.SelectMany(
+            color1 => rgbToLabLookupTable.Select(color2 => color1.Value.Distance(color2.Value))).ToArray();
+        (long Segment, int Total, List<(Rgb8 Color, double Density, int DistanceIndex)> ColorData)[] processedRegions =
+            regionColorHistograms.Select(entry => (
+                    Segment: entry.Key,
+                    Total: entry.Value.Total(),
+                    ColorData: entry.Value.Buckets.Select(bucket => (Color: bucket, Density: entry.Value.GetDensity(bucket), DistanceIndex: rgbToIndexLookupTable[bucket])).ToList())
+                )
+                .ToArray();
 
-        Dictionary<long, double> saliency = new();
-        Parallel.ForEach(histograms, (value) =>
+        Dictionary<long, double> saliency = new(regions.Count);
+        Parallel.ForEach(processedRegions, (value) =>
         {
-            var (Segment, Histogram) = value;
+            var (Segment, Total, ColorData) = value;
+            var currCentroid = normalizedRegionCentroids[Segment];
             double currSaliency = 0.0;
-            foreach (var (OtherSegment, OtherHistogram) in histograms)
+            foreach (var (OtherSegment, OtherTotal, OtherColorData) in processedRegions)
             {
                 if (Segment == OtherSegment)
                 {
@@ -61,48 +73,47 @@ public static class RegionalContrastSaliency
                 }
 
                 var distance = 0.0;
-                foreach (var bucket in Histogram)
+                foreach (var currColorData in ColorData)
                 {
-                    var bucketLab = rgbToLabLookupTable[bucket.Key];
-                    var bucketDestiny = Histogram.GetDensity(bucket.Key);
-                    foreach (var otherBucket in OtherHistogram)
+                    var bucketDestiny = currColorData.Density;
+                    var initialBucketOffset = currColorData.DistanceIndex * rgbToIndexLookupTable.Count;
+                    foreach (var currOtherColorData in OtherColorData)
                     {
-                        distance += bucketDestiny * OtherHistogram.GetDensity(otherBucket.Key) * bucketLab.Distance(rgbToLabLookupTable[otherBucket.Key]);
+                        distance += bucketDestiny * currOtherColorData.Density * labDistanceLookupTable[initialBucketOffset + currOtherColorData.DistanceIndex];
                     }
                 }
 
                 var sigmaSquared = 0.4;
-                var spacialDistance = regionCentroids[Segment].Distance(regionCentroids[OtherSegment]);
-                currSaliency += Math.Exp(spacialDistance / (-sigmaSquared)) * OtherHistogram.Total() * distance;
+                var spacialDistance = currCentroid.Distance(normalizedRegionCentroids[OtherSegment]);
+                currSaliency += Math.Exp(spacialDistance / (-sigmaSquared)) * OtherTotal * distance;
             }
 
-            var averageRegionDistanceSquared = averageRegionDistance[Segment] * averageRegionDistance[Segment];
+            var currAverageRegionDistance = normalizedAverageRegionDistance[Segment];
             lock (saliency)
             {
-                saliency.Add(Segment, Math.Exp(-9 * averageRegionDistanceSquared) * currSaliency);
+                saliency.Add(Segment, Math.Exp(-9 * currAverageRegionDistance * currAverageRegionDistance) * currSaliency);
             }
-            Console.Write($"\r{new string(' ', Console.BufferWidth)}\rSaliency computed for segment\t{Segment}\t(Size: {Histogram.Total()})\t{saliency.Count}/{histograms.Count} - {(int)Math.Round((double)saliency.Count / histograms.Count * 100)}%");
         });
-        Console.WriteLine("\nSaliency computed for all segments.");
 
         var finalSaliencyMap = saliency;
-        HashSet<long> borderRegions = new();
-
+        HashSet<long> borderRegions = [];
         if (computeBorderRegions)
         {
-            var regionInBorderPercentage = .1;
-            var borderPixelWidth = image.Width * .025;
-            var borderPixelHeight = image.Height * .025;
+            const double REGION_IN_BORDER_PERCENTAGE = .1;
+            const double BORDER_PERCENTAGE = .025;
+            var borderPixelWidth = image.Width * BORDER_PERCENTAGE;
+            var borderPixelHeight = image.Height * BORDER_PERCENTAGE;
+            var maxX = image.Width - borderPixelWidth;
+            var maxY = image.Height - borderPixelHeight;
             borderRegions = regions.Where(
-                region => region.Pixels.Where(pixel => pixel.X < borderPixelWidth || pixel.X >= image.Width - borderPixelWidth || pixel.Y < borderPixelHeight || pixel.Y >= image.Height - borderPixelHeight).Count() > region.Pixels.Count * regionInBorderPercentage)
+                region => region.Pixels.Where(pixel => pixel.X < borderPixelWidth || pixel.X >= maxX || pixel.Y < borderPixelHeight || pixel.Y >= maxY).Count() > region.Pixels.Count * REGION_IN_BORDER_PERCENTAGE)
                 .Select(region => region.Id)
                 .ToHashSet();
         }
 
-        // BEGIN SMOOTHING
         if (enableSmoothing)
         {
-            Dictionary<Rgb8, (double Saliency, int Count)> intermediateColorSaliencyMap = new();
+            Dictionary<Rgb8, (double Saliency, int Count)> intermediateColorSaliencyMap = [];
             for (int x = 0; x < image.Width; x++)
             {
                 for (int y = 0; y < image.Height; y++)
@@ -137,8 +148,8 @@ public static class RegionalContrastSaliency
                 colorSaliencyMap[bucket.Key] = (1.0 / ((nearestColorCount - 1) * T)) * nearestNeighbors.Sum(neighbor => (T - neighbor.distance) * unsmoothedSaliencyMap[neighbor.color]);
             }
 
-            finalSaliencyMap = new Dictionary<long, double>();
-            Parallel.ForEach(histograms, (value) =>
+            finalSaliencyMap = new Dictionary<long, double>(regions.Count);
+            Parallel.ForEach(regionColorHistograms, (value) =>
             {
                 var (Segment, Histogram) = value;
                 var saliency = 0.0;
@@ -153,11 +164,9 @@ public static class RegionalContrastSaliency
                 }
             });
         }
-        // END SMOOTHING
 
         double minSaliency = finalSaliencyMap.Values.Min();
         double saliencyRange = finalSaliencyMap.Values.Max() - minSaliency;
-
         return segmentationMatrix.Map<DoublePixel>(segment => computeBorderRegions && borderRegions.Contains(segment.Value) ? 0.0 : (finalSaliencyMap[segment.Value] - minSaliency) / saliencyRange);
     }
 }

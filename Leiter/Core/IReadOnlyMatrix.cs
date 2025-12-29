@@ -47,8 +47,4 @@ public interface IReadOnlyMatrix<T> : IUntypedMatrix, IReadOnlyCollection<T>, IR
         builder.Append('}');
         return builder.ToString();
     }
-
-    protected static Coord CoordFromIndex(IReadOnlyMatrix<T> matrix, int index) => new(index % matrix.Width, index / matrix.Width);
-
-    protected static int IndexFromCoord(IReadOnlyMatrix<T> matrix, Coord coord) => coord.X + coord.Y * matrix.Width;
 }

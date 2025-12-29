@@ -8,8 +8,4 @@ public interface IUntypedMatrix
     Size Size { get; }
 
     int Count { get; }
-
-    Coord CoordFromIndex(int index);
-
-    int IndexFromCoord(Coord coord);
 }

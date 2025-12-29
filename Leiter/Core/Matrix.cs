@@ -53,10 +53,6 @@ public abstract class Matrix<T> : IReadOnlyMatrix<T>
 
     public abstract Matrix<T> Clone();
 
-    public Coord CoordFromIndex(int index) => IReadOnlyMatrix<T>.CoordFromIndex(this, index);
-
-    public int IndexFromCoord(Coord coord) => IReadOnlyMatrix<T>.IndexFromCoord(this, coord);
-
     public override string? ToString() => IReadOnlyMatrix<T>.ToString(this);
 
     public virtual IEnumerator<T> GetEnumerator()

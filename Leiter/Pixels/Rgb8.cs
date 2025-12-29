@@ -99,6 +99,11 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
+    public override int GetHashCode()
+    {
+        return R << 16 | G << 8 | B;
+    }
+
     public double Distance(Rgb8 otherPixel) =>
         Math.Sqrt(
             this.Zip(otherPixel)
