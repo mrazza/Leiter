@@ -4,8 +4,14 @@ using Leiter.Core;
 
 namespace Leiter.Tests.Core;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="SizeTests" />.
+/// </summary>
 public class SizeTests
 {
+    /// <summary>
+    /// Verifies that the constructor and properties should work behaves correctly.
+    /// </summary>
     [Fact]
     public void Constructor_AndProperties_ShouldWork()
     {

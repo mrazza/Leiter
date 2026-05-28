@@ -8,8 +8,14 @@ using System.Numerics;
 
 namespace Leiter.Tests.Pixels;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="Rgb64Tests" />.
+/// </summary>
 public class Rgb64Tests
 {
+    /// <summary>
+    /// Verifies that the properties should work behaves correctly.
+    /// </summary>
     [Fact]
     public void Properties_ShouldWork()
     {
@@ -20,6 +26,9 @@ public class Rgb64Tests
         Assert.Equal(0.0, Rgb64.Zero.R);
     }
 
+    /// <summary>
+    /// Verifies that the self operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void SelfOperations_ShouldWork()
     {
@@ -32,6 +41,9 @@ public class Rgb64Tests
         Assert.Equal(new Rgb64(5.0, 10.0, 15.0), p1.Divide(p2));
     }
 
+    /// <summary>
+    /// Verifies that the numeric operations decimal should work behaves correctly.
+    /// </summary>
     [Fact]
     public void NumericOperations_Decimal_ShouldWork()
     {
@@ -43,6 +55,9 @@ public class Rgb64Tests
         Assert.Equal(new Rgb64(5.0, 10.0, 15.0), p.Divide(2.0m));
     }
 
+    /// <summary>
+    /// Verifies that the numeric operations double should work behaves correctly.
+    /// </summary>
     [Fact]
     public void NumericOperations_Double_ShouldWork()
     {
@@ -56,6 +71,9 @@ public class Rgb64Tests
 
     
 
+    /// <summary>
+    /// Verifies that the scalar operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void ScalarOperations_ShouldWork()
     {
@@ -67,6 +85,9 @@ public class Rgb64Tests
         Assert.Equal(new Rgb64(5.0, 10.0, 15.0), p.Subtract(scalar));
     }
 
+    /// <summary>
+    /// Verifies that the vector operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void VectorOperations_ShouldWork()
     {
@@ -81,6 +102,9 @@ public class Rgb64Tests
         }
     }
 
+    /// <summary>
+    /// Verifies that the enumerator should yield values behaves correctly.
+    /// </summary>
     [Fact]
     public void Enumerator_ShouldYieldValues()
     {
@@ -94,6 +118,9 @@ public class Rgb64Tests
         Assert.Equal(1.0, seqEnum.Current);
     }
 
+    /// <summary>
+    /// Verifies that the component maps should work behaves correctly.
+    /// </summary>
     [Fact]
     public void ComponentMaps_ShouldWork()
     {
@@ -102,6 +129,9 @@ public class Rgb64Tests
         Assert.Equal(new Rgb64(20.0, 40.0, 60.0), p.ColorComponentMap(b => b * 2));
     }
 
+    /// <summary>
+    /// Verifies that the distance should work behaves correctly.
+    /// </summary>
     [Fact]
     public void Distance_ShouldWork()
     {

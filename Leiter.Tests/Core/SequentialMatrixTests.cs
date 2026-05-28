@@ -7,8 +7,14 @@ using System.Collections.Generic;
 
 namespace Leiter.Tests.Core;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="SequentialMatrixTests" />.
+/// </summary>
 public class SequentialMatrixTests
 {
+    /// <summary>
+    /// Verifies that the constructors should initialize correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void Constructors_ShouldInitializeCorrectly()
     {
@@ -44,6 +50,9 @@ public class SequentialMatrixTests
         Assert.Equal(40.0, m4[3].Value);
     }
 
+    /// <summary>
+    /// Verifies that the constructor data mismatch should throw behaves correctly.
+    /// </summary>
     [Fact]
     public void Constructor_DataMismatch_ShouldThrow()
     {
@@ -51,6 +60,9 @@ public class SequentialMatrixTests
         Assert.Throws<ArgumentException>(() => new SequentialMatrix<DoublePixel>(new Size(2, 2), values));
     }
 
+    /// <summary>
+    /// Verifies that the indexer out of bounds should throw behaves correctly.
+    /// </summary>
     [Fact]
     public void Indexer_OutOfBounds_ShouldThrow()
     {
@@ -71,6 +83,9 @@ public class SequentialMatrixTests
         Assert.Throws<IndexOutOfRangeException>(() => matrix[2, 0] = 1.0);
     }
 
+    /// <summary>
+    /// Verifies that the set all should fill matrix behaves correctly.
+    /// </summary>
     [Fact]
     public void SetAll_ShouldFillMatrix()
     {
@@ -82,6 +97,9 @@ public class SequentialMatrixTests
         Assert.Equal(5.0, m[3].Value);
     }
 
+    /// <summary>
+    /// Verifies that the clone should create distinct copy behaves correctly.
+    /// </summary>
     [Fact]
     public void Clone_ShouldCreateDistinctCopy()
     {
@@ -95,6 +113,9 @@ public class SequentialMatrixTests
         Assert.Equal(10.0, m[0].Value);
     }
 
+    /// <summary>
+    /// Verifies that the map should apply function behaves correctly.
+    /// </summary>
     [Fact]
     public void Map_ShouldApplyFunction()
     {
@@ -109,6 +130,9 @@ public class SequentialMatrixTests
         Assert.Equal(10.0, result[3].Value);
     }
 
+    /// <summary>
+    /// Verifies that the get enumerator should return all elements behaves correctly.
+    /// </summary>
     [Fact]
     public void GetEnumerator_ShouldReturnAllElements()
     {
@@ -126,6 +150,9 @@ public class SequentialMatrixTests
         Assert.Equal(new double[] { 1.0, 2.0, 3.0, 4.0 }, list);
     }
 
+    /// <summary>
+    /// Verifies that the multiply should perform matrix multiplication behaves correctly.
+    /// </summary>
     [Fact]
     public void Multiply_ShouldPerformMatrixMultiplication()
     {
@@ -160,6 +187,9 @@ public class SequentialMatrixTests
         Assert.Equal(55.0, result[1, 1].Value);
     }
 
+    /// <summary>
+    /// Verifies that the multiply dimension mismatch should throw behaves correctly.
+    /// </summary>
     [Fact]
     public void Multiply_DimensionMismatch_ShouldThrow()
     {
@@ -168,6 +198,9 @@ public class SequentialMatrixTests
         Assert.Throws<ArgumentException>(() => m1.Multiply(m2));
     }
 
+    /// <summary>
+    /// Verifies that the to string should format correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void ToString_ShouldFormatCorrectly()
     {

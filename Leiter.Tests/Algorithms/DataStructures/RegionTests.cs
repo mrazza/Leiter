@@ -4,8 +4,14 @@ using Leiter.Algorithms.DataStructures;
 
 namespace Leiter.Tests.Algorithms.DataStructures;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="RegionTests" />.
+/// </summary>
 public class RegionTests
 {
+    /// <summary>
+    /// Verifies that the region constructors should work behaves correctly.
+    /// </summary>
     [Fact]
     public void Region_Constructors_ShouldWork()
     {

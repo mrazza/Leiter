@@ -7,8 +7,14 @@ using System;
 
 namespace Leiter.Tests.Pixels;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="ColorSpaceTests" />.
+/// </summary>
 public class ColorSpaceTests
 {
+    /// <summary>
+    /// Verifies that the rgb to linear rgb and back should be close to identity behaves correctly.
+    /// </summary>
     [Fact]
     public void SRgbToLinearRgb_AndBack_ShouldBeCloseToIdentity()
     {
@@ -30,6 +36,9 @@ public class ColorSpaceTests
         Assert.Equal(smallOriginal.B, smallSrgb.B, 5);
     }
 
+    /// <summary>
+    /// Verifies that the pixel conversion rgb8 to rgb64 to rgb8 should work behaves correctly.
+    /// </summary>
     [Fact]
     public void PixelConversion_Rgb8_ToRgb64_ToRgb8_ShouldWork()
     {
@@ -46,6 +55,9 @@ public class ColorSpaceTests
         Assert.Equal(rgb8.B, rgb8Back.B);
     }
 
+    /// <summary>
+    /// Executes the pixel conversion to xyz32 and rgb8 rgb64 operation.
+    /// </summary>
     [Fact]
     public void PixelConversion_ToXyz32_AndRgb8Rgb64()
     {
@@ -70,6 +82,9 @@ public class ColorSpaceTests
         Assert.True(rgb8Back.B <= 1);
     }
 
+    /// <summary>
+    /// Verifies that the pixel conversion to lab32 should work behaves correctly.
+    /// </summary>
     [Fact]
     public void PixelConversion_ToLab32_ShouldWork()
     {
@@ -82,6 +97,9 @@ public class ColorSpaceTests
         Assert.Equal(labFromRgb8.B, labFromRgb64.B, 4);
     }
 
+    /// <summary>
+    /// Verifies that the pixel conversion linear rgb xyz should work behaves correctly.
+    /// </summary>
     [Fact]
     public void PixelConversion_LinearRgbXyz_ShouldWork()
     {
@@ -94,6 +112,9 @@ public class ColorSpaceTests
         Assert.Equal(0.5, rgb64Back.B, 4);
     }
 
+    /// <summary>
+    /// Verifies that the pixel conversion invalid color space should throw behaves correctly.
+    /// </summary>
     [Fact]
     public void PixelConversion_InvalidColorSpace_ShouldThrow()
     {

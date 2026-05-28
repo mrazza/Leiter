@@ -8,8 +8,14 @@ using System.Numerics;
 
 namespace Leiter.Tests.Pixels;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="Lab32Tests" />.
+/// </summary>
 public class Lab32Tests
 {
+    /// <summary>
+    /// Verifies that the properties should work behaves correctly.
+    /// </summary>
     [Fact]
     public void Properties_ShouldWork()
     {
@@ -20,6 +26,9 @@ public class Lab32Tests
         Assert.Equal(0.0f, Lab32.Zero.L);
     }
 
+    /// <summary>
+    /// Verifies that the self operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void SelfOperations_ShouldWork()
     {
@@ -32,6 +41,9 @@ public class Lab32Tests
         Assert.Equal(new Lab32(5.0f, 10.0f, 15.0f), p1.Divide(p2));
     }
 
+    /// <summary>
+    /// Verifies that the numeric operations decimal should work behaves correctly.
+    /// </summary>
     [Fact]
     public void NumericOperations_Decimal_ShouldWork()
     {
@@ -43,6 +55,9 @@ public class Lab32Tests
         Assert.Equal(new Lab32(5.0f, 10.0f, 15.0f), p.Divide(2.0m));
     }
 
+    /// <summary>
+    /// Verifies that the numeric operations double should work behaves correctly.
+    /// </summary>
     [Fact]
     public void NumericOperations_Double_ShouldWork()
     {
@@ -56,6 +71,9 @@ public class Lab32Tests
 
     
 
+    /// <summary>
+    /// Verifies that the scalar operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void ScalarOperations_ShouldWork()
     {
@@ -76,6 +94,9 @@ public class Lab32Tests
         Assert.Equal(new Lab32(8.0f, 18.0f, 28.0f), p.Divide(scalar));
     }
 
+    /// <summary>
+    /// Verifies that the vector operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void VectorOperations_ShouldWork()
     {
@@ -90,6 +111,9 @@ public class Lab32Tests
         }
     }
 
+    /// <summary>
+    /// Verifies that the enumerator should yield values behaves correctly.
+    /// </summary>
     [Fact]
     public void Enumerator_ShouldYieldValues()
     {
@@ -103,6 +127,9 @@ public class Lab32Tests
         Assert.Equal(1.0f, seqEnum.Current);
     }
 
+    /// <summary>
+    /// Verifies that the component maps should work behaves correctly.
+    /// </summary>
     [Fact]
     public void ComponentMaps_ShouldWork()
     {
@@ -111,6 +138,9 @@ public class Lab32Tests
         Assert.Equal(new Lab32(20.0f, 40.0f, 60.0f), p.ComponentMap(b => b * 2));
     }
 
+    /// <summary>
+    /// Verifies that the distance should work behaves correctly.
+    /// </summary>
     [Fact]
     public void Distance_ShouldWork()
     {

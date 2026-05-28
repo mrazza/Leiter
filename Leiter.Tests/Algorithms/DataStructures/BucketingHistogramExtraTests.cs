@@ -5,8 +5,14 @@ using System.Collections.Generic;
 
 namespace Leiter.Tests.Algorithms.DataStructures;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="BucketingHistogramExtraTests" />.
+/// </summary>
 public class BucketingHistogramExtraTests
 {
+    /// <summary>
+    /// Executes the test bucketing histogram enumerable operation.
+    /// </summary>
     [Fact]
     public void TestBucketingHistogram_IEnumerable()
     {

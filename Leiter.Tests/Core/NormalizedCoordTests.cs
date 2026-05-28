@@ -4,8 +4,14 @@ using Leiter.Core;
 
 namespace Leiter.Tests.Core;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="NormalizedCoordTests" />.
+/// </summary>
 public class NormalizedCoordTests
 {
+    /// <summary>
+    /// Verifies that the distance should calculate correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void Distance_ShouldCalculateCorrectly()
     {
@@ -14,6 +20,9 @@ public class NormalizedCoordTests
         Assert.Equal(5.0, c1.Distance(c2));
     }
 
+    /// <summary>
+    /// Verifies that the addition operator should add behaves correctly.
+    /// </summary>
     [Fact]
     public void AdditionOperator_ShouldAdd()
     {
@@ -24,6 +33,9 @@ public class NormalizedCoordTests
         Assert.Equal(2.5, result.Y);
     }
 
+    /// <summary>
+    /// Verifies that the subtraction operator should subtract scalar behaves correctly.
+    /// </summary>
     [Fact]
     public void SubtractionOperator_ShouldSubtractScalar()
     {

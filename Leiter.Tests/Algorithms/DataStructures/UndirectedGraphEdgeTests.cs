@@ -4,8 +4,14 @@ using Leiter.Algorithms.DataStructures;
 
 namespace Leiter.Tests.Algorithms.DataStructures;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="UndirectedGraphEdgeTests" />.
+/// </summary>
 public class UndirectedGraphEdgeTests
 {
+    /// <summary>
+    /// Verifies that the undirected graph edge should compare by weight behaves correctly.
+    /// </summary>
     [Fact]
     public void UndirectedGraphEdge_ShouldCompareByWeight()
     {

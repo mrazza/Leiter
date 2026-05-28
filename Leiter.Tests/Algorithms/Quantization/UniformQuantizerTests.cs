@@ -6,8 +6,14 @@ using System;
 
 namespace Leiter.Tests.Algorithms.Quantization;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="UniformQuantizerTests" />.
+/// </summary>
 public class UniformQuantizerTests
 {
+    /// <summary>
+    /// Verifies that the quantize to midpoint should quantize correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void QuantizeToMidpoint_ShouldQuantizeCorrectly()
     {
@@ -27,6 +33,9 @@ public class UniformQuantizerTests
         Assert.Equal(224, quantized.B);
     }
 
+    /// <summary>
+    /// Verifies that the quantize to midpoint invalid levels should throw behaves correctly.
+    /// </summary>
     [Fact]
     public void QuantizeToMidpoint_InvalidLevels_ShouldThrow()
     {
@@ -35,6 +44,9 @@ public class UniformQuantizerTests
         Assert.Throws<ArgumentException>(() => UniformQuantizer.QuantizeToMidpoint(pixel, 257));
     }
 
+    /// <summary>
+    /// Verifies that the quantize bits to midpoint should quantize correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void QuantizeBitsToMidpoint_ShouldQuantizeCorrectly()
     {
@@ -53,6 +65,9 @@ public class UniformQuantizerTests
         Assert.Equal(224, quantized.B);
     }
 
+    /// <summary>
+    /// Verifies that the quantize bits to midpoint invalid bits should throw behaves correctly.
+    /// </summary>
     [Fact]
     public void QuantizeBitsToMidpoint_InvalidBits_ShouldThrow()
     {

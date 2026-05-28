@@ -9,8 +9,14 @@ using System.IO;
 
 namespace Leiter.Tests.Platform;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="PlatformLinuxTests" />.
+/// </summary>
 public class PlatformLinuxTests
 {
+    /// <summary>
+    /// Verifies that the color extensions should convert correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void ColorExtensions_ShouldConvertCorrectly()
     {
@@ -24,6 +30,9 @@ public class PlatformLinuxTests
         Assert.Equal(original, convertedBack);
     }
 
+    /// <summary>
+    /// Verifies that the image extensions should convert correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void ImageExtensions_ShouldConvertCorrectly()
     {

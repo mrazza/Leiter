@@ -5,8 +5,14 @@ using Leiter.Core;
 
 namespace Leiter.Tests.Algorithms.DataStructures;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="RegionExtraTests" />.
+/// </summary>
 public class RegionExtraTests
 {
+    /// <summary>
+    /// Executes the test region single element constructor operation.
+    /// </summary>
     [Fact]
     public void TestRegion_SingleElementConstructor()
     {

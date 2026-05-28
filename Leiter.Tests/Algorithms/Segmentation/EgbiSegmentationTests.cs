@@ -10,8 +10,14 @@ using System.Linq;
 
 namespace Leiter.Tests.Algorithms.Segmentation;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="EgbiSegmentationTests" />.
+/// </summary>
 public class EgbiSegmentationTests
 {
+    /// <summary>
+    /// Verifies that the segment should partition image behaves correctly.
+    /// </summary>
     [Fact]
     public void Segment_ShouldPartitionImage()
     {
@@ -48,6 +54,9 @@ public class EgbiSegmentationTests
         Assert.Equal(rightRoot, segmentation[5, 5]);
     }
 
+    /// <summary>
+    /// Verifies that the color assigners and color image by segmentation should work behaves correctly.
+    /// </summary>
     [Fact]
     public void ColorAssigners_AndColorImageBySegmentation_ShouldWork()
     {

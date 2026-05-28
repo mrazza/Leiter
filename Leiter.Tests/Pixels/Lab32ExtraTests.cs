@@ -4,8 +4,14 @@ using Leiter.Pixels;
 
 namespace Leiter.Tests.Pixels;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="Lab32ExtraTests" />.
+/// </summary>
 public class Lab32ExtraTests
 {
+    /// <summary>
+    /// Executes the test e2000 special cases operation.
+    /// </summary>
     [Fact]
     public void TestCIEDE2000_SpecialCases()
     {

@@ -8,8 +8,14 @@ using System.Numerics;
 
 namespace Leiter.Tests.Pixels;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="DoublePixelTests" />.
+/// </summary>
 public class DoublePixelTests
 {
+    /// <summary>
+    /// Verifies that the properties and implicit operators should work behaves correctly.
+    /// </summary>
     [Fact]
     public void Properties_AndImplicitOperators_ShouldWork()
     {
@@ -26,6 +32,9 @@ public class DoublePixelTests
         Assert.Equal(3.5, p2.Value);
     }
 
+    /// <summary>
+    /// Verifies that the self operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void SelfOperations_ShouldWork()
     {
@@ -38,6 +47,9 @@ public class DoublePixelTests
         Assert.Equal(5.0, p1.Divide(p2).Value);
     }
 
+    /// <summary>
+    /// Verifies that the numeric operations decimal should work behaves correctly.
+    /// </summary>
     [Fact]
     public void NumericOperations_Decimal_ShouldWork()
     {
@@ -49,6 +61,9 @@ public class DoublePixelTests
         Assert.Equal(5.0, p.Divide(2.0m).Value);
     }
 
+    /// <summary>
+    /// Verifies that the numeric operations double should work behaves correctly.
+    /// </summary>
     [Fact]
     public void NumericOperations_Double_ShouldWork()
     {
@@ -62,6 +77,9 @@ public class DoublePixelTests
 
     
 
+    /// <summary>
+    /// Verifies that the scalar operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void ScalarOperations_ShouldWork()
     {
@@ -74,6 +92,9 @@ public class DoublePixelTests
         Assert.Equal(5.0, p.Divide(scalar).Value);
     }
 
+    /// <summary>
+    /// Verifies that the vector operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void VectorOperations_ShouldWork()
     {
@@ -88,6 +109,9 @@ public class DoublePixelTests
         }
     }
 
+    /// <summary>
+    /// Verifies that the enumerator should yield value behaves correctly.
+    /// </summary>
     [Fact]
     public void Enumerator_ShouldYieldValue()
     {
@@ -104,6 +128,9 @@ public class DoublePixelTests
         Assert.Equal(5.5, seqEnum.Current);
     }
 
+    /// <summary>
+    /// Verifies that the distance should compute correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void Distance_ShouldComputeCorrectly()
     {
@@ -112,6 +139,9 @@ public class DoublePixelTests
         Assert.Equal(2.5, p1.Distance(p2));
     }
 
+    /// <summary>
+    /// Verifies that the maps should work behaves correctly.
+    /// </summary>
     [Fact]
     public void Maps_ShouldWork()
     {

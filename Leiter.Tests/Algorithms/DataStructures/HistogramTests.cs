@@ -6,8 +6,14 @@ using System.Collections.Generic;
 
 namespace Leiter.Tests.Algorithms.DataStructures;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="HistogramTests" />.
+/// </summary>
 public class HistogramTests
 {
+    /// <summary>
+    /// Verifies that the dictionary histogram should count correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void DictionaryHistogram_ShouldCountCorrectly()
     {
@@ -42,6 +48,9 @@ public class HistogramTests
         Assert.Equal(2, list.Count);
     }
 
+    /// <summary>
+    /// Verifies that the bucketing histogram should bucket correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void BucketingHistogram_ShouldBucketCorrectly()
     {

@@ -10,10 +10,16 @@ using System.Linq;
 
 namespace Leiter.Tests.Core;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="CoreExtraTests" />.
+/// </summary>
 public class CoreExtraTests
 {
     
 
+    /// <summary>
+    /// Executes the test explicit interface counts operation.
+    /// </summary>
     [Fact]
     public void TestExplicitInterfaceCounts()
     {
@@ -27,6 +33,9 @@ public class CoreExtraTests
         Assert.Equal(4, roc.Count);
     }
 
+    /// <summary>
+    /// Executes the test explicit interface implementations and to string operation.
+    /// </summary>
     [Fact]
     public void TestExplicitInterfaceImplementations_AndToString()
     {
@@ -58,6 +67,9 @@ public class CoreExtraTests
         Assert.NotNull(enumerator.Current);
     }
 
+    /// <summary>
+    /// Executes the test matrix view uncovered lines operation.
+    /// </summary>
     [Fact]
     public void TestMatrixView_UncoveredLines()
     {

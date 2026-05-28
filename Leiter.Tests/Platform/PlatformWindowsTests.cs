@@ -7,8 +7,14 @@ using System;
 
 namespace Leiter.Tests.Platform;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="PlatformWindowsTests" />.
+/// </summary>
 public class PlatformWindowsTests
 {
+    /// <summary>
+    /// Verifies that the color extensions should convert correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void ColorExtensions_ShouldConvertCorrectly()
     {
@@ -32,6 +38,9 @@ public class PlatformWindowsTests
         Assert.Equal(original.B, convertedBack.B);
     }
 
+    /// <summary>
+    /// Verifies that the bitmap extensions should convert correctly behaves correctly.
+    /// </summary>
     [Fact]
     public void BitmapExtensions_ShouldConvertCorrectly()
     {

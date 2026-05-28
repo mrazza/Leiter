@@ -8,8 +8,14 @@ using System.Numerics;
 
 namespace Leiter.Tests.Pixels;
 
+/// <summary>
+/// Provides unit tests or helpers for <see cref="Rgb8Tests" />.
+/// </summary>
 public class Rgb8Tests
 {
+    /// <summary>
+    /// Verifies that the properties should work behaves correctly.
+    /// </summary>
     [Fact]
     public void Properties_ShouldWork()
     {
@@ -20,6 +26,9 @@ public class Rgb8Tests
         Assert.Equal(0, Rgb8.Zero.R);
     }
 
+    /// <summary>
+    /// Verifies that the self operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void SelfOperations_ShouldWork()
     {
@@ -32,6 +41,9 @@ public class Rgb8Tests
         Assert.Equal(new Rgb8(2, 2, 2), p1.Divide(p2));
     }
 
+    /// <summary>
+    /// Verifies that the numeric operations decimal should work behaves correctly.
+    /// </summary>
     [Fact]
     public void NumericOperations_Decimal_ShouldWork()
     {
@@ -43,6 +55,9 @@ public class Rgb8Tests
         Assert.Equal(new Rgb8(5, 10, 15), p.Divide(2.0m));
     }
 
+    /// <summary>
+    /// Verifies that the numeric operations double should work behaves correctly.
+    /// </summary>
     [Fact]
     public void NumericOperations_Double_ShouldWork()
     {
@@ -56,6 +71,9 @@ public class Rgb8Tests
 
     
 
+    /// <summary>
+    /// Verifies that the scalar operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void ScalarOperations_ShouldWork()
     {
@@ -68,6 +86,9 @@ public class Rgb8Tests
         Assert.Equal(new Rgb8(2, 4, 6), p.Divide(scalar));
     }
 
+    /// <summary>
+    /// Verifies that the vector operations should work behaves correctly.
+    /// </summary>
     [Fact]
     public void VectorOperations_ShouldWork()
     {
@@ -82,6 +103,9 @@ public class Rgb8Tests
         }
     }
 
+    /// <summary>
+    /// Verifies that the enumerator should yield values behaves correctly.
+    /// </summary>
     [Fact]
     public void Enumerator_ShouldYieldValues()
     {
@@ -95,6 +119,9 @@ public class Rgb8Tests
         Assert.Equal((byte)10, seqEnum.Current);
     }
 
+    /// <summary>
+    /// Verifies that the get hash code and distance should work behaves correctly.
+    /// </summary>
     [Fact]
     public void GetHashCode_AndDistance_ShouldWork()
     {
@@ -105,6 +132,9 @@ public class Rgb8Tests
         Assert.Equal(5.0, p1.Distance(p2));
     }
 
+    /// <summary>
+    /// Verifies that the component maps should work behaves correctly.
+    /// </summary>
     [Fact]
     public void ComponentMaps_ShouldWork()
     {
