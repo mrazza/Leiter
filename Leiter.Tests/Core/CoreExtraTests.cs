@@ -8,10 +8,41 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 
-namespace Leiter.Tests.Uncovered;
+namespace Leiter.Tests.Core;
 
-public class UncoveredLinesTests
+public class CoreExtraTests
 {
+    private class DumbMatrix : IReadOnlyMatrix<DoublePixel>
+    {
+        public int Width => 2;
+        public int Height => 2;
+        public Size Size => new(2, 2);
+        public int Count => 4;
+
+        public DoublePixel this[int x, int y] => new(x + y);
+        public DoublePixel this[Coord coord] => this[coord.X, coord.Y];
+        public DoublePixel this[int index] => new(index);
+
+        public DoublePixel GetElement(int index) => new(index);
+        public DoublePixel GetElement(int width, int height) => new(width * height);
+
+        public IEnumerator<DoublePixel> GetEnumerator() => Enumerable.Range(0, 4).Select(i => new DoublePixel(i)).GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    [Fact]
+    public void TestExplicitInterfaceCounts()
+    {
+        var m = new DumbMatrix();
+        IReadOnlyMatrix<DoublePixel> rom = m;
+        IUntypedMatrix utm = rom;
+        IReadOnlyCollection<DoublePixel> roc = rom;
+
+        // Force call explicit interface default implementations in IReadOnlyMatrix
+        Assert.Equal(4, utm.Count);
+        Assert.Equal(4, roc.Count);
+    }
+
     [Fact]
     public void TestExplicitInterfaceImplementations_AndToString()
     {
@@ -57,45 +88,5 @@ public class UncoveredLinesTests
         var enumerator = enumerable.GetEnumerator();
         Assert.True(enumerator.MoveNext());
         Assert.NotNull(enumerator.Current);
-    }
-
-    [Fact]
-    public void TestBucketingHistogram_IEnumerable()
-    {
-        var hist = new DictionaryHistogram<string>();
-        hist.Increment("test");
-        var enumerable = (System.Collections.IEnumerable)hist;
-        var enumerator = enumerable.GetEnumerator();
-        Assert.True(enumerator.MoveNext());
-        Assert.NotNull(enumerator.Current);
-    }
-
-    [Fact]
-    public void TestRegion_SingleElementConstructor()
-    {
-        var region = new Region<Coord>(new Coord(1, 1));
-        Assert.Single(region.Pixels);
-        Assert.Contains(new Coord(1, 1), region.Pixels);
-    }
-
-    [Fact]
-    public void TestCIEDE2000_SpecialCases()
-    {
-        // To cover various partialDeltaHPrime and meanHPrime branches in CIEDE2000 (Lab32.Distance):
-        // case { selfCPrime: 0.0 }
-        // case { otherCPrime: 0.0 }
-        // case sumHPrime and absDiffHPrime conditions
-
-        var gray1 = new Lab32(50, 0, 0);
-        var gray2 = new Lab32(50, 0, 0);
-        var color1 = new Lab32(50, 10, 20);
-        var color2 = new Lab32(50, -10, -20);
-        var color3 = new Lab32(50, 10, -20);
-
-        Assert.Equal(0.0, gray1.Distance(gray2), 5);
-        Assert.True(gray1.Distance(color1) > 0);
-        Assert.True(color1.Distance(gray2) > 0);
-        Assert.True(color1.Distance(color2) > 0);
-        Assert.True(color1.Distance(color3) > 0);
     }
 }
