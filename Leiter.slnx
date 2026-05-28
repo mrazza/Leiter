@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Leiter.Platform.Linux/Leiter.Platform.Linux.csproj" />
+  <Project Path="Leiter.Platform.Windows/Leiter.Platform.Windows.csproj" />
+  <Project Path="Leiter.Tests/Leiter.Tests.csproj" />
+  <Project Path="Leiter/Leiter.csproj" />
+</Solution>

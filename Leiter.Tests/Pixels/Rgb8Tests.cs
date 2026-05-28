@@ -1,0 +1,135 @@
+
+using Xunit;
+using Leiter.Pixels;
+using Leiter.Core;
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+
+namespace Leiter.Tests.Pixels;
+
+public class Rgb8Tests
+{
+    [Fact]
+    public void Properties_ShouldWork()
+    {
+        var p = new Rgb8(10, 20, 30);
+        Assert.Equal(10, p.R);
+        Assert.Equal(20, p.G);
+        Assert.Equal(30, p.B);
+        Assert.Equal(0, Rgb8.Zero.R);
+    }
+
+    [Fact]
+    public void SelfOperations_ShouldWork()
+    {
+        var p1 = new Rgb8(10, 20, 30);
+        var p2 = new Rgb8(5, 10, 15);
+
+        Assert.Equal(new Rgb8(15, 30, 45), p1.Add(p2));
+        Assert.Equal(new Rgb8(5, 10, 15), p1.Subtract(p2));
+        Assert.Equal(new Rgb8(50, 200, 194), p1.Multiply(p2)); // 30*15 = 450 = 194 (byte overflow)
+        Assert.Equal(new Rgb8(2, 2, 2), p1.Divide(p2));
+    }
+
+    [Fact]
+    public void NumericOperations_Decimal_ShouldWork()
+    {
+        var p = new Rgb8(10, 20, 30);
+
+        Assert.Equal(new Rgb8(15, 25, 35), p.Add(5.0m));
+        Assert.Equal(new Rgb8(5, 15, 25), p.Subtract(5.0m));
+        Assert.Equal(new Rgb8(20, 40, 60), p.Multiply(2.0m));
+        Assert.Equal(new Rgb8(5, 10, 15), p.Divide(2.0m));
+    }
+
+    [Fact]
+    public void NumericOperations_Double_ShouldWork()
+    {
+        var p = new Rgb8(10, 20, 30);
+
+        Assert.Equal(new Rgb8(15, 25, 35), p.Add(5.0));
+        Assert.Equal(new Rgb8(5, 15, 25), p.Subtract(5.0));
+        Assert.Equal(new Rgb8(20, 40, 60), p.Multiply(2.0));
+        Assert.Equal(new Rgb8(5, 10, 15), p.Divide(2.0));
+    }
+
+    private class DummyScalar : IScalar<DummyScalar>
+    {
+        public static DummyScalar Zero => new DummyScalar(0.0);
+        public double Val { get; }
+        public DummyScalar(double val) => Val = val;
+        public double AsDouble() => Val;
+        public DummyScalar Add(DummyScalar right) => new(Val + right.Val);
+        public DummyScalar Subtract(DummyScalar right) => new(Val - right.Val);
+        public DummyScalar Multiply(DummyScalar right) => new(Val * right.Val);
+        public DummyScalar Divide(DummyScalar right) => new(Val / right.Val);
+        public DummyScalar Add(decimal right) => new(Val + (double)right);
+        public DummyScalar Subtract(decimal right) => new(Val - (double)right);
+        public DummyScalar Multiply(decimal right) => new(Val * (double)right);
+        public DummyScalar Divide(decimal right) => new(Val / (double)right);
+        public DummyScalar Add(double right) => new(Val + right);
+        public DummyScalar Subtract(double right) => new(Val - right);
+        public DummyScalar Multiply(double right) => new(Val * right);
+        public DummyScalar Divide(double right) => new(Val / right);
+        public Vector<double> ToDoubleVector() => new(Val);
+        public static DummyScalar FromDoubleVector(Vector<double> vector) => new(vector[0]);
+    }
+
+    [Fact]
+    public void ScalarOperations_ShouldWork()
+    {
+        var p = new Rgb8(10, 20, 30);
+        var scalar = new DummyScalar(5.0);
+
+        Assert.Equal(new Rgb8(15, 25, 35), p.Add(scalar));
+        Assert.Equal(new Rgb8(5, 15, 25), p.Subtract(scalar));
+        Assert.Equal(new Rgb8(50, 100, 150), p.Multiply(scalar));
+        Assert.Equal(new Rgb8(2, 4, 6), p.Divide(scalar));
+    }
+
+    [Fact]
+    public void VectorOperations_ShouldWork()
+    {
+        var p = new Rgb8(255, 255, 255);
+        if (Vector<double>.Count >= 3)
+        {
+            var vec = p.ToDoubleVector();
+            Assert.Equal(1.0, vec[0], 5);
+
+            var pFromVec = Rgb8.FromDoubleVector(vec);
+            Assert.Equal(p, pFromVec);
+        }
+    }
+
+    [Fact]
+    public void Enumerator_ShouldYieldValues()
+    {
+        var p = new Rgb8(10, 20, 30);
+        var list = new List<byte>(p);
+        Assert.Equal(new byte[] { 10, 20, 30 }, list);
+
+        var seq = (System.Collections.IEnumerable)p;
+        var seqEnum = seq.GetEnumerator();
+        Assert.True(seqEnum.MoveNext());
+        Assert.Equal((byte)10, seqEnum.Current);
+    }
+
+    [Fact]
+    public void GetHashCode_AndDistance_ShouldWork()
+    {
+        var p1 = new Rgb8(10, 20, 30);
+        var p2 = new Rgb8(13, 24, 30);
+
+        Assert.Equal(10 << 16 | 20 << 8 | 30, p1.GetHashCode());
+        Assert.Equal(5.0, p1.Distance(p2));
+    }
+
+    [Fact]
+    public void ComponentMaps_ShouldWork()
+    {
+        var p = new Rgb8(10, 20, 30);
+        Assert.Equal(new Rgb8(20, 40, 60), p.ComponentMap(b => (byte)(b * 2)));
+        Assert.Equal(new Rgb8(20, 40, 60), p.ColorComponentMap(b => (byte)(b * 2)));
+    }
+}
