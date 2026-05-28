@@ -1,4 +1,4 @@
-
+using Leiter.Tests.TestUtils;
 using Xunit;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -9,13 +9,7 @@ namespace Leiter.Tests.Core;
 
 public class MatrixExtensionsTests
 {
-    private class DummyUntypedMatrix : IUntypedMatrix
-    {
-        public int Width { get; set; }
-        public int Height { get; set; }
-        public Size Size => new(Width, Height);
-        public int Count => Width * Height;
-    }
+    
 
     [Fact]
     public void ToSequentialMatrix_ShouldPopulateCorrectly()

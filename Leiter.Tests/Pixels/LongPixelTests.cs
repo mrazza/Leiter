@@ -1,4 +1,4 @@
-
+using Leiter.Tests.TestUtils;
 using Xunit;
 using Leiter.Pixels;
 using Leiter.Core;
@@ -59,27 +59,7 @@ public class LongPixelTests
         Assert.Equal(5L, p.Divide(2.0).Value);
     }
 
-    private class DummyScalar : IScalar<DummyScalar>
-    {
-        public static DummyScalar Zero => new DummyScalar(0.0);
-        public double Val { get; }
-        public DummyScalar(double val) => Val = val;
-        public double AsDouble() => Val;
-        public DummyScalar Add(DummyScalar right) => new(Val + right.Val);
-        public DummyScalar Subtract(DummyScalar right) => new(Val - right.Val);
-        public DummyScalar Multiply(DummyScalar right) => new(Val * right.Val);
-        public DummyScalar Divide(DummyScalar right) => new(Val / right.Val);
-        public DummyScalar Add(decimal right) => new(Val + (double)right);
-        public DummyScalar Subtract(decimal right) => new(Val - (double)right);
-        public DummyScalar Multiply(decimal right) => new(Val * (double)right);
-        public DummyScalar Divide(decimal right) => new(Val / (double)right);
-        public DummyScalar Add(double right) => new(Val + right);
-        public DummyScalar Subtract(double right) => new(Val - right);
-        public DummyScalar Multiply(double right) => new(Val * right);
-        public DummyScalar Divide(double right) => new(Val / right);
-        public Vector<double> ToDoubleVector() => new(Val);
-        public static DummyScalar FromDoubleVector(Vector<double> vector) => new(vector[0]);
-    }
+    
 
     [Fact]
     public void ScalarOperations_ShouldWork()

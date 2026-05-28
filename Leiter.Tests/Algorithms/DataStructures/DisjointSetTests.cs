@@ -1,4 +1,4 @@
-
+using Leiter.Tests.TestUtils;
 using Xunit;
 using Leiter.Core;
 using Leiter.Algorithms.DataStructures;
@@ -11,18 +11,12 @@ namespace Leiter.Tests.Algorithms.DataStructures;
 
 public class DisjointSetTests
 {
-    private class DummyMatrix : IUntypedMatrix
-    {
-        public int Width => 4;
-        public int Height => 4;
-        public Size Size => new(4, 4);
-        public int Count => 16;
-    }
+    
 
     [Fact]
     public void Constructor_AndBasicProperties_ShouldInitialize()
     {
-        var mat = new DummyMatrix();
+        var mat = new DummyUntypedMatrix(4, 4);
         var dsu = new DisjointSet<int>(mat, index => index * 10);
 
         Assert.Equal(16, dsu.Count);
@@ -42,7 +36,7 @@ public class DisjointSetTests
     [Fact]
     public void GetPartition_ShouldReturnSnapshot()
     {
-        var mat = new DummyMatrix();
+        var mat = new DummyUntypedMatrix(4, 4);
         var dsu = new DisjointSet<int>(mat, index => index * 10);
 
         var p = dsu.GetPartition(new Coord(1, 1)); // index 5
@@ -62,7 +56,7 @@ public class DisjointSetTests
     [Fact]
     public void Union_ShouldMergePartitionsCorrectly()
     {
-        var mat = new DummyMatrix();
+        var mat = new DummyUntypedMatrix(4, 4);
         var dsu = new DisjointSet<int>(mat, index => 0);
 
         // Union elements and verify size / structure
@@ -103,7 +97,7 @@ public class DisjointSetTests
     [Fact]
     public void GetRegion_ShouldReturnPopulatedRegion()
     {
-        var mat = new DummyMatrix();
+        var mat = new DummyUntypedMatrix(4, 4);
         var dsu = new DisjointSet<int>(mat, index => 0);
 
         dsu.Union(0, 1, 10);
@@ -125,7 +119,7 @@ public class DisjointSetTests
     [Fact]
     public void ToMatrix_ShouldCreateMaterializedMatrix()
     {
-        var mat = new DummyMatrix();
+        var mat = new DummyUntypedMatrix(4, 4);
         var dsu = new DisjointSet<int>(mat, index => 0);
         dsu.Union(0, 1, 10);
 
@@ -139,7 +133,7 @@ public class DisjointSetTests
     [Fact]
     public void ToRegions_ShouldReturnSetOfRegions()
     {
-        var mat = new DummyMatrix();
+        var mat = new DummyUntypedMatrix(4, 4);
         var dsu = new DisjointSet<int>(mat, index => 0);
         dsu.Union(0, 1, 10);
         dsu.Union(2, 3, 20);
@@ -157,7 +151,7 @@ public class DisjointSetTests
     [Fact]
     public void Indexers_AndGetElement_ShouldDelegateToFind()
     {
-        var mat = new DummyMatrix();
+        var mat = new DummyUntypedMatrix(4, 4);
         var dsu = new DisjointSet<int>(mat, index => 0);
         dsu.Union(0, 1, 10);
 
@@ -168,7 +162,7 @@ public class DisjointSetTests
     [Fact]
     public void Helpers_CoordToIndex_IndexToCoord_ShouldDelegate()
     {
-        var mat = new DummyMatrix();
+        var mat = new DummyUntypedMatrix(4, 4);
         var dsu = new DisjointSet<int>(mat, index => 0);
 
         Assert.Equal(new Coord(1, 2), dsu.CoordFromIndex(9));
@@ -178,7 +172,7 @@ public class DisjointSetTests
     [Fact]
     public void Enumerator_ShouldReturnRoots()
     {
-        var mat = new DummyMatrix();
+        var mat = new DummyUntypedMatrix(4, 4);
         var dsu = new DisjointSet<int>(mat, index => 0);
         dsu.Union(0, 1, 10);
 
