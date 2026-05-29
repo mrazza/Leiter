@@ -23,7 +23,7 @@ public static class ColorExtensions
     /// <summary>
     /// Converts a Leiter <see cref="Rgb8"/> to a <see cref="Color"/>.
     /// </summary>
-    /// <param name="matrix">The Leiter pixel to a <see cref="Color"/>.</param>
+    /// <param name="pixel">The Leiter pixel to convert.</param>
     /// <returns>The Rgb8 with the same data.</returns>
     public static Color ToColor(this Rgb8 pixel)
         => Color.FromArgb(pixel.R, pixel.G, pixel.B);

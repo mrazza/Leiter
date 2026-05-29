@@ -14,7 +14,7 @@ using System.Runtime.Versioning;
 public static class ImageExtensions
 {
     /// <summary>
-    /// Converts a <see cref="Image{Rgb24}"/> to a <see cref="SequentialMatrix"/>.
+    /// Converts a <see cref="Image{Rgb24}"/> to a <see cref="SequentialMatrix{T}"/>.
     /// </summary>
     /// <param name="image">The image to convert.</param>
     /// <returns>The Leiter matrix with the same data.</returns>
@@ -36,7 +36,7 @@ public static class ImageExtensions
     }
 
     /// <summary>
-    /// Converts a Leiter <see cref="IReadOnlyMatrix"/> to a <see cref="Image{Rgb24}"/>.
+    /// Converts a Leiter <see cref="IReadOnlyMatrix{T}"/> to a <see cref="Image{Rgb24}"/>.
     /// </summary>
     /// <param name="matrix">The Leiter matrix to a <see cref="Image{Rgb24}"/>.</param>
     /// <returns>The Image based on the specified matrix.</returns>

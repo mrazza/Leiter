@@ -13,7 +13,7 @@ using Leiter.Pixels;
 public static class BitmapExtensions
 {
     /// <summary>
-    /// Converts a <see cref="Bitmap"/> to a <see cref="SequentialMatrix"/>.
+    /// Converts a <see cref="Bitmap"/> to a <see cref="SequentialMatrix{T}"/>.
     /// </summary>
     /// <param name="bitmap">The bitmap to convert.</param>
     /// <returns>The Leiter matrix with the same data.</returns>
@@ -31,7 +31,7 @@ public static class BitmapExtensions
     }
 
     /// <summary>
-    /// Converts a Leiter <see cref="IReadOnlyMatrix"/> to a <see cref="Bitmap"/>.
+    /// Converts a Leiter <see cref="IReadOnlyMatrix{T}"/> to a <see cref="Bitmap"/>.
     /// </summary>
     /// <param name="matrix">The Leiter matrix to a <see cref="Bitmap"/>.</param>
     /// <returns>The Bitmap based on the specified matrix.</returns>
