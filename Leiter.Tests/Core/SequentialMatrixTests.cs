@@ -8,7 +8,7 @@ using System.Collections.Generic;
 namespace Leiter.Tests.Core;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="SequentialMatrixTests" />.
+/// Provides unit tests for <see cref="SequentialMatrixTests" />.
 /// </summary>
 public class SequentialMatrixTests
 {

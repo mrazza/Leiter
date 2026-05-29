@@ -9,7 +9,7 @@ using System.Runtime.Versioning;
 namespace Leiter.Tests.Platform;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="PlatformWindowsTests" />.
+/// Provides unit tests for <see cref="PlatformWindowsTests" />.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public class PlatformWindowsTests

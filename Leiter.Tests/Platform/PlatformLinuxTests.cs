@@ -11,7 +11,7 @@ using System.Runtime.Versioning;
 namespace Leiter.Tests.Platform;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="PlatformLinuxTests" />.
+/// Provides unit tests for <see cref="PlatformLinuxTests" />.
 /// </summary>
 [SupportedOSPlatform("linux")]
 public class PlatformLinuxTests

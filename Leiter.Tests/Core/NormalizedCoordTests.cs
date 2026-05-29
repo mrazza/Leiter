@@ -5,7 +5,7 @@ using Leiter.Core;
 namespace Leiter.Tests.Core;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="NormalizedCoordTests" />.
+/// Provides unit tests for <see cref="NormalizedCoordTests" />.
 /// </summary>
 public class NormalizedCoordTests
 {

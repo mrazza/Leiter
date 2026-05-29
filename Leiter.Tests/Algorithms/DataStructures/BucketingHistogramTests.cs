@@ -6,7 +6,7 @@ using System.Collections.Generic;
 namespace Leiter.Tests.Algorithms.DataStructures;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="BucketingHistogram{T}" />.
+/// Provides unit tests for <see cref="BucketingHistogram{T}" />.
 /// </summary>
 public class BucketingHistogramTests
 {

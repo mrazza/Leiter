@@ -9,7 +9,7 @@ using System.Numerics;
 namespace Leiter.Tests.Pixels;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="Rgb8Tests" />.
+/// Provides unit tests for <see cref="Rgb8Tests" />.
 /// </summary>
 public class Rgb8Tests
 {

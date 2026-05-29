@@ -9,7 +9,7 @@ using System.Numerics;
 namespace Leiter.Tests.Pixels;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="Xyz32Tests" />.
+/// Provides unit tests for <see cref="Xyz32Tests" />.
 /// </summary>
 public class Xyz32Tests
 {

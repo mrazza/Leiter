@@ -11,7 +11,7 @@ using System.Linq;
 namespace Leiter.Tests.Algorithms.Segmentation;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="EgbiSegmentationTests" />.
+/// Provides unit tests for <see cref="EgbiSegmentationTests" />.
 /// </summary>
 public class EgbiSegmentationTests
 {

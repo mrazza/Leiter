@@ -7,7 +7,7 @@ using System.Collections.Generic;
 namespace Leiter.Tests.Core;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="IReadOnlyMatrix{T}" />.
+/// Provides unit tests for <see cref="IReadOnlyMatrix{T}" />.
 /// </summary>
 public class IReadOnlyMatrixTests
 {

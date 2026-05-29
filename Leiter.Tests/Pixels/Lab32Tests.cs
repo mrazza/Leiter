@@ -9,7 +9,7 @@ using System.Numerics;
 namespace Leiter.Tests.Pixels;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="Lab32" />.
+/// Provides unit tests for <see cref="Lab32" />.
 /// </summary>
 public class Lab32Tests
 {

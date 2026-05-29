@@ -7,7 +7,7 @@ using System;
 namespace Leiter.Tests.Algorithms.Quantization;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="UniformQuantizerTests" />.
+/// Provides unit tests for <see cref="UniformQuantizerTests" />.
 /// </summary>
 public class UniformQuantizerTests
 {

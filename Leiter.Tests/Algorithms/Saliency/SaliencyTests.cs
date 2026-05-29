@@ -11,7 +11,7 @@ using System.Linq;
 namespace Leiter.Tests.Algorithms.Saliency;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="SaliencyTests" />.
+/// Provides unit tests for <see cref="SaliencyTests" />.
 /// </summary>
 public class SaliencyTests
 {
@@ -47,6 +47,10 @@ public class SaliencyTests
         var maxS = saliencyWithSmoothing.Max(p => p.Value);
         Assert.Equal(0.0, minS, 4);
         Assert.Equal(1.0, maxS, 4);
+
+        // Verify that different areas have different saliency (i.e. we are not getting flat zeros)
+        Assert.True(saliencyWithSmoothing.Any(p => p.Value > 0.0 && p.Value < 1.0));
+        Assert.True(saliencyWithoutSmoothing.Any(p => p.Value > 0.0 && p.Value < 1.0));
     }
 
     /// <summary>
@@ -83,8 +87,12 @@ public class SaliencyTests
         Assert.Equal(0.0, minS, 4);
         Assert.Equal(1.0, maxS, 4);
 
+        // Verify regional saliency is not all flat zeros/ones and varies by region
+        Assert.True(saliency[0, 0].Value < saliency[10, 10].Value);
+
         // Turn off smoothing and border calculation to test the alternate branches
         var saliencyRaw = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: false, computeBorderRegions: false);
         Assert.Equal(20, saliencyRaw.Width);
+        Assert.True(saliencyRaw.Min(p => p.Value) >= 0.0);
     }
 }

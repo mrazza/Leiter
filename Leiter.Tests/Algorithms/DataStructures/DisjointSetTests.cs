@@ -10,12 +10,10 @@ using System.Linq;
 namespace Leiter.Tests.Algorithms.DataStructures;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="DisjointSetTests" />.
+/// Provides unit tests for <see cref="DisjointSetTests" />.
 /// </summary>
 public class DisjointSetTests
 {
-    
-
     /// <summary>
     /// Verifies that the constructor and basic properties should initialize behaves correctly.
     /// </summary>

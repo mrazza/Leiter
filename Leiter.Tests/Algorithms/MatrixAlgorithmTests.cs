@@ -8,7 +8,7 @@ using System;
 namespace Leiter.Tests.Algorithms;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="MatrixAlgorithmTests" />.
+/// Provides unit tests for <see cref="MatrixAlgorithmTests" />.
 /// </summary>
 public class MatrixAlgorithmTests
 {

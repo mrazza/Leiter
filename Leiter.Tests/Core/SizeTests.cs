@@ -5,7 +5,7 @@ using Leiter.Core;
 namespace Leiter.Tests.Core;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="SizeTests" />.
+/// Provides unit tests for <see cref="SizeTests" />.
 /// </summary>
 public class SizeTests
 {

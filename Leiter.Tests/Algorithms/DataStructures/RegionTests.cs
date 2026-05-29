@@ -5,7 +5,7 @@ using Leiter.Core;
 namespace Leiter.Tests.Algorithms.DataStructures;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="Region{T}" />.
+/// Provides unit tests for <see cref="Region{T}" />.
 /// </summary>
 public class RegionTests
 {

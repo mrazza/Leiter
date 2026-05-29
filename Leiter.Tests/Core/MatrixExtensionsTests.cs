@@ -8,12 +8,10 @@ using System.Collections.Generic;
 namespace Leiter.Tests.Core;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="MatrixExtensionsTests" />.
+/// Provides unit tests for <see cref="MatrixExtensionsTests" />.
 /// </summary>
 public class MatrixExtensionsTests
 {
-    
-
     /// <summary>
     /// Verifies that the to sequential matrix should populate correctly behaves correctly.
     /// </summary>

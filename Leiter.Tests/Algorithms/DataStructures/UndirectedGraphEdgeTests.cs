@@ -5,7 +5,7 @@ using Leiter.Algorithms.DataStructures;
 namespace Leiter.Tests.Algorithms.DataStructures;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="UndirectedGraphEdgeTests" />.
+/// Provides unit tests for <see cref="UndirectedGraphEdgeTests" />.
 /// </summary>
 public class UndirectedGraphEdgeTests
 {

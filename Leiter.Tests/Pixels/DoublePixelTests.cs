@@ -9,7 +9,7 @@ using System.Numerics;
 namespace Leiter.Tests.Pixels;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="DoublePixelTests" />.
+/// Provides unit tests for <see cref="DoublePixelTests" />.
 /// </summary>
 public class DoublePixelTests
 {

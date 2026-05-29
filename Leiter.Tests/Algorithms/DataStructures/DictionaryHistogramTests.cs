@@ -6,7 +6,7 @@ using System.Collections.Generic;
 namespace Leiter.Tests.Algorithms.DataStructures;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="DictionaryHistogram{T}" />.
+/// Provides unit tests for <see cref="DictionaryHistogram{T}" />.
 /// </summary>
 public class DictionaryHistogramTests
 {
