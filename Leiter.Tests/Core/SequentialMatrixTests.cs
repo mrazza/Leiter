@@ -214,4 +214,38 @@ public class SequentialMatrixTests
         Assert.Contains("SequentialMatrix", str);
         Assert.Contains("1", str);
     }
+
+    /// <summary>
+    /// Executes the test explicit interface implementations and to string operation.
+    /// </summary>
+    [Fact]
+    public void TestExplicitInterfaceImplementations_AndToString()
+    {
+        var m = new SequentialMatrix<DoublePixel>(2, 2);
+        m.SetAll(1.0);
+
+        // Test explicit interface implementation on IReadOnlyMatrix/IUntypedMatrix
+        IReadOnlyMatrix<DoublePixel> rom = m;
+        IUntypedMatrix utm = rom;
+        IReadOnlyCollection<DoublePixel> roc = rom;
+
+        Assert.Equal(4, utm.Count);
+        Assert.Equal(4, roc.Count);
+
+        // Test index setter on Matrix
+        m[0] = 5.0;
+        Assert.Equal(5.0, m[0].Value);
+
+        m[1, 0] = 6.0;
+        Assert.Equal(6.0, m[1, 0].Value);
+
+        m[new Coord(0, 1)] = 7.0;
+        Assert.Equal(7.0, m[0, 1].Value);
+
+        // Test IEnumerable.GetEnumerator on Matrix
+        var enumerable = (System.Collections.IEnumerable)m;
+        var enumerator = enumerable.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+        Assert.NotNull(enumerator.Current);
+    }
 }

@@ -9,7 +9,7 @@ using System.Numerics;
 namespace Leiter.Tests.Pixels;
 
 /// <summary>
-/// Provides unit tests or helpers for <see cref="Lab32Tests" />.
+/// Provides unit tests or helpers for <see cref="Lab32" />.
 /// </summary>
 public class Lab32Tests
 {
@@ -68,8 +68,6 @@ public class Lab32Tests
         Assert.Equal(new Lab32(20.0f, 40.0f, 60.0f), p.Multiply(2.0));
         Assert.Equal(new Lab32(5.0f, 10.0f, 15.0f), p.Divide(2.0));
     }
-
-    
 
     /// <summary>
     /// Verifies that the scalar operations should work behaves correctly.
@@ -147,5 +145,24 @@ public class Lab32Tests
         var p1 = new Lab32(1.0f, 2.0f, 3.0f);
         var p2 = new Lab32(4.0f, 2.0f, 3.0f);
         Assert.Equal(1.7550397986383963, p1.Distance(p2));
+    }
+
+    /// <summary>
+    /// Executes the test e2000 special cases operation.
+    /// </summary>
+    [Fact]
+    public void TestCIEDE2000_SpecialCases()
+    {
+        var gray1 = new Lab32(50, 0, 0);
+        var gray2 = new Lab32(50, 0, 0);
+        var color1 = new Lab32(50, 10, 20);
+        var color2 = new Lab32(50, -10, -20);
+        var color3 = new Lab32(50, 10, -20);
+
+        Assert.Equal(0.0, gray1.Distance(gray2), 5);
+        Assert.True(gray1.Distance(color1) > 0);
+        Assert.True(color1.Distance(gray2) > 0);
+        Assert.True(color1.Distance(color2) > 0);
+        Assert.True(color1.Distance(color3) > 0);
     }
 }

@@ -150,4 +150,23 @@ public class MatrixViewTests
         var str = view.ToString();
         Assert.Contains("MatrixView", str);
     }
+
+    /// <summary>
+    /// Executes the test matrix view uncovered lines operation.
+    /// </summary>
+    [Fact]
+    public void TestMatrixView_UncoveredLines()
+    {
+        var baseMat = new SequentialMatrix<DoublePixel>(2, 2);
+        var view = new MatrixView<DoublePixel>(baseMat, 0, 0, 2, 2, EdgeHandling.EXTEND);
+
+        // Call ToString
+        Assert.NotNull(view.ToString());
+
+        // Call IEnumerable.GetEnumerator on MatrixView
+        var enumerable = (System.Collections.IEnumerable)view;
+        var enumerator = enumerable.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+        Assert.NotNull(enumerator.Current);
+    }
 }

@@ -6,12 +6,14 @@ using SixLabors.ImageSharp.PixelFormats;
 using Leiter.Core;
 using Leiter.Pixels;
 using System.IO;
+using System.Runtime.Versioning;
 
 namespace Leiter.Tests.Platform;
 
 /// <summary>
 /// Provides unit tests or helpers for <see cref="PlatformLinuxTests" />.
 /// </summary>
+[SupportedOSPlatform("linux")]
 public class PlatformLinuxTests
 {
     /// <summary>
