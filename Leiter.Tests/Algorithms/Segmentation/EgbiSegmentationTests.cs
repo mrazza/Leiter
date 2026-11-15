@@ -55,6 +55,40 @@ public class EgbiSegmentationTests
     }
 
     /// <summary>
+    /// Verifies that segmenting an image with many equal-weight edges produces deterministic results across runs.
+    /// </summary>
+    [Fact]
+    public void Segment_EqualWeightGradient_ShouldBeDeterministicAcrossRuns()
+    {
+        const int width = 30;
+        const int height = 30;
+        var img = new SequentialMatrix<Rgb8>(width, height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                byte value = (byte)((x + y) * 4);
+                img[x, y] = new Rgb8(value, value, value);
+            }
+        }
+
+        var baselineSegmentation = EgbiSegmentation.Segment(img, kFactor: 5.0, epsilon: 0.0, minSegmentSize: 15);
+        Assert.True(baselineSegmentation.ToRegions().Count > 10);
+        Matrix<LongPixel> baseline = baselineSegmentation.ToMatrix();
+
+        for (int run = 0; run < 5; run++)
+        {
+            Matrix<LongPixel> current = EgbiSegmentation.Segment(img, kFactor: 5.0, epsilon: 0.0, minSegmentSize: 15).ToMatrix();
+            Assert.Equal(baseline.Width, current.Width);
+            Assert.Equal(baseline.Height, current.Height);
+            for (int i = 0; i < baseline.Count; i++)
+            {
+                Assert.Equal(baseline[i].Value, current[i].Value);
+            }
+        }
+    }
+
+    /// <summary>
     /// Verifies that the color assigners and color image by segmentation should work behaves correctly.
     /// </summary>
     [Fact]

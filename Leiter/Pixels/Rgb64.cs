@@ -67,7 +67,7 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
 
     public Rgb64 Divide<S>(IScalar<S> right)
         where S : IScalar<S> =>
-        ComponentMap(channel => channel - right.AsDouble());
+        ComponentMap(channel => channel / right.AsDouble());
 
     public Rgb64 Multiply<S>(IScalar<S> right)
         where S : IScalar<S> =>
@@ -75,7 +75,7 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
 
     public Rgb64 Subtract<S>(IScalar<S> right)
         where S : IScalar<S> =>
-        ComponentMap(channel => channel / right.AsDouble());
+        ComponentMap(channel => channel - right.AsDouble());
 
     public Rgb64 ColorComponentMap(Func<double, double> func) => new() { R = func(R), G = func(G), B = func(B) };
 

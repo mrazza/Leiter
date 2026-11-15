@@ -12,7 +12,11 @@ public static class PixelConversion
     public static Rgb8 ToRgb8(this Xyz32 self, RgbColorSpace colorSpace) =>
         self.ToRgb64(colorSpace).ToRgb8();
 
-    public static Rgb8 ToRgb8(this Rgb64 self) => new((byte)(self.R * 255), (byte)(self.G * 255), (byte)(self.B * 255));
+    private static byte ClampToByte(double value) =>
+        double.IsNaN(value) ? (byte)0 : (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
+
+    public static Rgb8 ToRgb8(this Rgb64 self) =>
+        new(ClampToByte(self.R * 255.0), ClampToByte(self.G * 255.0), ClampToByte(self.B * 255.0));
 
     public static Rgb64 ToRgb64(this Xyz32 self, RgbColorSpace colorSpace)
     {

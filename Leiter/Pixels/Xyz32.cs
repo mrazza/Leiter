@@ -68,7 +68,7 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
 
     public Xyz32 Divide<S>(IScalar<S> right)
         where S : IScalar<S> =>
-        ComponentMap(channel => channel - (float)right.AsDouble());
+        ComponentMap(channel => channel / (float)right.AsDouble());
 
     public Xyz32 Multiply<S>(IScalar<S> right)
         where S : IScalar<S> =>
@@ -76,7 +76,7 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
 
     public Xyz32 Subtract<S>(IScalar<S> right)
         where S : IScalar<S> =>
-        ComponentMap(channel => channel / (float)right.AsDouble());
+        ComponentMap(channel => channel - (float)right.AsDouble());
 
     public Xyz32 ColorComponentMap(Func<float, float> func) => new() { X = func(X), Y = Y, Z = func(Z) };
 

@@ -131,6 +131,34 @@ public class SequentialMatrixTests
     }
 
     /// <summary>
+    /// Verifies that mapping a large matrix preserves exact element ordering.
+    /// </summary>
+    [Fact]
+    public void Map_LargeMatrix_ShouldPreserveExactElementOrdering()
+    {
+        const int width = 100;
+        const int height = 100;
+        var m = new SequentialMatrix<DoublePixel>(width, height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                m[x, y] = x + (y * width);
+            }
+        }
+
+        var result = m.Map(p => new DoublePixel(p.Value * 3 + 1));
+
+        Assert.Equal(width, result.Width);
+        Assert.Equal(height, result.Height);
+        for (int i = 0; i < width * height; i++)
+        {
+            double expected = (i * 3) + 1;
+            Assert.Equal(expected, result[i].Value);
+        }
+    }
+
+    /// <summary>
     /// Verifies that the get enumerator should return all elements behaves correctly.
     /// </summary>
     [Fact]

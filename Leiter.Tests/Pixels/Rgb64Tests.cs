@@ -81,8 +81,9 @@ public class Rgb64Tests
         var scalar = new DummyScalar(2.0);
 
         Assert.Equal(new Rgb64(12.0, 22.0, 32.0), p.Add(scalar));
-        Assert.Equal(new Rgb64(8.0, 18.0, 28.0), p.Divide(scalar));
-        Assert.Equal(new Rgb64(5.0, 10.0, 15.0), p.Subtract(scalar));
+        Assert.Equal(new Rgb64(8.0, 18.0, 28.0), p.Subtract(scalar));
+        Assert.Equal(new Rgb64(20.0, 40.0, 60.0), p.Multiply(scalar));
+        Assert.Equal(new Rgb64(5.0, 10.0, 15.0), p.Divide(scalar));
     }
 
     /// <summary>

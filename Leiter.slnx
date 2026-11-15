@@ -3,4 +3,5 @@
   <Project Path="Leiter.Platform.Windows/Leiter.Platform.Windows.csproj" />
   <Project Path="Leiter.Tests/Leiter.Tests.csproj" />
   <Project Path="Leiter/Leiter.csproj" />
+  <Project Path="LeiterTest/LeiterTest.csproj" />
 </Solution>

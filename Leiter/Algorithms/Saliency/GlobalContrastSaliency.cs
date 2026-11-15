@@ -2,7 +2,6 @@ namespace Leiter.Algorithms.Saliency;
 
 using System.Collections.Generic;
 using System.Linq;
-using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Quantization;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -33,38 +32,16 @@ public static class GlobalContrastSaliency
     /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
     public static Matrix<DoublePixel> ComputeSaliency(Matrix<Rgb8> image, bool enableColorSpaceSmoothing = true)
     {
-        // Quantize the image into 12 buckets per channel and compute the number of pixels in each bucket
-        // across the image.
-        Matrix<Rgb8> quantizedInput = image.Map(color => UniformQuantizer.QuantizeToMidpoint(color, 12));
-        DictionaryHistogram<Rgb8> histogram = new();
-        foreach (var quantizedPixel in quantizedInput)
+        if (image.Count == 0)
         {
-            histogram.Increment(quantizedPixel);
+            return new SequentialMatrix<DoublePixel>(image.Size);
         }
 
-        // Create a lookup table for the Lab values of each bucket (this is a significant performance
-        // optimization given that Lab32 conversions are expensive).
-        Dictionary<Rgb8, Lab32> rgbToLabLookupTable = histogram.ToDictionary(bucket => bucket.Key, bucket => bucket.Key.ToLab32(RgbColorSpace.sRGB));
-
-        // Truncate the histogram to the top 95% of pixels and map the remaining pixels to the nearest bucket.
-        DictionaryHistogram<Rgb8> truncatedHistogram = new();
-        Dictionary<Rgb8, Rgb8> truncatedColors = new();
-        int pixelCount = 0;
-        int pixelCutOff = (int)(image.Count * 0.95);
-        foreach (var bucket in histogram.OrderByDescending(bucket => bucket.Value))
-        {
-            if (pixelCount <= pixelCutOff)
-            {
-                truncatedHistogram.Increment(bucket.Key, bucket.Value);
-                pixelCount += bucket.Value;
-            }
-            else
-            {
-                var newKey = truncatedHistogram.OrderBy(targetBucket => rgbToLabLookupTable[bucket.Key].Distance(rgbToLabLookupTable[targetBucket.Key])).First().Key;
-                truncatedHistogram.Increment(newKey, bucket.Value);
-                truncatedColors[bucket.Key] = newKey;
-            }
-        }
+        // Quantize the image into 12 buckets per channel and truncate the histogram to the top 95% of pixels.
+        var (paletteImage, truncatedHistogram, rgbToLabLookupTable) = PaletteQuantizer.QuantizeAndTruncate(
+            image,
+            static color => UniformQuantizer.QuantizeToMidpoint(color, 12),
+            static color => color.ToLab32(RgbColorSpace.sRGB));
 
         // Compute the saliency for each bucket based on the distance to all other buckets.
         Dictionary<Rgb8, double> saliencyMap = [];
@@ -78,35 +55,22 @@ public static class GlobalContrastSaliency
 
         if (enableColorSpaceSmoothing)
         {
-            int nearestColorCount = truncatedHistogram.BucketCount / 4;
-            var unsmoothedSaliencyMap = new Dictionary<Rgb8, double>(saliencyMap);
-            foreach (var bucket in unsmoothedSaliencyMap)
-            {
-                // Computes [c, D(c, c sub i)] for m nearest neighbors of bucket.Key.
-                // Note that we include our own color here. The paper says "other colors" and "other pixels"
-                // but the equations seem to explicitly include the color or pixel under evaluation and so
-                // we do so here.
-                var nearestNeighbors = unsmoothedSaliencyMap.Keys
-                    .Select(key => (color: key, distance: rgbToLabLookupTable[bucket.Key].Distance(rgbToLabLookupTable[key])))
-                    .OrderBy(neighbor => neighbor.distance).Take(nearestColorCount).ToList();
-
-                // Computes T = sum(D(c, c sub i)).
-                double T = nearestNeighbors.Sum(neighbor => neighbor.distance);
-
-                // Computes (1 / ((m - 1) * T)) * sum((T - D(c, c sub i)) * S[c sub i]).
-                saliencyMap[bucket.Key] = (1.0 / ((nearestColorCount - 1) * T)) * nearestNeighbors.Sum(neighbor => (T - neighbor.distance) * unsmoothedSaliencyMap[neighbor.color]);
-            }
+            SaliencyColorSmoother.SmoothColorSaliency(saliencyMap, rgbToLabLookupTable, neighborDivisor: 4);
         }
 
-        // In order to prepare the final image, we need to map the truncated colors back to the original colors.
-        foreach (var color in truncatedColors)
+        if (saliencyMap.Count == 0)
         {
-            saliencyMap[color.Key] = saliencyMap[color.Value];
+            return new SequentialMatrix<DoublePixel>(image.Size);
         }
 
         // Map the saliency values back to the original image and normalize the values to [0, 1].
         double minSaliency = saliencyMap.Values.Min();
         double saliencyRange = saliencyMap.Values.Max() - minSaliency;
-        return quantizedInput.Map<DoublePixel>((pixel) => (saliencyMap[pixel] - minSaliency) / saliencyRange);
+        if (saliencyRange <= 0.0)
+        {
+            return new SequentialMatrix<DoublePixel>(image.Size);
+        }
+
+        return paletteImage.Map<DoublePixel>(pixel => (saliencyMap[pixel] - minSaliency) / saliencyRange);
     }
 }
