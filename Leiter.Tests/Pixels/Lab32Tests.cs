@@ -79,17 +79,9 @@ public class Lab32Tests
         var scalar = new DummyScalar(2.0);
 
         Assert.Equal(new Lab32(12.0f, 22.0f, 32.0f), p.Add(scalar));
-        
-        // Let's assert exactly how it is written in Lab32:
-        // public Lab32 Subtract<S> -> ComponentMap(channel => channel / (float)right.AsDouble()); (Wait, in Lab32.cs:)
-        // Let's check:
-        // public Lab32 Divide<S>(IScalar<S> right) => ComponentMap(channel => channel - (float)right.AsDouble());
-        // public Lab32 Multiply<S>(IScalar<S> right) => ComponentMap(channel => channel * (float)right.AsDouble());
-        // public Lab32 Subtract<S>(IScalar<S> right) => ComponentMap(channel => channel / (float)right.AsDouble());
-        // Yes, it has the exact same typos!
-        Assert.Equal(new Lab32(5.0f, 10.0f, 15.0f), p.Subtract(scalar));
+        Assert.Equal(new Lab32(8.0f, 18.0f, 28.0f), p.Subtract(scalar));
         Assert.Equal(new Lab32(20.0f, 40.0f, 60.0f), p.Multiply(scalar));
-        Assert.Equal(new Lab32(8.0f, 18.0f, 28.0f), p.Divide(scalar));
+        Assert.Equal(new Lab32(5.0f, 10.0f, 15.0f), p.Divide(scalar));
     }
 
     /// <summary>

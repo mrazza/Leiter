@@ -81,9 +81,9 @@ public class Xyz32Tests
         var scalar = new DummyScalar(2.0);
 
         Assert.Equal(new Xyz32(12.0f, 22.0f, 32.0f), p.Add(scalar));
-        Assert.Equal(new Xyz32(5.0f, 10.0f, 15.0f), p.Subtract(scalar));
+        Assert.Equal(new Xyz32(8.0f, 18.0f, 28.0f), p.Subtract(scalar));
         Assert.Equal(new Xyz32(20.0f, 40.0f, 60.0f), p.Multiply(scalar));
-        Assert.Equal(new Xyz32(8.0f, 18.0f, 28.0f), p.Divide(scalar));
+        Assert.Equal(new Xyz32(5.0f, 10.0f, 15.0f), p.Divide(scalar));
     }
 
     /// <summary>

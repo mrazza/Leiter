@@ -12,28 +12,32 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
     private static readonly Rgb8 INTERNAL_ZERO = new();
     public static Rgb8 Zero => INTERNAL_ZERO;
 
+    private static byte ClampToByte(int value) => (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
+    private static byte ClampToByte(decimal value) => (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
+    private static byte ClampToByte(double value) => double.IsNaN(value) ? (byte)0 : (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
+
     public Rgb8 Add(Rgb8 right) =>
         new()
         {
-            R = (byte)(R + right.R),
-            G = (byte)(G + right.G),
-            B = (byte)(B + right.B)
+            R = ClampToByte(R + right.R),
+            G = ClampToByte(G + right.G),
+            B = ClampToByte(B + right.B)
         };
 
     public Rgb8 Subtract(Rgb8 right) =>
         new()
         {
-            R = (byte)(R - right.R),
-            G = (byte)(G - right.G),
-            B = (byte)(B - right.B)
+            R = ClampToByte(R - right.R),
+            G = ClampToByte(G - right.G),
+            B = ClampToByte(B - right.B)
         };
 
     public Rgb8 Multiply(Rgb8 right) =>
         new()
         {
-            R = (byte)(R * right.R),
-            G = (byte)(G * right.G),
-            B = (byte)(B * right.B)
+            R = ClampToByte(R * right.R),
+            G = ClampToByte(G * right.G),
+            B = ClampToByte(B * right.B)
         };
 
     public Rgb8 Divide(Rgb8 right) =>
@@ -44,33 +48,29 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
             B = (byte)(B / right.B)
         };
 
-    public Rgb8 Add(decimal right) => ComponentMap(channel => (byte)(channel + right));
+    public Rgb8 Add(decimal right) => ComponentMap(channel => ClampToByte(channel + right));
 
-    public Rgb8 Subtract(decimal right) => ComponentMap(channel => (byte)(channel - right));
+    public Rgb8 Subtract(decimal right) => ComponentMap(channel => ClampToByte(channel - right));
 
-    public Rgb8 Multiply(decimal right) => ComponentMap(channel => (byte)(channel * right));
+    public Rgb8 Multiply(decimal right) => ComponentMap(channel => ClampToByte(channel * right));
 
-    public Rgb8 Divide(decimal right) => ComponentMap(channel => (byte)(channel / right));
+    public Rgb8 Divide(decimal right) => ComponentMap(channel => ClampToByte(channel / right));
 
-    public Rgb8 Add(double right) => ComponentMap(channel => (byte)(channel + right));
+    public Rgb8 Add(double right) => ComponentMap(channel => ClampToByte(channel + right));
 
-    public Rgb8 Subtract(double right) => ComponentMap(channel => (byte)(channel - right));
+    public Rgb8 Subtract(double right) => ComponentMap(channel => ClampToByte(channel - right));
 
-    public Rgb8 Multiply(double right) => ComponentMap(channel => (byte)(channel * right));
+    public Rgb8 Multiply(double right) => ComponentMap(channel => ClampToByte(channel * right));
 
-    public Rgb8 Divide(double right) => ComponentMap(channel => (byte)(channel / right));
+    public Rgb8 Divide(double right) => ComponentMap(channel => ClampToByte(channel / right));
 
-    public Rgb8 Add<S>(IScalar<S> right) where S : IScalar<S> =>
-        Add((decimal)Convert.ToByte(right.AsDouble()));
+    public Rgb8 Add<S>(IScalar<S> right) where S : IScalar<S> => Add(right.AsDouble());
 
-    public Rgb8 Subtract<S>(IScalar<S> right) where S : IScalar<S> =>
-        Subtract((decimal)Convert.ToByte(right.AsDouble()));
+    public Rgb8 Subtract<S>(IScalar<S> right) where S : IScalar<S> => Subtract(right.AsDouble());
 
-    public Rgb8 Multiply<S>(IScalar<S> right) where S : IScalar<S> =>
-        ComponentMap(channel => (byte)(channel * right.AsDouble()));
+    public Rgb8 Multiply<S>(IScalar<S> right) where S : IScalar<S> => Multiply(right.AsDouble());
 
-    public Rgb8 Divide<S>(IScalar<S> right) where S : IScalar<S> =>
-        ComponentMap(channel => (byte)(channel / right.AsDouble()));
+    public Rgb8 Divide<S>(IScalar<S> right) where S : IScalar<S> => Divide(right.AsDouble());
 
     public Rgb8 ColorComponentMap(Func<byte, byte> func) => new() { R = func(R), G = func(G), B = func(B) };
 
@@ -88,7 +88,7 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
         return new(data);
     }
 
-    public static Rgb8 FromDoubleVector(Vector<double> vector) => new((byte)(vector[0] * 255), (byte)(vector[1] * 255), (byte)(vector[2] * 255));
+    public static Rgb8 FromDoubleVector(Vector<double> vector) => new(ClampToByte(vector[0] * 255.0), ClampToByte(vector[1] * 255.0), ClampToByte(vector[2] * 255.0));
 
     public IEnumerator<byte> GetEnumerator()
     {

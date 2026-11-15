@@ -123,4 +123,17 @@ public class ColorSpaceTests
         Assert.Throws<NotImplementedException>(() => rgb64.ToXyz32((RgbColorSpace)999));
         Assert.Throws<NotImplementedException>(() => xyz.ToRgb64((RgbColorSpace)999));
     }
+
+    /// <summary>
+    /// Verifies that converting out-of-gamut <see cref="Rgb64"/> values to <see cref="Rgb8"/> clamps to byte range.
+    /// </summary>
+    [Fact]
+    public void ToRgb8_OutOfGamut_ShouldClampToByteRange()
+    {
+        var outOfGamut = new Rgb64(-0.5, 1.5, double.NaN);
+        Assert.Equal(new Rgb8(0, 255, 0), outOfGamut.ToRgb8());
+
+        var mixed = new Rgb64(-10.0, 2.0, 0.5);
+        Assert.Equal(new Rgb8(0, 255, 127), mixed.ToRgb8());
+    }
 }

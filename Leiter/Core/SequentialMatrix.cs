@@ -96,6 +96,10 @@ public class SequentialMatrix<T> : Matrix<T>
     public override IEnumerator<T> GetEnumerator() =>
         data.AsEnumerable().GetEnumerator();
 
-    public override Matrix<R> Map<R>(Func<T, R> func) =>
-        new SequentialMatrix<R>(Width, Height, data.AsParallel().Select(pixel => func(pixel)).ToArray());
+    public override Matrix<R> Map<R>(Func<T, R> func)
+    {
+        var mappedData = new R[data.Length];
+        Parallel.For(0, data.Length, index => mappedData[index] = func(data[index]));
+        return new SequentialMatrix<R>(Width, Height, mappedData);
+    }
 }

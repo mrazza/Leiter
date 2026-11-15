@@ -37,7 +37,15 @@ public static class RegionalContrastSaliency
     /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
     public static Matrix<DoublePixel> ComputeSaliency(Matrix<Rgb8> image, IDisjointSet segmentation, bool enableSmoothing = true, bool computeBorderRegions = true)
     {
-        var colorQuantizedImage = image.Map(color => UniformQuantizer.QuantizeToMidpoint(color, 12));
+        if (image.Count == 0)
+        {
+            return new SequentialMatrix<DoublePixel>(image.Size);
+        }
+
+        var (colorQuantizedImage, _, rgbToLabLookupTable) = PaletteQuantizer.QuantizeAndTruncate(
+            image,
+            static color => UniformQuantizer.QuantizeToMidpoint(color, 12),
+            static color => color.ToLab32(RgbColorSpace.sRGB));
         var segmentationMatrix = segmentation.ToMatrix();
         var regions = segmentation.ToRegions();
 
@@ -73,7 +81,6 @@ public static class RegionalContrastSaliency
         // Note that these loops are so tight that Dictionary<>/hash map lookups end up being expensive.
         // As a result, we construct a single dictionary to resolve an RGB value to an array index and
         // use array lookups using that index instead of dictionaries for lookups within the loop.
-        Dictionary<Rgb8, Lab32> rgbToLabLookupTable = regionColorHistograms.Values.SelectMany(histogram => histogram.Select(bucket => bucket.Key)).Distinct().ToDictionary(bucket => bucket, bucket => bucket.ToLab32(RgbColorSpace.sRGB));
         int rgbToIndexLookupTableIndex = 0;
         Dictionary<Rgb8, int> rgbToIndexLookupTable = rgbToLabLookupTable.ToDictionary(entry => entry.Key, entry => rgbToIndexLookupTableIndex++);
         double[] labDistanceLookupTable = rgbToLabLookupTable.SelectMany(
@@ -122,7 +129,6 @@ public static class RegionalContrastSaliency
             }
         });
 
-        var finalSaliencyMap = saliency;
         HashSet<long> borderRegions = [];
         if (computeBorderRegions)
         {
@@ -136,8 +142,16 @@ public static class RegionalContrastSaliency
                 region => region.Pixels.Where(pixel => pixel.X < borderPixelWidth || pixel.X >= maxX || pixel.Y < borderPixelHeight || pixel.Y >= maxY).Count() > region.Pixels.Count * REGION_IN_BORDER_PERCENTAGE)
                 .Select(region => region.Id)
                 .ToHashSet();
+
+            // Zero border regions before smoothing so border background regions do not bleed saliency
+            // into foreground colors during color-space smoothing.
+            foreach (var borderId in borderRegions)
+            {
+                saliency[borderId] = 0.0;
+            }
         }
 
+        var finalSaliencyMap = saliency;
         if (enableSmoothing)
         {
             Dictionary<Rgb8, (double Saliency, int Count)> intermediateColorSaliencyMap = [];
@@ -156,44 +170,45 @@ public static class RegionalContrastSaliency
             }
 
             Dictionary<Rgb8, double> colorSaliencyMap = intermediateColorSaliencyMap.ToDictionary(entry => entry.Key, entry => entry.Value.Saliency / entry.Value.Count);
-            int nearestColorCount = colorSaliencyMap.Count / 10;
-            var unsmoothedSaliencyMap = new Dictionary<Rgb8, double>(colorSaliencyMap);
-            foreach (var bucket in unsmoothedSaliencyMap)
-            {
-                // Computes [c, D(c, c sub i)] for m nearest neighbors of bucket.Key.
-                // Note that we include our own color here. The paper says "other colors" and "other pixels"
-                // but the equations seem to explicitly include the color or pixel under evaluation and so
-                // we do so here.
-                var nearestNeighbors = unsmoothedSaliencyMap.Keys
-                    .Select(key => (color: key, distance: rgbToLabLookupTable[bucket.Key].Distance(rgbToLabLookupTable[key])))
-                    .OrderBy(neighbor => neighbor.distance).Take(nearestColorCount).ToList();
-
-                // Computes T = sum(D(c, c sub i)).
-                double T = nearestNeighbors.Sum(neighbor => neighbor.distance);
-
-                // Computes (1 / ((m - 1) * T)) * sum((T - D(c, c sub i)) * S[c sub i]).
-                colorSaliencyMap[bucket.Key] = (1.0 / ((nearestColorCount - 1) * T)) * nearestNeighbors.Sum(neighbor => (T - neighbor.distance) * unsmoothedSaliencyMap[neighbor.color]);
-            }
+            SaliencyColorSmoother.SmoothColorSaliency(colorSaliencyMap, rgbToLabLookupTable, neighborDivisor: 10);
 
             finalSaliencyMap = new Dictionary<long, double>(regions.Count);
             Parallel.ForEach(regionColorHistograms, (value) =>
             {
                 var (Segment, Histogram) = value;
-                var saliency = 0.0;
+                var regionSaliency = 0.0;
                 foreach (var bucket in Histogram)
                 {
-                    saliency += Histogram.GetDensity(bucket.Key) * colorSaliencyMap[bucket.Key];
+                    regionSaliency += Histogram.GetDensity(bucket.Key) * colorSaliencyMap[bucket.Key];
                 }
 
                 lock (finalSaliencyMap)
                 {
-                    finalSaliencyMap.Add(Segment, saliency);
+                    finalSaliencyMap.Add(Segment, regionSaliency);
                 }
             });
+
+            if (computeBorderRegions)
+            {
+                foreach (var borderId in borderRegions)
+                {
+                    finalSaliencyMap[borderId] = 0.0;
+                }
+            }
+        }
+
+        if (finalSaliencyMap.Count == 0)
+        {
+            return new SequentialMatrix<DoublePixel>(image.Size);
         }
 
         double minSaliency = finalSaliencyMap.Values.Min();
         double saliencyRange = finalSaliencyMap.Values.Max() - minSaliency;
-        return segmentationMatrix.Map<DoublePixel>(segment => computeBorderRegions && borderRegions.Contains(segment.Value) ? 0.0 : (finalSaliencyMap[segment.Value] - minSaliency) / saliencyRange);
+        if (saliencyRange <= 0.0)
+        {
+            return new SequentialMatrix<DoublePixel>(image.Size);
+        }
+
+        return segmentationMatrix.Map<DoublePixel>(segment => (finalSaliencyMap[segment.Value] - minSaliency) / saliencyRange);
     }
 }

@@ -58,47 +58,65 @@ public static class EgbiSegmentation
         where T : struct, IPixel<T>
     {
         var neighbors = new[] { new Coord(0, 1), new Coord(1, 1), new Coord(1, 0), new Coord(1, -1) };
-        List<UndirectedGraphEdge<Coord>> graphEdges = new(image.Count * 4);
-        Parallel.For(
-            0,
-            image.Height,
-            () => new List<UndirectedGraphEdge<Coord>>(image.Width * 4),
-            (y, _, localEdges) =>
+        var rowEdges = new List<UndirectedGraphEdge<Coord>>[image.Height];
+        Parallel.For(0, image.Height, y =>
+        {
+            var localEdges = new List<UndirectedGraphEdge<Coord>>(image.Width * 4);
+            for (int x = 0; x < image.Width; x++)
             {
-                for (int x = 0; x < image.Width; x++)
+                var self = new Coord(x, y);
+                T selfPixel = image[self];
+                foreach (var neighbor in neighbors)
                 {
-                    var self = new Coord(x, y);
-                    T selfPixel = image[self];
-                    foreach (var neighbor in neighbors)
+                    var other = self + neighbor;
+                    if (other.X < 0 || other.X >= image.Width || other.Y < 0 || other.Y >= image.Height)
                     {
-                        var other = self + neighbor;
-                        if (other.X < 0 || other.X >= image.Width || other.Y < 0 || other.Y >= image.Height)
-                        {
-                            continue;
-                        }
-                        T otherPixel = image[other];
-                        localEdges.Add(new UndirectedGraphEdge<Coord>
-                        {
-                            First = self,
-                            Second = other,
-                            Weight = selfPixel.Distance(otherPixel)
-                        });
+                        continue;
                     }
+                    T otherPixel = image[other];
+                    localEdges.Add(new UndirectedGraphEdge<Coord>
+                    {
+                        First = self,
+                        Second = other,
+                        Weight = selfPixel.Distance(otherPixel)
+                    });
                 }
+            }
 
-                return localEdges;
-            },
-            (localEdges) =>
-            {
-                lock (graphEdges)
-                {
-                    graphEdges.AddRange(localEdges);
-                }
-            });
+            rowEdges[y] = localEdges;
+        });
+
+        int totalEdges = 0;
+        for (int y = 0; y < image.Height; y++)
+        {
+            totalEdges += rowEdges[y].Count;
+        }
+
+        var graphEdges = new UndirectedGraphEdge<Coord>[totalEdges];
+        int offset = 0;
+        for (int y = 0; y < image.Height; y++)
+        {
+            rowEdges[y].CopyTo(graphEdges, offset);
+            offset += rowEdges[y].Count;
+        }
+
+        Array.Sort(graphEdges, static (a, b) =>
+        {
+            int cmp = a.Weight.CompareTo(b.Weight);
+            if (cmp != 0) return cmp;
+            cmp = ComputeEdgeTieBreaker(a).CompareTo(ComputeEdgeTieBreaker(b));
+            if (cmp != 0) return cmp;
+            cmp = a.First.Y.CompareTo(b.First.Y);
+            if (cmp != 0) return cmp;
+            cmp = a.First.X.CompareTo(b.First.X);
+            if (cmp != 0) return cmp;
+            cmp = a.Second.Y.CompareTo(b.Second.Y);
+            return cmp != 0 ? cmp : a.Second.X.CompareTo(b.Second.X);
+        });
 
         var disjointSet = new DisjointSet<PartitionInfo>(image, (_) => new PartitionInfo(kFactor));
         var deferredEdges = new LinkedList<UndirectedGraphEdge<Coord>>();
-        foreach (var edge in graphEdges.AsParallel().OrderBy(edge => edge.Weight))
+        foreach (var edge in graphEdges)
         {
             var firstPartition = disjointSet.GetPartition(edge.First);
             var secondPartition = disjointSet.GetPartition(edge.Second);
@@ -209,5 +227,25 @@ public static class EgbiSegmentation
                 image[pixel.X, pixel.Y] = color;
             }
         }
+    }
+
+    /// <summary>
+    /// Computes a deterministic, fixed-seed SplitMix64 tie-breaker from edge endpoint coordinates
+    /// so equal-weight edges break ties pseudo-randomly rather than sweeping in scanline order.
+    /// </summary>
+    private static ulong ComputeEdgeTieBreaker(UndirectedGraphEdge<Coord> edge)
+    {
+        ulong x1 = (uint)edge.First.X;
+        ulong y1 = (uint)edge.First.Y;
+        ulong x2 = (uint)edge.Second.X;
+        ulong y2 = (uint)edge.Second.Y;
+
+        ulong z = (x1 * 0x9E3779B97F4A7C15UL)
+                ^ (y1 * 0xBF58476D1CE4E5B9UL)
+                ^ (x2 * 0x94D049BB133111EBUL)
+                ^ (y2 * 0xD6E8FEB86659FD93UL);
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+        return z ^ (z >> 31);
     }
 }

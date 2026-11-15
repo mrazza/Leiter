@@ -1,0 +1,62 @@
+namespace Leiter.Algorithms.Saliency;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Leiter.Pixels;
+
+/// <summary>
+/// Shared color-space saliency smoothing helper for contrast-based saliency algorithms.
+/// </summary>
+internal static class SaliencyColorSmoother
+{
+    /// <summary>
+    /// Smooths per-color saliency values across nearest neighbors in CIELAB space.
+    /// </summary>
+    /// <param name="colorSaliencyMap">The per-color saliency map to smooth in place.</param>
+    /// <param name="rgbToLabLookupTable">Precomputed Lab colors for keys in <paramref name="colorSaliencyMap"/>.</param>
+    /// <param name="neighborDivisor">Divisor applied to the active palette size to select the neighbor count.</param>
+    public static void SmoothColorSaliency(
+        Dictionary<Rgb8, double> colorSaliencyMap,
+        IReadOnlyDictionary<Rgb8, Lab32> rgbToLabLookupTable,
+        int neighborDivisor)
+    {
+        if (neighborDivisor <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(neighborDivisor), "Neighbor divisor must be positive.");
+        }
+
+        int nearestColorCount = colorSaliencyMap.Count / neighborDivisor;
+        if (nearestColorCount <= 1)
+        {
+            return;
+        }
+
+        var unsmoothed = new Dictionary<Rgb8, double>(colorSaliencyMap);
+        foreach (var bucket in unsmoothed)
+        {
+            // Computes [c, D(c, c sub i)] for m nearest neighbors of bucket.Key.
+            // Note that we include our own color here. The paper says "other colors" and "other pixels"
+            // but the equations seem to explicitly include the color or pixel under evaluation and so
+            // we do so here.
+            Lab32 bucketLab = rgbToLabLookupTable[bucket.Key];
+            var nearestNeighbors = unsmoothed.Keys
+                .Select(key => (color: key, distance: bucketLab.Distance(rgbToLabLookupTable[key])))
+                .OrderBy(neighbor => neighbor.distance)
+                .ThenBy(neighbor => neighbor.color.GetHashCode())
+                .Take(nearestColorCount)
+                .ToList();
+
+            // Computes T = sum(D(c, c sub i)).
+            double T = nearestNeighbors.Sum(n => n.distance);
+            if (T <= 0.0)
+            {
+                continue;
+            }
+
+            // Computes (1 / ((m - 1) * T)) * sum((T - D(c, c sub i)) * S[c sub i]).
+            colorSaliencyMap[bucket.Key] = (1.0 / ((nearestColorCount - 1) * T)) *
+                nearestNeighbors.Sum(n => (T - n.distance) * unsmoothed[n.color]);
+        }
+    }
+}
