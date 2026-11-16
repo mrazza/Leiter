@@ -1,42 +1,16 @@
+namespace Leiter.Tests.Platform.Windows;
 
-using Xunit;
-using Leiter.Platform.Windows;
-using Leiter.Core;
-using Leiter.Pixels;
 using System;
 using System.Runtime.Versioning;
-
-namespace Leiter.Tests.Platform;
+using Leiter.Platform.Windows;
+using Xunit;
 
 /// <summary>
-/// Provides unit tests for <see cref="Leiter.Platform.Windows.ColorExtensions" /> and <see cref="Leiter.Platform.Windows.BitmapExtensions" />.
+/// Provides unit tests for <see cref="Leiter.Platform.Windows.BitmapExtensions" />.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public class PlatformWindowsTests
+public class BitmapExtensionsTests
 {
-    [Fact]
-    public void ColorExtensions_ShouldConvertCorrectly()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-
-        // We use reflection/dynamic or wrapper to avoid loading types directly, but simple IsWindows check usually works if type load is deferred.
-        RunColorExtensionsTest();
-    }
-
-    private void RunColorExtensionsTest()
-    {
-        var original = System.Drawing.Color.FromArgb(10, 20, 30);
-        var leiterPixel = original.ToRgb8();
-        Assert.Equal(10, leiterPixel.R);
-        Assert.Equal(20, leiterPixel.G);
-        Assert.Equal(30, leiterPixel.B);
-
-        var convertedBack = leiterPixel.ToColor();
-        Assert.Equal(original.R, convertedBack.R);
-        Assert.Equal(original.G, convertedBack.G);
-        Assert.Equal(original.B, convertedBack.B);
-    }
-
     [Fact]
     public void BitmapExtensions_ShouldConvertCorrectly()
     {

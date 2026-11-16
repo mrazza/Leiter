@@ -1,38 +1,16 @@
+namespace Leiter.Tests.Algorithms;
 
-using Xunit;
+using System;
+using Leiter.Algorithms;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
-using Leiter.Algorithms;
-using System;
-
-namespace Leiter.Tests.Pixels;
+using Xunit;
 
 /// <summary>
-/// Provides unit tests for <see cref="RgbColorSpaceConversions" /> and <see cref="Leiter.Algorithms.PixelConversion" />.
+/// Provides unit tests for <see cref="PixelConversion"/>.
 /// </summary>
-public class ColorSpaceTests
+public class PixelConversionTests
 {
-    [Fact]
-    public void SRgbToLinearRgb_AndBack_ShouldBeCloseToIdentity()
-    {
-        var original = new Rgb64(0.5, 0.2, 0.8);
-        var linear = RgbColorSpaceConversions.SRgbToLinearRgb(original);
-        var srgb = RgbColorSpaceConversions.LinearRgbToSRgb(linear);
-
-        Assert.Equal(original.R, srgb.R, 5);
-        Assert.Equal(original.G, srgb.G, 5);
-        Assert.Equal(original.B, srgb.B, 5);
-
-        // Test small values (<= 0.04045 and <= 0.0031308)
-        var smallOriginal = new Rgb64(0.02, 0.01, 0.03);
-        var smallLinear = RgbColorSpaceConversions.SRgbToLinearRgb(smallOriginal);
-        var smallSrgb = RgbColorSpaceConversions.LinearRgbToSRgb(smallLinear);
-
-        Assert.Equal(smallOriginal.R, smallSrgb.R, 5);
-        Assert.Equal(smallOriginal.G, smallSrgb.G, 5);
-        Assert.Equal(smallOriginal.B, smallSrgb.B, 5);
-    }
-
     [Fact]
     public void PixelConversion_Rgb8_ToRgb64_ToRgb8_ShouldWork()
     {
@@ -170,40 +148,5 @@ public class ColorSpaceTests
 
         Assert.Throws<NotImplementedException>(() => sampleXyz.ToLab32((Illuminant)999));
         Assert.Throws<NotImplementedException>(() => labD65.ToXyz32((Illuminant)999));
-    }
-
-    [Fact]
-    public void ColorMetrics_HueIntensitySaturationAndChroma_ShouldComputeCorrectly()
-    {
-        Assert.Equal(0.0, new Rgb8(255, 0, 0).GetHueDegrees(), 6);
-        Assert.Equal(60.0, new Rgb8(255, 255, 0).GetHueDegrees(), 6);
-        Assert.Equal(120.0, new Rgb8(0, 255, 0).GetHueDegrees(), 6);
-        Assert.Equal(180.0, new Rgb8(0, 255, 255).GetHueDegrees(), 6);
-        Assert.Equal(240.0, new Rgb8(0, 0, 255).GetHueDegrees(), 6);
-        Assert.Equal(300.0, new Rgb8(255, 0, 255).GetHueDegrees(), 6);
-        Assert.Equal(0.0, new Rgb8(128, 128, 128).GetHueDegrees(), 6);
-
-        Assert.Equal(1.0 / 3.0, new Rgb8(255, 0, 0).GetIntensity(), 6);
-        Assert.Equal(1.0, new Rgb8(255, 0, 0).GetSaturation(), 6);
-        Assert.Equal(0.0, new Rgb8(128, 128, 128).GetSaturation(), 6);
-        Assert.Equal(0.0, new Rgb64(0.0, 0.0, 0.0).GetSaturation(), 6);
-        Assert.Equal(0.0, new Rgb64(1.0, 0.0, 1e-17).GetHueDegrees(), 6);
-
-        var warm = new Rgb64(0.6, 0.3, 0.0);
-        Assert.Equal(30.0, warm.GetHueDegrees(), 6);
-        Assert.Equal(0.3, warm.GetIntensity(), 6);
-        Assert.Equal(1.0, warm.GetSaturation(), 6);
-
-        var lab = new Lab32(50f, 3f, 4f);
-        Assert.Equal(5.0, lab.GetChroma(), 6);
-        Assert.Equal(0.5, lab.GetNormalizedLightness(), 6);
-        Assert.Equal(Math.Atan2(4.0, 3.0) * (180.0 / Math.PI), lab.GetHueDegrees(), 6);
-        Assert.Equal(135.0, new Lab32(50f, -5f, 5f).GetHueDegrees(), 6);
-        Assert.Equal(270.0, new Lab32(50f, 0f, -5f).GetHueDegrees(), 6);
-        Assert.Equal(0.0, new Lab32(50f, 0f, 0f).GetHueDegrees(), 6);
-
-        Assert.Equal(15.0, ColorMetrics.HueDifferenceDegrees(355.0, 10.0), 6);
-        Assert.Equal(15.0, ColorMetrics.HueDifferenceDegrees(10.0, 355.0), 6);
-        Assert.Equal(180.0, ColorMetrics.HueDifferenceDegrees(0.0, 180.0), 6);
     }
 }

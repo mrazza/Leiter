@@ -1,82 +1,20 @@
-using Xunit;
-using Leiter.Core;
-using Leiter.Pixels;
-using Leiter.Algorithms;
-using Leiter.Algorithms.Segmentation;
-using Leiter.Algorithms.Saliency;
-using System;
-using System.Linq;
-
 namespace Leiter.Tests.Algorithms.Saliency;
 
+using System;
+using System.Linq;
+using Leiter.Algorithms.Saliency;
+using Leiter.Algorithms.Segmentation;
+using Leiter.Core;
+using Leiter.Pixels;
+using Xunit;
+
 /// <summary>
-/// Provides unit tests for <see cref="GlobalContrastSaliency" /> and <see cref="RegionalContrastSaliency" />.
+/// Provides unit tests for <see cref="RegionalContrastSaliency"/>.
 /// </summary>
-public class SaliencyTests
+public class RegionalContrastSaliencyTests
 {
     [Fact]
-    public void GlobalContrastSaliency_ShouldComputeCorrectly()
-    {
-        // 20x20 image with 25+ unique quantized colors to satisfy the smoothing logic
-        var img = new SequentialMatrix<Rgb8>(20, 20);
-        for (int y = 0; y < 20; y++)
-        {
-            for (int x = 0; x < 20; x++)
-            {
-                // Each grid cell has a different color to ensure we have many unique colors
-                byte r = (byte)(x * 12);
-                byte g = (byte)(y * 12);
-                byte b = (byte)((x + y) * 6);
-                img[x, y] = new Rgb8(r, g, b);
-            }
-        }
-
-        // Compute saliency (both with and without color smoothing)
-        var saliencyWithSmoothing = GlobalContrastSaliency.ComputeSaliency(img, enableColorSpaceSmoothing: true);
-        var saliencyWithoutSmoothing = GlobalContrastSaliency.ComputeSaliency(img, enableColorSpaceSmoothing: false);
-
-        Assert.Equal(20, saliencyWithSmoothing.Width);
-        Assert.Equal(20, saliencyWithSmoothing.Height);
-
-        // Min and max should be normalized to 0.0 and 1.0
-        var minS = saliencyWithSmoothing.Min(p => p.Value);
-        var maxS = saliencyWithSmoothing.Max(p => p.Value);
-        Assert.Equal(0.0, minS, 4);
-        Assert.Equal(1.0, maxS, 4);
-
-        // Verify that different areas have different saliency (i.e. we are not getting flat zeros)
-        Assert.Contains(saliencyWithSmoothing, p => p.Value > 0.0 && p.Value < 1.0);
-        Assert.Contains(saliencyWithoutSmoothing, p => p.Value > 0.0 && p.Value < 1.0);
-    }
-
-    /// <summary>
-    /// Verifies that global contrast saliency of a contrasting object is correctly computed.
-    /// </summary>
-    [Fact]
-    public void GlobalContrastSaliency_ContrastingObject_ShouldBeMostSalient()
-    {
-        // 10x10 image with a 4x4 red square in the center (16 pixels, 16%) and black background
-        var img = new SequentialMatrix<Rgb8>(10, 10);
-        img.SetAll(new Rgb8(0, 0, 0));
-        for (int y = 3; y <= 6; y++)
-        {
-            for (int x = 3; x <= 6; x++)
-            {
-                img[x, y] = new Rgb8(255, 0, 0);
-            }
-        }
-
-        var saliency = GlobalContrastSaliency.ComputeSaliency(img, enableColorSpaceSmoothing: false);
-
-        // The contrasting red region should have highest saliency (1.0)
-        Assert.Equal(1.0, saliency[5, 5].Value, 4);
-
-        // The black background should have the lowest saliency (0.0)
-        Assert.Equal(0.0, saliency[0, 0].Value, 4);
-    }
-
-    [Fact]
-    public void RegionalContrastSaliency_ShouldComputeCorrectly()
+    public void ComputeSaliency_MultiColorImage_ShouldComputeNormalizedRegionalSaliency()
     {
         // 20x20 image with 25+ unique quantized colors to satisfy the smoothing logic
         var img = new SequentialMatrix<Rgb8>(20, 20);
@@ -96,7 +34,7 @@ public class SaliencyTests
 
         // Compute regional saliency
         var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: true);
-        
+
         Assert.Equal(20, saliency.Width);
         Assert.Equal(20, saliency.Height);
 
@@ -119,7 +57,7 @@ public class SaliencyTests
     /// Verifies that regional contrast saliency of a contrasting object is correctly computed.
     /// </summary>
     [Fact]
-    public void RegionalContrastSaliency_ContrastingObject_ShouldBeMostSalient()
+    public void ComputeSaliency_ContrastingObject_ShouldBeMostSalient()
     {
         // 12x12 image with a 4x4 red square in the center (16 pixels) and black background
         var img = new SequentialMatrix<Rgb8>(12, 12);
@@ -146,36 +84,10 @@ public class SaliencyTests
     }
 
     /// <summary>
-    /// Verifies that global contrast saliency of a solid-color image returns all zeros without NaN.
-    /// </summary>
-    [Fact]
-    public void GlobalContrastSaliency_SolidColorImage_ShouldReturnZerosWithoutNaN()
-    {
-        var img = new SequentialMatrix<Rgb8>(10, 10);
-        img.SetAll(new Rgb8(100, 150, 200));
-
-        var withSmoothing = GlobalContrastSaliency.ComputeSaliency(img, enableColorSpaceSmoothing: true);
-        var withoutSmoothing = GlobalContrastSaliency.ComputeSaliency(img, enableColorSpaceSmoothing: false);
-
-        Assert.Equal(10, withSmoothing.Width);
-        Assert.Equal(10, withSmoothing.Height);
-        Assert.All(withSmoothing, p =>
-        {
-            Assert.False(double.IsNaN(p.Value));
-            Assert.Equal(0.0, p.Value, 4);
-        });
-        Assert.All(withoutSmoothing, p =>
-        {
-            Assert.False(double.IsNaN(p.Value));
-            Assert.Equal(0.0, p.Value, 4);
-        });
-    }
-
-    /// <summary>
     /// Verifies that regional contrast saliency of a solid-color image returns all zeros without NaN.
     /// </summary>
     [Fact]
-    public void RegionalContrastSaliency_SolidColorImage_ShouldReturnZerosWithoutNaN()
+    public void ComputeSaliency_SolidColorImage_ShouldReturnZerosWithoutNaN()
     {
         var img = new SequentialMatrix<Rgb8>(10, 10);
         img.SetAll(new Rgb8(100, 150, 200));
@@ -200,33 +112,10 @@ public class SaliencyTests
     }
 
     /// <summary>
-    /// Verifies that global contrast saliency on a 2-color image with smoothing enabled does not produce NaN.
-    /// </summary>
-    [Fact]
-    public void GlobalContrastSaliency_ContrastingObjectWithSmoothing_ShouldNotProduceNaN()
-    {
-        var img = new SequentialMatrix<Rgb8>(10, 10);
-        img.SetAll(new Rgb8(0, 0, 0));
-        for (int y = 3; y <= 6; y++)
-        {
-            for (int x = 3; x <= 6; x++)
-            {
-                img[x, y] = new Rgb8(255, 0, 0);
-            }
-        }
-
-        var saliency = GlobalContrastSaliency.ComputeSaliency(img, enableColorSpaceSmoothing: true);
-
-        Assert.All(saliency, p => Assert.False(double.IsNaN(p.Value)));
-        Assert.Equal(1.0, saliency[5, 5].Value, 4);
-        Assert.Equal(0.0, saliency[0, 0].Value, 4);
-    }
-
-    /// <summary>
     /// Verifies that regional contrast saliency on a 2-color image with smoothing enabled does not produce NaN.
     /// </summary>
     [Fact]
-    public void RegionalContrastSaliency_ContrastingObjectWithSmoothing_ShouldNotProduceNaN()
+    public void ComputeSaliency_ContrastingObjectWithSmoothing_ShouldNotProduceNaN()
     {
         var img = new SequentialMatrix<Rgb8>(12, 12);
         img.SetAll(new Rgb8(0, 0, 0));
@@ -256,7 +145,7 @@ public class SaliencyTests
     /// the surviving interior salient region to 1.0.
     /// </summary>
     [Fact]
-    public void RegionalContrastSaliency_BorderSuppression_ShouldZeroBorderAndNormalizeInteriorToOne()
+    public void ComputeSaliency_BorderSuppression_ShouldZeroBorderAndNormalizeInteriorToOne()
     {
         // 40x40 image so 2.5% border width/height covers the 1-pixel outer ring (x=0, x=39, y=0, y=39).
         var img = new SequentialMatrix<Rgb8>(40, 40);
@@ -312,7 +201,7 @@ public class SaliencyTests
     /// Verifies border suppression and normalization when active color-space smoothing runs (20+ palette colors).
     /// </summary>
     [Fact]
-    public void RegionalContrastSaliency_BorderSuppressionWithActiveSmoothing_ShouldZeroBorderAndNormalizeInteriorToOne()
+    public void ComputeSaliency_BorderSuppressionWithActiveSmoothing_ShouldZeroBorderAndNormalizeInteriorToOne()
     {
         // 40x40 image split into a 5x5 grid of 8x8 blocks (25 distinct colors, 64 pixels each).
         var img = new SequentialMatrix<Rgb8>(40, 40);
@@ -367,7 +256,7 @@ public class SaliencyTests
     /// Verifies that regional contrast saliency truncates rare (&lt;5%) noise colors cleanly without NaN.
     /// </summary>
     [Fact]
-    public void RegionalContrastSaliency_RareNoisePixels_ShouldTruncatePaletteCleanly()
+    public void ComputeSaliency_RareNoisePixels_ShouldTruncatePaletteCleanly()
     {
         // 20x20 image (400 pixels): 300 black (75%), 90 red (22.5%), and 10 rare noise colors (2.5% < 5%).
         var img = new SequentialMatrix<Rgb8>(20, 20);
@@ -421,44 +310,13 @@ public class SaliencyTests
     }
 
     [Fact]
-    public void Saliency_EmptyImages_And_SmootherEdgeCases_ShouldBeHandledCleanly()
+    public void ComputeSaliency_EmptyImage_ShouldReturnEmptyMatrix()
     {
         var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
-        Matrix<DoublePixel> globalEmpty = GlobalContrastSaliency.ComputeSaliency(emptyImg);
-        Assert.Empty(globalEmpty);
-        Assert.Equal(0, globalEmpty.Width);
-        Assert.Equal(0, globalEmpty.Height);
-
         var dummySeg = EgbiSegmentation.Segment(new SequentialMatrix<Rgb8>(1, 1));
         Matrix<DoublePixel> regionalEmpty = RegionalContrastSaliency.ComputeSaliency(emptyImg, dummySeg);
         Assert.Empty(regionalEmpty);
         Assert.Equal(0, regionalEmpty.Width);
         Assert.Equal(0, regionalEmpty.Height);
-
-        var map = new Dictionary<Rgb8, double>
-        {
-            [new Rgb8(0, 0, 0)] = 0.2,
-            [new Rgb8(1, 0, 0)] = 0.4,
-            [new Rgb8(255, 0, 0)] = 0.8,
-            [new Rgb8(0, 255, 0)] = 0.6
-        };
-        var labLookup = new Dictionary<Rgb8, Lab32>
-        {
-            [new Rgb8(0, 0, 0)] = new Lab32(0f, 0f, 0f),
-            [new Rgb8(1, 0, 0)] = new Lab32(0f, 0f, 0f),
-            [new Rgb8(255, 0, 0)] = new Lab32(53f, 80f, 67f),
-            [new Rgb8(0, 255, 0)] = new Lab32(87f, -86f, 83f)
-        };
-
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            SaliencyColorSmoother.SmoothColorSaliency(map, labLookup, neighborDivisor: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            SaliencyColorSmoother.SmoothColorSaliency(map, labLookup, neighborDivisor: -2));
-
-        // For neighborDivisor: 2 -> nearestColorCount = 2; the two zero-Lab keys have T == 0 and remain unchanged.
-        SaliencyColorSmoother.SmoothColorSaliency(map, labLookup, neighborDivisor: 2);
-        Assert.Equal(0.2, map[new Rgb8(0, 0, 0)], 6);
-        Assert.Equal(0.4, map[new Rgb8(1, 0, 0)], 6);
-        Assert.All(map.Values, value => Assert.False(double.IsNaN(value)));
     }
 }

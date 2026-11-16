@@ -1,4 +1,6 @@
-namespace Leiter.Algorithms.Segmentation;
+namespace Leiter.Algorithms.Segmentation.Internal;
+
+using Leiter.Algorithms.Segmentation;
 
 /// <summary>
 /// Full-covariance 3D Gaussian Mixture Model in RGB color space with deterministic

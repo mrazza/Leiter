@@ -1,5 +1,6 @@
 namespace Leiter.Tests.Algorithms.Color;
 
+using System;
 using Leiter.Algorithms.Color;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -7,7 +8,7 @@ using Leiter.Pixels.ColorSpaces;
 using Xunit;
 
 /// <summary>
-/// Provides unit tests for <see cref="LabColorStatistics"/>, <see cref="WatercolorPalettes"/>, and <see cref="ColorTransfer"/>.
+/// Provides unit tests for <see cref="ColorTransfer"/>.
 /// </summary>
 public class ColorTransferTests
 {
@@ -31,6 +32,8 @@ public class ColorTransferTests
 
         LabColorStatistics emptyStats = ColorTransfer.ComputeStatistics(new SequentialMatrix<Lab32>(0, 0));
         Assert.Equal(default, emptyStats);
+
+        Assert.Equal(default, ColorTransfer.ComputeStatistics(new SequentialMatrix<Rgb8>(0, 0)));
     }
 
     [Fact]
@@ -40,7 +43,9 @@ public class ColorTransferTests
         for (int y = 0; y < source.Height; y++)
         {
             for (int x = 0; x < source.Width; x++)
+            {
                 source[x, y] = new Lab32(30f + (x * 10f) + (y * 2f), -12f + (x * 6f), -8f + (y * 7f));
+            }
         }
 
         var target = new LabColorStatistics(72.5, -5.0, 14.0, 12.0, 6.5, 9.0);
@@ -56,7 +61,9 @@ public class ColorTransferTests
 
         Matrix<Lab32> unchanged = ColorTransfer.Transfer(source, target, strength: 0.0);
         for (int i = 0; i < source.Count; i++)
+        {
             Assert.Equal(source[i], unchanged[i]);
+        }
 
         Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(source, target, strength: -0.1));
         Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(source, target, strength: 1.1));
@@ -67,8 +74,12 @@ public class ColorTransferTests
     {
         var gray = new SequentialMatrix<Lab32>(3, 2);
         for (int y = 0; y < gray.Height; y++)
+        {
             for (int x = 0; x < gray.Width; x++)
+            {
                 gray[x, y] = new Lab32(40f + (x * 10f), 0f, 0f);
+            }
+        }
 
         var target = new LabColorStatistics(70.0, -8.5, 16.25, 15.0, 7.0, 12.0);
         Matrix<Lab32> transferred = ColorTransfer.Transfer(gray, target);
@@ -95,7 +106,9 @@ public class ColorTransferTests
             new Rgb8(76, 102, 128)
         ];
         for (int i = 0; i < coastalImg.Count; i++)
+        {
             coastalImg[i] = coastalSamples[i % coastalSamples.Length];
+        }
 
         var (coastalOut, coastalSelected) = ColorTransfer.TransferToClosestPalette(coastalImg);
         Assert.Equal(WatercolorPalettes.CoastalCerulean, coastalSelected);
@@ -110,7 +123,9 @@ public class ColorTransferTests
             new Rgb8(76, 98, 74)
         ];
         for (int i = 0; i < botanicalImg.Count; i++)
+        {
             botanicalImg[i] = botanicalSamples[i % botanicalSamples.Length];
+        }
 
         var (botanicalOut, botanicalSelected) = ColorTransfer.TransferToClosestPalette(botanicalImg);
         Assert.Equal(WatercolorPalettes.BotanicalFoliage, botanicalSelected);
@@ -127,23 +142,9 @@ public class ColorTransferTests
     }
 
     [Fact]
-    public void ColorTransfer_And_Statistics_EdgeCases_AndOverloads_ShouldWork()
+    public void Transfer_OverloadsAndEdgeCases_ShouldWork()
     {
         var statA = new LabColorStatistics(10, 0, 0, 5, 0, 0);
-        var statB = new LabColorStatistics(13, 4, 0, 5, 0, 0);
-        Assert.Equal(5.0, statA.FeatureDistance(statB), 10);
-
-        var negativeWeight = new LabColorStatistics(1, 1, 1, -0.5, 1, 1);
-        var nanWeight = new LabColorStatistics(double.NaN, 1, 1, 1, 1, 1);
-        Assert.Throws<ArgumentOutOfRangeException>(() => statA.FeatureDistance(statB, negativeWeight));
-        Assert.Throws<ArgumentOutOfRangeException>(() => statA.FeatureDistance(statB, nanWeight));
-
-        var d65Palette = new WatercolorPalette("Custom D65", new(65, 2, 8, 14, 5, 6), Illuminant.D65);
-        Assert.Equal("Custom D65", d65Palette.Name);
-        Assert.Equal(65, d65Palette.Statistics.MeanL);
-        Assert.Equal(Illuminant.D65, d65Palette.Illuminant);
-
-        Assert.Equal(default, ColorTransfer.ComputeStatistics(new SequentialMatrix<Rgb8>(0, 0)));
 
         Assert.Throws<ArgumentNullException>(() =>
             ColorTransfer.SelectClosestPalette(LabColorStatistics.UnitWeights, new WatercolorPalette[] { null! }));
@@ -153,6 +154,8 @@ public class ColorTransferTests
         var customWeights = new LabColorStatistics(2.0, 1.0, 1.0, 0.5, 0.5, 0.5);
         WatercolorPalette weightedMatch = ColorTransfer.SelectClosestPalette(statA, featureWeights: customWeights);
         Assert.NotNull(weightedMatch);
+
+        var d65Palette = new WatercolorPalette("Custom D65", new(65, 2, 8, 14, 5, 6), Illuminant.D65);
 
         var emptyLab = new SequentialMatrix<Lab32>(0, 0);
         Assert.Empty(ColorTransfer.Transfer(emptyLab, statA));
