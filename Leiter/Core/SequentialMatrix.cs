@@ -5,7 +5,7 @@ namespace Leiter.Core;
 /// </summary>
 /// <typeparam name="T">The type of elements stored in the matrix.</typeparam>
 public class SequentialMatrix<T> : Matrix<T>
-    where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+    where T : struct
 {
     private readonly T[] data;
 
@@ -47,13 +47,24 @@ public class SequentialMatrix<T> : Matrix<T>
     /// <param name="height">The number of rows in the matrix.</param>
     /// <param name="data">The contiguous row-major data array to take direct ownership of.</param>
     /// <exception cref="ArgumentException">The length of <paramref name="data"/> does not match <paramref name="width"/> * <paramref name="height"/>.</exception>
-    private SequentialMatrix(int width, int height, T[] data)
+    private protected SequentialMatrix(int width, int height, T[] data)
         : base(width, height)
     {
         if (data.Length != width * height)
             throw new ArgumentException("Data length does not match matrix size.");
 
         this.data = data;
+    }
+
+    /// <summary>
+    /// Creates a shallow copy of the underlying contiguous element array.
+    /// </summary>
+    /// <returns>A new array containing the copied matrix elements.</returns>
+    private protected T[] CloneData()
+    {
+        var clonedData = new T[data.Length];
+        Array.Copy(data, clonedData, data.Length);
+        return clonedData;
     }
 
     /// <inheritdoc/>
@@ -99,36 +110,8 @@ public class SequentialMatrix<T> : Matrix<T>
     }
 
     /// <inheritdoc/>
-    public override Matrix<T> Multiply(IReadOnlyMatrix<T> right)
-    {
-        if (Width != right.Height)
-            throw new ArgumentException("Right hand side matrix must have height equal to width of the left hand side matrix.");
-
-        // TODO: Improve this. This simple implementation is O(n^3).
-        var result = new SequentialMatrix<T>(right.Width, Height);
-        for (int y = 0; y < Height; y++)
-        {
-            for (int x = 0; x < right.Width; x++)
-            {
-                T sum = T.Zero;
-                for (int k = 0; k < Width; k++)
-                {
-                    sum = sum.Add(this[k, y].Multiply(right[x, k]));
-                }
-                result[x, y] = sum;
-            }
-        }
-
-        return result;
-    }
-
-    /// <inheritdoc/>
-    public override Matrix<T> Clone()
-    {
-        var clonedData = new T[data.Length];
-        Array.Copy(data, clonedData, data.Length);
-        return new SequentialMatrix<T>(Width, Height, clonedData);
-    }
+    public override SequentialMatrix<T> Clone() =>
+        new(Width, Height, CloneData());
 
     /// <inheritdoc/>
     public override IEnumerator<T> GetEnumerator() =>

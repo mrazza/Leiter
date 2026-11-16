@@ -31,16 +31,16 @@ public static class JumpFlooding
     ];
 
     /// <summary>
-    /// Extracts all foreground coordinates in a binary mask that border at least one background pixel.
+    /// Extracts all foreground (<see langword="true"/>) coordinates in a boolean mask that border at least one background pixel.
     /// </summary>
-    /// <param name="binaryMask">The binary mask (<c>0</c> = background, non-zero = foreground).</param>
+    /// <param name="binaryMask">The boolean mask (<see langword="false"/> = background, <see langword="true"/> = foreground).</param>
     /// <param name="eightConnectedBackground">
     /// If <see langword="true"/>, checks all 8 neighbors for background pixels; otherwise checks only the 4 cardinal neighbors.
     /// </param>
     /// <returns>The list of foreground boundary coordinates in row-major order.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="binaryMask"/> is <see langword="null"/>.</exception>
     public static IReadOnlyList<Coord> ExtractBoundarySeeds(
-        IReadOnlyMatrix<LongPixel> binaryMask,
+        IReadOnlyMatrix<bool> binaryMask,
         bool eightConnectedBackground = true)
     {
         ArgumentNullException.ThrowIfNull(binaryMask);
@@ -57,14 +57,14 @@ public static class JumpFlooding
         {
             for (int x = 0; x < width; x++)
             {
-                if (binaryMask[x, y].Value == 0)
+                if (!binaryMask[x, y])
                     continue;
 
                 foreach (Coord offset in offsets)
                 {
                     int nx = x + offset.X;
                     int ny = y + offset.Y;
-                    if ((uint)nx < (uint)width && (uint)ny < (uint)height && binaryMask[nx, ny].Value == 0)
+                    if ((uint)nx < (uint)width && (uint)ny < (uint)height && !binaryMask[nx, ny])
                     {
                         seeds.Add(new Coord(x, y));
                         break;
@@ -77,24 +77,23 @@ public static class JumpFlooding
     }
 
     /// <summary>
-    /// Computes the row-major linear index of the nearest seed pixel for every cell in a grid using <c>1+JFA</c>.
+    /// Computes the nearest seed coordinate for every cell in a grid using <c>1+JFA</c>.
     /// </summary>
     /// <param name="size">The dimensions of the grid.</param>
     /// <param name="seeds">The seed coordinates (out-of-bounds coordinates are ignored).</param>
     /// <returns>
-    /// A matrix storing the nearest seed linear index (<c>y * Width + x</c>) per pixel,
-    /// or <c>-1</c> everywhere if no valid in-bounds seeds are supplied.
+    /// A matrix storing each cell's <see cref="NearestSeed"/>, or <see cref="NearestSeed.None"/> everywhere if no valid in-bounds seeds are supplied.
     /// </returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="seeds"/> is <see langword="null"/>.</exception>
-    public static Matrix<LongPixel> ComputeNearestSeedIndices(Size size, IEnumerable<Coord> seeds)
+    public static Matrix<NearestSeed> ComputeNearestSeeds(Size size, IEnumerable<Coord> seeds)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
         ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
         ArgumentNullException.ThrowIfNull(seeds);
 
         if (size.Width == 0 || size.Height == 0)
-            return new SequentialMatrix<LongPixel>(size);
+            return new SequentialMatrix<NearestSeed>(size);
 
         var seedGrid = new int[size.Width * size.Height];
         Array.Fill(seedGrid, -1);
@@ -114,20 +113,19 @@ public static class JumpFlooding
     }
 
     /// <summary>
-    /// Computes the row-major linear index of the nearest non-zero mask pixel for every cell using <c>1+JFA</c>.
+    /// Computes the nearest <see langword="true"/> seed coordinate in <paramref name="seedMask"/> for every cell using <c>1+JFA</c>.
     /// </summary>
-    /// <param name="seedMask">The mask whose non-zero entries define seed pixels.</param>
+    /// <param name="seedMask">The boolean mask whose <see langword="true"/> entries define seed pixels.</param>
     /// <returns>
-    /// A matrix storing the nearest seed linear index (<c>y * Width + x</c>) per pixel,
-    /// or <c>-1</c> everywhere if <paramref name="seedMask"/> contains no non-zero entries.
+    /// A matrix storing each cell's <see cref="NearestSeed"/>, or <see cref="NearestSeed.None"/> everywhere if <paramref name="seedMask"/> contains no <see langword="true"/> entries.
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="seedMask"/> is <see langword="null"/>.</exception>
-    public static Matrix<LongPixel> ComputeNearestSeedIndices(IReadOnlyMatrix<LongPixel> seedMask)
+    public static Matrix<NearestSeed> ComputeNearestSeeds(IReadOnlyMatrix<bool> seedMask)
     {
         ArgumentNullException.ThrowIfNull(seedMask);
 
         if (seedMask.Count == 0)
-            return new SequentialMatrix<LongPixel>(seedMask.Size);
+            return new SequentialMatrix<NearestSeed>(seedMask.Size);
 
         int width = seedMask.Width;
         int height = seedMask.Height;
@@ -140,7 +138,7 @@ public static class JumpFlooding
             for (int x = 0; x < width; x++)
             {
                 int index = rowBase + x;
-                if (seedMask[x, y].Value != 0)
+                if (seedMask[x, y])
                 {
                     seedGrid[index] = index;
                     hasAnySeed = true;
@@ -162,25 +160,25 @@ public static class JumpFlooding
     /// <param name="seeds">The seed coordinates.</param>
     /// <returns>A matrix of Euclidean distances in pixels (<see cref="double.PositiveInfinity"/> if no seeds exist).</returns>
     public static Matrix<DoublePixel> ComputeDistanceTransform(Size size, IEnumerable<Coord> seeds) =>
-        ComputeDistancesFromSeedIndices(ComputeNearestSeedIndices(size, seeds));
+        ComputeDistancesFromNearestSeeds(ComputeNearestSeeds(size, seeds));
 
     /// <summary>
-    /// Computes the Euclidean distance to the nearest non-zero pixel in <paramref name="seedMask"/>.
+    /// Computes the Euclidean distance to the nearest <see langword="true"/> pixel in <paramref name="seedMask"/>.
     /// </summary>
-    /// <param name="seedMask">The mask whose non-zero pixels act as seeds.</param>
+    /// <param name="seedMask">The boolean mask whose <see langword="true"/> pixels act as seeds.</param>
     /// <returns>A matrix of Euclidean distances in pixels (<see cref="double.PositiveInfinity"/> if no seeds exist).</returns>
-    public static Matrix<DoublePixel> ComputeDistanceTransform(IReadOnlyMatrix<LongPixel> seedMask) =>
-        ComputeDistancesFromSeedIndices(ComputeNearestSeedIndices(seedMask));
+    public static Matrix<DoublePixel> ComputeDistanceTransform(IReadOnlyMatrix<bool> seedMask) =>
+        ComputeDistancesFromNearestSeeds(ComputeNearestSeeds(seedMask));
 
-    private static Matrix<LongPixel> RunJumpFlooding(Size size, int[] currentSeeds, bool hasAnySeed)
+    private static Matrix<NearestSeed> RunJumpFlooding(Size size, int[] currentSeeds, bool hasAnySeed)
     {
         int width = size.Width;
         int height = size.Height;
-        var result = new SequentialMatrix<LongPixel>(width, height);
+        var result = new SequentialMatrix<NearestSeed>(width, height);
 
         if (!hasAnySeed)
         {
-            result.SetAll(-1L);
+            result.SetAll(NearestSeed.None);
             return result;
         }
 
@@ -200,8 +198,15 @@ public static class JumpFlooding
             }
         }
 
-        for (int i = 0; i < currentSeeds.Length; i++)
-            result[i] = currentSeeds[i];
+        for (int y = 0; y < height; y++)
+        {
+            int rowBase = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                int seedIndex = currentSeeds[rowBase + x];
+                result[x, y] = NearestSeed.FromCoord(new Coord(seedIndex % width, seedIndex / width));
+            }
+        }
 
         return result;
     }
@@ -254,30 +259,23 @@ public static class JumpFlooding
         });
     }
 
-    private static Matrix<DoublePixel> ComputeDistancesFromSeedIndices(Matrix<LongPixel> seedIndices)
+    private static Matrix<DoublePixel> ComputeDistancesFromNearestSeeds(Matrix<NearestSeed> nearestSeeds)
     {
-        int width = seedIndices.Width;
-        int height = seedIndices.Height;
+        int width = nearestSeeds.Width;
+        int height = nearestSeeds.Height;
         var distances = new SequentialMatrix<DoublePixel>(width, height);
 
-        if (seedIndices.Count == 0)
+        if (nearestSeeds.Count == 0)
             return distances;
 
         Parallel.For(0, height, y =>
         {
             for (int x = 0; x < width; x++)
             {
-                long seedIndex = seedIndices[x, y].Value;
-                if (seedIndex < 0)
-                {
-                    distances[x, y] = double.PositiveInfinity;
-                }
-                else
-                {
-                    int seedX = (int)(seedIndex % width);
-                    int seedY = (int)(seedIndex / width);
-                    distances[x, y] = Math.Sqrt(DistanceSquared(x, y, seedX, seedY));
-                }
+                NearestSeed entry = nearestSeeds[x, y];
+                distances[x, y] = entry.HasSeed
+                    ? Math.Sqrt(DistanceSquared(x, y, entry.Seed.X, entry.Seed.Y))
+                    : double.PositiveInfinity;
             }
         });
 

@@ -47,7 +47,7 @@ public enum ComponentRetentionPolicy
 }
 
 /// <summary>
-/// Extracts and filters binary foreground masks from continuous [0, 1] saliency maps.
+/// Extracts and filters boolean foreground masks from continuous [0, 1] saliency maps.
 /// </summary>
 public static class SaliencyMask
 {
@@ -91,17 +91,17 @@ public static class SaliencyMask
     }
 
     /// <summary>
-    /// Thresholds a continuous [0, 1] saliency map and filters connected foreground components into a binary mask.
+    /// Thresholds a continuous [0, 1] saliency map and filters connected foreground components into a boolean mask.
     /// </summary>
     /// <param name="saliencyMap">The continuous [0, 1] saliency map.</param>
     /// <param name="method">The thresholding strategy.</param>
     /// <param name="fixedThreshold">The threshold in [0, 1] used when <paramref name="method"/> is <see cref="SaliencyThresholdMethod.Fixed"/>.</param>
     /// <param name="retentionPolicy">The connected-component filtering policy.</param>
     /// <param name="minAreaFraction">The minimum component area fraction in [0, 1] used by <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/>.</param>
-    /// <returns>A binary mask with <c>1</c> for salient foreground pixels and <c>0</c> for background pixels.</returns>
+    /// <returns>A <see cref="MaskMatrix"/> with <see langword="true"/> for salient foreground pixels and <see langword="false"/> for background pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="saliencyMap"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is outside its valid range.</exception>
-    public static Matrix<LongPixel> Binarize(
+    public static MaskMatrix Binarize(
         IReadOnlyMatrix<DoublePixel> saliencyMap,
         SaliencyThresholdMethod method = SaliencyThresholdMethod.Otsu,
         double fixedThreshold = 70.0 / 255.0,
@@ -111,61 +111,45 @@ public static class SaliencyMask
         double threshold = ComputeThreshold(saliencyMap, method, fixedThreshold);
         ValidateRetentionArgs(retentionPolicy, minAreaFraction);
 
-        var rawMask = new SequentialMatrix<LongPixel>(saliencyMap.Size);
-        for (int y = 0; y < saliencyMap.Height; y++)
-        {
-            for (int x = 0; x < saliencyMap.Width; x++)
-            {
-                double value = ClampUnit(saliencyMap[x, y].Value);
-                rawMask[x, y] = value > threshold ? 1L : 0L;
-            }
-        }
-
+        MaskMatrix rawMask = saliencyMap.ToMaskMatrix(pixel => ClampUnit(pixel.Value) > threshold);
         return FilterConnectedComponents(rawMask, retentionPolicy, minAreaFraction);
     }
 
     /// <summary>
-    /// Filters 8-connected foreground components in a binary mask according to the specified retention policy.
+    /// Filters 8-connected foreground components in a boolean mask according to the specified retention policy.
     /// </summary>
-    /// <param name="mask">The binary mask (<c>0</c> = background, non-zero = foreground).</param>
+    /// <param name="mask">The boolean mask (<see langword="false"/> = background, <see langword="true"/> = foreground).</param>
     /// <param name="retentionPolicy">The connected-component retention rule.</param>
     /// <param name="minAreaFraction">The minimum fraction of total pixels in [0, 1] required when using <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/>.</param>
-    /// <returns>A filtered binary mask with normalized values <c>0</c> and <c>1</c>.</returns>
+    /// <returns>A filtered <see cref="MaskMatrix"/> containing only the retained components.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="mask"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="retentionPolicy"/> is invalid or <paramref name="minAreaFraction"/> is outside [0, 1].</exception>
-    public static Matrix<LongPixel> FilterConnectedComponents(
-        IReadOnlyMatrix<LongPixel> mask,
+    public static MaskMatrix FilterConnectedComponents(
+        IReadOnlyMatrix<bool> mask,
         ComponentRetentionPolicy retentionPolicy = ComponentRetentionPolicy.MinimumAreaFraction,
         double minAreaFraction = 0.01)
     {
         ArgumentNullException.ThrowIfNull(mask);
         ValidateRetentionArgs(retentionPolicy, minAreaFraction);
 
-        var filtered = new SequentialMatrix<LongPixel>(mask.Size);
         if (mask.Count == 0)
-            return filtered;
+            return new MaskMatrix(mask.Size);
+
+        if (retentionPolicy == ComponentRetentionPolicy.KeepAll)
+            return MaskMatrix.From(mask);
 
         int width = mask.Width;
         int height = mask.Height;
-
-        if (retentionPolicy == ComponentRetentionPolicy.KeepAll)
-        {
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                    filtered[x, y] = mask[x, y].Value != 0 ? 1L : 0L;
-            }
-            return filtered;
-        }
-
+        var filtered = new MaskMatrix(width, height);
         var isForeground = new bool[mask.Count];
         bool hasAnyForeground = false;
+
         for (int y = 0; y < height; y++)
         {
             int rowBase = y * width;
             for (int x = 0; x < width; x++)
             {
-                if (mask[x, y].Value != 0)
+                if (mask[x, y])
                 {
                     isForeground[rowBase + x] = true;
                     hasAnyForeground = true;
@@ -227,7 +211,7 @@ public static class SaliencyMask
             for (int i = 0; i < isForeground.Length; i++)
             {
                 if (isForeground[i] && disjointSet.GetPartition(i).RootIndex == largestRoot)
-                    filtered[i] = 1L;
+                    filtered[i] = true;
             }
         }
         else
@@ -236,7 +220,7 @@ public static class SaliencyMask
             for (int i = 0; i < isForeground.Length; i++)
             {
                 if (isForeground[i] && disjointSet.GetPartition(i).Size >= minPixels)
-                    filtered[i] = 1L;
+                    filtered[i] = true;
             }
         }
 

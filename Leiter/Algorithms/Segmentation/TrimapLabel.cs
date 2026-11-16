@@ -3,7 +3,7 @@ namespace Leiter.Algorithms.Segmentation;
 /// <summary>
 /// Specifies pixel trimap labels used to constrain <see cref="GrabCut"/> foreground/background segmentation.
 /// </summary>
-public enum TrimapLabel : long
+public enum TrimapLabel : byte
 {
     /// <summary>
     /// Pixel is firmly constrained to belong to the background.
