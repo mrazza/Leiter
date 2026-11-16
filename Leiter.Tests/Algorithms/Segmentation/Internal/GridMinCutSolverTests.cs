@@ -1,6 +1,8 @@
 namespace Leiter.Tests.Algorithms.Segmentation.Internal;
 
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation.Internal;
+using Leiter.Core;
 using Xunit;
 
 /// <summary>
@@ -53,5 +55,30 @@ public class GridMinCutSolverTests
         double[] snk = [0.0, 1.0, 0.0, 10.0];
         double flow = solver.Solve(src, snk);
         Assert.Equal(3.0, flow, 4);
+    }
+
+    [Fact]
+    public void GridMinCutSolver_CoordAndGridDirectionOverloads_ShouldMatchLinearIndices()
+    {
+        var solver = new GridMinCutSolver(new Size(3, 2));
+        solver.SetUndirectedEdgeCapacity(new Coord(0, 0), GridDirection.East, 5f);
+        solver.SetUndirectedEdgeCapacity(new Coord(1, 0), GridDirection.East, 2f);
+        solver.SetUndirectedEdgeCapacity(new Coord(0, 0), GridDirection.South, 2f);
+        solver.SetUndirectedEdgeCapacity(new Coord(1, 0), GridDirection.South, 4f);
+        solver.SetUndirectedEdgeCapacity(new Coord(2, 0), GridDirection.South, 6f);
+        solver.SetUndirectedEdgeCapacity(new Coord(0, 1), GridDirection.East, 3f);
+        solver.SetUndirectedEdgeCapacity(new Coord(1, 1), GridDirection.East, 1f);
+
+        double[] sourceCaps = [100.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        double[] sinkCaps = [0.0, 0.0, 100.0, 0.0, 0.0, 100.0];
+
+        double flow = solver.Solve(sourceCaps, sinkCaps);
+        Assert.Equal(3.0, flow, 4);
+        Assert.True(solver.IsSourceSide(new Coord(0, 0)));
+        Assert.True(solver.IsSourceSide(new Coord(1, 0)));
+        Assert.True(solver.IsSourceSide(new Coord(0, 1)));
+        Assert.True(solver.IsSourceSide(new Coord(1, 1)));
+        Assert.False(solver.IsSourceSide(new Coord(2, 0)));
+        Assert.False(solver.IsSourceSide(new Coord(2, 1)));
     }
 }

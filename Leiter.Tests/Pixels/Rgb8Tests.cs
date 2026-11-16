@@ -167,6 +167,7 @@ public class Rgb8Tests
         var p2 = new Rgb8(13, 24, 30);
 
         Assert.Equal(10 << 16 | 20 << 8 | 30, p1.GetHashCode());
+        Assert.Equal(25.0, p1.DistanceSquared(p2));
         Assert.Equal(5.0, p1.Distance(p2));
     }
 

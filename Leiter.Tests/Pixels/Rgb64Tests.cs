@@ -110,7 +110,8 @@ public class Rgb64Tests
     public void Distance_ShouldWork()
     {
         var p1 = new Rgb64(1.0, 2.0, 3.0);
-        var p2 = new Rgb64(4.0, 2.0, 3.0);
-        Assert.Equal(3.0, p1.Distance(p2));
+        var p2 = new Rgb64(4.0, 6.0, 3.0);
+        Assert.Equal(25.0, p1.DistanceSquared(p2));
+        Assert.Equal(5.0, p1.Distance(p2));
     }
 }

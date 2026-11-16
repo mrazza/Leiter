@@ -223,6 +223,22 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
     }
 
     /// <summary>
+    /// Calculates the squared Euclidean color distance between this pixel and another pixel in RGB color space.
+    /// </summary>
+    /// <remarks>
+    /// This implementation assumes Euclidean uniformity of the RGB color space and avoids the square root operation.
+    /// </remarks>
+    /// <param name="otherPixel">The other pixel on which to operate.</param>
+    /// <returns>The squared Euclidean distance in color between the two pixels.</returns>
+    public double DistanceSquared(Rgb8 otherPixel)
+    {
+        double dr = R - otherPixel.R;
+        double dg = G - otherPixel.G;
+        double db = B - otherPixel.B;
+        return (dr * dr) + (dg * dg) + (db * db);
+    }
+
+    /// <summary>
     /// Calculates the Euclidean color distance between this pixel and another pixel in RGB color space.
     /// </summary>
     /// <remarks>
@@ -230,11 +246,5 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
     /// </remarks>
     /// <param name="otherPixel">The other pixel on which to operate.</param>
     /// <returns>The Euclidean distance in color between the two pixels.</returns>
-    public double Distance(Rgb8 otherPixel)
-    {
-        double dr = R - otherPixel.R;
-        double dg = G - otherPixel.G;
-        double db = B - otherPixel.B;
-        return Math.Sqrt(dr * dr + dg * dg + db * db);
-    }
+    public double Distance(Rgb8 otherPixel) => Math.Sqrt(DistanceSquared(otherPixel));
 }

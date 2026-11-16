@@ -119,4 +119,30 @@ public class EgbiSegmentationTests
         // All pixels colored by segmentation
         Assert.NotEqual(new Rgb8(255, 0, 0), img[0, 0]);
     }
+
+    [Fact]
+    public void Segment_EdgeCasesAndValidation_ShouldBehaveCorrectly()
+    {
+        Assert.Throws<ArgumentNullException>(() => EgbiSegmentation.Segment<Rgb8>(null!));
+
+        var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
+        IDisjointSet emptySeg = EgbiSegmentation.Segment(emptyImg);
+        Assert.Equal(0, emptySeg.Count);
+        Assert.Equal(0, emptySeg.Width);
+        Assert.Equal(0, emptySeg.Height);
+        Assert.Empty(emptySeg.ToRegions());
+
+        // Single high-contrast pixel surrounded by black pixels stays separate when minSegmentSize is 0,
+        // and merges into the background when minSegmentSize > 1.
+        var speckled = new SequentialMatrix<Rgb8>(6, 6);
+        speckled.SetAll(new Rgb8(0, 0, 0));
+        speckled[3, 3] = new Rgb8(255, 255, 255);
+
+        IDisjointSet withoutPostMerge = EgbiSegmentation.Segment(speckled, kFactor: 10.0, epsilon: 1.0, minSegmentSize: 0);
+        Assert.Equal(2, withoutPostMerge.ToRegions().Count);
+        Assert.NotEqual(withoutPostMerge[0, 0].Value, withoutPostMerge[3, 3].Value);
+
+        IDisjointSet withPostMerge = EgbiSegmentation.Segment(speckled, kFactor: 10.0, epsilon: 1.0, minSegmentSize: 5);
+        Assert.Single(withPostMerge.ToRegions());
+    }
 }

@@ -95,4 +95,63 @@ public static class MatrixExtensions
     /// <param name="normalizedCoord">The normalized coordinate to denormalize.</param>
     /// <returns>A <see cref="Coord"/> in integer matrix coordinates.</returns>
     public static Coord DenormalizeCoord(this IUntypedMatrix matrix, NormalizedCoord normalizedCoord) => new((int)(normalizedCoord.X * matrix.Width), (int)(normalizedCoord.Y * matrix.Height));
+
+    /// <summary>
+    /// Determines whether the specified integer coordinates lie within the bounds of the matrix.
+    /// </summary>
+    /// <param name="matrix">The matrix whose bounds are checked.</param>
+    /// <param name="x">The zero-based column (X) coordinate.</param>
+    /// <param name="y">The zero-based row (Y) coordinate.</param>
+    /// <returns><see langword="true"/> if the coordinates lie within the matrix bounds; otherwise, <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    public static bool Contains(this IUntypedMatrix matrix, int x, int y)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        return matrix.Size.Contains(x, y);
+    }
+
+    /// <summary>
+    /// Determines whether the specified coordinate lies within the bounds of the matrix.
+    /// </summary>
+    /// <param name="matrix">The matrix whose bounds are checked.</param>
+    /// <param name="coord">The 2D coordinate to test.</param>
+    /// <returns><see langword="true"/> if the coordinate lies within the matrix bounds; otherwise, <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    public static bool Contains(this IUntypedMatrix matrix, Coord coord)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        return matrix.Size.Contains(coord);
+    }
+
+    /// <summary>
+    /// Determines whether two matrices have identical dimensions and equal element values at every coordinate.
+    /// </summary>
+    /// <typeparam name="T">The element type stored in both matrices.</typeparam>
+    /// <param name="left">The first matrix to compare.</param>
+    /// <param name="right">The second matrix to compare.</param>
+    /// <returns><see langword="true"/> if both matrices have the same size and equal elements; otherwise, <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
+    public static bool ContentEquals<T>(this IReadOnlyMatrix<T> left, IReadOnlyMatrix<T> right)
+        where T : struct
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+
+        if (left.Size != right.Size)
+            return false;
+
+        EqualityComparer<T> comparer = EqualityComparer<T>.Default;
+        int width = left.Width;
+        int height = left.Height;
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!comparer.Equals(left[x, y], right[x, y]))
+                    return false;
+            }
+        }
+
+        return true;
+    }
 }
