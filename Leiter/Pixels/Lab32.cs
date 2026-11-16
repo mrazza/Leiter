@@ -225,6 +225,22 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     }
 
     /// <summary>
+    /// Calculates the squared Euclidean (CIE76) color distance between the current pixel and <paramref name="other"/> in CIELAB space.
+    /// </summary>
+    /// <remarks>
+    /// Computes <c>ΔL² + Δa² + Δb²</c> without heap allocations or square roots, suitable for fast inner-loop range checks.
+    /// </remarks>
+    /// <param name="other">The other pixel to compare with.</param>
+    /// <returns>The squared CIE76 Euclidean color distance between the two pixels.</returns>
+    public double EuclideanDistanceSquared(Lab32 other)
+    {
+        double dl = L - other.L;
+        double da = A - other.A;
+        double db = B - other.B;
+        return (dl * dl) + (da * da) + (db * db);
+    }
+
+    /// <summary>
     /// Calculates the Euclidean (CIE76) color distance between the current pixel and <paramref name="other"/> in CIELAB space.
     /// </summary>
     /// <remarks>
@@ -232,11 +248,5 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     /// </remarks>
     /// <param name="other">The other pixel to compare with.</param>
     /// <returns>The CIE76 Euclidean color distance between the two pixels.</returns>
-    public double EuclideanDistance(Lab32 other)
-    {
-        double dl = L - other.L;
-        double da = A - other.A;
-        double db = B - other.B;
-        return Math.Sqrt(dl * dl + da * da + db * db);
-    }
+    public double EuclideanDistance(Lab32 other) => Math.Sqrt(EuclideanDistanceSquared(other));
 }

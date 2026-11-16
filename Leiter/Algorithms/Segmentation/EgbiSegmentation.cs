@@ -1,7 +1,6 @@
 namespace Leiter.Algorithms.Segmentation;
 
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Threading.Tasks;
 using Leiter.Algorithms;
@@ -246,8 +245,8 @@ public static class EgbiSegmentation
     /// Colors the specified 8-bit RGB image matrix such that each segment in the specified segmentation is a random color.
     /// </summary>
     /// <param name="image">The image to color.</param>
-    /// <param name="segmentation">The segmentation.</param>
-    public static void ColorImageBySegmentation(Matrix<Rgb8> image, IImmutableSet<Region<Coord>> segmentation)
+    /// <param name="segmentation">The segmentation containing regions of coordinates to color.</param>
+    public static void ColorImageBySegmentation(Matrix<Rgb8> image, IEnumerable<Region<Coord>> segmentation)
         => ColorImageBySegmentation(image, segmentation, RandomColorAssigner());
 
     /// <summary>
@@ -256,9 +255,9 @@ public static class EgbiSegmentation
     /// </summary>
     /// <typeparam name="T">The pixel type for the input matrix.</typeparam>
     /// <param name="image">The image to color.</param>
-    /// <param name="segmentation">The segmentation.</param>
+    /// <param name="segmentation">The segmentation containing regions of coordinates to color.</param>
     /// <param name="colorAssigner">The <see cref="ColorAssigner{T}"/> used to select a color for each segment.</param>
-    public static void ColorImageBySegmentation<T>(Matrix<T> image, IImmutableSet<Region<Coord>> segmentation, ColorAssigner<T> colorAssigner)
+    public static void ColorImageBySegmentation<T>(Matrix<T> image, IEnumerable<Region<Coord>> segmentation, ColorAssigner<T> colorAssigner)
         where T : struct, IPixel<T>
     {
         foreach (var currSegment in segmentation)
