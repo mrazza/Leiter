@@ -117,7 +117,18 @@ public static class PixelConversion
     /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
     /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
     public static Lab32 ToLab32(this Rgb8 self, RgbColorSpace colorSpace) =>
-        self.ToXyz32(colorSpace).ToLab32();
+        self.ToLab32(colorSpace, Illuminant.D65);
+
+    /// <summary>
+    /// Converts an 8-bit per channel <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/> to a <see cref="Lab32"/> pixel under <paramref name="illuminant"/>.
+    /// </summary>
+    /// <param name="self">The 8-bit RGB pixel to convert.</param>
+    /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
+    /// <param name="illuminant">The reference white illuminant to normalize against.</param>
+    /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified color space or illuminant is not implemented.</exception>
+    public static Lab32 ToLab32(this Rgb8 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
+        self.ToXyz32(colorSpace).ToLab32(illuminant);
 
     /// <summary>
     /// Converts an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/> to a <see cref="Lab32"/> pixel.
@@ -130,9 +141,28 @@ public static class PixelConversion
     /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
     /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
     public static Lab32 ToLab32(this Rgb64 self, RgbColorSpace colorSpace) =>
-        self.ToXyz32(colorSpace).ToLab32();
+        self.ToLab32(colorSpace, Illuminant.D65);
+
+    /// <summary>
+    /// Converts an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/> to a <see cref="Lab32"/> pixel under <paramref name="illuminant"/>.
+    /// </summary>
+    /// <param name="self">The 64-bit RGB pixel to convert.</param>
+    /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
+    /// <param name="illuminant">The reference white illuminant to normalize against.</param>
+    /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified color space or illuminant is not implemented.</exception>
+    public static Lab32 ToLab32(this Rgb64 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
+        self.ToXyz32(colorSpace).ToLab32(illuminant);
 
     private static readonly Xyz32 XyzReferenceWhiteD65 = new(0.9504f, 1.0000f, 1.0888f);
+    private static readonly Xyz32 XyzReferenceWhiteE = new(1.0000f, 1.0000f, 1.0000f);
+
+    private static Xyz32 GetReferenceWhite(Illuminant illuminant) => illuminant switch
+    {
+        Illuminant.D65 => XyzReferenceWhiteD65,
+        Illuminant.E => XyzReferenceWhiteE,
+        _ => throw new NotImplementedException($"Conversion with illuminant {illuminant} is not implemented.")
+    };
 
     /// <summary>
     /// Converts from an <see cref="Xyz32"/> pixel to a <see cref="Lab32"/> pixel.
@@ -142,13 +172,93 @@ public static class PixelConversion
     /// </remarks>
     /// <param name="self">The XYZ pixel on which to operate.</param>
     /// <returns>A LAB pixel of the same color as the XYZ pixel.</returns>
-    public static Lab32 ToLab32(this Xyz32 self)
+    public static Lab32 ToLab32(this Xyz32 self) =>
+        self.ToLab32(Illuminant.D65);
+
+    /// <summary>
+    /// Converts an <see cref="Xyz32"/> pixel to a <see cref="Lab32"/> pixel under the specified <paramref name="illuminant"/>.
+    /// </summary>
+    /// <param name="self">The XYZ pixel on which to operate.</param>
+    /// <param name="illuminant">The reference white illuminant to normalize against.</param>
+    /// <returns>A LAB pixel representing the same color under <paramref name="illuminant"/>.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified illuminant is not implemented.</exception>
+    public static Lab32 ToLab32(this Xyz32 self, Illuminant illuminant)
     {
-        float fx = LabTransfer(self.X / XyzReferenceWhiteD65.X);
-        float fy = LabTransfer(self.Y / XyzReferenceWhiteD65.Y);
-        float fz = LabTransfer(self.Z / XyzReferenceWhiteD65.Z);
+        Xyz32 white = GetReferenceWhite(illuminant);
+        float fx = LabTransfer(self.X / white.X);
+        float fy = LabTransfer(self.Y / white.Y);
+        float fz = LabTransfer(self.Z / white.Z);
         return new(116f * fy - 16f, 500f * (fx - fy), 200f * (fy - fz));
     }
+
+    /// <summary>
+    /// Converts a <see cref="Lab32"/> pixel to an <see cref="Xyz32"/> pixel assuming a D65 white point.
+    /// </summary>
+    /// <param name="self">The CIELAB pixel to convert.</param>
+    /// <returns>An <see cref="Xyz32"/> pixel representing the same color.</returns>
+    public static Xyz32 ToXyz32(this Lab32 self) =>
+        self.ToXyz32(Illuminant.D65);
+
+    /// <summary>
+    /// Converts a <see cref="Lab32"/> pixel to an <see cref="Xyz32"/> pixel under the specified <paramref name="illuminant"/>.
+    /// </summary>
+    /// <param name="self">The CIELAB pixel to convert.</param>
+    /// <param name="illuminant">The reference white illuminant used by the input CIELAB coordinates.</param>
+    /// <returns>An <see cref="Xyz32"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified illuminant is not implemented.</exception>
+    public static Xyz32 ToXyz32(this Lab32 self, Illuminant illuminant)
+    {
+        Xyz32 white = GetReferenceWhite(illuminant);
+        float fy = (self.L + 16f) / 116f;
+        float fx = fy + (self.A / 500f);
+        float fz = fy - (self.B / 200f);
+        return new(
+            white.X * InverseLabTransfer(fx),
+            white.Y * InverseLabTransfer(fy),
+            white.Z * InverseLabTransfer(fz));
+    }
+
+    /// <summary>
+    /// Converts a <see cref="Lab32"/> pixel (D65 white point) to an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/>.
+    /// </summary>
+    /// <param name="self">The CIELAB pixel to convert.</param>
+    /// <param name="colorSpace">The target RGB color space.</param>
+    /// <returns>An <see cref="Rgb64"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
+    public static Rgb64 ToRgb64(this Lab32 self, RgbColorSpace colorSpace) =>
+        self.ToRgb64(colorSpace, Illuminant.D65);
+
+    /// <summary>
+    /// Converts a <see cref="Lab32"/> pixel under <paramref name="illuminant"/> to an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/>.
+    /// </summary>
+    /// <param name="self">The CIELAB pixel to convert.</param>
+    /// <param name="colorSpace">The target RGB color space.</param>
+    /// <param name="illuminant">The reference white illuminant used by the input CIELAB coordinates.</param>
+    /// <returns>An <see cref="Rgb64"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified color space or illuminant is not implemented.</exception>
+    public static Rgb64 ToRgb64(this Lab32 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
+        self.ToXyz32(illuminant).ToRgb64(colorSpace);
+
+    /// <summary>
+    /// Converts a <see cref="Lab32"/> pixel (D65 white point) to a byte-clamped <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/>.
+    /// </summary>
+    /// <param name="self">The CIELAB pixel to convert.</param>
+    /// <param name="colorSpace">The target RGB color space.</param>
+    /// <returns>An <see cref="Rgb8"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
+    public static Rgb8 ToRgb8(this Lab32 self, RgbColorSpace colorSpace) =>
+        self.ToRgb8(colorSpace, Illuminant.D65);
+
+    /// <summary>
+    /// Converts a <see cref="Lab32"/> pixel under <paramref name="illuminant"/> to a byte-clamped <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/>.
+    /// </summary>
+    /// <param name="self">The CIELAB pixel to convert.</param>
+    /// <param name="colorSpace">The target RGB color space.</param>
+    /// <param name="illuminant">The reference white illuminant used by the input CIELAB coordinates.</param>
+    /// <returns>An <see cref="Rgb8"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified color space or illuminant is not implemented.</exception>
+    public static Rgb8 ToRgb8(this Lab32 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
+        self.ToRgb64(colorSpace, illuminant).ToRgb8();
 
     /// <summary>
     /// Evaluates the piecewise CIE L*a*b* transfer function on a normalized tristimulus ratio.
@@ -163,5 +273,13 @@ public static class PixelConversion
         const float epsilon = 0.008856f; // (6/29)^3
         const float kappa = 903.3f; // (29/3)^3
         return channel > epsilon ? (float)Math.Cbrt(channel) : (kappa * channel + 16f) / 116f;
+    }
+
+    private static float InverseLabTransfer(float f)
+    {
+        const float epsilon = 0.008856f; // (6/29)^3
+        const float kappa = 903.3f; // (29/3)^3
+        float cubed = f * f * f;
+        return cubed > epsilon ? cubed : (116f * f - 16f) / kappa;
     }
 }
