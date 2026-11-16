@@ -280,4 +280,83 @@ public class MatrixAlgorithmTests
         Assert.Throws<ArgumentException>(() => view.FrobeniusProduct<DoublePixel, DoublePixel>(m3));
         Assert.Throws<ArgumentException>(() => rgbView.FrobeniusProduct(m3));
     }
+
+    [Fact]
+    public void Convolve_And_ConvolveSeparable_EdgeCases_ShouldValidateAndHandleEmptyAndLargeKernels()
+    {
+        var img = new SequentialMatrix<DoublePixel>(2, 2);
+        img.SetAll(5.0);
+
+        Assert.Throws<ArgumentException>(() => img.Convolve(new SequentialMatrix<DoublePixel>(0, 3)));
+        Assert.Throws<ArgumentException>(() => img.Convolve(new SequentialMatrix<DoublePixel>(3, 0)));
+
+        var validKernel = new SequentialMatrix<DoublePixel>(1, 1);
+        validKernel[0, 0] = 1.0;
+
+        var emptyW = new SequentialMatrix<DoublePixel>(0, 3);
+        var convolvedEmptyW = emptyW.Convolve(validKernel);
+        Assert.Equal(0, convolvedEmptyW.Width);
+        Assert.Equal(3, convolvedEmptyW.Height);
+
+        var emptyH = new SequentialMatrix<DoublePixel>(3, 0);
+        var convolvedEmptyH = emptyH.Convolve(validKernel);
+        Assert.Equal(3, convolvedEmptyH.Width);
+        Assert.Equal(0, convolvedEmptyH.Height);
+
+        Assert.Throws<ArgumentException>(() => img.ConvolveSeparable(ReadOnlySpan<double>.Empty, [1.0]));
+        Assert.Throws<ArgumentException>(() => img.ConvolveSeparable([1.0], ReadOnlySpan<double>.Empty));
+
+        var sepEmptyW = emptyW.ConvolveSeparable([1.0], [1.0]);
+        Assert.Equal(0, sepEmptyW.Width);
+        Assert.Equal(3, sepEmptyW.Height);
+
+        var sepEmptyH = emptyH.ConvolveSeparable([1.0], [1.0]);
+        Assert.Equal(3, sepEmptyH.Width);
+        Assert.Equal(0, sepEmptyH.Height);
+
+        double[] largeVertical = new double[257];
+        Array.Fill(largeVertical, 1.0 / largeVertical.Length);
+        var convolvedLargeV = img.ConvolveSeparable([1.0], largeVertical);
+        for (int i = 0; i < convolvedLargeV.Count; i++)
+            Assert.Equal(5.0, convolvedLargeV[i].Value, 10);
+    }
+
+    [Fact]
+    public void Blur_EdgeCases_AndSmallMediumSigmaRecursive_ShouldWork()
+    {
+        var uniform = new SequentialMatrix<DoublePixel>(6, 6);
+        uniform.SetAll(12.5);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlur(uniform, 1.0, -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlur(uniform, 0.0, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlur(uniform, -1.0, 1));
+
+        var emptyW = new SequentialMatrix<DoublePixel>(0, 4);
+        var emptyH = new SequentialMatrix<DoublePixel>(4, 0);
+
+        Assert.Equal(0, Blur.GaussianBlur(emptyW, 1.0, 1).Width);
+        Assert.Equal(0, Blur.GaussianBlur(emptyH, 1.0, 1).Height);
+        var gaussZeroRadius = Blur.GaussianBlur(uniform, 1.0, 0);
+        Assert.Equal(12.5, gaussZeroRadius[2, 2].Value, 10);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.BoxBlur(uniform, -1));
+        Assert.Equal(0, Blur.BoxBlur(emptyW, 1).Width);
+        Assert.Equal(0, Blur.BoxBlur(emptyH, 1).Height);
+        var boxZeroRadius = Blur.BoxBlur(uniform, 0);
+        Assert.Equal(12.5, boxZeroRadius[2, 2].Value, 10);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlurRecursive(uniform, 0.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlurRecursive(uniform, -1.0));
+        Assert.Equal(0, Blur.GaussianBlurRecursive(emptyW, 1.0).Width);
+        Assert.Equal(0, Blur.GaussianBlurRecursive(emptyH, 1.0).Height);
+
+        // Exercise both small-sigma (< 0.5 FIR fallback) and medium-sigma (0.5 <= sigma < 2.5) branches.
+        var smallSigma = Blur.GaussianBlurRecursive(uniform, 0.3);
+        var mediumSigma = Blur.GaussianBlurRecursive(uniform, 1.2);
+        for (int i = 0; i < uniform.Count; i++)
+        {
+            Assert.Equal(12.5, smallSigma[i].Value, 10);
+            Assert.Equal(12.5, mediumSigma[i].Value, 10);
+        }
+    }
 }

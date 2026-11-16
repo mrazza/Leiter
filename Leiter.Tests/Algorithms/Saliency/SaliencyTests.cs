@@ -419,4 +419,46 @@ public class SaliencyTests
             Assert.Equal(0.0, saliency[0, 19].Value, 4);
         }
     }
+
+    [Fact]
+    public void Saliency_EmptyImages_And_SmootherEdgeCases_ShouldBeHandledCleanly()
+    {
+        var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
+        Matrix<DoublePixel> globalEmpty = GlobalContrastSaliency.ComputeSaliency(emptyImg);
+        Assert.Empty(globalEmpty);
+        Assert.Equal(0, globalEmpty.Width);
+        Assert.Equal(0, globalEmpty.Height);
+
+        var dummySeg = EgbiSegmentation.Segment(new SequentialMatrix<Rgb8>(1, 1));
+        Matrix<DoublePixel> regionalEmpty = RegionalContrastSaliency.ComputeSaliency(emptyImg, dummySeg);
+        Assert.Empty(regionalEmpty);
+        Assert.Equal(0, regionalEmpty.Width);
+        Assert.Equal(0, regionalEmpty.Height);
+
+        var map = new Dictionary<Rgb8, double>
+        {
+            [new Rgb8(0, 0, 0)] = 0.2,
+            [new Rgb8(1, 0, 0)] = 0.4,
+            [new Rgb8(255, 0, 0)] = 0.8,
+            [new Rgb8(0, 255, 0)] = 0.6
+        };
+        var labLookup = new Dictionary<Rgb8, Lab32>
+        {
+            [new Rgb8(0, 0, 0)] = new Lab32(0f, 0f, 0f),
+            [new Rgb8(1, 0, 0)] = new Lab32(0f, 0f, 0f),
+            [new Rgb8(255, 0, 0)] = new Lab32(53f, 80f, 67f),
+            [new Rgb8(0, 255, 0)] = new Lab32(87f, -86f, 83f)
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            SaliencyColorSmoother.SmoothColorSaliency(map, labLookup, neighborDivisor: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            SaliencyColorSmoother.SmoothColorSaliency(map, labLookup, neighborDivisor: -2));
+
+        // For neighborDivisor: 2 -> nearestColorCount = 2; the two zero-Lab keys have T == 0 and remain unchanged.
+        SaliencyColorSmoother.SmoothColorSaliency(map, labLookup, neighborDivisor: 2);
+        Assert.Equal(0.2, map[new Rgb8(0, 0, 0)], 6);
+        Assert.Equal(0.4, map[new Rgb8(1, 0, 0)], 6);
+        Assert.All(map.Values, value => Assert.False(double.IsNaN(value)));
+    }
 }

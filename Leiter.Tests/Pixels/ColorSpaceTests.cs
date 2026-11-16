@@ -132,7 +132,7 @@ public class ColorSpaceTests
             Assert.True(Math.Abs(bright.B - brightBack.B) <= 1);
 
             // Very dark RGB exercises the linear segment below epsilon in LabTransfer/InverseLabTransfer.
-            var dark = new Rgb64(3.0 / 255.0, 5.0 / 255.0, 8.0 / 255.0);
+            var dark = new Rgb64(0.001, 0.002, 0.003);
             Lab32 darkLab = dark.ToLab32(RgbColorSpace.LinearRGB, illuminant);
             Rgb64 darkBack = darkLab.ToRgb64(RgbColorSpace.LinearRGB, illuminant);
             Assert.Equal(dark.R, darkBack.R, 4);
@@ -148,10 +148,15 @@ public class ColorSpaceTests
 
         // Verify D65 and Illuminant E produce distinct Lab coordinates for the same XYZ color.
         var sampleXyz = new Xyz32(0.5f, 0.5f, 0.5f);
-        Lab32 labD65 = sampleXyz.ToLab32(Illuminant.D65);
+        Lab32 labD65 = sampleXyz.ToLab32();
         Lab32 labE = sampleXyz.ToLab32(Illuminant.E);
         Assert.NotEqual(labD65.A, labE.A);
         Assert.NotEqual(labD65.B, labE.B);
+
+        Xyz32 defaultXyzBack = labD65.ToXyz32();
+        Assert.Equal(sampleXyz.X, defaultXyzBack.X, 4);
+        Assert.Equal(sampleXyz.Y, defaultXyzBack.Y, 4);
+        Assert.Equal(sampleXyz.Z, defaultXyzBack.Z, 4);
 
         // Default D65 convenience overloads round-trip cleanly.
         var mid = new Rgb64(0.4, 0.7, 0.25);
@@ -159,6 +164,9 @@ public class ColorSpaceTests
         Assert.Equal(mid.R, midBack.R, 4);
         Assert.Equal(mid.G, midBack.G, 4);
         Assert.Equal(mid.B, midBack.B, 4);
+
+        Rgb8 defaultRgb8Back = labD65.ToRgb8(RgbColorSpace.sRGB);
+        Assert.InRange(defaultRgb8Back.R, (byte)0, (byte)255);
 
         Assert.Throws<NotImplementedException>(() => sampleXyz.ToLab32((Illuminant)999));
         Assert.Throws<NotImplementedException>(() => labD65.ToXyz32((Illuminant)999));
@@ -179,6 +187,7 @@ public class ColorSpaceTests
         Assert.Equal(1.0, new Rgb8(255, 0, 0).GetSaturation(), 6);
         Assert.Equal(0.0, new Rgb8(128, 128, 128).GetSaturation(), 6);
         Assert.Equal(0.0, new Rgb64(0.0, 0.0, 0.0).GetSaturation(), 6);
+        Assert.Equal(0.0, new Rgb64(1.0, 0.0, 1e-17).GetHueDegrees(), 6);
 
         var warm = new Rgb64(0.6, 0.3, 0.0);
         Assert.Equal(30.0, warm.GetHueDegrees(), 6);
