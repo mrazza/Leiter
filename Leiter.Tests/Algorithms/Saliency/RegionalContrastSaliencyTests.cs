@@ -319,4 +319,22 @@ public class RegionalContrastSaliencyTests
         Assert.Equal(0, regionalEmpty.Width);
         Assert.Equal(0, regionalEmpty.Height);
     }
+
+    /// <summary>
+    /// Verifies argument validation for null arguments and dimension mismatches.
+    /// </summary>
+    [Fact]
+    public void ComputeSaliency_Validation_ShouldThrowOnNullOrDimensionMismatch()
+    {
+        var img = new SequentialMatrix<Rgb8>(10, 10);
+        var seg = EgbiSegmentation.Segment(img);
+
+        // Null checks
+        Assert.Throws<ArgumentNullException>(() => RegionalContrastSaliency.ComputeSaliency(null!, seg));
+        Assert.Throws<ArgumentNullException>(() => RegionalContrastSaliency.ComputeSaliency(img, null!));
+
+        // Dimension mismatch with non-empty image
+        var mismatchedSeg = EgbiSegmentation.Segment(new SequentialMatrix<Rgb8>(5, 5));
+        Assert.Throws<ArgumentException>(() => RegionalContrastSaliency.ComputeSaliency(img, mismatchedSeg));
+    }
 }

@@ -139,6 +139,20 @@ public class Lab32Tests
         Assert.Equal(a.EuclideanDistance(b), b.EuclideanDistance(a), 12);
     }
 
+    /// <summary>
+    /// Verifies that <see cref="Lab32.EuclideanDistanceSquared"/> computes exact squared CIE76 Euclidean distance.
+    /// </summary>
+    [Fact]
+    public void EuclideanDistanceSquared_ShouldComputeSquaredCIE76Distance()
+    {
+        var a = new Lab32(50.0f, 10.0f, 20.0f);
+        var b = new Lab32(53.0f, 14.0f, 32.0f);
+
+        Assert.Equal(0.0, a.EuclideanDistanceSquared(a), 12);
+        Assert.Equal(169.0, a.EuclideanDistanceSquared(b), 12);
+        Assert.Equal(a.EuclideanDistanceSquared(b), b.EuclideanDistanceSquared(a), 12);
+    }
+
     [Fact]
     public void TestCIEDE2000_HueWraparoundBranches()
     {

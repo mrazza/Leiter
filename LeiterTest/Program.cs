@@ -8,6 +8,7 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Quantization;
 using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
+using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -144,6 +145,35 @@ internal static class Program
             () => SaliencyDistanceField.Compute(salientMask));
         SaveOutput(outputDir, $"{stem}_12b_distance_field_smoothed.png", SaliencyToGrayscale(smoothedDistanceField));
 
+        RunStepAndSave(
+            "13a. Mean-Shift Mode Filter (hs=8, hr=5.5)",
+            outputDir,
+            $"{stem}_13a_meanshift_filtered.png",
+            () => MeanShiftSegmentation.Filter(colorTransferred));
+
+        RegionGraph meanShiftGraph = RunStep(
+            "13b. Mean-Shift Segmentation (hs=8, hr=5.5, minSize=50) + RegionGraph",
+            () =>
+            {
+                IDisjointSet meanShiftSeg = MeanShiftSegmentation.Segment(colorTransferred);
+                return RegionGraph.FromDisjointSet(meanShiftSeg);
+            });
+        Console.WriteLine($"  Regions: {meanShiftGraph.RegionCount}, Boundaries: {meanShiftGraph.Boundaries.Count}");
+        SaveOutput(
+            outputDir,
+            $"{stem}_13b_meanshift_average.png",
+            ColorBySegmentation(colorTransferred, meanShiftGraph.Regions, EgbiSegmentation.AverageColorAssigner()));
+        SaveOutput(
+            outputDir,
+            $"{stem}_13c_meanshift_random.png",
+            ColorBySegmentation(colorTransferred, meanShiftGraph.Regions, EgbiSegmentation.RandomColorAssigner(randomSeed: 42)));
+
+        RunStepAndSave(
+            "14. Saliency-Guided LOD Abstraction (Stage 3)",
+            outputDir,
+            $"{stem}_14_lod_abstraction.png",
+            () => LodAbstraction.Apply(colorTransferred, meanShiftGraph, smoothedDistanceField, salientMask));
+
         Console.WriteLine("Done.");
         return 0;
     }
@@ -204,7 +234,7 @@ internal static class Program
     /// <returns>A new image matrix with recolored segment regions.</returns>
     private static Matrix<Rgb8> ColorBySegmentation(
         Matrix<Rgb8> source,
-        System.Collections.Immutable.IImmutableSet<Region<Coord>> regions,
+        IEnumerable<Region<Coord>> regions,
         EgbiSegmentation.ColorAssigner<Rgb8> colorAssigner)
     {
         Matrix<Rgb8> clone = source.Clone();

@@ -5,6 +5,7 @@ using Leiter.Pixels;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.DataStructures;
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 
@@ -144,5 +145,42 @@ public class EgbiSegmentationTests
 
         IDisjointSet withPostMerge = EgbiSegmentation.Segment(speckled, kFactor: 10.0, epsilon: 1.0, minSegmentSize: 5);
         Assert.Single(withPostMerge.ToRegions());
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="EgbiSegmentation.ColorImageBySegmentation{T}(Matrix{T}, IEnumerable{Region{Coord}}, EgbiSegmentation.ColorAssigner{T})"/> accepts <see cref="RegionGraph.Regions"/>.
+    /// </summary>
+    [Fact]
+    public void ColorImageBySegmentation_WithRegionGraphRegions_ShouldColorImage()
+    {
+        var labels = new SequentialMatrix<int>(4, 4);
+        for (int y = 0; y < 4; y++)
+        {
+            for (int x = 0; x < 4; x++)
+            {
+                labels[x, y] = x < 2 ? 0 : 1;
+            }
+        }
+
+        var graph = RegionGraph.FromLabels(labels);
+        IReadOnlyList<Region<Coord>> regions = graph.Regions;
+
+        var img = new SequentialMatrix<Rgb8>(4, 4);
+        img.SetAll(new Rgb8(0, 0, 0));
+
+        EgbiSegmentation.ColorImageBySegmentation(
+            img,
+            regions,
+            (matrix, region) => region.Id == 0 ? new Rgb8(255, 0, 0) : new Rgb8(0, 255, 0));
+
+        Assert.Equal(new Rgb8(255, 0, 0), img[0, 0]);
+        Assert.Equal(new Rgb8(255, 0, 0), img[1, 3]);
+        Assert.Equal(new Rgb8(0, 255, 0), img[2, 0]);
+        Assert.Equal(new Rgb8(0, 255, 0), img[3, 3]);
+
+        // Also test the Rgb8 overload with RandomColorAssigner default
+        EgbiSegmentation.ColorImageBySegmentation(img, regions);
+        Assert.NotEqual(new Rgb8(0, 0, 0), img[0, 0]);
+        Assert.NotEqual(new Rgb8(0, 0, 0), img[3, 3]);
     }
 }

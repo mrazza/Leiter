@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.DistanceTransform;
 
 using System.Numerics;
+using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -10,26 +11,6 @@ using Leiter.Pixels;
 /// </summary>
 public static class JumpFlooding
 {
-    private static readonly Coord[] FourConnectedOffsets =
-    [
-        new(1, 0),
-        new(-1, 0),
-        new(0, 1),
-        new(0, -1),
-    ];
-
-    private static readonly Coord[] EightConnectedOffsets =
-    [
-        new(1, 0),
-        new(-1, 0),
-        new(0, 1),
-        new(0, -1),
-        new(1, 1),
-        new(1, -1),
-        new(-1, 1),
-        new(-1, -1),
-    ];
-
     /// <summary>
     /// Extracts all foreground (<see langword="true"/>) coordinates in a boolean mask that border at least one background pixel.
     /// </summary>
@@ -51,7 +32,7 @@ public static class JumpFlooding
         if (width == 0 || height == 0)
             return seeds;
 
-        Coord[] offsets = eightConnectedBackground ? EightConnectedOffsets : FourConnectedOffsets;
+        ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(eightConnectedBackground ? GridConnectivity.EightConnected : GridConnectivity.FourConnected);
 
         for (int y = 0; y < height; y++)
         {
@@ -60,13 +41,13 @@ public static class JumpFlooding
                 if (!binaryMask[x, y])
                     continue;
 
-                foreach (Coord offset in offsets)
+                var coord = new Coord(x, y);
+                foreach (GridNeighbor neighbor in neighbors)
                 {
-                    int nx = x + offset.X;
-                    int ny = y + offset.Y;
-                    if ((uint)nx < (uint)width && (uint)ny < (uint)height && !binaryMask[nx, ny])
+                    Coord neighborCoord = coord + neighbor.Offset;
+                    if (binaryMask.Contains(neighborCoord) && !binaryMask[neighborCoord])
                     {
-                        seeds.Add(new Coord(x, y));
+                        seeds.Add(coord);
                         break;
                     }
                 }
