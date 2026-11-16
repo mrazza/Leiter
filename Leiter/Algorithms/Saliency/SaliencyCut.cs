@@ -42,20 +42,56 @@ public static class SaliencyCut
         if (resolvedOptions.MaxWorkingDimension is int maxDimension &&
             Math.Max(image.Width, image.Height) > maxDimension)
         {
-            double scale = (double)maxDimension / Math.Max(image.Width, image.Height);
-            int workingWidth = Math.Max(1, (int)Math.Round(image.Width * scale));
-            int workingHeight = Math.Max(1, (int)Math.Round(image.Height * scale));
-            var workingSize = new Size(workingWidth, workingHeight);
-
-            Matrix<Rgb8> smallImage = DownsampleBilinear(image, workingSize);
-            Matrix<DoublePixel> smallSaliency = DownsampleBilinear(saliencyMap, workingSize);
-            int scaledBandRadius = Math.Max(1, (int)Math.Round(resolvedOptions.TrimapBandRadius * scale));
-
-            MaskMatrix smallMask = ExtractCore(smallImage, smallSaliency, resolvedOptions, scaledBandRadius);
-            return UpsampleMaskNearest(smallMask, image.Size);
+            return ExtractAtScaledResolution(image, saliencyMap, resolvedOptions, maxDimension);
         }
 
         return ExtractCore(image, saliencyMap, resolvedOptions, resolvedOptions.TrimapBandRadius);
+    }
+
+    private static MaskMatrix ExtractAtScaledResolution(
+        IReadOnlyMatrix<Rgb8> image,
+        IReadOnlyMatrix<DoublePixel> saliencyMap,
+        SaliencyCutOptions options,
+        int maxDimension)
+    {
+        double scale = (double)maxDimension / Math.Max(image.Width, image.Height);
+        var workingSize = new Size(
+            Math.Max(1, (int)Math.Round(image.Width * scale)),
+            Math.Max(1, (int)Math.Round(image.Height * scale)));
+
+        Matrix<Rgb8> smallImage = image.ResizeBilinear(workingSize);
+        Matrix<DoublePixel> smallSaliency = saliencyMap.ResizeBilinear(workingSize);
+        int scaledBandRadius = Math.Max(1, (int)Math.Round(options.TrimapBandRadius * scale));
+
+        MaskMatrix smallMask = ExtractCore(smallImage, smallSaliency, options, scaledBandRadius);
+        return smallMask.ResizeMaskNearest(image.Size);
+    }
+
+    private static MaskMatrix BinarizeInitialSeed(
+        IReadOnlyMatrix<DoublePixel> saliencyMap,
+        SaliencyCutOptions options,
+        out int foregroundCount)
+    {
+        MaskMatrix candidate = SaliencyMask.Binarize(
+            saliencyMap,
+            SaliencyThresholdMethod.Fixed,
+            options.InitialThreshold,
+            options.RetentionPolicy,
+            options.MinAreaFraction);
+
+        foregroundCount = candidate.CountTrue();
+        if (foregroundCount == 0 || foregroundCount == saliencyMap.Count)
+        {
+            candidate = SaliencyMask.Binarize(
+                saliencyMap,
+                SaliencyThresholdMethod.Otsu,
+                options.InitialThreshold,
+                options.RetentionPolicy,
+                options.MinAreaFraction);
+            foregroundCount = candidate.CountTrue();
+        }
+
+        return candidate;
     }
 
     private static MaskMatrix ExtractCore(
@@ -64,38 +100,11 @@ public static class SaliencyCut
         SaliencyCutOptions options,
         int bandRadius)
     {
-        MaskMatrix candidateMask = SaliencyMask.Binarize(
-            saliencyMap,
-            SaliencyThresholdMethod.Fixed,
-            options.InitialThreshold,
-            options.RetentionPolicy,
-            options.MinAreaFraction);
+        MaskMatrix candidateMask = BinarizeInitialSeed(saliencyMap, options, out int seedFgCount);
+        if (seedFgCount == 0 || seedFgCount == image.Count)
+            return candidateMask;
 
-        int fgCount = candidateMask.CountTrue();
-        if (fgCount == 0 || fgCount == image.Count)
-        {
-            candidateMask = SaliencyMask.Binarize(
-                saliencyMap,
-                SaliencyThresholdMethod.Otsu,
-                options.InitialThreshold,
-                options.RetentionPolicy,
-                options.MinAreaFraction);
-
-            fgCount = candidateMask.CountTrue();
-            if (fgCount == 0 || fgCount == image.Count)
-                return candidateMask;
-        }
-
-        var trimap = new TrimapMatrix(image.Size);
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                if (candidateMask[x, y])
-                    trimap[x, y] = TrimapLabel.ProbableForeground;
-            }
-        }
-
+        TrimapMatrix trimap = TrimapMatrix.FromCandidateMask(candidateMask);
         var session = new GrabCutSession(image, options.MixtureComponentCount, options.SmoothnessWeight);
         MaskMatrix? previousMask = null;
 
@@ -111,13 +120,13 @@ public static class SaliencyCut
             if (currentFgCount == 0 && previousMask is null)
             {
                 currentMask = candidateMask;
-                currentFgCount = fgCount;
+                currentFgCount = seedFgCount;
             }
 
             if (currentFgCount == 0 || currentFgCount == image.Count)
                 return previousMask ?? currentMask;
 
-            if (previousMask is not null && MasksEqual(previousMask, currentMask))
+            if (previousMask is not null && previousMask.ContentEquals(currentMask))
                 return currentMask;
 
             previousMask = currentMask;
@@ -125,100 +134,30 @@ public static class SaliencyCut
             if (outer == options.MaxOuterIterations - 1)
                 break;
 
-            MaskMatrix dilated = BinaryMorphology.Dilate(currentMask, bandRadius, StructuringElementShape.Disk);
-            if (dilated.CountTrue() == image.Count)
+            if (!TryBuildRefinedTrimap(currentMask, bandRadius, out TrimapMatrix? nextTrimap))
                 return currentMask;
 
-            int erodeRadius = Math.Clamp(bandRadius / 4, 1, 3);
-            MaskMatrix eroded = BinaryMorphology.Erode(currentMask, erodeRadius, StructuringElementShape.Disk);
-
-            for (int y = 0; y < image.Height; y++)
-            {
-                for (int x = 0; x < image.Width; x++)
-                {
-                    if (!dilated[x, y])
-                        trimap[x, y] = TrimapLabel.Background;
-                    else if (eroded[x, y])
-                        trimap[x, y] = TrimapLabel.Foreground;
-                    else if (currentMask[x, y])
-                        trimap[x, y] = TrimapLabel.ProbableForeground;
-                    else
-                        trimap[x, y] = TrimapLabel.ProbableBackground;
-                }
-            }
+            trimap = nextTrimap!;
         }
 
         return previousMask!;
     }
 
-    private static bool MasksEqual(IReadOnlyMatrix<bool> left, IReadOnlyMatrix<bool> right)
+    private static bool TryBuildRefinedTrimap(
+        MaskMatrix currentMask,
+        int bandRadius,
+        out TrimapMatrix? refinedTrimap)
     {
-        for (int y = 0; y < left.Height; y++)
+        MaskMatrix dilated = BinaryMorphology.Dilate(currentMask, bandRadius, StructuringElementShape.Disk);
+        if (dilated.CountTrue() == currentMask.Count)
         {
-            for (int x = 0; x < left.Width; x++)
-            {
-                if (left[x, y] != right[x, y])
-                    return false;
-            }
+            refinedTrimap = null;
+            return false;
         }
+
+        int erodeRadius = Math.Clamp(bandRadius / 4, 1, 3);
+        MaskMatrix eroded = BinaryMorphology.Erode(currentMask, erodeRadius, StructuringElementShape.Disk);
+        refinedTrimap = TrimapMatrix.FromConfidenceBands(currentMask, eroded, dilated);
         return true;
-    }
-
-    private static Matrix<T> DownsampleBilinear<T>(IReadOnlyMatrix<T> source, Size targetSize)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
-    {
-        var result = new SequentialMatrix<T>(targetSize);
-        int srcWidth = source.Width;
-        int srcHeight = source.Height;
-
-        Parallel.For(0, targetSize.Height, y =>
-        {
-            double srcY = Math.Clamp((((y + 0.5) * srcHeight) / targetSize.Height) - 0.5, 0.0, srcHeight - 1);
-            int y0 = (int)Math.Floor(srcY);
-            int y1 = Math.Min(srcHeight - 1, y0 + 1);
-            double fy = srcY - y0;
-
-            for (int x = 0; x < targetSize.Width; x++)
-            {
-                double srcX = Math.Clamp((((x + 0.5) * srcWidth) / targetSize.Width) - 0.5, 0.0, srcWidth - 1);
-                int x0 = (int)Math.Floor(srcX);
-                int x1 = Math.Min(srcWidth - 1, x0 + 1);
-                double fx = srcX - x0;
-
-                double w00 = (1.0 - fx) * (1.0 - fy);
-                double w10 = fx * (1.0 - fy);
-                double w01 = (1.0 - fx) * fy;
-                double w11 = fx * fy;
-
-                var blended =
-                    (source[x0, y0].ToDoubleVector() * w00) +
-                    (source[x1, y0].ToDoubleVector() * w10) +
-                    (source[x0, y1].ToDoubleVector() * w01) +
-                    (source[x1, y1].ToDoubleVector() * w11);
-
-                result[x, y] = T.FromDoubleVector(blended);
-            }
-        });
-
-        return result;
-    }
-
-    private static MaskMatrix UpsampleMaskNearest(IReadOnlyMatrix<bool> source, Size targetSize)
-    {
-        var result = new MaskMatrix(targetSize);
-        int srcWidth = source.Width;
-        int srcHeight = source.Height;
-
-        Parallel.For(0, targetSize.Height, y =>
-        {
-            int srcY = Math.Clamp((int)((long)y * srcHeight / targetSize.Height), 0, srcHeight - 1);
-            for (int x = 0; x < targetSize.Width; x++)
-            {
-                int srcX = Math.Clamp((int)((long)x * srcWidth / targetSize.Width), 0, srcWidth - 1);
-                result[x, y] = source[srcX, srcY];
-            }
-        });
-
-        return result;
     }
 }

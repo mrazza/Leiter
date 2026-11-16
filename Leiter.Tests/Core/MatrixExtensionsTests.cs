@@ -108,4 +108,48 @@ public class MatrixExtensionsTests
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).Map(p => p.Value > 0.0));
         Assert.Throws<ArgumentNullException>(() => dummy.Map<DoublePixel, bool>(null!));
     }
+
+    [Fact]
+    public void Contains_ShouldCheckMatrixBoundsAndNull()
+    {
+        var matrix = new DummyUntypedMatrix { Width = 4, Height = 3 };
+
+        Assert.True(matrix.Contains(0, 0));
+        Assert.True(matrix.Contains(3, 2));
+        Assert.True(matrix.Contains(new Coord(2, 1)));
+
+        Assert.False(matrix.Contains(-1, 0));
+        Assert.False(matrix.Contains(0, -1));
+        Assert.False(matrix.Contains(4, 2));
+        Assert.False(matrix.Contains(new Coord(1, 3)));
+
+        Assert.Throws<ArgumentNullException>(() => ((IUntypedMatrix)null!).Contains(0, 0));
+        Assert.Throws<ArgumentNullException>(() => ((IUntypedMatrix)null!).Contains(new Coord(0, 0)));
+    }
+
+    [Fact]
+    public void ContentEquals_ShouldCompareDimensionsAndElements()
+    {
+        var left = new MaskMatrix(2, 2);
+        left[0, 0] = true;
+        left[1, 1] = true;
+
+        var rightEqual = new MaskMatrix(2, 2);
+        rightEqual[0, 0] = true;
+        rightEqual[1, 1] = true;
+
+        var rightDiffValue = new MaskMatrix(2, 2);
+        rightDiffValue[0, 0] = true;
+        rightDiffValue[0, 1] = true;
+
+        var rightDiffSize = new MaskMatrix(2, 3);
+
+        Assert.True(left.ContentEquals(rightEqual));
+        Assert.False(left.ContentEquals(rightDiffValue));
+        Assert.False(left.ContentEquals(rightDiffSize));
+        Assert.True(new MaskMatrix(0, 0).ContentEquals(new MaskMatrix(0, 0)));
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ContentEquals(left));
+        Assert.Throws<ArgumentNullException>(() => left.ContentEquals(null!));
+    }
 }

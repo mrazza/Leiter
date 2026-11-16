@@ -1,22 +1,75 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
+using System.Runtime.CompilerServices;
+using Leiter.Algorithms.DataStructures;
+using Leiter.Core;
+
 /// <summary>
 /// Solves 8-connected 2D grid s-t min-cut / max-flow instances using the Boykov–Kolmogorov algorithm.
 /// </summary>
 internal sealed class GridMinCutSolver
 {
-    private const byte FreeTree = 0;
-    private const byte SourceTree = 1;
-    private const byte SinkTree = 2;
+    private enum SearchTree : byte
+    {
+        Free = 0,
+        Source = 1,
+        Sink = 2,
+    }
+
+    private sealed class ActiveNodeQueue
+    {
+        private readonly int[] items;
+        private readonly bool[] contains;
+        private int head;
+        private int tail;
+
+        public ActiveNodeQueue(int capacity)
+        {
+            items = new int[capacity];
+            contains = new bool[capacity];
+        }
+
+        public int Count { get; private set; }
+
+        public void Clear()
+        {
+            Array.Clear(contains);
+            head = 0;
+            tail = 0;
+            Count = 0;
+        }
+
+        public int Peek() => items[head];
+
+        public void Enqueue(int pixelIndex)
+        {
+            if (contains[pixelIndex])
+                return;
+
+            contains[pixelIndex] = true;
+            items[tail] = pixelIndex;
+            tail++;
+            if (tail == items.Length)
+                tail = 0;
+            Count++;
+        }
+
+        public void DequeueHead()
+        {
+            int pixelIndex = items[head];
+            contains[pixelIndex] = false;
+            head++;
+            if (head == items.Length)
+                head = 0;
+            Count--;
+        }
+    }
 
     private const int TerminalParent = -1;
     private const int NoParent = -2;
     private const float CapacityEpsilon = 1e-5f;
 
-    // Direction indices chosen so (dir ^ 4) is always the opposite vector.
-    private static readonly int[] DirectionDeltaX = [1, 0, 1, -1, -1, 0, -1, 1];
-    private static readonly int[] DirectionDeltaY = [0, 1, 1, 1, 0, -1, -1, -1];
-
+    private readonly Size gridSize;
     private readonly int pixelCount;
     private readonly int[] neighborOffsets;
     private readonly byte[] validDirectionMasks;
@@ -25,42 +78,42 @@ internal sealed class GridMinCutSolver
     private readonly float[] residualCapacities;
     private readonly double[] terminalExcess;
 
-    private readonly byte[] treeMembership;
+    private readonly SearchTree[] treeMembership;
     private readonly int[] parentPixel;
     private readonly byte[] directionToParent;
 
-    private readonly int[] activeQueue;
-    private readonly bool[] isInActiveQueue;
+    private readonly ActiveNodeQueue activeQueue;
     private readonly Queue<int> orphanQueue;
     private readonly long[] originTimestamp;
     private readonly int[] distanceToTerminal;
-
-    private int queueHead;
-    private int queueTail;
-    private int queueCount;
     private long currentTimestamp;
 
     public GridMinCutSolver(int width, int height)
+        : this(new Size(width, height))
     {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(width, 0);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(height, 0);
+    }
 
-        pixelCount = checked(width * height);
+    public GridMinCutSolver(Size size)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(size.Width, 0, nameof(size));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(size.Height, 0, nameof(size));
+
+        gridSize = size;
+        pixelCount = checked(size.Width * size.Height);
         neighborOffsets = new int[8];
-        for (int dir = 0; dir < 8; dir++)
-            neighborOffsets[dir] = DirectionDeltaX[dir] + (DirectionDeltaY[dir] * width);
+        foreach (GridNeighbor neighbor in GridNeighborhood.All8Connected)
+            neighborOffsets[(int)neighbor.Direction] = neighbor.Offset.X + (neighbor.Offset.Y * size.Width);
 
-        validDirectionMasks = BuildValidDirectionMasks(width, height);
+        validDirectionMasks = BuildValidDirectionMasks(size);
         baseNeighborCapacities = new float[pixelCount * 8];
         residualCapacities = new float[pixelCount * 8];
         terminalExcess = new double[pixelCount];
 
-        treeMembership = new byte[pixelCount];
+        treeMembership = new SearchTree[pixelCount];
         parentPixel = new int[pixelCount];
         directionToParent = new byte[pixelCount];
 
-        activeQueue = new int[pixelCount];
-        isInActiveQueue = new bool[pixelCount];
+        activeQueue = new ActiveNodeQueue(pixelCount);
         orphanQueue = new Queue<int>();
         originTimestamp = new long[pixelCount];
         distanceToTerminal = new int[pixelCount];
@@ -69,11 +122,16 @@ internal sealed class GridMinCutSolver
     public void SetUndirectedEdgeCapacity(int pixelIndex, int direction, float capacity)
     {
         int neighborIndex = pixelIndex + neighborOffsets[direction];
-        baseNeighborCapacities[(pixelIndex << 3) | direction] = capacity;
-        baseNeighborCapacities[(neighborIndex << 3) | (direction ^ 4)] = capacity;
+        baseNeighborCapacities[DirectedEdgeIndex(pixelIndex, direction)] = capacity;
+        baseNeighborCapacities[DirectedEdgeIndex(neighborIndex, OppositeDirection(direction))] = capacity;
     }
 
-    public bool IsSourceSide(int pixelIndex) => treeMembership[pixelIndex] == SourceTree;
+    public void SetUndirectedEdgeCapacity(Coord pixel, GridDirection direction, float capacity) =>
+        SetUndirectedEdgeCapacity((pixel.Y * gridSize.Width) + pixel.X, (int)direction, capacity);
+
+    public bool IsSourceSide(int pixelIndex) => treeMembership[pixelIndex] == SearchTree.Source;
+
+    public bool IsSourceSide(Coord pixel) => IsSourceSide((pixel.Y * gridSize.Width) + pixel.X);
 
     public double Solve(ReadOnlySpan<double> sourceCapacities, ReadOnlySpan<double> sinkCapacities)
     {
@@ -81,22 +139,16 @@ internal sealed class GridMinCutSolver
             throw new ArgumentException("Terminal capacity spans must match the grid pixel count.");
 
         Array.Copy(baseNeighborCapacities, residualCapacities, residualCapacities.Length);
-        Array.Clear(isInActiveQueue);
         Array.Clear(originTimestamp);
+        activeQueue.Clear();
         orphanQueue.Clear();
-        queueHead = 0;
-        queueTail = 0;
-        queueCount = 0;
         currentTimestamp = 0;
 
         double totalFlow = InitializeTerminalTrees(sourceCapacities, sinkCapacities);
         SeedBoundaryActiveNodes();
 
-        while (true)
+        while (TryGrowToAugmentingPath(out int sourceEndpoint, out int sinkEndpoint, out int dirSourceToSink))
         {
-            if (!TryGrowToAugmentingPath(out int sourceEndpoint, out int sinkEndpoint, out int dirSourceToSink))
-                break;
-
             totalFlow += AugmentPath(sourceEndpoint, sinkEndpoint, dirSourceToSink);
             AdoptOrphans();
         }
@@ -104,22 +156,46 @@ internal sealed class GridMinCutSolver
         return totalFlow;
     }
 
-    private static byte[] BuildValidDirectionMasks(int width, int height)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int DirectedEdgeIndex(int fromPixel, int direction) => (fromPixel << 3) | direction;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int OppositeDirection(int direction) => direction ^ 4;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private float GetTreeGrowthCapacity(SearchTree tree, int fromPixel, int toPixel, int dirFromTo) =>
+        tree == SearchTree.Source
+            ? residualCapacities[DirectedEdgeIndex(fromPixel, dirFromTo)]
+            : residualCapacities[DirectedEdgeIndex(toPixel, OppositeDirection(dirFromTo))];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private float GetParentLinkCapacity(SearchTree tree, int childPixel, int parentPixelIndex, int dirChildToParent) =>
+        tree == SearchTree.Source
+            ? residualCapacities[DirectedEdgeIndex(parentPixelIndex, OppositeDirection(dirChildToParent))]
+            : residualCapacities[DirectedEdgeIndex(childPixel, dirChildToParent)];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool PushDirectedFlow(int fromPixel, int toPixel, int dirFromTo, float flow)
     {
-        var masks = new byte[width * height];
-        for (int y = 0; y < height; y++)
+        residualCapacities[DirectedEdgeIndex(toPixel, OppositeDirection(dirFromTo))] += flow;
+        return SubtractResidual(DirectedEdgeIndex(fromPixel, dirFromTo), flow);
+    }
+
+    private static byte[] BuildValidDirectionMasks(Size size)
+    {
+        var masks = new byte[size.Width * size.Height];
+        for (int y = 0; y < size.Height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (int x = 0; x < size.Width; x++)
             {
+                var coord = new Coord(x, y);
                 byte mask = 0;
-                for (int dir = 0; dir < 8; dir++)
+                foreach (GridNeighbor neighbor in GridNeighborhood.All8Connected)
                 {
-                    int nx = x + DirectionDeltaX[dir];
-                    int ny = y + DirectionDeltaY[dir];
-                    if ((uint)nx < (uint)width && (uint)ny < (uint)height)
-                        mask |= (byte)(1 << dir);
+                    if (size.Contains(coord + neighbor.Offset))
+                        mask |= (byte)(1 << (int)neighbor.Direction);
                 }
-                masks[(y * width) + x] = mask;
+                masks[(y * size.Width) + x] = mask;
             }
         }
         return masks;
@@ -140,17 +216,17 @@ internal sealed class GridMinCutSolver
 
             if (excess > CapacityEpsilon)
             {
-                treeMembership[p] = SourceTree;
+                treeMembership[p] = SearchTree.Source;
                 parentPixel[p] = TerminalParent;
             }
             else if (excess < -CapacityEpsilon)
             {
-                treeMembership[p] = SinkTree;
+                treeMembership[p] = SearchTree.Sink;
                 parentPixel[p] = TerminalParent;
             }
             else
             {
-                treeMembership[p] = FreeTree;
+                treeMembership[p] = SearchTree.Free;
                 parentPixel[p] = NoParent;
             }
         }
@@ -162,8 +238,8 @@ internal sealed class GridMinCutSolver
     {
         for (int p = 0; p < pixelCount; p++)
         {
-            byte ownTree = treeMembership[p];
-            if (ownTree == FreeTree)
+            SearchTree ownTree = treeMembership[p];
+            if (ownTree == SearchTree.Free)
                 continue;
 
             byte validMask = validDirectionMasks[p];
@@ -175,45 +251,22 @@ internal sealed class GridMinCutSolver
                 int q = p + neighborOffsets[dir];
                 if (treeMembership[q] != ownTree)
                 {
-                    EnqueueActive(p);
+                    activeQueue.Enqueue(p);
                     break;
                 }
             }
         }
     }
 
-    private void EnqueueActive(int pixelIndex)
-    {
-        if (isInActiveQueue[pixelIndex])
-            return;
-
-        isInActiveQueue[pixelIndex] = true;
-        activeQueue[queueTail] = pixelIndex;
-        queueTail++;
-        if (queueTail == pixelCount)
-            queueTail = 0;
-        queueCount++;
-    }
-
-    private void DequeueActiveHead()
-    {
-        int pixelIndex = activeQueue[queueHead];
-        isInActiveQueue[pixelIndex] = false;
-        queueHead++;
-        if (queueHead == pixelCount)
-            queueHead = 0;
-        queueCount--;
-    }
-
     private bool TryGrowToAugmentingPath(out int sourceEndpoint, out int sinkEndpoint, out int dirSourceToSink)
     {
-        while (queueCount > 0)
+        while (activeQueue.Count > 0)
         {
-            int p = activeQueue[queueHead];
-            byte tree = treeMembership[p];
-            if (tree == FreeTree)
+            int p = activeQueue.Peek();
+            SearchTree tree = treeMembership[p];
+            if (tree == SearchTree.Free)
             {
-                DequeueActiveHead();
+                activeQueue.DequeueHead();
                 continue;
             }
 
@@ -224,24 +277,20 @@ internal sealed class GridMinCutSolver
                     continue;
 
                 int q = p + neighborOffsets[dir];
-                float capacity = tree == SourceTree
-                    ? residualCapacities[(p << 3) | dir]
-                    : residualCapacities[(q << 3) | (dir ^ 4)];
-
-                if (capacity <= CapacityEpsilon)
+                if (GetTreeGrowthCapacity(tree, p, q, dir) <= CapacityEpsilon)
                     continue;
 
-                byte neighborTree = treeMembership[q];
-                if (neighborTree == FreeTree)
+                SearchTree neighborTree = treeMembership[q];
+                if (neighborTree == SearchTree.Free)
                 {
                     treeMembership[q] = tree;
                     parentPixel[q] = p;
-                    directionToParent[q] = (byte)(dir ^ 4);
-                    EnqueueActive(q);
+                    directionToParent[q] = (byte)OppositeDirection(dir);
+                    activeQueue.Enqueue(q);
                 }
                 else if (neighborTree != tree)
                 {
-                    if (tree == SourceTree)
+                    if (tree == SearchTree.Source)
                     {
                         sourceEndpoint = p;
                         sinkEndpoint = q;
@@ -251,13 +300,13 @@ internal sealed class GridMinCutSolver
                     {
                         sourceEndpoint = q;
                         sinkEndpoint = p;
-                        dirSourceToSink = dir ^ 4;
+                        dirSourceToSink = OppositeDirection(dir);
                     }
                     return true;
                 }
             }
 
-            DequeueActiveHead();
+            activeQueue.DequeueHead();
         }
 
         sourceEndpoint = -1;
@@ -268,17 +317,25 @@ internal sealed class GridMinCutSolver
 
     private double AugmentPath(int sourceEndpoint, int sinkEndpoint, int dirSourceToSink)
     {
-        double bottleneck = residualCapacities[(sourceEndpoint << 3) | dirSourceToSink];
+        double bottleneck = FindBottleneckCapacity(sourceEndpoint, sinkEndpoint, dirSourceToSink);
+        PushFlowAlongAugmentingPath(sourceEndpoint, sinkEndpoint, dirSourceToSink, bottleneck);
+        return bottleneck;
+    }
+
+    private double FindBottleneckCapacity(int sourceEndpoint, int sinkEndpoint, int dirSourceToSink)
+    {
+        double bottleneck = residualCapacities[DirectedEdgeIndex(sourceEndpoint, dirSourceToSink)];
 
         int u = sourceEndpoint;
         while (parentPixel[u] >= 0)
         {
             int parent = parentPixel[u];
-            double edgeCap = residualCapacities[(parent << 3) | (directionToParent[u] ^ 4)];
+            double edgeCap = GetParentLinkCapacity(SearchTree.Source, u, parent, directionToParent[u]);
             if (edgeCap < bottleneck)
                 bottleneck = edgeCap;
             u = parent;
         }
+
         double sourceRootCap = terminalExcess[u];
         if (sourceRootCap < bottleneck)
             bottleneck = sourceRootCap;
@@ -286,68 +343,59 @@ internal sealed class GridMinCutSolver
         int v = sinkEndpoint;
         while (parentPixel[v] >= 0)
         {
-            double edgeCap = residualCapacities[(v << 3) | directionToParent[v]];
+            int parent = parentPixel[v];
+            double edgeCap = GetParentLinkCapacity(SearchTree.Sink, v, parent, directionToParent[v]);
             if (edgeCap < bottleneck)
                 bottleneck = edgeCap;
-            v = parentPixel[v];
+            v = parent;
         }
+
         double sinkRootCap = -terminalExcess[v];
         if (sinkRootCap < bottleneck)
             bottleneck = sinkRootCap;
 
-        float floatBottleneck = (float)bottleneck;
-        SubtractResidual((sourceEndpoint << 3) | dirSourceToSink, floatBottleneck);
-        residualCapacities[(sinkEndpoint << 3) | (dirSourceToSink ^ 4)] += floatBottleneck;
+        return bottleneck;
+    }
 
-        u = sourceEndpoint;
+    private void PushFlowAlongAugmentingPath(int sourceEndpoint, int sinkEndpoint, int dirSourceToSink, double bottleneck)
+    {
+        float floatBottleneck = (float)bottleneck;
+        PushDirectedFlow(sourceEndpoint, sinkEndpoint, dirSourceToSink, floatBottleneck);
+
+        int u = sourceEndpoint;
         while (parentPixel[u] >= 0)
         {
             int parent = parentPixel[u];
-            byte dirToParent = directionToParent[u];
-            int forwardEdge = (parent << 3) | (dirToParent ^ 4);
-            residualCapacities[(u << 3) | dirToParent] += floatBottleneck;
-
-            if (!SubtractResidual(forwardEdge, floatBottleneck))
-            {
-                parentPixel[u] = NoParent;
-                orphanQueue.Enqueue(u);
-            }
+            int dirParentToChild = OppositeDirection(directionToParent[u]);
+            if (!PushDirectedFlow(parent, u, dirParentToChild, floatBottleneck))
+                MarkAsOrphan(u);
 
             u = parent;
         }
 
         terminalExcess[u] -= bottleneck;
         if (terminalExcess[u] <= CapacityEpsilon)
-        {
-            parentPixel[u] = NoParent;
-            orphanQueue.Enqueue(u);
-        }
+            MarkAsOrphan(u);
 
-        v = sinkEndpoint;
+        int v = sinkEndpoint;
         while (parentPixel[v] >= 0)
         {
             int parent = parentPixel[v];
-            byte dirToParent = directionToParent[v];
-            int forwardEdge = (v << 3) | dirToParent;
-            residualCapacities[(parent << 3) | (dirToParent ^ 4)] += floatBottleneck;
-
-            if (!SubtractResidual(forwardEdge, floatBottleneck))
-            {
-                parentPixel[v] = NoParent;
-                orphanQueue.Enqueue(v);
-            }
+            if (!PushDirectedFlow(v, parent, directionToParent[v], floatBottleneck))
+                MarkAsOrphan(v);
 
             v = parent;
         }
 
         terminalExcess[v] += bottleneck;
         if (-terminalExcess[v] <= CapacityEpsilon)
-        {
-            parentPixel[v] = NoParent;
-            orphanQueue.Enqueue(v);
-        }
+            MarkAsOrphan(v);
+    }
 
-        return bottleneck;
+    private void MarkAsOrphan(int pixelIndex)
+    {
+        parentPixel[pixelIndex] = NoParent;
+        orphanQueue.Enqueue(pixelIndex);
     }
 
     private bool SubtractResidual(int edgeIndex, float flow)
@@ -368,75 +416,76 @@ internal sealed class GridMinCutSolver
         while (orphanQueue.Count > 0)
         {
             int orphan = orphanQueue.Dequeue();
-            byte tree = treeMembership[orphan];
-            currentTimestamp++;
-
-            int bestParent = -1;
-            byte bestDir = 0;
-            int bestDistance = int.MaxValue;
-            byte validMask = validDirectionMasks[orphan];
-
-            for (int dir = 0; dir < 8; dir++)
-            {
-                if ((validMask & (1 << dir)) == 0)
-                    continue;
-
-                int candidate = orphan + neighborOffsets[dir];
-                if (treeMembership[candidate] != tree)
-                    continue;
-
-                float treeArcCapacity = tree == SourceTree
-                    ? residualCapacities[(candidate << 3) | (dir ^ 4)]
-                    : residualCapacities[(orphan << 3) | dir];
-
-                if (treeArcCapacity <= CapacityEpsilon)
-                    continue;
-
-                int distance = ComputeDistanceToTerminal(candidate);
-                if (distance < bestDistance)
-                {
-                    bestDistance = distance;
-                    bestParent = candidate;
-                    bestDir = (byte)dir;
-                }
-            }
-
-            if (bestParent >= 0)
-            {
-                parentPixel[orphan] = bestParent;
-                directionToParent[orphan] = bestDir;
-                originTimestamp[orphan] = currentTimestamp;
-                distanceToTerminal[orphan] = bestDistance + 1;
-                continue;
-            }
-
-            for (int dir = 0; dir < 8; dir++)
-            {
-                if ((validMask & (1 << dir)) == 0)
-                    continue;
-
-                int neighbor = orphan + neighborOffsets[dir];
-                if (treeMembership[neighbor] != tree)
-                    continue;
-
-                float treeArcCapacity = tree == SourceTree
-                    ? residualCapacities[(neighbor << 3) | (dir ^ 4)]
-                    : residualCapacities[(orphan << 3) | dir];
-
-                if (treeArcCapacity > CapacityEpsilon)
-                    EnqueueActive(neighbor);
-
-                if (parentPixel[neighbor] == orphan)
-                {
-                    parentPixel[neighbor] = NoParent;
-                    orphanQueue.Enqueue(neighbor);
-                }
-            }
-
-            treeMembership[orphan] = FreeTree;
-            parentPixel[orphan] = NoParent;
-            originTimestamp[orphan] = 0;
+            if (!TryFindReplacementParent(orphan))
+                DemoteOrphanToFree(orphan);
         }
+    }
+
+    private bool TryFindReplacementParent(int orphan)
+    {
+        SearchTree tree = treeMembership[orphan];
+        currentTimestamp++;
+
+        int bestParent = -1;
+        byte bestDir = 0;
+        int bestDistance = int.MaxValue;
+        byte validMask = validDirectionMasks[orphan];
+
+        for (int dir = 0; dir < 8; dir++)
+        {
+            if ((validMask & (1 << dir)) == 0)
+                continue;
+
+            int candidate = orphan + neighborOffsets[dir];
+            if (treeMembership[candidate] != tree)
+                continue;
+
+            if (GetParentLinkCapacity(tree, orphan, candidate, dir) <= CapacityEpsilon)
+                continue;
+
+            int distance = ComputeDistanceToTerminal(candidate);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestParent = candidate;
+                bestDir = (byte)dir;
+            }
+        }
+
+        if (bestParent < 0)
+            return false;
+
+        parentPixel[orphan] = bestParent;
+        directionToParent[orphan] = bestDir;
+        originTimestamp[orphan] = currentTimestamp;
+        distanceToTerminal[orphan] = bestDistance + 1;
+        return true;
+    }
+
+    private void DemoteOrphanToFree(int orphan)
+    {
+        SearchTree tree = treeMembership[orphan];
+        byte validMask = validDirectionMasks[orphan];
+
+        for (int dir = 0; dir < 8; dir++)
+        {
+            if ((validMask & (1 << dir)) == 0)
+                continue;
+
+            int neighbor = orphan + neighborOffsets[dir];
+            if (treeMembership[neighbor] != tree)
+                continue;
+
+            if (GetParentLinkCapacity(tree, orphan, neighbor, dir) > CapacityEpsilon)
+                activeQueue.Enqueue(neighbor);
+
+            if (parentPixel[neighbor] == orphan)
+                MarkAsOrphan(neighbor);
+        }
+
+        treeMembership[orphan] = SearchTree.Free;
+        parentPixel[orphan] = NoParent;
+        originTimestamp[orphan] = 0;
     }
 
     private int ComputeDistanceToTerminal(int startNode)

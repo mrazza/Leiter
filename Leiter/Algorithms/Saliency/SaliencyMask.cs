@@ -9,14 +9,6 @@ using Leiter.Pixels;
 /// </summary>
 public static class SaliencyMask
 {
-    private static readonly Coord[] ForwardNeighborOffsets =
-    [
-        new(1, 0),
-        new(0, 1),
-        new(1, 1),
-        new(-1, 1),
-    ];
-
     /// <summary>
     /// Computes a binarization threshold in [0, 1] for the given saliency map using the specified method.
     /// </summary>
@@ -129,14 +121,14 @@ public static class SaliencyMask
                 if (!isForeground[currentIndex])
                     continue;
 
-                foreach (Coord offset in ForwardNeighborOffsets)
+                var current = new Coord(x, y);
+                foreach (GridNeighbor neighbor in GridNeighborhood.Forward8Connected)
                 {
-                    int nx = x + offset.X;
-                    int ny = y + offset.Y;
-                    if ((uint)nx >= (uint)width || (uint)ny >= (uint)height)
+                    Coord other = current + neighbor.Offset;
+                    if (!mask.Contains(other))
                         continue;
 
-                    int neighborIndex = (ny * width) + nx;
+                    int neighborIndex = (other.Y * width) + other.X;
                     if (!isForeground[neighborIndex])
                         continue;
 

@@ -1,5 +1,6 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
@@ -11,42 +12,43 @@ using Leiter.Pixels;
 /// </summary>
 internal sealed class GrabCutSession
 {
-    private const double DiagonalDistanceFactor = 0.7071067811865475; // 1 / sqrt(2)
+    private readonly record struct TrimapCounts(
+        int ForegroundCount,
+        int BackgroundCount,
+        int HardBackgroundCount);
 
-    private readonly int width;
-    private readonly int height;
+    private readonly Size imageSize;
     private readonly int pixelCount;
     private readonly double smoothnessWeight;
 
-    private readonly float[] interleavedRgb;
+    private readonly Rgb8[] pixels;
     private readonly GridMinCutSolver solver;
     private readonly GaussianMixtureModel foregroundGmm;
     private readonly GaussianMixtureModel backgroundGmm;
 
     private readonly TrimapLabel[] trimapLabels;
-    private readonly byte[] currentForeground;
+    private readonly bool[] isForeground;
     private readonly int[] componentAssignments;
     private readonly double[] sourceCapacities;
     private readonly double[] sinkCapacities;
 
     public GrabCutSession(IReadOnlyMatrix<Rgb8> image, int mixtureComponentCount, double smoothnessWeight)
     {
-        width = image.Width;
-        height = image.Height;
+        imageSize = image.Size;
         pixelCount = image.Count;
         this.smoothnessWeight = smoothnessWeight;
 
-        interleavedRgb = ExtractRgbArray(image, width, height);
-        double beta = ComputeContrastParameterBeta(interleavedRgb, width, height);
+        pixels = ExtractPixelArray(image);
+        double beta = ComputeContrastParameterBeta(image);
 
-        solver = new GridMinCutSolver(width, height);
-        PopulateSmoothnessEdges(solver, interleavedRgb, width, height, smoothnessWeight, beta);
+        solver = new GridMinCutSolver(image.Size);
+        PopulateSmoothnessEdges(solver, image, smoothnessWeight, beta);
 
         foregroundGmm = new GaussianMixtureModel(mixtureComponentCount);
         backgroundGmm = new GaussianMixtureModel(mixtureComponentCount);
 
         trimapLabels = new TrimapLabel[pixelCount];
-        currentForeground = new byte[pixelCount];
+        isForeground = new bool[pixelCount];
         componentAssignments = new int[pixelCount];
         sourceCapacities = new double[pixelCount];
         sinkCapacities = new double[pixelCount];
@@ -54,131 +56,33 @@ internal sealed class GrabCutSession
 
     public MaskMatrix Run(IReadOnlyMatrix<TrimapLabel> trimap, int iterations)
     {
-        int initialFgCount = 0;
-        int initialBgCount = 0;
-        int hardBgCount = 0;
+        TrimapCounts initialCounts = LoadAndValidateTrimap(trimap);
 
-        for (int y = 0; y < height; y++)
+        if (initialCounts.ForegroundCount == 0)
+            return new MaskMatrix(imageSize);
+
+        if (initialCounts.BackgroundCount == 0)
         {
-            for (int x = 0; x < width; x++)
-            {
-                TrimapLabel label = trimap[x, y];
-                if ((byte)label > (byte)TrimapLabel.ProbableForeground)
-                    throw new ArgumentOutOfRangeException(nameof(trimap), label, "Trimap entries must be valid TrimapLabel values.");
-
-                int p = (y * width) + x;
-                trimapLabels[p] = label;
-
-                bool isForeground = label is TrimapLabel.Foreground or TrimapLabel.ProbableForeground;
-                currentForeground[p] = isForeground ? (byte)1 : (byte)0;
-                if (isForeground)
-                {
-                    initialFgCount++;
-                }
-                else
-                {
-                    initialBgCount++;
-                    if (label == TrimapLabel.Background)
-                        hardBgCount++;
-                }
-            }
-        }
-
-        if (initialFgCount == 0)
-            return new MaskMatrix(width, height);
-
-        if (initialBgCount == 0)
-        {
-            var allForeground = new MaskMatrix(width, height);
+            var allForeground = new MaskMatrix(imageSize);
             allForeground.SetAll(true);
             return allForeground;
         }
 
-        InitializeGmms(initialFgCount, initialBgCount, hardBgCount);
+        InitializeGmms(initialCounts);
 
-        int fgCount = initialFgCount;
-        int bgCount = initialBgCount;
+        int fgCount = initialCounts.ForegroundCount;
+        int bgCount = initialCounts.BackgroundCount;
         double hardWeight = (9.0 * smoothnessWeight) + 1.0;
 
         for (int iteration = 0; iteration < iterations; iteration++)
         {
             if (iteration > 0)
-            {
-                Parallel.For(0, pixelCount, p =>
-                {
-                    int rgbOffset = p * 3;
-                    float r = interleavedRgb[rgbOffset + 0];
-                    float g = interleavedRgb[rgbOffset + 1];
-                    float b = interleavedRgb[rgbOffset + 2];
+                RefitGmmsFromSegmentation(fgCount, bgCount);
 
-                    componentAssignments[p] = currentForeground[p] != 0
-                        ? foregroundGmm.AssignBestComponent(r, g, b)
-                        : backgroundGmm.AssignBestComponent(r, g, b);
-                });
-
-                foregroundGmm.FitFromAssignedComponents(interleavedRgb, currentForeground, 1, componentAssignments, fgCount);
-                backgroundGmm.FitFromAssignedComponents(interleavedRgb, currentForeground, 0, componentAssignments, bgCount);
-            }
-
-            Parallel.For(0, pixelCount, p =>
-            {
-                TrimapLabel label = trimapLabels[p];
-                if (label == TrimapLabel.Foreground)
-                {
-                    sourceCapacities[p] = hardWeight;
-                    sinkCapacities[p] = 0.0;
-                }
-                else if (label == TrimapLabel.Background)
-                {
-                    sourceCapacities[p] = 0.0;
-                    sinkCapacities[p] = hardWeight;
-                }
-                else
-                {
-                    int rgbOffset = p * 3;
-                    float r = interleavedRgb[rgbOffset + 0];
-                    float g = interleavedRgb[rgbOffset + 1];
-                    float b = interleavedRgb[rgbOffset + 2];
-
-                    double bgNll = backgroundGmm.EvaluateNegativeLogLikelihood(r, g, b);
-                    double fgNll = foregroundGmm.EvaluateNegativeLogLikelihood(r, g, b);
-                    if (bgNll >= fgNll)
-                    {
-                        sourceCapacities[p] = bgNll - fgNll;
-                        sinkCapacities[p] = 0.0;
-                    }
-                    else
-                    {
-                        sourceCapacities[p] = 0.0;
-                        sinkCapacities[p] = fgNll - bgNll;
-                    }
-                }
-            });
-
+            ComputeTerminalCapacities(hardWeight);
             solver.Solve(sourceCapacities, sinkCapacities);
 
-            bool changed = false;
-            fgCount = 0;
-
-            for (int p = 0; p < pixelCount; p++)
-            {
-                byte nextFg = trimapLabels[p] switch
-                {
-                    TrimapLabel.Foreground => 1,
-                    TrimapLabel.Background => 0,
-                    _ => solver.IsSourceSide(p) ? (byte)1 : (byte)0,
-                };
-
-                if (nextFg != currentForeground[p])
-                {
-                    currentForeground[p] = nextFg;
-                    changed = true;
-                }
-
-                if (nextFg != 0)
-                    fgCount++;
-            }
-
+            bool changed = UpdateSegmentationFromCut(out fgCount);
             bgCount = pixelCount - fgCount;
             if (!changed || fgCount == 0 || bgCount == 0)
                 break;
@@ -187,89 +91,176 @@ internal sealed class GrabCutSession
         return BuildMaskFromState();
     }
 
-    private void InitializeGmms(int initialFgCount, int initialBgCount, int hardBgCount)
+    private TrimapCounts LoadAndValidateTrimap(IReadOnlyMatrix<TrimapLabel> trimap)
     {
-        var fgIndices = new int[initialFgCount];
-        bool useHardBackgroundOnly = hardBgCount > 0;
-        var bgIndices = new int[useHardBackgroundOnly ? hardBgCount : initialBgCount];
+        int fgCount = 0;
+        int bgCount = 0;
+        int hardBgCount = 0;
+        int width = imageSize.Width;
+
+        for (int y = 0; y < imageSize.Height; y++)
+        {
+            int rowBase = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                TrimapLabel label = trimap[x, y];
+                if (!Enum.IsDefined(label))
+                    throw new ArgumentOutOfRangeException(nameof(trimap), label, "Trimap entries must be valid TrimapLabel values.");
+
+                int p = rowBase + x;
+                trimapLabels[p] = label;
+
+                bool fg = label is TrimapLabel.Foreground or TrimapLabel.ProbableForeground;
+                isForeground[p] = fg;
+                if (fg)
+                {
+                    fgCount++;
+                }
+                else
+                {
+                    bgCount++;
+                    if (label == TrimapLabel.Background)
+                        hardBgCount++;
+                }
+            }
+        }
+
+        return new TrimapCounts(fgCount, bgCount, hardBgCount);
+    }
+
+    private void InitializeGmms(TrimapCounts counts)
+    {
+        var fgIndices = new int[counts.ForegroundCount];
+        bool useHardBackgroundOnly = counts.HardBackgroundCount > 0;
+        var bgIndices = new int[useHardBackgroundOnly ? counts.HardBackgroundCount : counts.BackgroundCount];
         int fgCursor = 0;
         int bgCursor = 0;
 
         for (int p = 0; p < pixelCount; p++)
         {
-            if (currentForeground[p] != 0)
+            if (isForeground[p])
                 fgIndices[fgCursor++] = p;
             else if (!useHardBackgroundOnly || trimapLabels[p] == TrimapLabel.Background)
                 bgIndices[bgCursor++] = p;
         }
 
-        foregroundGmm.InitializeAndFit(interleavedRgb, fgIndices);
-        backgroundGmm.InitializeAndFit(interleavedRgb, bgIndices);
+        foregroundGmm.InitializeAndFit(pixels, fgIndices);
+        backgroundGmm.InitializeAndFit(pixels, bgIndices);
     }
 
-    private MaskMatrix BuildMaskFromState()
+    private void RefitGmmsFromSegmentation(int fgCount, int bgCount)
     {
-        var result = new MaskMatrix(width, height);
-        for (int y = 0; y < height; y++)
+        Parallel.For(0, pixelCount, p =>
         {
-            for (int x = 0; x < width; x++)
-                result[x, y] = currentForeground[(y * width) + x] != 0;
-        }
-        return result;
+            Rgb8 pixel = pixels[p];
+            componentAssignments[p] = isForeground[p]
+                ? foregroundGmm.AssignBestComponent(pixel)
+                : backgroundGmm.AssignBestComponent(pixel);
+        });
+
+        foregroundGmm.FitFromAssignedComponents(pixels, isForeground, targetForeground: true, componentAssignments, fgCount);
+        backgroundGmm.FitFromAssignedComponents(pixels, isForeground, targetForeground: false, componentAssignments, bgCount);
     }
 
-    private static float[] ExtractRgbArray(IReadOnlyMatrix<Rgb8> image, int width, int height)
+    private void ComputeTerminalCapacities(double hardWeight)
     {
-        var rgb = new float[width * height * 3];
+        Parallel.For(0, pixelCount, p =>
+        {
+            TrimapLabel label = trimapLabels[p];
+            if (label == TrimapLabel.Foreground)
+            {
+                sourceCapacities[p] = hardWeight;
+                sinkCapacities[p] = 0.0;
+                return;
+            }
+
+            if (label == TrimapLabel.Background)
+            {
+                sourceCapacities[p] = 0.0;
+                sinkCapacities[p] = hardWeight;
+                return;
+            }
+
+            Rgb8 pixel = pixels[p];
+            double bgNll = backgroundGmm.EvaluateNegativeLogLikelihood(pixel);
+            double fgNll = foregroundGmm.EvaluateNegativeLogLikelihood(pixel);
+            if (bgNll >= fgNll)
+            {
+                sourceCapacities[p] = bgNll - fgNll;
+                sinkCapacities[p] = 0.0;
+            }
+            else
+            {
+                sourceCapacities[p] = 0.0;
+                sinkCapacities[p] = fgNll - bgNll;
+            }
+        });
+    }
+
+    private bool UpdateSegmentationFromCut(out int fgCount)
+    {
+        bool changed = false;
+        fgCount = 0;
+
+        for (int p = 0; p < pixelCount; p++)
+        {
+            bool nextFg = trimapLabels[p] switch
+            {
+                TrimapLabel.Foreground => true,
+                TrimapLabel.Background => false,
+                _ => solver.IsSourceSide(p),
+            };
+
+            if (nextFg != isForeground[p])
+            {
+                isForeground[p] = nextFg;
+                changed = true;
+            }
+
+            if (nextFg)
+                fgCount++;
+        }
+
+        return changed;
+    }
+
+    private MaskMatrix BuildMaskFromState() => new(imageSize, isForeground);
+
+    private static Rgb8[] ExtractPixelArray(IReadOnlyMatrix<Rgb8> image)
+    {
+        int width = image.Width;
+        int height = image.Height;
+        var extracted = new Rgb8[image.Count];
+
         Parallel.For(0, height, y =>
         {
             int rowBase = y * width;
             for (int x = 0; x < width; x++)
-            {
-                Rgb8 pixel = image[x, y];
-                int offset = (rowBase + x) * 3;
-                rgb[offset + 0] = pixel.R;
-                rgb[offset + 1] = pixel.G;
-                rgb[offset + 2] = pixel.B;
-            }
+                extracted[rowBase + x] = image[x, y];
         });
-        return rgb;
+
+        return extracted;
     }
 
-    private static double ComputeContrastParameterBeta(float[] rgb, int width, int height)
+    private static double ComputeContrastParameterBeta(IReadOnlyMatrix<Rgb8> image)
     {
         double sumSquaredDiff = 0.0;
         long pairCount = 0;
 
-        for (int y = 0; y < height; y++)
+        for (int y = 0; y < image.Height; y++)
         {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
+            for (int x = 0; x < image.Width; x++)
             {
-                int p = rowBase + x;
-                if (x + 1 < width)
+                var self = new Coord(x, y);
+                Rgb8 selfPixel = image[self];
+                foreach (GridNeighbor neighbor in GridNeighborhood.Forward8Connected)
                 {
-                    sumSquaredDiff += ColorDistanceSquared(rgb, p, p + 1);
+                    Coord other = self + neighbor.Offset;
+                    if (!image.Contains(other))
+                        continue;
+
+                    sumSquaredDiff += selfPixel.DistanceSquared(image[other]);
                     pairCount++;
-                }
-
-                if (y + 1 < height)
-                {
-                    int below = p + width;
-                    sumSquaredDiff += ColorDistanceSquared(rgb, p, below);
-                    pairCount++;
-
-                    if (x + 1 < width)
-                    {
-                        sumSquaredDiff += ColorDistanceSquared(rgb, p, below + 1);
-                        pairCount++;
-                    }
-
-                    if (x - 1 >= 0)
-                    {
-                        sumSquaredDiff += ColorDistanceSquared(rgb, p, below - 1);
-                        pairCount++;
-                    }
                 }
             }
         }
@@ -283,55 +274,27 @@ internal sealed class GrabCutSession
 
     private static void PopulateSmoothnessEdges(
         GridMinCutSolver solver,
-        float[] rgb,
-        int width,
-        int height,
+        IReadOnlyMatrix<Rgb8> image,
         double smoothnessWeight,
         double beta)
     {
-        double diagonalWeight = smoothnessWeight * DiagonalDistanceFactor;
-
-        Parallel.For(0, height, y =>
+        Parallel.For(0, image.Height, y =>
         {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
+            for (int x = 0; x < image.Width; x++)
             {
-                int p = rowBase + x;
-                if (x + 1 < width)
+                var self = new Coord(x, y);
+                Rgb8 selfPixel = image[self];
+                foreach (GridNeighbor neighbor in GridNeighborhood.Forward8Connected)
                 {
-                    double diffSq = ColorDistanceSquared(rgb, p, p + 1);
-                    solver.SetUndirectedEdgeCapacity(p, 0, (float)(smoothnessWeight * Math.Exp(-beta * diffSq)));
-                }
+                    Coord other = self + neighbor.Offset;
+                    if (!image.Contains(other))
+                        continue;
 
-                if (y + 1 < height)
-                {
-                    int below = p + width;
-                    double verticalDiffSq = ColorDistanceSquared(rgb, p, below);
-                    solver.SetUndirectedEdgeCapacity(p, 1, (float)(smoothnessWeight * Math.Exp(-beta * verticalDiffSq)));
-
-                    if (x + 1 < width)
-                    {
-                        double downRightDiffSq = ColorDistanceSquared(rgb, p, below + 1);
-                        solver.SetUndirectedEdgeCapacity(p, 2, (float)(diagonalWeight * Math.Exp(-beta * downRightDiffSq)));
-                    }
-
-                    if (x - 1 >= 0)
-                    {
-                        double downLeftDiffSq = ColorDistanceSquared(rgb, p, below - 1);
-                        solver.SetUndirectedEdgeCapacity(p, 3, (float)(diagonalWeight * Math.Exp(-beta * downLeftDiffSq)));
-                    }
+                    double diffSq = selfPixel.DistanceSquared(image[other]);
+                    double capacity = smoothnessWeight * neighbor.InverseDistance * Math.Exp(-beta * diffSq);
+                    solver.SetUndirectedEdgeCapacity(self, neighbor.Direction, (float)capacity);
                 }
             }
         });
-    }
-
-    private static double ColorDistanceSquared(float[] rgb, int pixelA, int pixelB)
-    {
-        int offsetA = pixelA * 3;
-        int offsetB = pixelB * 3;
-        double dr = rgb[offsetA + 0] - rgb[offsetB + 0];
-        double dg = rgb[offsetA + 1] - rgb[offsetB + 1];
-        double db = rgb[offsetA + 2] - rgb[offsetB + 2];
-        return (dr * dr) + (dg * dg) + (db * db);
     }
 }

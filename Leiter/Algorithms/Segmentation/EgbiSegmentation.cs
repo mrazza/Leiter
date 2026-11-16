@@ -59,7 +59,49 @@ public static class EgbiSegmentation
     public static IDisjointSet Segment<T>(IReadOnlyMatrix<T> image, double kFactor = 100.0, double epsilon = 1.0, int minSegmentSize = 100)
         where T : struct, IPixel<T>
     {
-        var neighbors = new[] { new Coord(0, 1), new Coord(1, 1), new Coord(1, 0), new Coord(1, -1) };
+        ArgumentNullException.ThrowIfNull(image);
+
+        var disjointSet = new DisjointSet<PartitionInfo>(image, (_) => new PartitionInfo(kFactor));
+        if (image.Count == 0)
+            return disjointSet;
+
+        UndirectedGraphEdge<Coord>[] graphEdges = BuildSortedGraphEdges(image);
+
+        // Reuse graphEdges in place for deferred edges: Segment owns this array exclusively,
+        // and deferredCount <= i holds on every iteration so unread entries are never overwritten.
+        // This avoids both per-edge LinkedListNode heap allocations / pointer chasing and
+        // Large Object Heap array resizes from growing a separate List<UndirectedGraphEdge<Coord>>.
+        int deferredCount = 0;
+        for (int i = 0; i < graphEdges.Length; i++)
+        {
+            UndirectedGraphEdge<Coord> edge = graphEdges[i];
+            var firstPartition = disjointSet.GetPartition(edge.First);
+            var secondPartition = disjointSet.GetPartition(edge.Second);
+
+            if (firstPartition.RootIndex == secondPartition.RootIndex)
+                continue;
+
+            if (ShouldMergePartitions(edge.Weight, firstPartition, secondPartition, epsilon))
+            {
+                MergePartitions(disjointSet, firstPartition, secondPartition, edge.Weight, kFactor);
+            }
+            else if (minSegmentSize > 0)
+            {
+                graphEdges[deferredCount++] = edge;
+            }
+        }
+
+        if (minSegmentSize > 0 && deferredCount > 0)
+        {
+            MergeSmallPartitions(disjointSet, graphEdges.AsSpan(0, deferredCount), minSegmentSize, kFactor);
+        }
+
+        return disjointSet;
+    }
+
+    private static UndirectedGraphEdge<Coord>[] BuildSortedGraphEdges<T>(IReadOnlyMatrix<T> image)
+        where T : struct, IPixel<T>
+    {
         var rowEdges = new List<UndirectedGraphEdge<Coord>>[image.Height];
         Parallel.For(0, image.Height, y =>
         {
@@ -68,19 +110,17 @@ public static class EgbiSegmentation
             {
                 var self = new Coord(x, y);
                 T selfPixel = image[self];
-                foreach (var neighbor in neighbors)
+                foreach (GridNeighbor neighbor in GridNeighborhood.Forward8Connected)
                 {
-                    var other = self + neighbor;
-                    if (other.X < 0 || other.X >= image.Width || other.Y < 0 || other.Y >= image.Height)
-                    {
+                    Coord other = self + neighbor.Offset;
+                    if (!image.Contains(other))
                         continue;
-                    }
-                    T otherPixel = image[other];
+
                     localEdges.Add(new UndirectedGraphEdge<Coord>
                     {
                         First = self,
                         Second = other,
-                        Weight = selfPixel.Distance(otherPixel)
+                        Weight = selfPixel.Distance(image[other]),
                     });
                 }
             }
@@ -90,9 +130,7 @@ public static class EgbiSegmentation
 
         int totalEdges = 0;
         for (int y = 0; y < image.Height; y++)
-        {
             totalEdges += rowEdges[y].Count;
-        }
 
         var graphEdges = new UndirectedGraphEdge<Coord>[totalEdges];
         int offset = 0;
@@ -102,58 +140,60 @@ public static class EgbiSegmentation
             offset += rowEdges[y].Count;
         }
 
-        Array.Sort(graphEdges, static (a, b) =>
-        {
-            int cmp = a.Weight.CompareTo(b.Weight);
-            if (cmp != 0) return cmp;
-            cmp = ComputeEdgeTieBreaker(a).CompareTo(ComputeEdgeTieBreaker(b));
-            if (cmp != 0) return cmp;
-            cmp = a.First.Y.CompareTo(b.First.Y);
-            if (cmp != 0) return cmp;
-            cmp = a.First.X.CompareTo(b.First.X);
-            if (cmp != 0) return cmp;
-            cmp = a.Second.Y.CompareTo(b.Second.Y);
-            return cmp != 0 ? cmp : a.Second.X.CompareTo(b.Second.X);
-        });
+        Array.Sort(graphEdges, CompareEdges);
+        return graphEdges;
+    }
 
-        var disjointSet = new DisjointSet<PartitionInfo>(image, (_) => new PartitionInfo(kFactor));
-        var deferredEdges = new LinkedList<UndirectedGraphEdge<Coord>>();
-        foreach (var edge in graphEdges)
+    private static int CompareEdges(UndirectedGraphEdge<Coord> a, UndirectedGraphEdge<Coord> b)
+    {
+        int cmp = a.Weight.CompareTo(b.Weight);
+        if (cmp != 0) return cmp;
+        cmp = ComputeEdgeTieBreaker(a).CompareTo(ComputeEdgeTieBreaker(b));
+        if (cmp != 0) return cmp;
+        cmp = a.First.Y.CompareTo(b.First.Y);
+        if (cmp != 0) return cmp;
+        cmp = a.First.X.CompareTo(b.First.X);
+        if (cmp != 0) return cmp;
+        cmp = a.Second.Y.CompareTo(b.Second.Y);
+        return cmp != 0 ? cmp : a.Second.X.CompareTo(b.Second.X);
+    }
+
+    private static bool ShouldMergePartitions(
+        double edgeWeight,
+        DisjointSet<PartitionInfo>.Partition first,
+        DisjointSet<PartitionInfo>.Partition second,
+        double epsilon) =>
+        edgeWeight <= epsilon ||
+        (edgeWeight <= first.Value.InternalDifference && edgeWeight <= second.Value.InternalDifference);
+
+    private static void MergePartitions(
+        DisjointSet<PartitionInfo> disjointSet,
+        DisjointSet<PartitionInfo>.Partition first,
+        DisjointSet<PartitionInfo>.Partition second,
+        double edgeWeight,
+        double kFactor)
+    {
+        int combinedSize = first.Size + second.Size;
+        disjointSet.Union(first, second, new PartitionInfo(edgeWeight + (kFactor / combinedSize)));
+    }
+
+    private static void MergeSmallPartitions(
+        DisjointSet<PartitionInfo> disjointSet,
+        ReadOnlySpan<UndirectedGraphEdge<Coord>> deferredEdges,
+        int minSegmentSize,
+        double kFactor)
+    {
+        foreach (ref readonly UndirectedGraphEdge<Coord> edge in deferredEdges)
         {
             var firstPartition = disjointSet.GetPartition(edge.First);
             var secondPartition = disjointSet.GetPartition(edge.Second);
 
-            if (firstPartition.RootIndex != secondPartition.RootIndex)
-            {
-                if (edge.Weight <= epsilon || (edge.Weight <= firstPartition.Value.InternalDifference && edge.Weight <= secondPartition.Value.InternalDifference))
-                {
-                    disjointSet.Union(firstPartition, secondPartition, new PartitionInfo(edge.Weight + (kFactor / (firstPartition.Size + secondPartition.Size))));
-                }
-                else
-                {
-                    deferredEdges.AddLast(edge);
-                }
-            }
+            if (firstPartition.RootIndex == secondPartition.RootIndex)
+                continue;
+
+            if (firstPartition.Size < minSegmentSize || secondPartition.Size < minSegmentSize)
+                MergePartitions(disjointSet, firstPartition, secondPartition, edge.Weight, kFactor);
         }
-
-        if (minSegmentSize > 0)
-        {
-            foreach (var edge in deferredEdges)
-            {
-                var firstPartition = disjointSet.GetPartition(edge.First);
-                var secondPartition = disjointSet.GetPartition(edge.Second);
-
-                if (firstPartition.RootIndex != secondPartition.RootIndex)
-                {
-                    if (firstPartition.Size < minSegmentSize || secondPartition.Size < minSegmentSize)
-                    {
-                        disjointSet.Union(firstPartition, secondPartition, new PartitionInfo(edge.Weight + (kFactor / (firstPartition.Size + secondPartition.Size))));
-                    }
-                }
-            }
-        }
-
-        return disjointSet;
     }
 
     /// <summary>

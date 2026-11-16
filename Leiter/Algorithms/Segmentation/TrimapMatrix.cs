@@ -124,4 +124,92 @@ public class TrimapMatrix : SequentialMatrix<TrimapLabel>
 
         return trimap;
     }
+
+    /// <summary>
+    /// Constructs a trimap from a binary candidate mask, assigning <paramref name="foregroundLabel"/> where the mask is
+    /// <see langword="true"/> and <paramref name="backgroundLabel"/> elsewhere.
+    /// </summary>
+    /// <param name="candidateMask">The binary foreground candidate mask.</param>
+    /// <param name="foregroundLabel">The label assigned to <see langword="true"/> mask entries.</param>
+    /// <param name="backgroundLabel">The label assigned to <see langword="false"/> mask entries.</param>
+    /// <returns>A <see cref="TrimapMatrix"/> matching <paramref name="candidateMask"/> dimensions.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="candidateMask"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="foregroundLabel"/> or <paramref name="backgroundLabel"/> is not a defined <see cref="TrimapLabel"/> value.</exception>
+    public static TrimapMatrix FromCandidateMask(
+        IReadOnlyMatrix<bool> candidateMask,
+        TrimapLabel foregroundLabel = TrimapLabel.ProbableForeground,
+        TrimapLabel backgroundLabel = TrimapLabel.Background)
+    {
+        ArgumentNullException.ThrowIfNull(candidateMask);
+        if (!Enum.IsDefined(foregroundLabel))
+            throw new ArgumentOutOfRangeException(nameof(foregroundLabel), foregroundLabel, "Foreground label must be a defined TrimapLabel value.");
+        if (!Enum.IsDefined(backgroundLabel))
+            throw new ArgumentOutOfRangeException(nameof(backgroundLabel), backgroundLabel, "Background label must be a defined TrimapLabel value.");
+
+        if (candidateMask.Count == 0)
+            return new TrimapMatrix(candidateMask.Size);
+
+        int width = candidateMask.Width;
+        int height = candidateMask.Height;
+        var data = new TrimapLabel[candidateMask.Count];
+
+        Parallel.For(0, height, y =>
+        {
+            int rowBase = y * width;
+            for (int x = 0; x < width; x++)
+                data[rowBase + x] = candidateMask[x, y] ? foregroundLabel : backgroundLabel;
+        });
+
+        return new TrimapMatrix(width, height, data);
+    }
+
+    /// <summary>
+    /// Constructs a four-state refinement trimap from a current foreground mask, a hard foreground core mask,
+    /// and a dilated support region outside which pixels are firmly background.
+    /// </summary>
+    /// <param name="currentMask">The current foreground estimate used to split the uncertain band into probable foreground/background.</param>
+    /// <param name="sureForeground">Pixels firmly constrained to <see cref="TrimapLabel.Foreground"/>.</param>
+    /// <param name="possibleForegroundRegion">Support region outside which pixels are constrained to <see cref="TrimapLabel.Background"/>.</param>
+    /// <returns>A <see cref="TrimapMatrix"/> matching the input mask dimensions.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when any input mask is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when the input mask dimensions do not all match.</exception>
+    public static TrimapMatrix FromConfidenceBands(
+        IReadOnlyMatrix<bool> currentMask,
+        IReadOnlyMatrix<bool> sureForeground,
+        IReadOnlyMatrix<bool> possibleForegroundRegion)
+    {
+        ArgumentNullException.ThrowIfNull(currentMask);
+        ArgumentNullException.ThrowIfNull(sureForeground);
+        ArgumentNullException.ThrowIfNull(possibleForegroundRegion);
+
+        if (sureForeground.Size != currentMask.Size)
+            throw new ArgumentException("Sure-foreground mask dimensions must match current mask dimensions.", nameof(sureForeground));
+        if (possibleForegroundRegion.Size != currentMask.Size)
+            throw new ArgumentException("Possible-foreground mask dimensions must match current mask dimensions.", nameof(possibleForegroundRegion));
+
+        if (currentMask.Count == 0)
+            return new TrimapMatrix(currentMask.Size);
+
+        int width = currentMask.Width;
+        int height = currentMask.Height;
+        var data = new TrimapLabel[currentMask.Count];
+
+        Parallel.For(0, height, y =>
+        {
+            int rowBase = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                if (!possibleForegroundRegion[x, y])
+                    data[rowBase + x] = TrimapLabel.Background;
+                else if (sureForeground[x, y])
+                    data[rowBase + x] = TrimapLabel.Foreground;
+                else if (currentMask[x, y])
+                    data[rowBase + x] = TrimapLabel.ProbableForeground;
+                else
+                    data[rowBase + x] = TrimapLabel.ProbableBackground;
+            }
+        });
+
+        return new TrimapMatrix(width, height, data);
+    }
 }

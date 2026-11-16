@@ -134,6 +134,22 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     /// <summary>
+    /// Calculates the squared color distance between the current and other pixel in RGB color space.
+    /// </summary>
+    /// <remarks>
+    /// This implementation assumes Euclidean uniformity of the RGB color space and avoids the square root operation.
+    /// </remarks>
+    /// <param name="otherPixel">The other pixel on which to operate.</param>
+    /// <returns>The squared distance in color between the two pixels.</returns>
+    public double DistanceSquared(Rgb64 otherPixel)
+    {
+        double dr = R - otherPixel.R;
+        double dg = G - otherPixel.G;
+        double db = B - otherPixel.B;
+        return (dr * dr) + (dg * dg) + (db * db);
+    }
+
+    /// <summary>
     /// Calculates the color distance between the current and other pixel in RGB color space.
     /// </summary>
     /// <remarks>
@@ -141,11 +157,5 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
     /// </remarks>
     /// <param name="otherPixel">The other pixel on which to operate.</param>
     /// <returns>The distance in color between the two pixels.</returns>
-    public double Distance(Rgb64 otherPixel)
-    {
-        double dr = R - otherPixel.R;
-        double dg = G - otherPixel.G;
-        double db = B - otherPixel.B;
-        return Math.Sqrt(dr * dr + dg * dg + db * db);
-    }
+    public double Distance(Rgb64 otherPixel) => Math.Sqrt(DistanceSquared(otherPixel));
 }
