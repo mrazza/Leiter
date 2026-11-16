@@ -87,7 +87,7 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
         if (Vector<double>.Count < 3)
             throw new PlatformNotSupportedException("This operation is not supported on this platform. Vector width is too small.");
 
-        var data = new double[Vector<double>.Count];
+        Span<double> data = stackalloc double[Vector<double>.Count];
         data[0] = X;
         data[1] = Y;
         data[2] = Z;
@@ -111,12 +111,13 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
     /// <remarks>
     /// This naive implementation assumes euclidean uniformity of the XYZ color space.
     /// </remarks>
-    /// <param name="self">The current pixel on which to operate.</param>
-    /// <param name="other">The other pixel on which to operate.</param>
+    /// <param name="otherPixel">The other pixel on which to operate.</param>
     /// <returns>The distance in color between the two pixels.</returns>
-    public double Distance(Xyz32 otherPixel) =>
-        Math.Sqrt(
-            this.Zip(otherPixel)
-                .Select(channels => Math.Pow(channels.First - channels.Second, 2))
-                .Sum());
+    public double Distance(Xyz32 otherPixel)
+    {
+        double dx = X - otherPixel.X;
+        double dy = Y - otherPixel.Y;
+        double dz = Z - otherPixel.Z;
+        return Math.Sqrt(dx * dx + dy * dy + dz * dz);
+    }
 }

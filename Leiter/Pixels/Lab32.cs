@@ -88,7 +88,7 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
         if (Vector<double>.Count < 3)
             throw new PlatformNotSupportedException("This operation is not supported on this platform. Vector width is too small.");
 
-        var data = new double[Vector<double>.Count];
+        Span<double> data = stackalloc double[Vector<double>.Count];
         data[0] = L;
         data[1] = A;
         data[2] = B;
@@ -117,7 +117,6 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     /// "The CIEDE2000 Color-Difference Formula: Implementation Notes, Supplementary Test Data, and Mathematical Observations,",
     /// G. Sharma, W. Wu, E. N. Dalal, Color Research and Application, vol. 30. No. 1, pp. 21-30, February 2005.
     /// </remarks>
-    /// <param name="self">The current pixel on which to operate.</param>
     /// <param name="other">The other pixel on which to operate.</param>
     /// <returns>The distance in color between the two pixels.</returns>
     public double Distance(Lab32 other)
@@ -191,5 +190,21 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
                 (deltaCPrime / (kC * sC)) *
                 (deltaHPrime / (kH * sH))
         );
+    }
+
+    /// <summary>
+    /// Calculates the Euclidean (CIE76) color distance between the current pixel and <paramref name="other"/> in CIELAB space.
+    /// </summary>
+    /// <remarks>
+    /// Computes <c>sqrt(ΔL² + Δa² + Δb²)</c> without heap allocations, suitable for saliency and Mean-Shift clustering formulated in CIE76.
+    /// </remarks>
+    /// <param name="other">The other pixel to compare with.</param>
+    /// <returns>The CIE76 Euclidean color distance between the two pixels.</returns>
+    public double EuclideanDistance(Lab32 other)
+    {
+        double dl = L - other.L;
+        double da = A - other.A;
+        double db = B - other.B;
+        return Math.Sqrt(dl * dl + da * da + db * db);
     }
 }

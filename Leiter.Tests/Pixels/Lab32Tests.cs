@@ -157,4 +157,15 @@ public class Lab32Tests
         Assert.True(color1.Distance(color2) > 0);
         Assert.True(color1.Distance(color3) > 0);
     }
+
+    [Fact]
+    public void EuclideanDistance_ShouldComputeCIE76Distance()
+    {
+        var a = new Lab32(50, 10, 20);
+        var b = new Lab32(53, 14, 32);
+
+        Assert.Equal(0.0, a.EuclideanDistance(a), 12);
+        Assert.Equal(13.0, a.EuclideanDistance(b), 12);
+        Assert.Equal(a.EuclideanDistance(b), b.EuclideanDistance(a), 12);
+    }
 }
