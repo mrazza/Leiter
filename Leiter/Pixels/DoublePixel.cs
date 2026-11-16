@@ -6,70 +6,96 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Leiter.Core;
 
+/// <summary>
+/// Represents a scalar pixel backed by a 64-bit floating-point value.
+/// </summary>
+/// <param name="Value">The scalar value of the pixel.</param>
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct DoublePixel(double Value) : ITypedPixel<DoublePixel, double>, ITypedScalar<DoublePixel, double>
 {
     private static readonly DoublePixel INTERNAL_ZERO = new();
+
+    /// <inheritdoc/>
     public static DoublePixel Zero => INTERNAL_ZERO;
 
+    /// <inheritdoc/>
     public DoublePixel ColorComponentMap(Func<double, double> func) => new() { Value = func(Value) };
 
+    /// <inheritdoc/>
     public DoublePixel ComponentMap(Func<double, double> func) => ColorComponentMap(func);
 
+    /// <inheritdoc/>
     public DoublePixel Add(DoublePixel right) =>
         new()
         {
             Value = Value + right.Value
         };
 
+    /// <inheritdoc/>
     public DoublePixel Subtract(DoublePixel right) =>
         new()
         {
             Value = Value - right.Value
         };
 
+    /// <inheritdoc/>
     public DoublePixel Multiply(DoublePixel right) =>
         new()
         {
             Value = Value * right.Value
         };
 
+    /// <inheritdoc/>
     public DoublePixel Divide(DoublePixel right) =>
         new()
         {
             Value = Value / right.Value
         };
 
+    /// <inheritdoc/>
     public DoublePixel Add(decimal right) => ComponentMap(channel => channel + (double)right);
 
+    /// <inheritdoc/>
     public DoublePixel Subtract(decimal right) => ComponentMap(channel => channel - (double)right);
 
+    /// <inheritdoc/>
     public DoublePixel Multiply(decimal right) => ComponentMap(channel => channel * (double)right);
 
+    /// <inheritdoc/>
     public DoublePixel Divide(decimal right) => ComponentMap(channel => channel / (double)right);
 
+    /// <inheritdoc/>
     public DoublePixel Add(double right) => ComponentMap(channel => channel + right);
 
+    /// <inheritdoc/>
     public DoublePixel Subtract(double right) => ComponentMap(channel => channel - right);
 
+    /// <inheritdoc/>
     public DoublePixel Multiply(double right) => ComponentMap(channel => channel * right);
 
+    /// <inheritdoc/>
     public DoublePixel Divide(double right) => ComponentMap(channel => channel / right);
 
+    /// <inheritdoc/>
     public DoublePixel Add<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
         Add(right.AsDouble());
 
+    /// <inheritdoc/>
     public DoublePixel Subtract<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
         Subtract(right.AsDouble());
 
+    /// <inheritdoc/>
     public DoublePixel Multiply<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
         Multiply(right.AsDouble());
 
+    /// <inheritdoc/>
     public DoublePixel Divide<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
         Divide(right.AsDouble());
 
+    /// <inheritdoc/>
     public double AsDouble() => Value;
 
+    /// <inheritdoc/>
     public Vector<double> ToDoubleVector()
     {
         if (Vector<double>.Count < 1)
@@ -80,8 +106,10 @@ public readonly record struct DoublePixel(double Value) : ITypedPixel<DoublePixe
         return new(data);
     }
 
+    /// <inheritdoc/>
     public static DoublePixel FromDoubleVector(Vector<double> vector) => vector[0];
 
+    /// <inheritdoc/>
     public IEnumerator<double> GetEnumerator()
     {
         yield return Value;
@@ -89,10 +117,25 @@ public readonly record struct DoublePixel(double Value) : ITypedPixel<DoublePixe
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
+    /// <summary>
+    /// Calculates the distance between this pixel and another pixel as the absolute difference <c>|Value - otherPixel.Value|</c>.
+    /// </summary>
+    /// <param name="otherPixel">The other pixel to compare with.</param>
+    /// <returns>The absolute difference between the pixel values.</returns>
     public double Distance(DoublePixel otherPixel) =>
         Math.Abs(Value - otherPixel.Value);
 
+    /// <summary>
+    /// Implicitly converts a <see cref="DoublePixel"/> to its underlying <see cref="double"/> value.
+    /// </summary>
+    /// <param name="pixel">The pixel to convert.</param>
+    /// <returns>The underlying <see cref="double"/> value of <paramref name="pixel"/>.</returns>
     public static implicit operator double(DoublePixel pixel) => pixel.Value;
 
+    /// <summary>
+    /// Implicitly converts a <see cref="double"/> value to a <see cref="DoublePixel"/>.
+    /// </summary>
+    /// <param name="value">The double value to wrap.</param>
+    /// <returns>A new <see cref="DoublePixel"/> initialized with <paramref name="value"/>.</returns>
     public static implicit operator DoublePixel(double value) => new(value);
 }

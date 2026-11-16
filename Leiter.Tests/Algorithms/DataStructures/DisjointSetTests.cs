@@ -10,13 +10,10 @@ using System.Linq;
 namespace Leiter.Tests.Algorithms.DataStructures;
 
 /// <summary>
-/// Provides unit tests for <see cref="DisjointSetTests" />.
+/// Provides unit tests for <see cref="DisjointSet{T}" />.
 /// </summary>
 public class DisjointSetTests
 {
-    /// <summary>
-    /// Verifies that the constructor and basic properties should initialize behaves correctly.
-    /// </summary>
     [Fact]
     public void Constructor_AndBasicProperties_ShouldInitialize()
     {
@@ -37,9 +34,6 @@ public class DisjointSetTests
         }
     }
 
-    /// <summary>
-    /// Verifies that the get partition should return snapshot behaves correctly.
-    /// </summary>
     [Fact]
     public void GetPartition_ShouldReturnSnapshot()
     {
@@ -60,9 +54,6 @@ public class DisjointSetTests
         Assert.Equal(5, indices[0]);
     }
 
-    /// <summary>
-    /// Verifies that the union should merge partitions correctly behaves correctly.
-    /// </summary>
     [Fact]
     public void Union_ShouldMergePartitionsCorrectly()
     {
@@ -104,9 +95,6 @@ public class DisjointSetTests
         Assert.Throws<ArgumentException>(() => dsu.Union(dsu.GetPartition(0), dsu.GetPartition(3), 400));
     }
 
-    /// <summary>
-    /// Verifies that the get region should return populated region behaves correctly.
-    /// </summary>
     [Fact]
     public void GetRegion_ShouldReturnPopulatedRegion()
     {
@@ -129,9 +117,6 @@ public class DisjointSetTests
         Assert.Equal(3, rByIndex.Pixels.Count);
     }
 
-    /// <summary>
-    /// Verifies that the to matrix should create materialized matrix behaves correctly.
-    /// </summary>
     [Fact]
     public void ToMatrix_ShouldCreateMaterializedMatrix()
     {
@@ -146,9 +131,6 @@ public class DisjointSetTests
         Assert.Equal(dsu[1].Value, m[1].Value);
     }
 
-    /// <summary>
-    /// Verifies that the to regions should return set of regions behaves correctly.
-    /// </summary>
     [Fact]
     public void ToRegions_ShouldReturnSetOfRegions()
     {
@@ -167,9 +149,6 @@ public class DisjointSetTests
         Assert.Contains(new Coord(1, 0), region0_1.Pixels);
     }
 
-    /// <summary>
-    /// Verifies that the indexers and get element should delegate to find behaves correctly.
-    /// </summary>
     [Fact]
     public void Indexers_AndGetElement_ShouldDelegateToFind()
     {
@@ -181,9 +160,6 @@ public class DisjointSetTests
         Assert.Equal(dsu[1], dsu.GetElement(1, 0));
     }
 
-    /// <summary>
-    /// Verifies that the helpers coord to index index to coord should delegate behaves correctly.
-    /// </summary>
     [Fact]
     public void Helpers_CoordToIndex_IndexToCoord_ShouldDelegate()
     {
@@ -194,9 +170,6 @@ public class DisjointSetTests
         Assert.Equal(9, dsu.IndexFromCoord(new Coord(1, 2)));
     }
 
-    /// <summary>
-    /// Verifies that the enumerator should return roots behaves correctly.
-    /// </summary>
     [Fact]
     public void Enumerator_ShouldReturnRoots()
     {

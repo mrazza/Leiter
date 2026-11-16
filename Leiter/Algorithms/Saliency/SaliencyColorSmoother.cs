@@ -16,6 +16,7 @@ internal static class SaliencyColorSmoother
     /// <param name="colorSaliencyMap">The per-color saliency map to smooth in place.</param>
     /// <param name="rgbToLabLookupTable">Precomputed Lab colors for keys in <paramref name="colorSaliencyMap"/>.</param>
     /// <param name="neighborDivisor">Divisor applied to the active palette size to select the neighbor count.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="neighborDivisor"/> is less than or equal to zero.</exception>
     public static void SmoothColorSaliency(
         Dictionary<Rgb8, double> colorSaliencyMap,
         IReadOnlyDictionary<Rgb8, Lab32> rgbToLabLookupTable,

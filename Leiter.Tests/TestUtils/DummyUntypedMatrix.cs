@@ -8,25 +8,26 @@ using Leiter.Core;
 public class DummyUntypedMatrix : IUntypedMatrix
 {
     /// <summary>
-    /// Gets the width property.
+    /// Gets or sets the width of the mock matrix.
     /// </summary>
     public int Width { get; set; }
+
     /// <summary>
-    /// Gets the height property.
+    /// Gets or sets the height of the mock matrix.
     /// </summary>
     public int Height { get; set; }
-    /// <summary>
-    /// Gets the size property.
-    /// </summary>
+
+    /// <inheritdoc/>
     public Size Size => new(Width, Height);
-    /// <summary>
-    /// Gets the count property.
-    /// </summary>
+
+    /// <inheritdoc/>
     public int Count => Width * Height;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="DummyUntypedMatrix" /> class.
+    /// Initializes a new instance of the <see cref="DummyUntypedMatrix"/> class.
     /// </summary>
+    /// <param name="width">The initial width of the matrix.</param>
+    /// <param name="height">The initial height of the matrix.</param>
     public DummyUntypedMatrix(int width = 0, int height = 0)
     {
         Width = width;

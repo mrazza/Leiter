@@ -25,6 +25,7 @@ public static class EgbiSegmentation
     /// <summary>
     /// Internal data structure used to track the internal difference of partitions/regions of the segmented image.
     /// </summary>
+    /// <param name="InternalDifference">The maximum edge weight in the minimum spanning tree of the partition plus threshold penalty.</param>
     private readonly record struct PartitionInfo(double InternalDifference);
 
     /// <summary>
@@ -54,6 +55,7 @@ public static class EgbiSegmentation
     /// <param name="epsilon">Specifies the minimum distance for two pixels to be considered different.</param>
     /// <param name="minSegmentSize">The minimum size for any one segment.</param>
     /// <returns>A collection of regions (themselves a collection of pixel coordinates); one for each segment.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     public static IDisjointSet Segment<T>(IReadOnlyMatrix<T> image, double kFactor = 100.0, double epsilon = 1.0, int minSegmentSize = 100)
         where T : struct, IPixel<T>
     {
@@ -233,6 +235,8 @@ public static class EgbiSegmentation
     /// Computes a deterministic, fixed-seed SplitMix64 tie-breaker from edge endpoint coordinates
     /// so equal-weight edges break ties pseudo-randomly rather than sweeping in scanline order.
     /// </summary>
+    /// <param name="edge">The graph edge whose endpoints are hashed.</param>
+    /// <returns>A 64-bit pseudo-random hash value for tie-breaking.</returns>
     private static ulong ComputeEdgeTieBreaker(UndirectedGraphEdge<Coord> edge)
     {
         ulong x1 = (uint)edge.First.X;

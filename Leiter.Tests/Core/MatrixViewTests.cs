@@ -8,13 +8,10 @@ using System.Collections.Generic;
 namespace Leiter.Tests.Core;
 
 /// <summary>
-/// Provides unit tests for <see cref="MatrixViewTests" />.
+/// Provides unit tests for <see cref="MatrixView{T}" />.
 /// </summary>
 public class MatrixViewTests
 {
-    /// <summary>
-    /// Verifies that the constructor and properties should initialize behaves correctly.
-    /// </summary>
     [Fact]
     public void Constructor_AndProperties_ShouldInitialize()
     {
@@ -31,9 +28,6 @@ public class MatrixViewTests
         Assert.Equal(4, view.Count);
     }
 
-    /// <summary>
-    /// Executes the indexers and get element with boundary handling operation.
-    /// </summary>
     [Fact]
     public void Indexers_AndGetElement_WithBoundaryHandling()
     {
@@ -72,9 +66,6 @@ public class MatrixViewTests
         Assert.Throws<IndexOutOfRangeException>(() => view[4]);
     }
 
-    /// <summary>
-    /// Verifies that the boundary handling extend should clamp behaves correctly.
-    /// </summary>
     [Fact]
     public void BoundaryHandling_Extend_ShouldClamp()
     {
@@ -118,9 +109,6 @@ public class MatrixViewTests
         Assert.Equal(4.0, view[3, 2].Value);
     }
 
-    /// <summary>
-    /// Verifies that the enumerator should yield correct elements behaves correctly.
-    /// </summary>
     [Fact]
     public void Enumerator_ShouldYieldCorrectElements()
     {
@@ -139,9 +127,6 @@ public class MatrixViewTests
         Assert.Equal(new double[] { 1.0, 2.0, 3.0, 4.0 }, list);
     }
 
-    /// <summary>
-    /// Verifies that the to string should work behaves correctly.
-    /// </summary>
     [Fact]
     public void ToString_ShouldWork()
     {
@@ -151,9 +136,6 @@ public class MatrixViewTests
         Assert.Contains("MatrixView", str);
     }
 
-    /// <summary>
-    /// Executes the test matrix view uncovered lines operation.
-    /// </summary>
     [Fact]
     public void TestMatrixView_UncoveredLines()
     {

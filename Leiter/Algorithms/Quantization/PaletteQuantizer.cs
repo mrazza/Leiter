@@ -21,6 +21,8 @@ public static class PaletteQuantizer
     /// <param name="bucketizer">Maps each input pixel to its initial quantization bucket.</param>
     /// <param name="coverageFraction">The cumulative pixel coverage fraction in <c>(0, 1]</c> of frequent buckets to retain.</param>
     /// <returns>The palette-mapped image, truncated histogram, and identity metric lookup table.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="bucketizer"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="coverageFraction"/> is NaN, less than or equal to 0.0, or greater than 1.0.</exception>
     public static QuantizedPalette<TPixel, TPixel> QuantizeAndTruncate<TPixel>(
         Matrix<TPixel> image,
         Func<TPixel, TPixel> bucketizer,
@@ -40,6 +42,8 @@ public static class PaletteQuantizer
     /// <param name="metricSelector">Projects each unique bucket value into the distance metric space.</param>
     /// <param name="coverageFraction">The cumulative pixel coverage fraction in <c>(0, 1]</c> of frequent buckets to retain.</param>
     /// <returns>The palette-mapped image, truncated histogram, and precomputed metric lookup table.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="bucketizer"/>, or <paramref name="metricSelector"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="coverageFraction"/> is NaN, less than or equal to 0.0, or greater than 1.0.</exception>
     public static QuantizedPalette<TPixel, TMetric> QuantizeAndTruncate<TPixel, TMetric>(
         Matrix<TPixel> image,
         Func<TPixel, TPixel> bucketizer,

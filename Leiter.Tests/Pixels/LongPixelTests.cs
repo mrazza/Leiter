@@ -9,13 +9,10 @@ using System.Numerics;
 namespace Leiter.Tests.Pixels;
 
 /// <summary>
-/// Provides unit tests for <see cref="LongPixelTests" />.
+/// Provides unit tests for <see cref="LongPixel" />.
 /// </summary>
 public class LongPixelTests
 {
-    /// <summary>
-    /// Verifies that the properties and implicit operators should work behaves correctly.
-    /// </summary>
     [Fact]
     public void Properties_AndImplicitOperators_ShouldWork()
     {
@@ -31,9 +28,6 @@ public class LongPixelTests
         Assert.Equal(456L, p2.Value);
     }
 
-    /// <summary>
-    /// Verifies that the self operations should work behaves correctly.
-    /// </summary>
     [Fact]
     public void SelfOperations_ShouldWork()
     {
@@ -46,9 +40,6 @@ public class LongPixelTests
         Assert.Equal(5L, p1.Divide(p2).Value);
     }
 
-    /// <summary>
-    /// Verifies that the numeric operations decimal should work behaves correctly.
-    /// </summary>
     [Fact]
     public void NumericOperations_Decimal_ShouldWork()
     {
@@ -60,9 +51,6 @@ public class LongPixelTests
         Assert.Equal(5L, p.Divide(2.0m).Value);
     }
 
-    /// <summary>
-    /// Verifies that the numeric operations double should work behaves correctly.
-    /// </summary>
     [Fact]
     public void NumericOperations_Double_ShouldWork()
     {
@@ -76,9 +64,6 @@ public class LongPixelTests
 
     
 
-    /// <summary>
-    /// Verifies that the scalar operations should work behaves correctly.
-    /// </summary>
     [Fact]
     public void ScalarOperations_ShouldWork()
     {
@@ -91,9 +76,6 @@ public class LongPixelTests
         Assert.Equal(5L, p.Divide(scalar).Value);
     }
 
-    /// <summary>
-    /// Verifies that the vector operations should work behaves correctly.
-    /// </summary>
     [Fact]
     public void VectorOperations_ShouldWork()
     {
@@ -108,9 +90,6 @@ public class LongPixelTests
         }
     }
 
-    /// <summary>
-    /// Verifies that the enumerator should yield value behaves correctly.
-    /// </summary>
     [Fact]
     public void Enumerator_ShouldYieldValue()
     {
@@ -121,9 +100,6 @@ public class LongPixelTests
         Assert.False(enumerator.MoveNext());
     }
 
-    /// <summary>
-    /// Verifies that the distance should compute correctly behaves correctly.
-    /// </summary>
     [Fact]
     public void Distance_ShouldComputeCorrectly()
     {
@@ -132,9 +108,6 @@ public class LongPixelTests
         Assert.Equal(50.0, p1.Distance(p2));
     }
 
-    /// <summary>
-    /// Verifies that the maps should work behaves correctly.
-    /// </summary>
     [Fact]
     public void Maps_ShouldWork()
     {

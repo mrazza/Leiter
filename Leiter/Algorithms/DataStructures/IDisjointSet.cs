@@ -9,15 +9,18 @@ using Leiter.Pixels;
 /// </summary>
 public interface IDisjointSet : IReadOnlyMatrix<LongPixel>
 {
+    /// <summary>
+    /// Represents a partition of connected pixels within a disjoint set.
+    /// </summary>
     public interface IPartition
     {
         /// <summary>
-        /// The index of the root of the partition.
+        /// Gets the index of the root of the partition.
         /// </summary>
         int RootIndex { get; }
 
         /// <summary>
-        /// The size of the partition.
+        /// Gets the size of the partition.
         /// </summary>
         int Size { get; }
 
@@ -59,7 +62,7 @@ public interface IDisjointSet : IReadOnlyMatrix<LongPixel>
     /// Returns a materialized matrix where each pixel is a unique identifier representing the partition it belongs to.
     /// </summary>
     /// <remarks>
-    /// Pixels in the same partition (disjoin set) will have the same value. Pixels with different values
+    /// Pixels in the same partition (disjoint set) will have the same value. Pixels with different values
     /// are, necessarily, in different partitions.
     /// 
     /// As a result of the materialization, this method is preferred over treating the DisjointSet as a matrix for
@@ -72,8 +75,8 @@ public interface IDisjointSet : IReadOnlyMatrix<LongPixel>
     /// Returns a materialized set of regions, where each region is a set of pixels that are in the same partition.
     /// </summary>
     /// <remarks>
-    /// As a result of the materialization, this method is preferred over getting paritions and iterating over the
-    /// {GetCoords()} or {GetIndices()} methods if multiple reads will take place.
+    /// As a result of the materialization, this method is preferred over getting partitions and iterating over the
+    /// <see cref="IPartition.GetCoords"/> or <see cref="IPartition.GetIndices"/> methods if multiple reads will take place.
     /// </remarks>
     /// <returns>A materialized set of regions, where each region is a set of pixels that are in the same partition.</returns>
     IImmutableSet<Region<Coord>> ToRegions();

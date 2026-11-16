@@ -7,14 +7,14 @@ using SixLabors.ImageSharp.PixelFormats;
 using System.Runtime.Versioning;
 
 /// <summary>
-/// Contains extension methods for interoping between the Linux platform (via ImageSharp) <see cref="Image{TPixel}"/>
+/// Contains extension methods for interoperating between the Linux platform (via ImageSharp) <see cref="Image{TPixel}"/>
 /// and Leiter types.
 /// </summary>
 [SupportedOSPlatform("linux")]
 public static class ImageExtensions
 {
     /// <summary>
-    /// Converts a <see cref="Image{Rgb24}"/> to a <see cref="SequentialMatrix{T}"/>.
+    /// Converts a <see cref="Image{Rgb24}"/> to a <see cref="SequentialMatrix{Rgb8}"/>.
     /// </summary>
     /// <param name="image">The image to convert.</param>
     /// <returns>The Leiter matrix with the same data.</returns>
@@ -36,10 +36,10 @@ public static class ImageExtensions
     }
 
     /// <summary>
-    /// Converts a Leiter <see cref="IReadOnlyMatrix{T}"/> to a <see cref="Image{Rgb24}"/>.
+    /// Converts a Leiter <see cref="IReadOnlyMatrix{Rgb8}"/> to a <see cref="Image{Rgb24}"/>.
     /// </summary>
-    /// <param name="matrix">The Leiter matrix to a <see cref="Image{Rgb24}"/>.</param>
-    /// <returns>The Image based on the specified matrix.</returns>
+    /// <param name="matrix">The Leiter matrix to convert.</param>
+    /// <returns>The image based on the specified matrix.</returns>
     public static Image<Rgb24> ToImage(this IReadOnlyMatrix<Rgb8> matrix)
     {
         var image = new Image<Rgb24>(matrix.Width, matrix.Height);

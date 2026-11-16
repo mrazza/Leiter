@@ -9,9 +9,6 @@ namespace Leiter.Tests.Algorithms.DataStructures;
 /// </summary>
 public class RegionTests
 {
-    /// <summary>
-    /// Verifies that the region constructors should work behaves correctly.
-    /// </summary>
     [Fact]
     public void Region_Constructors_ShouldWork()
     {
@@ -34,9 +31,6 @@ public class RegionTests
         Assert.Empty(r5.Pixels);
     }
 
-    /// <summary>
-    /// Executes the test region single element constructor operation.
-    /// </summary>
     [Fact]
     public void TestRegion_SingleElementConstructor()
     {

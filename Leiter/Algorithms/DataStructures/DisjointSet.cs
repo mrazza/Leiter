@@ -24,9 +24,8 @@ public class DisjointSet<T> : IDisjointSet
     where T : struct
 {
     /// <summary>
-    /// A snapshot of the current state of a partition within this disjoint set.
+    /// Represents a snapshot of the current state of a partition within this disjoint set.
     /// </summary>
-    /// <typeparam name="T">The arbitrary data associated with the partition.</typeparam>
     [StructLayout(LayoutKind.Sequential)]
     public readonly struct Partition : IDisjointSet.IPartition
     {
@@ -40,12 +39,18 @@ public class DisjointSet<T> : IDisjointSet
 
         private readonly DisjointSet<T> disjointSet;
 
+        /// <inheritdoc/>
         public int RootIndex { get; }
 
+        /// <inheritdoc/>
         public int Size { get; }
 
+        /// <summary>
+        /// Gets the value associated with this partition.
+        /// </summary>
         public T Value { get; }
 
+        /// <inheritdoc/>
         public IEnumerable<Coord> GetCoords()
         {
             var currIndex = RootIndex;
@@ -56,6 +61,7 @@ public class DisjointSet<T> : IDisjointSet
             } while (currIndex != RootIndex);
         }
 
+        /// <inheritdoc/>
         public IEnumerable<int> GetIndices()
         {
             var currIndex = RootIndex;
@@ -68,24 +74,39 @@ public class DisjointSet<T> : IDisjointSet
     }
 
 
+    /// <summary>
+    /// Represents an element within the disjoint set, storing its forest links and associated value.
+    /// </summary>
+    /// <param name="SelfIndex">The linear index of this element in the matrix.</param>
+    /// <param name="ParentIndex">The index of the parent element in the forest tree for path compression.</param>
+    /// <param name="NextIndex">The index of the next element in the circular singly-linked list for allocation-free partition traversal.</param>
+    /// <param name="Size">The number of elements in the tree rooted at this element, used for union-by-size rank optimization.</param>
+    /// <param name="Value">The arbitrary user data associated with this partition root.</param>
     [StructLayout(LayoutKind.Sequential)]
     private record struct Element(int SelfIndex, int ParentIndex, int NextIndex, int Size, T Value);
 
     private readonly IUntypedMatrix image;
     private readonly Element[] elements;
 
+    /// <inheritdoc/>
     public int Count => image.Count;
 
+    /// <inheritdoc/>
     public int Width => image.Width;
 
+    /// <inheritdoc/>
     public int Height => image.Height;
 
+    /// <inheritdoc/>
     public Size Size => image.Size;
 
+    /// <inheritdoc/>
     public LongPixel this[int index] => Find(index);
 
+    /// <inheritdoc/>
     public LongPixel this[Coord coord] => Find(image.IndexFromCoord(coord));
 
+    /// <inheritdoc/>
     public LongPixel this[int x, int y] => Find(image.IndexFromCoord(new Coord(x, y)));
 
     /// <summary>
@@ -161,7 +182,7 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="secondPartition">The second partition to union.</param>
     /// <param name="unionValue">The value to assign to the unioned partition.</param>
     /// <returns>The partition that the two partitions were unioned into.</returns>
-    /// <throws cref="ArgumentException">Thrown when the two partitions are the same.</throws>
+    /// <exception cref="ArgumentException">Thrown when the two partitions are the same.</exception>
     public Partition Union(Partition firstPartition, Partition secondPartition, T unionValue)
     {
         return Union(firstPartition.RootIndex, secondPartition.RootIndex, unionValue);
@@ -174,7 +195,7 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="secondCoord">The second coordinate to union.</param>
     /// <param name="unionValue">The value to assign to the unioned partition.</param>
     /// <returns>The partition that the two partitions were unioned into.</returns>
-    /// <throws cref="ArgumentException">Thrown when the two coordinates are already in the same partition.</throws>
+    /// <exception cref="ArgumentException">Thrown when the two coordinates are already in the same partition.</exception>
     public Partition Union(Coord firstCoord, Coord secondCoord, T unionValue)
     {
         return Union(image.IndexFromCoord(firstCoord), image.IndexFromCoord(secondCoord), unionValue);
@@ -187,7 +208,7 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="secondIndex">The second index to union.</param>
     /// <param name="unionValue">The value to assign to the unioned partition.</param>
     /// <returns>The partition that the two partitions were unioned into.</returns>
-    /// <throws cref="ArgumentException">Thrown when the two indices are already in the same partition.</throws>
+    /// <exception cref="ArgumentException">Thrown when the two indices are already in the same partition.</exception>
     public Partition Union(int firstIndex, int secondIndex, T unionValue)
     {
         int firstSetRoot = Find(firstIndex);
@@ -240,6 +261,11 @@ public class DisjointSet<T> : IDisjointSet
         return components.Values.ToImmutableHashSet();
     }
 
+    /// <summary>
+    /// Finds the root partition index for the specified element index, applying path compression.
+    /// </summary>
+    /// <param name="index">The index of the element whose root is to be found.</param>
+    /// <returns>The root index of the partition containing <paramref name="index"/>.</returns>
     private int Find(int index)
     {
         if (elements[index].ParentIndex == index)
@@ -249,14 +275,27 @@ public class DisjointSet<T> : IDisjointSet
         return elements[index].ParentIndex;
     }
 
+    /// <inheritdoc/>
     public LongPixel GetElement(int index) => Find(index);
 
+    /// <inheritdoc/>
     public LongPixel GetElement(int width, int height) => Find(image.IndexFromCoord(new Coord(width, height)));
 
+    /// <summary>
+    /// Converts a linear index into the corresponding 2D matrix coordinate.
+    /// </summary>
+    /// <param name="index">The zero-based linear index.</param>
+    /// <returns>The 2D coordinate corresponding to <paramref name="index"/>.</returns>
     public Coord CoordFromIndex(int index) => image.CoordFromIndex(index);
 
+    /// <summary>
+    /// Converts a 2D matrix coordinate into the corresponding linear index.
+    /// </summary>
+    /// <param name="coord">The 2D coordinate in the matrix.</param>
+    /// <returns>The zero-based linear index corresponding to <paramref name="coord"/>.</returns>
     public int IndexFromCoord(Coord coord) => image.IndexFromCoord(coord);
 
+    /// <inheritdoc/>
     public IEnumerator<LongPixel> GetEnumerator()
     {
         for (int pixelIndex = 0; pixelIndex < image.Count; pixelIndex++)

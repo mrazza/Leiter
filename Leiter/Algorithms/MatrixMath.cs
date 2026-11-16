@@ -207,6 +207,15 @@ public static class MatrixMath
         return result;
     }
 
+    /// <summary>
+    /// Computes the Frobenius inner product of two matrices of the same pixel type using vectorized accumulation.
+    /// </summary>
+    /// <typeparam name="TLeft">The matrix type of the left-hand operand.</typeparam>
+    /// <typeparam name="T">The pixel type of both matrices.</typeparam>
+    /// <param name="self">The left-hand matrix operand.</param>
+    /// <param name="right">The right-hand matrix operand.</param>
+    /// <returns>The channel-wise sum of element-wise products as <typeparamref name="T"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     private static T FrobeniusCore<TLeft, T>(TLeft self, IReadOnlyMatrix<T> right)
         where TLeft : IReadOnlyMatrix<T>
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
@@ -224,6 +233,16 @@ public static class MatrixMath
         return T.FromDoubleVector(sum);
     }
 
+    /// <summary>
+    /// Computes the Frobenius inner product of a pixel matrix and a scalar matrix using vectorized accumulation.
+    /// </summary>
+    /// <typeparam name="TLeft">The matrix type of the left-hand operand.</typeparam>
+    /// <typeparam name="T">The pixel type of the left-hand matrix.</typeparam>
+    /// <typeparam name="R">The scalar pixel type of the right-hand matrix.</typeparam>
+    /// <param name="self">The left-hand matrix operand.</param>
+    /// <param name="right">The right-hand scalar matrix operand.</param>
+    /// <returns>The weighted sum of elements as <typeparamref name="T"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     private static T FrobeniusScalarCore<TLeft, T, R>(TLeft self, IReadOnlyMatrix<R> right)
         where TLeft : IReadOnlyMatrix<T>
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
@@ -242,6 +261,12 @@ public static class MatrixMath
         return T.FromDoubleVector(sum);
     }
 
+    /// <summary>
+    /// Converts a matrix of pixels into a flattened array of double-precision SIMD vectors.
+    /// </summary>
+    /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
+    /// <param name="matrix">The matrix to vectorize.</param>
+    /// <returns>A flattened array of SIMD vectors corresponding to the matrix pixels.</returns>
     private static Vector<double>[] VectorizeMatrix<T>(Matrix<T> matrix)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {

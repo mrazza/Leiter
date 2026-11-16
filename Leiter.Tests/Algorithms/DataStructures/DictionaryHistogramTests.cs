@@ -10,9 +10,6 @@ namespace Leiter.Tests.Algorithms.DataStructures;
 /// </summary>
 public class DictionaryHistogramTests
 {
-    /// <summary>
-    /// Verifies that the dictionary histogram should count correctly behaves correctly.
-    /// </summary>
     [Fact]
     public void DictionaryHistogram_ShouldCountCorrectly()
     {
@@ -47,9 +44,6 @@ public class DictionaryHistogramTests
         Assert.Equal(2, list.Count);
     }
 
-    /// <summary>
-    /// Executes the test dictionary histogram enumerable operation.
-    /// </summary>
     [Fact]
     public void TestDictionaryHistogram_IEnumerable()
     {
