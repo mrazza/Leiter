@@ -1,11 +1,12 @@
 namespace Leiter.Tests.Core;
 
+using System;
 using Leiter.Core;
 using Leiter.Pixels;
 using Xunit;
 
 /// <summary>
-/// Provides unit tests for <see cref="MaskMatrix"/> and <see cref="MaskExtensions"/> conversion helpers.
+/// Provides unit tests for <see cref="MaskMatrix"/>.
 /// </summary>
 public class MaskMatrixTests
 {
@@ -65,32 +66,7 @@ public class MaskMatrixTests
         Assert.True(materialized[0, 0]);
         Assert.False(materialized[1, 0]);
 
-        MaskMatrix viaExtension = view.ToMaskMatrix();
-        Assert.Equal(new Size(2, 1), viaExtension.Size);
-        Assert.True(viaExtension[0, 0]);
-        Assert.False(viaExtension[1, 0]);
-
         Assert.Throws<ArgumentNullException>(() => MaskMatrix.From(null!));
-        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ToMaskMatrix());
-    }
-
-    [Fact]
-    public void ToMaskMatrix_WithPredicate_ShouldProjectInParallelAndValidateArgs()
-    {
-        var scores = new SequentialMatrix<DoublePixel>(2, 2);
-        scores[0, 0] = 0.2;
-        scores[1, 0] = 0.8;
-        scores[0, 1] = 0.5;
-        scores[1, 1] = 0.9;
-
-        MaskMatrix thresholded = scores.ToMaskMatrix(static p => p.Value >= 0.8);
-        Assert.False(thresholded[0, 0]);
-        Assert.True(thresholded[1, 0]);
-        Assert.False(thresholded[0, 1]);
-        Assert.True(thresholded[1, 1]);
-
-        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).ToMaskMatrix(static _ => true));
-        Assert.Throws<ArgumentNullException>(() => scores.ToMaskMatrix(null!));
     }
 
     [Fact]

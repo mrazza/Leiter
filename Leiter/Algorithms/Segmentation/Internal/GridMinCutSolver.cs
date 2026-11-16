@@ -1,4 +1,4 @@
-namespace Leiter.Algorithms.Segmentation;
+namespace Leiter.Algorithms.Segmentation.Internal;
 
 /// <summary>
 /// Solves 8-connected 2D grid s-t min-cut / max-flow instances using the Boykov–Kolmogorov algorithm.

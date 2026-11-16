@@ -5,48 +5,6 @@ using Leiter.Core;
 using Leiter.Pixels;
 
 /// <summary>
-/// Specifies the thresholding strategy used by <see cref="SaliencyMask"/> to binarize a continuous saliency map.
-/// </summary>
-public enum SaliencyThresholdMethod
-{
-    /// <summary>
-    /// Computes the optimal threshold maximizing inter-class variance (Otsu's method) over quantized [0, 1] values.
-    /// </summary>
-    Otsu,
-
-    /// <summary>
-    /// Computes an adaptive threshold equal to twice the mean saliency (<c>min(2 * mean, 0.95)</c>).
-    /// </summary>
-    AdaptiveMean,
-
-    /// <summary>
-    /// Compares saliency values directly against a caller-supplied fixed threshold in [0, 1].
-    /// </summary>
-    Fixed,
-}
-
-/// <summary>
-/// Specifies how connected components are retained when filtering a binary foreground mask.
-/// </summary>
-public enum ComponentRetentionPolicy
-{
-    /// <summary>
-    /// Retains all 8-connected components whose pixel area meets or exceeds a specified fraction of the image area.
-    /// </summary>
-    MinimumAreaFraction,
-
-    /// <summary>
-    /// Retains only the single largest 8-connected foreground component.
-    /// </summary>
-    LargestComponentOnly,
-
-    /// <summary>
-    /// Keeps all foreground pixels without connected-component filtering.
-    /// </summary>
-    KeepAll,
-}
-
-/// <summary>
 /// Extracts and filters boolean foreground masks from continuous [0, 1] saliency maps.
 /// </summary>
 public static class SaliencyMask

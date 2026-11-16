@@ -1,34 +1,18 @@
+namespace Leiter.Tests.Platform.Linux;
 
-using Xunit;
+using System.Runtime.Versioning;
+using Leiter.Core;
 using Leiter.Platform.Linux;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
-using Leiter.Core;
-using Leiter.Pixels;
-using System.IO;
-using System.Runtime.Versioning;
-
-namespace Leiter.Tests.Platform;
+using Xunit;
 
 /// <summary>
-/// Provides unit tests for <see cref="Leiter.Platform.Linux.ColorExtensions" /> and <see cref="Leiter.Platform.Linux.ImageExtensions" />.
+/// Provides unit tests for <see cref="Leiter.Platform.Linux.ImageExtensions" />.
 /// </summary>
 [SupportedOSPlatform("linux")]
-public class PlatformLinuxTests
+public class ImageExtensionsTests
 {
-    [Fact]
-    public void ColorExtensions_ShouldConvertCorrectly()
-    {
-        var original = new Rgb24(10, 20, 30);
-        var leiterPixel = original.ToRgb8();
-        Assert.Equal(10, leiterPixel.R);
-        Assert.Equal(20, leiterPixel.G);
-        Assert.Equal(30, leiterPixel.B);
-
-        var convertedBack = leiterPixel.ToRgb24();
-        Assert.Equal(original, convertedBack);
-    }
-
     [Fact]
     public void ImageExtensions_ShouldConvertCorrectly()
     {
