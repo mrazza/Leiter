@@ -1,62 +1,144 @@
 namespace Leiter.Algorithms;
 
+using System.Numerics;
 using Leiter.Core;
-using Leiter.Pixels;
 
 /// <summary>
 /// Provides algorithms to blur an input image.
 /// </summary>
 public static class Blur
 {
+    private delegate void LineFilter1D(Span<Vector<double>> line);
+
     /// <summary>
-    /// Performs a Gaussian Blur of the specified image using a kernel with a given sigma value and the configured radius.
+    /// Performs a Gaussian blur of the specified image using a separable kernel with a given sigma value and radius.
     /// </summary>
     /// <typeparam name="T">The pixel type of the input and output matrices.</typeparam>
     /// <param name="image">The image to blur.</param>
     /// <param name="sigma">The standard deviation of the Gaussian distribution. This value controls the amount of blur applied by the filter.</param>
-    /// <param name="radius">The radius of the box blur kernel. This value controls the area from where blur samples are taken.</param>
-    /// <returns>A new matrix containing the result of the gaussian blur.</returns>
+    /// <param name="radius">The radius of the Gaussian blur kernel. The kernel size is <c>2 * radius + 1</c>.</param>
+    /// <returns>A new matrix containing the result of the Gaussian blur.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="radius"/> is negative or <paramref name="sigma"/> is not positive.</exception>
     public static Matrix<T> GaussianBlur<T>(Matrix<T> image, double sigma, int radius)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {
-        int kernelDimension = radius * 2 + 1;
-        var kernel = new SequentialMatrix<DoublePixel>(kernelDimension, kernelDimension);
-        double sum = 0.0;
-        for (int x = -radius; x <= radius; x++)
-        {
-            for (int y = -radius; y <= radius; y++)
-            {
-                var value = Math.Exp(-(x * x + y * y) /
-                                      (2 * sigma * sigma));
-                kernel[x + radius, y + radius] = value;
-                sum += value;
-            }
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(radius);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sigma, 0.0);
 
-        for (int x = 0; x < kernelDimension; ++x)
-            for (int y = 0; y < kernelDimension; ++y)
-                kernel[x, y] /= sum;
+        if (image.Width == 0 || image.Height == 0 || radius == 0)
+            return image.Clone();
 
-        return image.Convolve(kernel);
+        double[] kernel = CreateGaussianKernel1D(sigma, radius);
+        return image.ConvolveSeparable(kernel, kernel);
     }
 
     /// <summary>
-    /// Performs a Box Blur of the specified image using a kernel with a configurable radius.
+    /// Performs a separable 1D Box Blur of the specified image using a kernel with a configurable radius.
     /// </summary>
     /// <remarks>
-    /// Performs a convolution of the input matrix with a blox blur kernel of size determined
-    /// by the radius argument. The kernel will be (radius * 2 + 1) x (radius * 2 + 1).
+    /// Performs a separable horizontal and vertical uniform convolution with clamp-to-edge border handling.
+    /// The effective 2D kernel size is <c>(radius * 2 + 1) x (radius * 2 + 1)</c>.
     /// </remarks>
     /// <typeparam name="T">The pixel type of the input and output matrices.</typeparam>
     /// <param name="image">The image to blur.</param>
     /// <param name="radius">The radius of the box blur kernel. This value controls the area from where blur samples are taken.</param>
-    /// <returns>A new matrix containing the result of the blox blur.</returns>
+    /// <returns>A new matrix containing the result of the box blur.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="radius"/> is negative.</exception>
     public static Matrix<T> BoxBlur<T>(Matrix<T> image, int radius)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {
-        var kernelDimension = radius * 2 + 1;
-        var kernel = new SequentialMatrix<DoublePixel>(kernelDimension, kernelDimension);
-        kernel.SetAll(1.0 / (kernelDimension * kernelDimension));
-        return image.Convolve(kernel);
+        ArgumentOutOfRangeException.ThrowIfNegative(radius);
+
+        if (image.Width == 0 || image.Height == 0 || radius == 0)
+            return image.Clone();
+
+        int kernelDimension = radius * 2 + 1;
+        var kernel = new double[kernelDimension];
+        Array.Fill(kernel, 1.0 / kernelDimension);
+        return image.ConvolveSeparable(kernel, kernel);
+    }
+
+    /// <summary>
+    /// Performs a constant-time O(W · H) recursive IIR Gaussian blur using the Young–van Vliet filter
+    /// with exact Triggs–Sdika boundary conditions.
+    /// </summary>
+    /// <remarks>
+    /// Complexity is independent of <paramref name="sigma"/>, making this well suited for large-sigma smoothing
+    /// (for <paramref name="sigma"/> &lt; 0.5, falls back to exact separable finite-impulse-response Gaussian blur).
+    /// </remarks>
+    /// <typeparam name="T">The pixel type of the input and output matrices.</typeparam>
+    /// <param name="image">The image to blur.</param>
+    /// <param name="sigma">The standard deviation of the Gaussian distribution.</param>
+    /// <returns>A new matrix containing the smoothed image.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="sigma"/> is not positive.</exception>
+    public static Matrix<T> GaussianBlurRecursive<T>(Matrix<T> image, double sigma)
+        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sigma, 0.0);
+
+        if (image.Width == 0 || image.Height == 0)
+            return image.Clone();
+
+        if (sigma < 0.5)
+            return GaussianBlur(image, sigma, Math.Max(1, (int)Math.Ceiling(3.0 * sigma)));
+
+        var filter = YoungVanVlietFilter.Create(sigma);
+        return ApplySeparable1D(image, filter.FilterLine);
+    }
+
+    private static Matrix<T> ApplySeparable1D<T>(Matrix<T> image, LineFilter1D filterLine)
+        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+    {
+        int width = image.Width;
+        int height = image.Height;
+        if (width == 0 || height == 0)
+            return image.Clone();
+
+        var buffer = new Vector<double>[width * height];
+
+        Parallel.For(0, height, y =>
+        {
+            int rowOffset = y * width;
+            for (int x = 0; x < width; x++)
+                buffer[rowOffset + x] = image[x, y].ToDoubleVector();
+
+            filterLine(buffer.AsSpan(rowOffset, width));
+        });
+
+        var result = image.Clone();
+
+        Parallel.For(0, width, x =>
+        {
+            var col = new Vector<double>[height];
+            for (int y = 0; y < height; y++)
+                col[y] = buffer[y * width + x];
+
+            filterLine(col);
+
+            for (int y = 0; y < height; y++)
+                result[x, y] = T.FromDoubleVector(col[y]);
+        });
+
+        return result;
+    }
+
+    private static double[] CreateGaussianKernel1D(double sigma, int radius)
+    {
+        int kernelDimension = radius * 2 + 1;
+        var kernel = new double[kernelDimension];
+        double twoSigmaSq = 2.0 * sigma * sigma;
+        double sum = 0.0;
+
+        for (int i = -radius; i <= radius; i++)
+        {
+            double value = Math.Exp(-(i * i) / twoSigmaSq);
+            kernel[i + radius] = value;
+            sum += value;
+        }
+
+        for (int i = 0; i < kernelDimension; i++)
+            kernel[i] /= sum;
+
+        return kernel;
     }
 }

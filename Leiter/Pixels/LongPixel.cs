@@ -75,7 +75,7 @@ public readonly record struct LongPixel(long Value) : ITypedPixel<LongPixel, lon
         if (Vector<double>.Count < 1)
             throw new PlatformNotSupportedException("This operation is not supported on this platform. Vector width is too small.");
 
-        var data = new double[Vector<double>.Count];
+        Span<double> data = stackalloc double[Vector<double>.Count];
         data[0] = Value;
         return new(data);
     }

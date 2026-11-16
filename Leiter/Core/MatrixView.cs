@@ -3,11 +3,25 @@ namespace Leiter.Core;
 using System.Collections;
 using System.Diagnostics;
 
-public class MatrixView<T> : IReadOnlyMatrix<T>
+/// <summary>
+/// A zero-allocation, read-only view into a sub-region or border-extended region of an underlying matrix.
+/// </summary>
+/// <typeparam name="T">The pixel type stored in the underlying matrix.</typeparam>
+public readonly struct MatrixView<T> : IReadOnlyMatrix<T>
     where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
 {
+    /// <summary>
+    /// Initializes a new <see cref="MatrixView{T}"/> over <paramref name="matrix"/>.
+    /// </summary>
+    /// <param name="matrix">The underlying matrix to wrap.</param>
+    /// <param name="offsetX">The starting X offset in <paramref name="matrix"/>.</param>
+    /// <param name="offsetY">The starting Y offset in <paramref name="matrix"/>.</param>
+    /// <param name="width">The width of the view.</param>
+    /// <param name="height">The height of the view.</param>
+    /// <param name="edgeHandling">The border handling strategy when coordinates fall outside <paramref name="matrix"/>.</param>
     public MatrixView(IReadOnlyMatrix<T> matrix, int offsetX, int offsetY, int width, int height, EdgeHandling edgeHandling)
     {
+        ArgumentNullException.ThrowIfNull(matrix);
         Matrix = matrix;
         Width = width;
         Height = height;
@@ -22,17 +36,17 @@ public class MatrixView<T> : IReadOnlyMatrix<T>
 
     public T this[Coord coord] => GetElement(coord.X, coord.Y);
 
-    public IReadOnlyMatrix<T> Matrix { get; private init; }
+    public IReadOnlyMatrix<T> Matrix { get; }
 
-    public int OffsetX { get; private init; }
+    public int OffsetX { get; }
 
-    public int OffsetY { get; private init; }
+    public int OffsetY { get; }
 
-    public EdgeHandling EdgeHandling { get; private init; }
+    public EdgeHandling EdgeHandling { get; }
 
-    public int Height { get; private init; }
+    public int Height { get; }
 
-    public int Width { get; private init; }
+    public int Width { get; }
 
     public Size Size => new(Width, Height);
 

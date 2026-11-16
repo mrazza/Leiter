@@ -25,7 +25,7 @@ public interface IReadOnlyMatrix<T> : IUntypedMatrix, IReadOnlyCollection<T>, IR
 
     new int Count { get; }
 
-    protected static string ToString(IReadOnlyMatrix<T> matrix)
+    protected internal static string ToString(IReadOnlyMatrix<T> matrix)
     {
         StringBuilder builder = new StringBuilder();
         builder.Append(matrix.GetType());

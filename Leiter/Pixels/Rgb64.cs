@@ -86,7 +86,7 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
         if (Vector<double>.Count < 3)
             throw new PlatformNotSupportedException("This operation is not supported on this platform. Vector width is too small.");
 
-        var data = new double[Vector<double>.Count];
+        Span<double> data = stackalloc double[Vector<double>.Count];
         data[0] = R;
         data[1] = G;
         data[2] = B;
@@ -110,12 +110,13 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
     /// <remarks>
     /// This implementation assumes euclidean uniformity of the RGB color space.
     /// </remarks>
-    /// <param name="self">The current pixel on which to operate.</param>
-    /// <param name="other">The other pixel on which to operate.</param>
+    /// <param name="otherPixel">The other pixel on which to operate.</param>
     /// <returns>The distance in color between the two pixels.</returns>
-    public double Distance(Rgb64 otherPixel) =>
-        Math.Sqrt(
-            this.Zip(otherPixel)
-                .Select(channels => Math.Pow(channels.First - channels.Second, 2))
-                .Sum());
+    public double Distance(Rgb64 otherPixel)
+    {
+        double dr = R - otherPixel.R;
+        double dg = G - otherPixel.G;
+        double db = B - otherPixel.B;
+        return Math.Sqrt(dr * dr + dg * dg + db * db);
+    }
 }

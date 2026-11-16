@@ -135,4 +135,170 @@ public class MatrixAlgorithmTests
         Assert.Equal(5, blurredB.Height);
         Assert.Equal(10.0, blurredB[2, 2].Value, 4);
     }
+
+    [Fact]
+    public void ConvolveSeparable_ShouldMatch2DConvolution()
+    {
+        var img = new SequentialMatrix<DoublePixel>(7, 6);
+        for (int y = 0; y < img.Height; y++)
+            for (int x = 0; x < img.Width; x++)
+                img[x, y] = x * 1.5 + y * y + ((x + y) % 3) * 2.0;
+
+        double[] hKernel = [0.2, 0.5, 0.3];
+        double[] vKernel = [0.1, 0.3, 0.4, 0.2];
+        var kernel2D = new SequentialMatrix<DoublePixel>(hKernel.Length, vKernel.Length);
+        for (int ky = 0; ky < vKernel.Length; ky++)
+            for (int kx = 0; kx < hKernel.Length; kx++)
+                kernel2D[kx, ky] = hKernel[kx] * vKernel[ky];
+
+        var expected = img.Convolve(kernel2D);
+        var actual = img.ConvolveSeparable(hKernel, vKernel);
+
+        for (int y = 0; y < img.Height; y++)
+            for (int x = 0; x < img.Width; x++)
+                Assert.Equal(expected[x, y].Value, actual[x, y].Value, 10);
+    }
+
+    [Fact]
+    public void BoxBlur_Separable_ShouldMatchExplicit2DConvolution()
+    {
+        var img = new SequentialMatrix<DoublePixel>(7, 5);
+        for (int y = 0; y < img.Height; y++)
+            for (int x = 0; x < img.Width; x++)
+                img[x, y] = (x + 1) * 3.0 + (y * 5.0);
+
+        const int radius = 2;
+        int dim = radius * 2 + 1;
+        var kernel2D = new SequentialMatrix<DoublePixel>(dim, dim);
+        kernel2D.SetAll(1.0 / (dim * dim));
+
+        var expected = img.Convolve(kernel2D);
+        var actual = Blur.BoxBlur(img, radius);
+
+        for (int y = 0; y < img.Height; y++)
+            for (int x = 0; x < img.Width; x++)
+                Assert.Equal(expected[x, y].Value, actual[x, y].Value, 10);
+
+        // Verify small dimensions smaller than kernel width
+        var small = new SequentialMatrix<DoublePixel>(3, 2);
+        small[0, 0] = 1.0; small[1, 0] = 4.0; small[2, 0] = 9.0;
+        small[0, 1] = 2.0; small[1, 1] = 5.0; small[2, 1] = 8.0;
+        var expectedSmall = small.Convolve(kernel2D);
+        var actualSmall = Blur.BoxBlur(small, radius);
+
+        for (int y = 0; y < small.Height; y++)
+            for (int x = 0; x < small.Width; x++)
+                Assert.Equal(expectedSmall[x, y].Value, actualSmall[x, y].Value, 10);
+    }
+
+    [Fact]
+    public void GaussianBlur_Separable_ShouldMatchExplicit2DGaussian()
+    {
+        var img = new SequentialMatrix<DoublePixel>(9, 7);
+        for (int y = 0; y < img.Height; y++)
+            for (int x = 0; x < img.Width; x++)
+                img[x, y] = Math.Sin(x * 0.7 + y * 0.4) * 50.0 + 100.0;
+
+        const double sigma = 1.4;
+        const int radius = 2;
+        int dim = radius * 2 + 1;
+        var kernel2D = new SequentialMatrix<DoublePixel>(dim, dim);
+        double sum = 0.0;
+        for (int y = -radius; y <= radius; y++)
+        {
+            for (int x = -radius; x <= radius; x++)
+            {
+                double val = Math.Exp(-(x * x + y * y) / (2.0 * sigma * sigma));
+                kernel2D[x + radius, y + radius] = val;
+                sum += val;
+            }
+        }
+        for (int y = 0; y < dim; y++)
+            for (int x = 0; x < dim; x++)
+                kernel2D[x, y] /= sum;
+
+        var expected = img.Convolve(kernel2D);
+        var actual = Blur.GaussianBlur(img, sigma, radius);
+
+        for (int y = 0; y < img.Height; y++)
+            for (int x = 0; x < img.Width; x++)
+                Assert.Equal(expected[x, y].Value, actual[x, y].Value, 10);
+    }
+
+    [Fact]
+    public void GaussianBlurRecursive_ShouldPreserveConstantsSymmetryAndApproximateGaussian()
+    {
+        var constantImg = new SequentialMatrix<DoublePixel>(16, 14);
+        constantImg.SetAll(42.5);
+        var blurredConst = Blur.GaussianBlurRecursive(constantImg, 4.0);
+        for (int y = 0; y < blurredConst.Height; y++)
+            for (int x = 0; x < blurredConst.Width; x++)
+                Assert.Equal(42.5, blurredConst[x, y].Value, 10);
+
+        var symImg = new SequentialMatrix<DoublePixel>(21, 15);
+        for (int y = 0; y < symImg.Height; y++)
+        {
+            for (int x = 0; x < symImg.Width; x++)
+            {
+                int dx = x - 10;
+                int dy = y - 7;
+                symImg[x, y] = dx * dx + dy * dy + (dx == 0 && dy == 0 ? 50.0 : 0.0);
+            }
+        }
+
+        var blurredSym = Blur.GaussianBlurRecursive(symImg, 3.5);
+        for (int y = 0; y < symImg.Height; y++)
+        {
+            for (int x = 0; x < symImg.Width; x++)
+            {
+                Assert.Equal(blurredSym[20 - x, y].Value, blurredSym[x, y].Value, 1e-10);
+                Assert.Equal(blurredSym[x, 14 - y].Value, blurredSym[x, y].Value, 1e-10);
+            }
+        }
+
+        var impulse = new SequentialMatrix<DoublePixel>(81, 81);
+        impulse.SetAll(0.0);
+        impulse[40, 40] = 1000.0;
+
+        var recursive = Blur.GaussianBlurRecursive(impulse, 4.0);
+        var separable = Blur.GaussianBlur(impulse, 4.0, 16);
+
+        double totalMass = 0.0;
+        for (int i = 0; i < recursive.Count; i++)
+            totalMass += recursive[i].Value;
+
+        Assert.Equal(1000.0, totalMass, 2);
+        Assert.Equal(separable[40, 40].Value, recursive[40, 40].Value, 0);
+        Assert.True(recursive[40, 40].Value > recursive[41, 40].Value);
+        Assert.True(recursive[41, 40].Value > recursive[43, 40].Value);
+        Assert.True(recursive[43, 40].Value > recursive[46, 40].Value);
+    }
+
+    [Fact]
+    public void FrobeniusProduct_MatrixViewOverloads_ShouldMatchAndThrowOnMismatch()
+    {
+        var m1 = new SequentialMatrix<DoublePixel>(new Size(2, 2), new DoublePixel[] { 1.0, 2.0, 3.0, 4.0 });
+        var m2 = new SequentialMatrix<DoublePixel>(new Size(2, 2), new DoublePixel[] { 2.0, 3.0, 4.0, 5.0 });
+        var view = new MatrixView<DoublePixel>(m1, 0, 0, 2, 2, EdgeHandling.EXTEND);
+
+        var sameTypeResult = view.FrobeniusProduct<DoublePixel>(m2);
+        Assert.Equal(40.0, sameTypeResult.Value);
+
+        var scalarExplicitResult = view.FrobeniusProduct<DoublePixel, DoublePixel>(m2);
+        Assert.Equal(40.0, scalarExplicitResult.Value);
+
+        var rgbImg = new SequentialMatrix<Rgb8>(3, 3);
+        rgbImg[1, 1] = new Rgb8(255, 0, 0);
+        rgbImg[2, 2] = new Rgb8(0, 0, 255);
+        var rgbView = new MatrixView<Rgb8>(rgbImg, 1, 1, 2, 2, EdgeHandling.EXTEND);
+        var scalarKernel = new SequentialMatrix<DoublePixel>(new Size(2, 2), new DoublePixel[] { 1.0, 0.0, 0.0, 1.0 });
+
+        Rgb8 inferredResult = rgbView.FrobeniusProduct(scalarKernel);
+        Assert.Equal(new Rgb8(255, 0, 255), inferredResult);
+
+        var m3 = new SequentialMatrix<DoublePixel>(3, 3);
+        Assert.Throws<ArgumentException>(() => view.FrobeniusProduct<DoublePixel>(m3));
+        Assert.Throws<ArgumentException>(() => view.FrobeniusProduct<DoublePixel, DoublePixel>(m3));
+        Assert.Throws<ArgumentException>(() => rgbView.FrobeniusProduct(m3));
+    }
 }
