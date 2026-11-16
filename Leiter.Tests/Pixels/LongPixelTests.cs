@@ -98,6 +98,10 @@ public class LongPixelTests
         Assert.True(enumerator.MoveNext());
         Assert.Equal(123L, enumerator.Current);
         Assert.False(enumerator.MoveNext());
+
+        var nonGeneric = ((System.Collections.IEnumerable)p).GetEnumerator();
+        Assert.True(nonGeneric.MoveNext());
+        Assert.Equal(123L, nonGeneric.Current);
     }
 
     [Fact]

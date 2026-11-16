@@ -125,4 +125,64 @@ public class ColorTransferTests
         Assert.Throws<ArgumentException>(() =>
             ColorTransfer.SelectClosestPalette(LabColorStatistics.UnitWeights, Array.Empty<WatercolorPalette>()));
     }
+
+    [Fact]
+    public void ColorTransfer_And_Statistics_EdgeCases_AndOverloads_ShouldWork()
+    {
+        var statA = new LabColorStatistics(10, 0, 0, 5, 0, 0);
+        var statB = new LabColorStatistics(13, 4, 0, 5, 0, 0);
+        Assert.Equal(5.0, statA.FeatureDistance(statB), 10);
+
+        var negativeWeight = new LabColorStatistics(1, 1, 1, -0.5, 1, 1);
+        var nanWeight = new LabColorStatistics(double.NaN, 1, 1, 1, 1, 1);
+        Assert.Throws<ArgumentOutOfRangeException>(() => statA.FeatureDistance(statB, negativeWeight));
+        Assert.Throws<ArgumentOutOfRangeException>(() => statA.FeatureDistance(statB, nanWeight));
+
+        var d65Palette = new WatercolorPalette("Custom D65", new(65, 2, 8, 14, 5, 6), Illuminant.D65);
+        Assert.Equal("Custom D65", d65Palette.Name);
+        Assert.Equal(65, d65Palette.Statistics.MeanL);
+        Assert.Equal(Illuminant.D65, d65Palette.Illuminant);
+
+        Assert.Equal(default, ColorTransfer.ComputeStatistics(new SequentialMatrix<Rgb8>(0, 0)));
+
+        Assert.Throws<ArgumentNullException>(() =>
+            ColorTransfer.SelectClosestPalette(LabColorStatistics.UnitWeights, new WatercolorPalette[] { null! }));
+        Assert.Throws<ArgumentNullException>(() =>
+            ColorTransfer.SelectClosestPalette(LabColorStatistics.UnitWeights, new WatercolorPalette[] { WatercolorPalettes.BalancedWash, null! }));
+
+        var customWeights = new LabColorStatistics(2.0, 1.0, 1.0, 0.5, 0.5, 0.5);
+        WatercolorPalette weightedMatch = ColorTransfer.SelectClosestPalette(statA, featureWeights: customWeights);
+        Assert.NotNull(weightedMatch);
+
+        var emptyLab = new SequentialMatrix<Lab32>(0, 0);
+        Assert.Empty(ColorTransfer.Transfer(emptyLab, statA));
+
+        var emptyRgb = new SequentialMatrix<Rgb8>(0, 0);
+        var sampleRgb = new SequentialMatrix<Rgb8>(2, 2);
+        sampleRgb[0, 0] = new Rgb8(60, 90, 120);
+        sampleRgb[1, 0] = new Rgb8(100, 130, 160);
+        sampleRgb[0, 1] = new Rgb8(140, 170, 190);
+        sampleRgb[1, 1] = new Rgb8(200, 210, 220);
+
+        Assert.Empty(ColorTransfer.Transfer(emptyRgb, sampleRgb));
+        Matrix<Rgb8> refNoOp = ColorTransfer.Transfer(sampleRgb, sampleRgb, strength: 0.0);
+        Assert.Equal(sampleRgb[0, 0], refNoOp[0, 0]);
+
+        Assert.Empty(ColorTransfer.Transfer(emptyRgb, d65Palette));
+        Matrix<Rgb8> palNoOp = ColorTransfer.Transfer(sampleRgb, d65Palette, strength: 0.0);
+        Assert.Equal(sampleRgb[1, 1], palNoOp[1, 1]);
+
+        Matrix<Rgb8> palTransferred = ColorTransfer.Transfer(sampleRgb, d65Palette);
+        Assert.Equal(sampleRgb.Size, palTransferred.Size);
+
+        var (emptyClosest, _) = ColorTransfer.TransferToClosestPalette(emptyRgb, [d65Palette]);
+        Assert.Empty(emptyClosest);
+
+        var (zeroStrengthClosest, _) = ColorTransfer.TransferToClosestPalette(sampleRgb, [d65Palette], strength: 0.0);
+        Assert.Equal(sampleRgb[0, 1], zeroStrengthClosest[0, 1]);
+
+        var (d65Out, d65Selected) = ColorTransfer.TransferToClosestPalette(sampleRgb, [d65Palette]);
+        Assert.Equal(d65Palette, d65Selected);
+        Assert.Equal(sampleRgb.Size, d65Out.Size);
+    }
 }

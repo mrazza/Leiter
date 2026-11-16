@@ -75,9 +75,6 @@ internal readonly struct YoungVanVlietFilter
     /// <param name="line">The line of SIMD vector samples to filter in place.</param>
     public void FilterLine(Span<Vector<double>> line)
     {
-        if (line.IsEmpty)
-            return;
-
         int length = line.Length;
         Vector<double> leftBoundaryValue = line[0];
         Vector<double> rightBoundaryValue = line[length - 1];

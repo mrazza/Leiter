@@ -138,4 +138,23 @@ public class Lab32Tests
         Assert.Equal(13.0, a.EuclideanDistance(b), 12);
         Assert.Equal(a.EuclideanDistance(b), b.EuclideanDistance(a), 12);
     }
+
+    [Fact]
+    public void TestCIEDE2000_HueWraparoundBranches()
+    {
+        // Straddle 0°/360° with sumH' < 360 and |diffH'| > 180.
+        var lowHue1 = new Lab32(50f, 30f, 2f);
+        var highHue1 = new Lab32(50f, 30f, -10f);
+        double d12 = lowHue1.Distance(highHue1);
+        double d21 = highHue1.Distance(lowHue1);
+        Assert.True(d12 > 0);
+        Assert.Equal(d12, d21, 10);
+
+        // Straddle 0°/360° with sumH' >= 360 and |diffH'| > 180.
+        var lowHue2 = new Lab32(50f, 30f, 15f);
+        var highHue2 = new Lab32(50f, 30f, -2f);
+        double d34 = lowHue2.Distance(highHue2);
+        Assert.True(d34 > 0);
+        Assert.Equal(d34, highHue2.Distance(lowHue2), 10);
+    }
 }

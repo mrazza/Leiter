@@ -102,9 +102,6 @@ public static class Blur
     {
         int width = image.Width;
         int height = image.Height;
-        if (width == 0 || height == 0)
-            return image.Clone();
-
         var buffer = new Vector<double>[width * height];
 
         Parallel.For(0, height, y =>
