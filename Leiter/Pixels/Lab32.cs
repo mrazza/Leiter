@@ -8,13 +8,21 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Leiter.Core;
 
+/// <summary>
+/// Represents a color in the CIELAB (L*a*b*) color space using 32-bit floating-point channels.
+/// </summary>
+/// <param name="L">The lightness channel (L*).</param>
+/// <param name="A">The green-red chromaticity channel (a*).</param>
+/// <param name="B">The blue-yellow chromaticity channel (b*).</param>
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab32, float>
 {
     private static readonly Lab32 INTERNAL_ZERO = new();
 
+    /// <inheritdoc/>
     public static Lab32 Zero => INTERNAL_ZERO;
 
+    /// <inheritdoc/>
     public Lab32 Add(Lab32 right) =>
         new()
         {
@@ -23,6 +31,7 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
             B = B + right.B
         };
 
+    /// <inheritdoc/>
     public Lab32 Subtract(Lab32 right) =>
         new()
         {
@@ -31,6 +40,7 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
             B = B - right.B
         };
 
+    /// <inheritdoc/>
     public Lab32 Multiply(Lab32 right) =>
         new()
         {
@@ -39,6 +49,7 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
             B = B * right.B
         };
 
+    /// <inheritdoc/>
     public Lab32 Divide(Lab32 right) =>
         new()
         {
@@ -47,42 +58,61 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
             B = B / right.B
         };
 
+    /// <inheritdoc/>
     public Lab32 Add(decimal right) => ComponentMap(channel => channel + (float)right);
 
+    /// <inheritdoc/>
     public Lab32 Subtract(decimal right) => ComponentMap(channel => channel - (float)right);
 
+    /// <inheritdoc/>
     public Lab32 Multiply(decimal right) => ComponentMap(channel => channel * (float)right);
 
+    /// <inheritdoc/>
     public Lab32 Divide(decimal right) => ComponentMap(channel => channel / (float)right);
 
+    /// <inheritdoc/>
     public Lab32 Add(double right) => ComponentMap(channel => channel + (float)right);
 
+    /// <inheritdoc/>
     public Lab32 Subtract(double right) => ComponentMap(channel => channel - (float)right);
 
+    /// <inheritdoc/>
     public Lab32 Multiply(double right) => ComponentMap(channel => channel * (float)right);
 
+    /// <inheritdoc/>
     public Lab32 Divide(double right) => ComponentMap(channel => channel / (float)right);
 
+    /// <inheritdoc/>
     public Lab32 Add<S>(IScalar<S> right)
         where S : IScalar<S> =>
         ComponentMap(channel => channel + (float)right.AsDouble());
 
+    /// <inheritdoc/>
     public Lab32 Divide<S>(IScalar<S> right)
         where S : IScalar<S> =>
         ComponentMap(channel => channel / (float)right.AsDouble());
 
+    /// <inheritdoc/>
     public Lab32 Multiply<S>(IScalar<S> right)
         where S : IScalar<S> =>
         ComponentMap(channel => channel * (float)right.AsDouble());
 
+    /// <inheritdoc/>
     public Lab32 Subtract<S>(IScalar<S> right)
         where S : IScalar<S> =>
         ComponentMap(channel => channel - (float)right.AsDouble());
 
+    /// <summary>
+    /// Maps the chromaticity channels (<see cref="A"/> and <see cref="B"/>) using the specified mapping function while preserving the lightness channel (<see cref="L"/>).
+    /// </summary>
+    /// <param name="func">The mapping function to apply to the chromaticity channels.</param>
+    /// <returns>A new <see cref="Lab32"/> pixel with the mapped chromaticity channels and original lightness.</returns>
     public Lab32 ColorComponentMap(Func<float, float> func) => new() { L = L, A = func(A), B = func(B) };
 
+    /// <inheritdoc/>
     public Lab32 ComponentMap(Func<float, float> func) => new() { L = func(L), A = func(A), B = func(B) };
 
+    /// <inheritdoc/>
     public Vector<double> ToDoubleVector()
     {
         if (Vector<double>.Count < 3)
@@ -95,8 +125,10 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
         return new(data);
     }
 
+    /// <inheritdoc/>
     public static Lab32 FromDoubleVector(Vector<double> vector) => new((float)vector[0], (float)vector[1], (float)vector[2]);
 
+    /// <inheritdoc/>
     public IEnumerator<float> GetEnumerator()
     {
         yield return L;

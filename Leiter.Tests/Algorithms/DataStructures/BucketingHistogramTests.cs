@@ -10,9 +10,6 @@ namespace Leiter.Tests.Algorithms.DataStructures;
 /// </summary>
 public class BucketingHistogramTests
 {
-    /// <summary>
-    /// Verifies that the bucketing histogram should bucket correctly behaves correctly.
-    /// </summary>
     [Fact]
     public void BucketingHistogram_ShouldBucketCorrectly()
     {
@@ -36,9 +33,6 @@ public class BucketingHistogramTests
         Assert.Equal(1, mapped["Even"]);
     }
 
-    /// <summary>
-    /// Executes the test bucketing histogram enumerable operation.
-    /// </summary>
     [Fact]
     public void TestBucketingHistogram_IEnumerable()
     {

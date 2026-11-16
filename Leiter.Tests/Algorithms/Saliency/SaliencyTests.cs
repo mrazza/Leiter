@@ -10,13 +10,10 @@ using System.Linq;
 namespace Leiter.Tests.Algorithms.Saliency;
 
 /// <summary>
-/// Provides unit tests for <see cref="SaliencyTests" />.
+/// Provides unit tests for <see cref="GlobalContrastSaliency" /> and <see cref="RegionalContrastSaliency" />.
 /// </summary>
 public class SaliencyTests
 {
-    /// <summary>
-    /// Verifies that the global contrast saliency should compute correctly.
-    /// </summary>
     [Fact]
     public void GlobalContrastSaliency_ShouldComputeCorrectly()
     {
@@ -78,9 +75,6 @@ public class SaliencyTests
         Assert.Equal(0.0, saliency[0, 0].Value, 4);
     }
 
-    /// <summary>
-    /// Verifies that the regional contrast saliency should compute correctly.
-    /// </summary>
     [Fact]
     public void RegionalContrastSaliency_ShouldComputeCorrectly()
     {

@@ -11,9 +11,6 @@ namespace Leiter.Tests.Core;
 /// </summary>
 public class IReadOnlyMatrixTests
 {
-    /// <summary>
-    /// Executes the test explicit interface counts operation.
-    /// </summary>
     [Fact]
     public void TestExplicitInterfaceCounts()
     {

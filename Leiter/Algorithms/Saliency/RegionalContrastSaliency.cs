@@ -35,6 +35,7 @@ public static class RegionalContrastSaliency
     /// <param name="enableSmoothing">Whether to enable region-based saliency smoothing.</param>
     /// <param name="computeBorderRegions">Whether to compute border regions.</param>
     /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="segmentation"/> is <see langword="null"/>.</exception>
     public static Matrix<DoublePixel> ComputeSaliency(Matrix<Rgb8> image, IDisjointSet segmentation, bool enableSmoothing = true, bool computeBorderRegions = true)
     {
         if (image.Count == 0)

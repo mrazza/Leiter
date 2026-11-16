@@ -7,13 +7,21 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Leiter.Core;
 
+/// <summary>
+/// Represents a color in the CIE 1931 XYZ color space using 32-bit floating-point channels.
+/// </summary>
+/// <param name="X">The X tristimulus component.</param>
+/// <param name="Y">The Y luminance component.</param>
+/// <param name="Z">The Z tristimulus component.</param>
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz32, float>
 {
     private static readonly Xyz32 INTERNAL_ZERO = new();
 
+    /// <inheritdoc/>
     public static Xyz32 Zero => INTERNAL_ZERO;
 
+    /// <inheritdoc/>
     public Xyz32 Add(Xyz32 right) =>
         new()
         {
@@ -22,6 +30,7 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
             Z = Z + right.Z
         };
 
+    /// <inheritdoc/>
     public Xyz32 Subtract(Xyz32 right) =>
         new()
         {
@@ -30,6 +39,7 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
             Z = Z - right.Z
         };
 
+    /// <inheritdoc/>
     public Xyz32 Multiply(Xyz32 right) =>
         new()
         {
@@ -38,6 +48,7 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
             Z = Z * right.Z
         };
 
+    /// <inheritdoc/>
     public Xyz32 Divide(Xyz32 right) =>
         new()
         {
@@ -46,42 +57,61 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
             Z = Z / right.Z
         };
 
+    /// <inheritdoc/>
     public Xyz32 Add(decimal right) => ComponentMap(channel => channel + (float)right);
 
+    /// <inheritdoc/>
     public Xyz32 Subtract(decimal right) => ComponentMap(channel => channel - (float)right);
 
+    /// <inheritdoc/>
     public Xyz32 Multiply(decimal right) => ComponentMap(channel => channel * (float)right);
 
+    /// <inheritdoc/>
     public Xyz32 Divide(decimal right) => ComponentMap(channel => channel / (float)right);
 
+    /// <inheritdoc/>
     public Xyz32 Add(double right) => ComponentMap(channel => channel + (float)right);
 
+    /// <inheritdoc/>
     public Xyz32 Subtract(double right) => ComponentMap(channel => channel - (float)right);
 
+    /// <inheritdoc/>
     public Xyz32 Multiply(double right) => ComponentMap(channel => channel * (float)right);
 
+    /// <inheritdoc/>
     public Xyz32 Divide(double right) => ComponentMap(channel => channel / (float)right);
 
+    /// <inheritdoc/>
     public Xyz32 Add<S>(IScalar<S> right)
         where S : IScalar<S> =>
         ComponentMap(channel => channel + (float)right.AsDouble());
 
+    /// <inheritdoc/>
     public Xyz32 Divide<S>(IScalar<S> right)
         where S : IScalar<S> =>
         ComponentMap(channel => channel / (float)right.AsDouble());
 
+    /// <inheritdoc/>
     public Xyz32 Multiply<S>(IScalar<S> right)
         where S : IScalar<S> =>
         ComponentMap(channel => channel * (float)right.AsDouble());
 
+    /// <inheritdoc/>
     public Xyz32 Subtract<S>(IScalar<S> right)
         where S : IScalar<S> =>
         ComponentMap(channel => channel - (float)right.AsDouble());
 
+    /// <summary>
+    /// Maps the <see cref="X"/> and <see cref="Z"/> chromaticity components using the specified mapping function while preserving luminance <see cref="Y"/>.
+    /// </summary>
+    /// <param name="func">The mapping function to apply to the X and Z components.</param>
+    /// <returns>A new <see cref="Xyz32"/> pixel with mapped X and Z components and preserved Y luminance.</returns>
     public Xyz32 ColorComponentMap(Func<float, float> func) => new() { X = func(X), Y = Y, Z = func(Z) };
 
+    /// <inheritdoc/>
     public Xyz32 ComponentMap(Func<float, float> func) => new() { X = func(X), Y = func(Y), Z = func(Z) };
 
+    /// <inheritdoc/>
     public Vector<double> ToDoubleVector()
     {
         if (Vector<double>.Count < 3)
@@ -94,8 +124,10 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
         return new(data);
     }
 
+    /// <inheritdoc/>
     public static Xyz32 FromDoubleVector(Vector<double> vector) => new((float)vector[0], (float)vector[1], (float)vector[2]);
 
+    /// <inheritdoc/>
     public IEnumerator<float> GetEnumerator()
     {
         yield return X;
@@ -109,7 +141,7 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
     /// Calculates the color distance between the current and other pixel in XYZ color space.
     /// </summary>
     /// <remarks>
-    /// This naive implementation assumes euclidean uniformity of the XYZ color space.
+    /// This naive implementation assumes Euclidean uniformity of the XYZ color space.
     /// </remarks>
     /// <param name="otherPixel">The other pixel on which to operate.</param>
     /// <returns>The distance in color between the two pixels.</returns>

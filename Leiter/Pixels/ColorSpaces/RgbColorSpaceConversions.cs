@@ -29,9 +29,19 @@ public static class RgbColorSpaceConversions
     public static Rgb64 LinearRgbToSRgb(Rgb64 pixel) =>
         new(LinearChannelToSRgb(pixel.R), LinearChannelToSRgb(pixel.G), LinearChannelToSRgb(pixel.B));
 
+    /// <summary>
+    /// Converts a single sRGB channel value to linear light intensity using the piecewise sRGB electro-optical transfer function (EOTF) / gamma expansion.
+    /// </summary>
+    /// <param name="channel">The sRGB channel value to expand.</param>
+    /// <returns>The linear-light channel value.</returns>
     private static double SRgbChannelToLinear(double channel) =>
         channel > 0.04045 ? Math.Pow((channel + 0.055) / 1.055, 2.4) : channel / 12.92;
 
+    /// <summary>
+    /// Converts a single linear-light channel value to sRGB using the piecewise sRGB opto-electronic transfer function (OETF) / gamma compression.
+    /// </summary>
+    /// <param name="channel">The linear channel value to compress.</param>
+    /// <returns>The gamma-compressed sRGB channel value.</returns>
     private static double LinearChannelToSRgb(double channel) =>
         channel > 0.0031308 ? 1.055 * Math.Pow(channel, 1.0 / 2.4) - 0.055 : channel * 12.92;
 }

@@ -11,14 +11,11 @@ using System.Runtime.Versioning;
 namespace Leiter.Tests.Platform;
 
 /// <summary>
-/// Provides unit tests for <see cref="PlatformLinuxTests" />.
+/// Provides unit tests for <see cref="Leiter.Platform.Linux.ColorExtensions" /> and <see cref="Leiter.Platform.Linux.ImageExtensions" />.
 /// </summary>
 [SupportedOSPlatform("linux")]
 public class PlatformLinuxTests
 {
-    /// <summary>
-    /// Verifies that the color extensions should convert correctly behaves correctly.
-    /// </summary>
     [Fact]
     public void ColorExtensions_ShouldConvertCorrectly()
     {
@@ -32,9 +29,6 @@ public class PlatformLinuxTests
         Assert.Equal(original, convertedBack);
     }
 
-    /// <summary>
-    /// Verifies that the image extensions should convert correctly behaves correctly.
-    /// </summary>
     [Fact]
     public void ImageExtensions_ShouldConvertCorrectly()
     {

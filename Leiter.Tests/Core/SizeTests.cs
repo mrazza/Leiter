@@ -5,13 +5,10 @@ using Leiter.Core;
 namespace Leiter.Tests.Core;
 
 /// <summary>
-/// Provides unit tests for <see cref="SizeTests" />.
+/// Provides unit tests for <see cref="Size" />.
 /// </summary>
 public class SizeTests
 {
-    /// <summary>
-    /// Verifies that the constructor and properties should work behaves correctly.
-    /// </summary>
     [Fact]
     public void Constructor_AndProperties_ShouldWork()
     {

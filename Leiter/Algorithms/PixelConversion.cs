@@ -9,15 +9,43 @@ using Leiter.Pixels.ColorSpaces;
 /// </summary>
 public static class PixelConversion
 {
+    /// <summary>
+    /// Converts an <see cref="Xyz32"/> pixel to an 8-bit per channel <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/>.
+    /// </summary>
+    /// <remarks>
+    /// This method assumes a D65 white point for the XYZ pixel. Values outside [0, 255] are clamped.
+    /// </remarks>
+    /// <param name="self">The XYZ pixel to convert.</param>
+    /// <param name="colorSpace">The target RGB color space.</param>
+    /// <returns>An <see cref="Rgb8"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if conversion to the specified color space is not implemented.</exception>
     public static Rgb8 ToRgb8(this Xyz32 self, RgbColorSpace colorSpace) =>
         self.ToRgb64(colorSpace).ToRgb8();
 
     private static byte ClampToByte(double value) =>
         double.IsNaN(value) ? (byte)0 : (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
 
+    /// <summary>
+    /// Converts an <see cref="Rgb64"/> pixel with channel values in [0, 1] to an 8-bit per channel <see cref="Rgb8"/> pixel.
+    /// </summary>
+    /// <remarks>
+    /// Channel values are scaled by 255 and clamped to [0, 255].
+    /// </remarks>
+    /// <param name="self">The 64-bit floating-point RGB pixel to convert.</param>
+    /// <returns>An <see cref="Rgb8"/> pixel with byte-clamped channels.</returns>
     public static Rgb8 ToRgb8(this Rgb64 self) =>
         new(ClampToByte(self.R * 255.0), ClampToByte(self.G * 255.0), ClampToByte(self.B * 255.0));
 
+    /// <summary>
+    /// Converts an <see cref="Xyz32"/> pixel to an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/>.
+    /// </summary>
+    /// <remarks>
+    /// This method assumes a D65 white point for the XYZ pixel.
+    /// </remarks>
+    /// <param name="self">The XYZ pixel to convert.</param>
+    /// <param name="colorSpace">The target RGB color space.</param>
+    /// <returns>An <see cref="Rgb64"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if conversion to the specified color space is not implemented.</exception>
     public static Rgb64 ToRgb64(this Xyz32 self, RgbColorSpace colorSpace)
     {
         if (colorSpace is not (RgbColorSpace.LinearRGB or RgbColorSpace.sRGB))
@@ -33,8 +61,23 @@ public static class PixelConversion
             : rgb64;
     }
 
+    /// <summary>
+    /// Converts an 8-bit per channel <see cref="Rgb8"/> pixel to an <see cref="Rgb64"/> pixel with channel values normalized to [0, 1].
+    /// </summary>
+    /// <param name="self">The 8-bit RGB pixel to convert.</param>
+    /// <returns>An <see cref="Rgb64"/> pixel with normalized floating-point channels.</returns>
     public static Rgb64 ToRgb64(this Rgb8 self) => new(self.R / 255.0, self.G / 255.0, self.B / 255.0);
 
+    /// <summary>
+    /// Converts an 8-bit per channel <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/> to an <see cref="Xyz32"/> pixel.
+    /// </summary>
+    /// <remarks>
+    /// This method assumes a D65 white point for the RGB pixel.
+    /// </remarks>
+    /// <param name="self">The 8-bit RGB pixel to convert.</param>
+    /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
+    /// <returns>An <see cref="Xyz32"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
     public static Xyz32 ToXyz32(this Rgb8 self, RgbColorSpace colorSpace) =>
         self.ToRgb64().ToXyz32(colorSpace);
 
@@ -63,9 +106,29 @@ public static class PixelConversion
         return new((float)x, (float)y, (float)z);
     }
 
+    /// <summary>
+    /// Converts an 8-bit per channel <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/> to a <see cref="Lab32"/> pixel.
+    /// </summary>
+    /// <remarks>
+    /// This method assumes a D65 white point.
+    /// </remarks>
+    /// <param name="self">The 8-bit RGB pixel to convert.</param>
+    /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
+    /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
     public static Lab32 ToLab32(this Rgb8 self, RgbColorSpace colorSpace) =>
         self.ToXyz32(colorSpace).ToLab32();
 
+    /// <summary>
+    /// Converts an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/> to a <see cref="Lab32"/> pixel.
+    /// </summary>
+    /// <remarks>
+    /// This method assumes a D65 white point.
+    /// </remarks>
+    /// <param name="self">The 64-bit RGB pixel to convert.</param>
+    /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
+    /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
+    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
     public static Lab32 ToLab32(this Rgb64 self, RgbColorSpace colorSpace) =>
         self.ToXyz32(colorSpace).ToLab32();
 
@@ -87,6 +150,14 @@ public static class PixelConversion
         return new(116f * fy - 16f, 500f * (fx - fy), 200f * (fy - fz));
     }
 
+    /// <summary>
+    /// Evaluates the piecewise CIE L*a*b* transfer function on a normalized tristimulus ratio.
+    /// </summary>
+    /// <remarks>
+    /// Applies a cube-root transfer for ratios above epsilon (0.008856) and a linear segment with slope kappa / 116 below.
+    /// </remarks>
+    /// <param name="channel">The normalized tristimulus value ratio relative to the reference white point.</param>
+    /// <returns>The transformed transfer value.</returns>
     private static float LabTransfer(float channel)
     {
         const float epsilon = 0.008856f; // (6/29)^3

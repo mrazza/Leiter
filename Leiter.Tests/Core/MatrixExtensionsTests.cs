@@ -8,13 +8,10 @@ using System.Collections.Generic;
 namespace Leiter.Tests.Core;
 
 /// <summary>
-/// Provides unit tests for <see cref="MatrixExtensionsTests" />.
+/// Provides unit tests for <see cref="MatrixExtensions" />.
 /// </summary>
 public class MatrixExtensionsTests
 {
-    /// <summary>
-    /// Verifies that the to sequential matrix should populate correctly behaves correctly.
-    /// </summary>
     [Fact]
     public void ToSequentialMatrix_ShouldPopulateCorrectly()
     {
@@ -29,9 +26,6 @@ public class MatrixExtensionsTests
         Assert.Equal(4.0, matrix[1, 1].Value);
     }
 
-    /// <summary>
-    /// Verifies that the to sequential matrix too small source should throw behaves correctly.
-    /// </summary>
     [Fact]
     public void ToSequentialMatrix_TooSmallSource_ShouldThrow()
     {
@@ -39,9 +33,6 @@ public class MatrixExtensionsTests
         Assert.Throws<ArgumentException>(() => source.ToSequentialMatrix(2, 2));
     }
 
-    /// <summary>
-    /// Verifies that the coord from index should compute correctly behaves correctly.
-    /// </summary>
     [Fact]
     public void CoordFromIndex_ShouldComputeCorrectly()
     {
@@ -54,9 +45,6 @@ public class MatrixExtensionsTests
         Assert.Equal(new Coord(2, 1), c7);
     }
 
-    /// <summary>
-    /// Verifies that the index from coord should compute correctly behaves correctly.
-    /// </summary>
     [Fact]
     public void IndexFromCoord_ShouldComputeCorrectly()
     {
@@ -66,9 +54,6 @@ public class MatrixExtensionsTests
         Assert.Equal(7, index);
     }
 
-    /// <summary>
-    /// Verifies that the normalize and denormalize coord should work behaves correctly.
-    /// </summary>
     [Fact]
     public void NormalizeAndDenormalizeCoord_ShouldWork()
     {

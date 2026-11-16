@@ -30,6 +30,11 @@ internal readonly struct YoungVanVlietFilter
         this.rightBoundaryMatrix = rightBoundaryMatrix;
     }
 
+    /// <summary>
+    /// Creates a Young–van Vliet recursive Gaussian filter configured for the specified standard deviation.
+    /// </summary>
+    /// <param name="sigma">The standard deviation of the Gaussian filter.</param>
+    /// <returns>A new <see cref="YoungVanVlietFilter"/> instance configured for <paramref name="sigma"/>.</returns>
     public static YoungVanVlietFilter Create(double sigma)
     {
         // Dimensionless pole-scaling parameter `q` from Young & van Vliet (1995) Eq. (11b).
@@ -61,6 +66,13 @@ internal readonly struct YoungVanVlietFilter
             rightBoundaryMatrix);
     }
 
+    /// <summary>
+    /// Applies the bidirectional recursive Gaussian filter to a line of SIMD vector samples in place.
+    /// </summary>
+    /// <remarks>
+    /// Performs a forward causal pass followed by an anti-causal backward pass with Triggs–Sdika boundary condition handling.
+    /// </remarks>
+    /// <param name="line">The line of SIMD vector samples to filter in place.</param>
     public void FilterLine(Span<Vector<double>> line)
     {
         if (line.IsEmpty)
@@ -113,6 +125,14 @@ internal readonly struct YoungVanVlietFilter
         }
     }
 
+    /// <summary>
+    /// Computes the initial backward filter state at the right boundary using the Triggs–Sdika boundary matrix.
+    /// </summary>
+    /// <param name="rightBoundaryValue">The constant boundary value at the right edge.</param>
+    /// <param name="prevForward1">The most recent forward pass output sample.</param>
+    /// <param name="prevForward2">The second most recent forward pass output sample.</param>
+    /// <param name="prevForward3">The third most recent forward pass output sample.</param>
+    /// <returns>A tuple containing the backward initial state at the edge and two virtual points beyond the edge.</returns>
     private (Vector<double> AtEdge, Vector<double> BeyondEdge1, Vector<double> BeyondEdge2) ComputeInitialBackwardState(
         Vector<double> rightBoundaryValue,
         Vector<double> prevForward1,
@@ -136,6 +156,13 @@ internal readonly struct YoungVanVlietFilter
             BeyondEdge2: ComputeRow(2));
     }
 
+    /// <summary>
+    /// Constructs the 3x3 Triggs–Sdika boundary matrix used to initialize the anti-causal backward filter pass.
+    /// </summary>
+    /// <param name="feedback1">The first-order feedback weight.</param>
+    /// <param name="feedback2">The second-order feedback weight.</param>
+    /// <param name="feedback3">The third-order feedback weight.</param>
+    /// <returns>A 3x3 sequential matrix containing the closed-form Triggs–Sdika polynomial boundary coefficients.</returns>
     private static SequentialMatrix<DoublePixel> CreateTriggsSdikaBoundaryMatrix(
         double feedback1,
         double feedback2,

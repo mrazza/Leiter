@@ -5,13 +5,10 @@ using Leiter.Algorithms.DataStructures;
 namespace Leiter.Tests.Algorithms.DataStructures;
 
 /// <summary>
-/// Provides unit tests for <see cref="UndirectedGraphEdgeTests" />.
+/// Provides unit tests for <see cref="UndirectedGraphEdge{T}" />.
 /// </summary>
 public class UndirectedGraphEdgeTests
 {
-    /// <summary>
-    /// Verifies that the undirected graph edge should compare by weight behaves correctly.
-    /// </summary>
     [Fact]
     public void UndirectedGraphEdge_ShouldCompareByWeight()
     {

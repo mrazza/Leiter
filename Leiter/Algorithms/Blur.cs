@@ -8,6 +8,10 @@ using Leiter.Core;
 /// </summary>
 public static class Blur
 {
+    /// <summary>
+    /// Represents a method that applies a one-dimensional filter to a line of SIMD vector samples in place.
+    /// </summary>
+    /// <param name="line">The line of SIMD vectors to filter in place.</param>
     private delegate void LineFilter1D(Span<Vector<double>> line);
 
     /// <summary>
@@ -86,6 +90,13 @@ public static class Blur
         return ApplySeparable1D(image, filter.FilterLine);
     }
 
+    /// <summary>
+    /// Applies a separable 1D line filter across an image using a parallel two-pass (row-then-column) approach.
+    /// </summary>
+    /// <typeparam name="T">The pixel type of the input and output matrices.</typeparam>
+    /// <param name="image">The image to filter.</param>
+    /// <param name="filterLine">The 1D line filter delegate applied to each row and column.</param>
+    /// <returns>A new matrix containing the filtered result.</returns>
     private static Matrix<T> ApplySeparable1D<T>(Matrix<T> image, LineFilter1D filterLine)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {

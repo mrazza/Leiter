@@ -10,76 +10,62 @@ using Leiter.Core;
 /// </summary>
 public class DummyScalar : IScalar<DummyScalar>
 {
-    /// <summary>
-    /// Gets the zero property.
-    /// </summary>
+    /// <inheritdoc/>
     public static DummyScalar Zero => new DummyScalar(0.0);
+
     /// <summary>
-    /// Gets the val property.
+    /// Gets the underlying double scalar value.
     /// </summary>
     public double Val { get; }
+
     /// <summary>
-    /// Initializes a new instance of the <see cref="DummyScalar" /> class.
+    /// Initializes a new instance of the <see cref="DummyScalar"/> class.
     /// </summary>
+    /// <param name="val">The underlying double scalar value.</param>
     public DummyScalar(double val) => Val = val;
-    /// <summary>
-    /// Executes the as double operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public double AsDouble() => Val;
-    /// <summary>
-    /// Executes the add operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Add(DummyScalar right) => new(Val + right.Val);
-    /// <summary>
-    /// Executes the subtract operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Subtract(DummyScalar right) => new(Val - right.Val);
-    /// <summary>
-    /// Executes the multiply operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Multiply(DummyScalar right) => new(Val * right.Val);
-    /// <summary>
-    /// Executes the divide operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Divide(DummyScalar right) => new(Val / right.Val);
-    /// <summary>
-    /// Executes the add operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Add(decimal right) => new(Val + (double)right);
-    /// <summary>
-    /// Executes the subtract operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Subtract(decimal right) => new(Val - (double)right);
-    /// <summary>
-    /// Executes the multiply operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Multiply(decimal right) => new(Val * (double)right);
-    /// <summary>
-    /// Executes the divide operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Divide(decimal right) => new(Val / (double)right);
-    /// <summary>
-    /// Executes the add operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Add(double right) => new(Val + right);
-    /// <summary>
-    /// Executes the subtract operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Subtract(double right) => new(Val - right);
-    /// <summary>
-    /// Executes the multiply operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Multiply(double right) => new(Val * right);
-    /// <summary>
-    /// Executes the divide operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public DummyScalar Divide(double right) => new(Val / right);
-    /// <summary>
-    /// Executes the to double vector operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public Vector<double> ToDoubleVector() => new(Val);
-    /// <summary>
-    /// Executes the from double vector operation.
-    /// </summary>
+
+    /// <inheritdoc/>
     public static DummyScalar FromDoubleVector(Vector<double> vector) => new(vector[0]);
 }

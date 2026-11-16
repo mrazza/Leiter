@@ -8,13 +8,10 @@ using System;
 namespace Leiter.Tests.Algorithms;
 
 /// <summary>
-/// Provides unit tests for <see cref="MatrixAlgorithmTests" />.
+/// Provides unit tests for <see cref="MatrixMath" /> and <see cref="Blur" />.
 /// </summary>
 public class MatrixAlgorithmTests
 {
-    /// <summary>
-    /// Verifies that the hadamard product same dimensions should multiply element wise behaves correctly.
-    /// </summary>
     [Fact]
     public void HadamardProduct_SameDimensions_ShouldMultiplyElementWise()
     {
@@ -29,9 +26,6 @@ public class MatrixAlgorithmTests
         Assert.Equal(30.0, result[3].Value);
     }
 
-    /// <summary>
-    /// Verifies that the hadamard product with scalar matrix should multiply element wise behaves correctly.
-    /// </summary>
     [Fact]
     public void HadamardProduct_WithScalarMatrix_ShouldMultiplyElementWise()
     {
@@ -44,9 +38,6 @@ public class MatrixAlgorithmTests
         Assert.Equal(12.0, result[1].Value);
     }
 
-    /// <summary>
-    /// Verifies that the hadamard product dimension mismatch should throw behaves correctly.
-    /// </summary>
     [Fact]
     public void HadamardProduct_DimensionMismatch_ShouldThrow()
     {
@@ -57,9 +48,6 @@ public class MatrixAlgorithmTests
         Assert.Throws<ArgumentException>(() => m1.HadamardProduct<DoublePixel, DoublePixel>(m2));
     }
 
-    /// <summary>
-    /// Verifies that the frobenius product should return inner product behaves correctly.
-    /// </summary>
     [Fact]
     public void FrobeniusProduct_ShouldReturnInnerProduct()
     {
@@ -75,9 +63,6 @@ public class MatrixAlgorithmTests
         Assert.Equal(40.0, result2.Value);
     }
 
-    /// <summary>
-    /// Verifies that the frobenius product dimension mismatch should throw behaves correctly.
-    /// </summary>
     [Fact]
     public void FrobeniusProduct_DimensionMismatch_ShouldThrow()
     {
@@ -88,9 +73,6 @@ public class MatrixAlgorithmTests
         Assert.Throws<ArgumentException>(() => m1.FrobeniusProduct<DoublePixel, DoublePixel>(m2));
     }
 
-    /// <summary>
-    /// Verifies that the convolve should perform convolution behaves correctly.
-    /// </summary>
     [Fact]
     public void Convolve_ShouldPerformConvolution()
     {
@@ -115,9 +97,6 @@ public class MatrixAlgorithmTests
         Assert.Equal(9.0, result[2, 2].Value);
     }
 
-    /// <summary>
-    /// Verifies that the blur gaussian blur and box blur should work behaves correctly.
-    /// </summary>
     [Fact]
     public void Blur_GaussianBlur_AndBoxBlur_ShouldWork()
     {

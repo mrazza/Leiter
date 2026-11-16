@@ -18,6 +18,11 @@ using SixLabors.ImageSharp.PixelFormats;
 /// </summary>
 internal static class Program
 {
+    /// <summary>
+    /// Serves as the main entry point for the Leiter test harness application.
+    /// </summary>
+    /// <param name="args">The command-line arguments specifying the input image path and optional output directory.</param>
+    /// <returns>Zero if execution succeeded; otherwise, non-zero.</returns>
     private static int Main(string[] args)
     {
         if (args.Length == 1 && (args[0] == "-h" || args[0] == "--help"))
@@ -130,6 +135,13 @@ internal static class Program
         writer.WriteLine("  [output-directory]  Directory where processed images are written (default: ./output).");
     }
 
+    /// <summary>
+    /// Executes a benchmarked processing step, logging its execution time to the console.
+    /// </summary>
+    /// <typeparam name="T">The result type of the processing step.</typeparam>
+    /// <param name="label">The descriptive display label for the step.</param>
+    /// <param name="action">The function delegate executing the processing step.</param>
+    /// <returns>The result produced by <paramref name="action"/>.</returns>
     private static T RunStep<T>(string label, Func<T> action)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -139,6 +151,14 @@ internal static class Program
         return result;
     }
 
+    /// <summary>
+    /// Executes a benchmarked processing step and saves the resulting image to disk.
+    /// </summary>
+    /// <param name="label">The descriptive display label for the step.</param>
+    /// <param name="outputDir">The directory where the output image will be saved.</param>
+    /// <param name="fileName">The file name of the saved image.</param>
+    /// <param name="action">The function delegate producing the image matrix.</param>
+    /// <returns>The resulting image matrix.</returns>
     private static Matrix<Rgb8> RunStepAndSave(string label, string outputDir, string fileName, Func<Matrix<Rgb8>> action)
     {
         Matrix<Rgb8> result = RunStep(label, action);
@@ -153,6 +173,13 @@ internal static class Program
         Console.WriteLine($"  Saved -> {outputPath}");
     }
 
+    /// <summary>
+    /// Creates a copy of the source image with segmented regions recolored using the specified color assigner.
+    /// </summary>
+    /// <param name="source">The original image matrix to recolor.</param>
+    /// <param name="regions">The set of segmented coordinate regions.</param>
+    /// <param name="colorAssigner">The delegate used to determine the color for each region.</param>
+    /// <returns>A new image matrix with recolored segment regions.</returns>
     private static Matrix<Rgb8> ColorBySegmentation(
         Matrix<Rgb8> source,
         System.Collections.Immutable.IImmutableSet<Region<Coord>> regions,
@@ -163,6 +190,11 @@ internal static class Program
         return clone;
     }
 
+    /// <summary>
+    /// Converts a continuous [0, 1] saliency map into an 8-bit grayscale image matrix.
+    /// </summary>
+    /// <param name="saliency">The matrix of saliency values in the [0, 1] range.</param>
+    /// <returns>An RGB matrix where each channel represents the clamped grayscale intensity.</returns>
     private static Matrix<Rgb8> SaliencyToGrayscale(Matrix<DoublePixel> saliency)
     {
         return saliency.Map(pixel =>
@@ -172,6 +204,12 @@ internal static class Program
         });
     }
 
+    /// <summary>
+    /// Loads an image from the specified file path into an RGB matrix using the platform-appropriate loader.
+    /// </summary>
+    /// <param name="path">The file path of the image to load.</param>
+    /// <returns>The loaded image as an <see cref="Rgb8"/> matrix.</returns>
+    /// <exception cref="PlatformNotSupportedException">The current operating system is neither Windows nor Linux.</exception>
     private static Matrix<Rgb8> LoadImage(string path)
     {
         if (OperatingSystem.IsWindows())
@@ -187,6 +225,12 @@ internal static class Program
         throw new PlatformNotSupportedException("LeiterTest supports Linux and Windows image loaders only.");
     }
 
+    /// <summary>
+    /// Saves an RGB matrix to the specified file path using the platform-appropriate image writer.
+    /// </summary>
+    /// <param name="matrix">The image matrix to save.</param>
+    /// <param name="path">The destination file path.</param>
+    /// <exception cref="PlatformNotSupportedException">The current operating system is neither Windows nor Linux.</exception>
     private static void SaveImage(IReadOnlyMatrix<Rgb8> matrix, string path)
     {
         if (OperatingSystem.IsWindows())
@@ -225,6 +269,11 @@ internal static class Program
         return Leiter.Platform.Windows.BitmapExtensions.ToSequentialMatrix(bitmap);
     }
 
+    /// <summary>
+    /// Saves an RGB matrix to disk on Windows, determining the image format from the file extension.
+    /// </summary>
+    /// <param name="matrix">The image matrix to save.</param>
+    /// <param name="path">The destination file path.</param>
     [SupportedOSPlatform("windows")]
     private static void SaveWindows(IReadOnlyMatrix<Rgb8> matrix, string path)
     {

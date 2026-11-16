@@ -7,17 +7,18 @@ using Leiter.Core;
 using Leiter.Pixels;
 
 /// <summary>
-/// Contains extension methods for interoping between the Windows platform <see cref="Bitmap"/>
+/// Contains extension methods for interoperating between the Windows platform <see cref="Bitmap"/>
 /// and Leiter types.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public static class BitmapExtensions
 {
     /// <summary>
-    /// Converts a <see cref="Bitmap"/> to a <see cref="SequentialMatrix{T}"/>.
+    /// Converts a <see cref="Bitmap"/> to a <see cref="SequentialMatrix{Rgb8}"/>.
     /// </summary>
     /// <param name="bitmap">The bitmap to convert.</param>
     /// <returns>The Leiter matrix with the same pixel data.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="bitmap"/> is <see langword="null"/>.</exception>
     public static unsafe SequentialMatrix<Rgb8> ToSequentialMatrix(this Bitmap bitmap)
     {
         ArgumentNullException.ThrowIfNull(bitmap);
@@ -54,10 +55,11 @@ public static class BitmapExtensions
     }
 
     /// <summary>
-    /// Converts a Leiter <see cref="IReadOnlyMatrix{T}"/> to a <see cref="Bitmap"/>.
+    /// Converts a Leiter <see cref="IReadOnlyMatrix{Rgb8}"/> to a <see cref="Bitmap"/>.
     /// </summary>
     /// <param name="matrix">The Leiter matrix to convert to a <see cref="Bitmap"/>.</param>
     /// <returns>The bitmap based on the specified matrix.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="matrix"/> is <see langword="null"/>.</exception>
     public static unsafe Bitmap ToBitmap(this IReadOnlyMatrix<Rgb8> matrix)
     {
         ArgumentNullException.ThrowIfNull(matrix);
