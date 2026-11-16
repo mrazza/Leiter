@@ -11,16 +11,16 @@ using Leiter.Pixels;
 public static class SaliencyDistanceField
 {
     /// <summary>
-    /// Computes the unsmoothed [0, 1] saliency distance field from a binary salient mask using
+    /// Computes the unsmoothed [0, 1] saliency distance field from a boolean salient mask using
     /// Jump Flooding boundary seeds and collinear ray–border normalization (<c>dx / dy</c>).
     /// </summary>
-    /// <param name="salientMask">The binary salient mask (<c>0</c> = non-salient, non-zero = salient).</param>
+    /// <param name="salientMask">The boolean salient mask (<see langword="false"/> = non-salient, <see langword="true"/> = salient).</param>
     /// <returns>
     /// A [0, 1] distance field where salient pixels have value <c>0</c> and non-salient pixels equal <c>dx / dy</c>.
     /// All-background masks return <c>1</c> everywhere; all-salient masks return <c>0</c> everywhere.
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="salientMask"/> is <see langword="null"/>.</exception>
-    public static Matrix<DoublePixel> ComputeNormalizedField(IReadOnlyMatrix<LongPixel> salientMask)
+    public static Matrix<DoublePixel> ComputeNormalizedField(IReadOnlyMatrix<bool> salientMask)
     {
         ArgumentNullException.ThrowIfNull(salientMask);
 
@@ -30,16 +30,7 @@ public static class SaliencyDistanceField
         if (salientMask.Count == 0)
             return field;
 
-        int salientCount = 0;
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                if (salientMask[x, y].Value != 0)
-                    salientCount++;
-            }
-        }
-
+        int salientCount = salientMask.CountTrue();
         if (salientCount == 0)
         {
             field.SetAll(1.0);
@@ -50,20 +41,19 @@ public static class SaliencyDistanceField
             return field;
 
         IReadOnlyList<Coord> boundarySeeds = JumpFlooding.ExtractBoundarySeeds(salientMask);
-        Matrix<LongPixel> nearestSeedIndices = JumpFlooding.ComputeNearestSeedIndices(salientMask.Size, boundarySeeds);
+        Matrix<NearestSeed> nearestSeeds = JumpFlooding.ComputeNearestSeeds(salientMask.Size, boundarySeeds);
 
         Parallel.For(0, height, y =>
         {
             for (int x = 0; x < width; x++)
             {
-                if (salientMask[x, y].Value != 0)
+                if (salientMask[x, y])
                 {
                     field[x, y] = 0.0;
                     continue;
                 }
 
-                int seedIndex = (int)nearestSeedIndices[x, y].Value;
-                Coord seed = nearestSeedIndices.CoordFromIndex(seedIndex);
+                Coord seed = nearestSeeds[x, y].Seed;
                 int deltaX = x - seed.X;
                 int deltaY = y - seed.Y;
 
@@ -88,10 +78,10 @@ public static class SaliencyDistanceField
     }
 
     /// <summary>
-    /// Computes the saliency distance field from a binary salient mask and smooths medial-axis / concavity
+    /// Computes the saliency distance field from a boolean salient mask and smooths medial-axis / concavity
     /// discontinuities continuously across the boundary via <see cref="Blur.GaussianBlurRecursive"/>.
     /// </summary>
-    /// <param name="salientMask">The binary salient mask (<c>0</c> = non-salient, non-zero = salient).</param>
+    /// <param name="salientMask">The boolean salient mask (<see langword="false"/> = non-salient, <see langword="true"/> = salient).</param>
     /// <param name="smoothingSigma">
     /// Optional explicit Gaussian smoothing σ; when <see langword="null"/>, defaults to
     /// <c>defaultSigmaScale * min(Width, Height)</c>. Passing <c>0</c> disables smoothing.
@@ -101,7 +91,7 @@ public static class SaliencyDistanceField
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="salientMask"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="smoothingSigma"/> or <paramref name="defaultSigmaScale"/> is negative or non-finite.</exception>
     public static Matrix<DoublePixel> Compute(
-        IReadOnlyMatrix<LongPixel> salientMask,
+        IReadOnlyMatrix<bool> salientMask,
         double? smoothingSigma = null,
         double defaultSigmaScale = 0.03)
     {
@@ -127,7 +117,7 @@ public static class SaliencyDistanceField
     }
 
     /// <summary>
-    /// End-to-end Stage 2 helper that extracts a binary salient mask via <see cref="SaliencyCut"/> and computes
+    /// End-to-end Stage 2 helper that extracts a boolean salient mask via <see cref="SaliencyCut"/> and computes
     /// its smoothed [0, 1] saliency distance field.
     /// </summary>
     /// <param name="image">The input RGB image.</param>
@@ -135,13 +125,13 @@ public static class SaliencyDistanceField
     /// <param name="saliencyCutOptions">Optional <see cref="SaliencyCut"/> configuration parameters.</param>
     /// <param name="smoothingSigma">Optional explicit Gaussian smoothing σ (defaults to <c>3%</c> of the smaller image dimension).</param>
     /// <returns>The extracted <c>SalientMask</c> and its smoothed [0, 1] <c>DistanceField</c>.</returns>
-    public static (Matrix<LongPixel> SalientMask, Matrix<DoublePixel> DistanceField) Compute(
+    public static (MaskMatrix SalientMask, Matrix<DoublePixel> DistanceField) Compute(
         IReadOnlyMatrix<Rgb8> image,
         IReadOnlyMatrix<DoublePixel> saliencyMap,
         SaliencyCutOptions? saliencyCutOptions = null,
         double? smoothingSigma = null)
     {
-        Matrix<LongPixel> salientMask = SaliencyCut.Extract(image, saliencyMap, saliencyCutOptions);
+        MaskMatrix salientMask = SaliencyCut.Extract(image, saliencyMap, saliencyCutOptions);
         Matrix<DoublePixel> distanceField = Compute(salientMask, smoothingSigma);
         return (salientMask, distanceField);
     }

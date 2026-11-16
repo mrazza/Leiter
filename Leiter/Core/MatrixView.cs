@@ -6,9 +6,9 @@ using System.Diagnostics;
 /// <summary>
 /// A zero-allocation, read-only view into a sub-region or border-extended region of an underlying matrix.
 /// </summary>
-/// <typeparam name="T">The pixel type stored in the underlying matrix.</typeparam>
+/// <typeparam name="T">The value type stored in the underlying matrix.</typeparam>
 public readonly struct MatrixView<T> : IReadOnlyMatrix<T>
-    where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+    where T : struct
 {
     /// <summary>
     /// Initializes a new <see cref="MatrixView{T}"/> over <paramref name="matrix"/>.

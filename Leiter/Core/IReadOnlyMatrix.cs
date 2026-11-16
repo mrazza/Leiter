@@ -7,7 +7,7 @@ using System.Text;
 /// </summary>
 /// <typeparam name="T">The type of elements stored in the matrix.</typeparam>
 public interface IReadOnlyMatrix<T> : IUntypedMatrix, IReadOnlyCollection<T>, IReadOnlyList<T>, IEnumerable<T>
-    where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+    where T : struct
 {
     /// <summary>
     /// Gets the element at the specified zero-based column and row coordinates.

@@ -9,6 +9,39 @@ using Leiter.Core;
 public static class MatrixMath
 {
     /// <summary>
+    /// Multiplies two matrices using standard matrix multiplication.
+    /// </summary>
+    /// <typeparam name="T">The numeric element type of both matrices.</typeparam>
+    /// <param name="self">The left-hand matrix.</param>
+    /// <param name="right">The right-hand matrix whose height matches <paramref name="self"/>'s width.</param>
+    /// <returns>A new <see cref="Matrix{T}"/> containing the matrix product.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The number of columns in <paramref name="self"/> does not equal the number of rows in <paramref name="right"/>.</exception>
+    public static Matrix<T> Multiply<T>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<T> right)
+        where T : struct, ISelfOperable<T>
+    {
+        ArgumentNullException.ThrowIfNull(self);
+        ArgumentNullException.ThrowIfNull(right);
+
+        if (self.Width != right.Height)
+            throw new ArgumentException("Right hand side matrix must have height equal to width of the left hand side matrix.");
+
+        var result = new SequentialMatrix<T>(right.Width, self.Height);
+        for (int y = 0; y < self.Height; y++)
+        {
+            for (int x = 0; x < right.Width; x++)
+            {
+                T sum = T.Zero;
+                for (int k = 0; k < self.Width; k++)
+                    sum = sum.Add(self[k, y].Multiply(right[x, k]));
+                result[x, y] = sum;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Computes the element-wise (Hadamard) product of two matrices of the same pixel type.
     /// </summary>
     /// <typeparam name="T">The pixel type of both matrices.</typeparam>

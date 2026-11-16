@@ -1,5 +1,6 @@
 
 using Xunit;
+using Leiter.Algorithms;
 using Leiter.Core;
 using Leiter.Pixels;
 using System;
@@ -197,6 +198,21 @@ public class SequentialMatrixTests
         var m1 = new SequentialMatrix<DoublePixel>(2, 2);
         var m2 = new SequentialMatrix<DoublePixel>(3, 3);
         Assert.Throws<ArgumentException>(() => m1.Multiply(m2));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).Multiply(m2));
+        Assert.Throws<ArgumentNullException>(() => m1.Multiply(null!));
+    }
+
+    [Fact]
+    public void SequentialMatrix_ArbitraryValueTypes_ShouldWork()
+    {
+        var boolMask = new SequentialMatrix<bool>(2, 2);
+        boolMask[0, 0] = true;
+        boolMask[1, 1] = true;
+
+        Matrix<int> intGrid = boolMask.Map(static flag => flag ? 42 : -1);
+        Assert.Equal(42, intGrid[0, 0]);
+        Assert.Equal(-1, intGrid[1, 0]);
+        Assert.Equal(42, intGrid[1, 1]);
     }
 
     [Fact]

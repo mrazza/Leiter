@@ -7,7 +7,7 @@ using System.Collections;
 /// </summary>
 /// <typeparam name="T">The type of elements stored in the matrix.</typeparam>
 public abstract class Matrix<T> : IReadOnlyMatrix<T>
-    where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+    where T : struct
 {
     /// <summary>
     /// Gets the number of columns in the matrix.
@@ -111,21 +111,13 @@ public abstract class Matrix<T> : IReadOnlyMatrix<T>
     public abstract void SetAll(T value);
 
     /// <summary>
-    /// Multiplies this matrix by another matrix using matrix multiplication.
-    /// </summary>
-    /// <param name="right">The matrix to multiply with.</param>
-    /// <returns>A new <see cref="Matrix{T}"/> resulting from the multiplication.</returns>
-    /// <exception cref="ArgumentException">The number of columns in this matrix does not equal the number of rows in <paramref name="right"/>.</exception>
-    public abstract Matrix<T> Multiply(IReadOnlyMatrix<T> right);
-
-    /// <summary>
     /// Applies a transformation function to each element of the matrix, producing a new matrix of the mapped type.
     /// </summary>
     /// <typeparam name="R">The type of elements in the resulting matrix.</typeparam>
     /// <param name="func">A function to apply to each element.</param>
     /// <returns>A new <see cref="Matrix{R}"/> containing the mapped elements.</returns>
     public abstract Matrix<R> Map<R>(Func<T, R> func)
-        where R : struct, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>;
+        where R : struct;
 
     /// <summary>
     /// Creates a deep copy of this matrix.

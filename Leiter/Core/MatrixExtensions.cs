@@ -15,7 +15,7 @@ public static class MatrixExtensions
     /// <returns>A new <see cref="SequentialMatrix{T}"/> containing the elements from <paramref name="values"/>.</returns>
     /// <exception cref="ArgumentException">The sequence in <paramref name="values"/> contains fewer elements than <paramref name="width"/> * <paramref name="height"/>.</exception>
     public static SequentialMatrix<T> ToSequentialMatrix<T>(this IEnumerable<T> values, int width, int height)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+        where T : struct
     {
         var result = new SequentialMatrix<T>(width, height);
         var enumerator = values.GetEnumerator();
@@ -28,6 +28,38 @@ public static class MatrixExtensions
             }
             result[index] = enumerator.Current;
         }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Applies a transformation function to each element of a read-only matrix, returning a new matrix of the mapped type.
+    /// </summary>
+    /// <typeparam name="T">The element type of the source matrix.</typeparam>
+    /// <typeparam name="R">The element type of the resulting matrix.</typeparam>
+    /// <param name="matrix">The source matrix to transform.</param>
+    /// <param name="selector">The transformation function applied to each element.</param>
+    /// <returns>A new <see cref="Matrix{R}"/> containing the mapped elements.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> or <paramref name="selector"/> is <see langword="null"/>.</exception>
+    public static Matrix<R> Map<T, R>(this IReadOnlyMatrix<T> matrix, Func<T, R> selector)
+        where T : struct
+        where R : struct
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        ArgumentNullException.ThrowIfNull(selector);
+
+        if (matrix is Matrix<T> concreteMatrix)
+            return concreteMatrix.Map(selector);
+
+        int width = matrix.Width;
+        int height = matrix.Height;
+        var result = new SequentialMatrix<R>(width, height);
+
+        Parallel.For(0, height, y =>
+        {
+            for (int x = 0; x < width; x++)
+                result[x, y] = selector(matrix[x, y]);
+        });
 
         return result;
     }

@@ -17,11 +17,11 @@ public static class GrabCut
     /// <param name="rectangleTopLeft">The top-left coordinate of the bounding rectangle.</param>
     /// <param name="rectangleSize">The width and height of the bounding rectangle.</param>
     /// <param name="options">Optional GrabCut tuning parameters.</param>
-    /// <returns>A binary mask matrix with <c>1</c> for foreground pixels and <c>0</c> for background pixels.</returns>
+    /// <returns>A <see cref="MaskMatrix"/> with <see langword="true"/> for foreground pixels and <see langword="false"/> for background pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="rectangleSize"/> dimensions are not positive or <paramref name="options"/> contains invalid values.</exception>
     /// <exception cref="ArgumentException">Thrown when the rectangle does not overlap the image or leaves zero background pixels outside it.</exception>
-    public static Matrix<LongPixel> Segment(
+    public static MaskMatrix Segment(
         IReadOnlyMatrix<Rgb8> image,
         Coord rectangleTopLeft,
         Size rectangleSize,
@@ -31,30 +31,9 @@ public static class GrabCut
         GrabCutOptions resolvedOptions = options ?? new GrabCutOptions();
         resolvedOptions.Validate();
 
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(rectangleSize.Width, 0, nameof(rectangleSize));
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(rectangleSize.Height, 0, nameof(rectangleSize));
-
+        TrimapMatrix trimap = TrimapMatrix.FromBoundingBox(image.Size, rectangleTopLeft, rectangleSize);
         if (image.Count == 0)
-            return new SequentialMatrix<LongPixel>(image.Size);
-
-        int left = Math.Max(0, rectangleTopLeft.X);
-        int top = Math.Max(0, rectangleTopLeft.Y);
-        int right = (int)Math.Min((long)image.Width, (long)rectangleTopLeft.X + rectangleSize.Width);
-        int bottom = (int)Math.Min((long)image.Height, (long)rectangleTopLeft.Y + rectangleSize.Height);
-
-        if (left >= right || top >= bottom)
-            throw new ArgumentException("Foreground rectangle does not overlap the image bounds.", nameof(rectangleTopLeft));
-
-        int overlapArea = (right - left) * (bottom - top);
-        if (overlapArea == image.Count)
-            throw new ArgumentException("Foreground rectangle must leave at least one background pixel outside it.", nameof(rectangleSize));
-
-        var trimap = new SequentialMatrix<LongPixel>(image.Size);
-        for (int y = top; y < bottom; y++)
-        {
-            for (int x = left; x < right; x++)
-                trimap[x, y] = (long)TrimapLabel.ProbableForeground;
-        }
+            return new MaskMatrix(image.Size);
 
         return Segment(image, trimap, resolvedOptions);
     }
@@ -65,13 +44,13 @@ public static class GrabCut
     /// <param name="image">The input RGB image.</param>
     /// <param name="trimap">A matrix of <see cref="TrimapLabel"/> values matching <paramref name="image"/> dimensions.</param>
     /// <param name="options">Optional GrabCut tuning parameters.</param>
-    /// <returns>A binary mask matrix with <c>1</c> for foreground pixels and <c>0</c> for background pixels.</returns>
+    /// <returns>A <see cref="MaskMatrix"/> with <see langword="true"/> for foreground pixels and <see langword="false"/> for background pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="trimap"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="trimap"/> dimensions do not match <paramref name="image"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="trimap"/> contains an invalid <see cref="TrimapLabel"/> value or <paramref name="options"/> is invalid.</exception>
-    public static Matrix<LongPixel> Segment(
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="trimap"/> contains an undefined <see cref="TrimapLabel"/> value or <paramref name="options"/> is invalid.</exception>
+    public static MaskMatrix Segment(
         IReadOnlyMatrix<Rgb8> image,
-        IReadOnlyMatrix<LongPixel> trimap,
+        IReadOnlyMatrix<TrimapLabel> trimap,
         GrabCutOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
@@ -84,7 +63,7 @@ public static class GrabCut
         resolvedOptions.Validate();
 
         if (image.Count == 0)
-            return new SequentialMatrix<LongPixel>(image.Size);
+            return new MaskMatrix(image.Size);
 
         var session = new GrabCutSession(image, resolvedOptions.MixtureComponentCount, resolvedOptions.SmoothnessWeight);
         return session.Run(trimap, resolvedOptions.Iterations);
@@ -109,7 +88,7 @@ internal sealed class GrabCutSession
     private readonly GaussianMixtureModel foregroundGmm;
     private readonly GaussianMixtureModel backgroundGmm;
 
-    private readonly byte[] trimapLabels;
+    private readonly TrimapLabel[] trimapLabels;
     private readonly byte[] currentForeground;
     private readonly int[] componentAssignments;
     private readonly double[] sourceCapacities;
@@ -131,14 +110,14 @@ internal sealed class GrabCutSession
         foregroundGmm = new GaussianMixtureModel(mixtureComponentCount);
         backgroundGmm = new GaussianMixtureModel(mixtureComponentCount);
 
-        trimapLabels = new byte[pixelCount];
+        trimapLabels = new TrimapLabel[pixelCount];
         currentForeground = new byte[pixelCount];
         componentAssignments = new int[pixelCount];
         sourceCapacities = new double[pixelCount];
         sinkCapacities = new double[pixelCount];
     }
 
-    public Matrix<LongPixel> Run(IReadOnlyMatrix<LongPixel> trimap, int iterations)
+    public MaskMatrix Run(IReadOnlyMatrix<TrimapLabel> trimap, int iterations)
     {
         int initialFgCount = 0;
         int initialBgCount = 0;
@@ -148,15 +127,14 @@ internal sealed class GrabCutSession
         {
             for (int x = 0; x < width; x++)
             {
-                long rawLabel = trimap[x, y].Value;
-                if ((ulong)rawLabel > (ulong)TrimapLabel.ProbableForeground)
-                    throw new ArgumentOutOfRangeException(nameof(trimap), rawLabel, "Trimap values must correspond to valid TrimapLabel members (0..3).");
+                TrimapLabel label = trimap[x, y];
+                if ((byte)label > (byte)TrimapLabel.ProbableForeground)
+                    throw new ArgumentOutOfRangeException(nameof(trimap), label, "Trimap entries must be valid TrimapLabel values.");
 
-                byte label = (byte)rawLabel;
                 int p = (y * width) + x;
                 trimapLabels[p] = label;
 
-                bool isForeground = label == (byte)TrimapLabel.Foreground || label == (byte)TrimapLabel.ProbableForeground;
+                bool isForeground = label is TrimapLabel.Foreground or TrimapLabel.ProbableForeground;
                 currentForeground[p] = isForeground ? (byte)1 : (byte)0;
                 if (isForeground)
                 {
@@ -165,19 +143,19 @@ internal sealed class GrabCutSession
                 else
                 {
                     initialBgCount++;
-                    if (label == (byte)TrimapLabel.Background)
+                    if (label == TrimapLabel.Background)
                         hardBgCount++;
                 }
             }
         }
 
         if (initialFgCount == 0)
-            return new SequentialMatrix<LongPixel>(width, height);
+            return new MaskMatrix(width, height);
 
         if (initialBgCount == 0)
         {
-            var allForeground = new SequentialMatrix<LongPixel>(width, height);
-            allForeground.SetAll(1L);
+            var allForeground = new MaskMatrix(width, height);
+            allForeground.SetAll(true);
             return allForeground;
         }
 
@@ -209,13 +187,13 @@ internal sealed class GrabCutSession
 
             Parallel.For(0, pixelCount, p =>
             {
-                byte label = trimapLabels[p];
-                if (label == (byte)TrimapLabel.Foreground)
+                TrimapLabel label = trimapLabels[p];
+                if (label == TrimapLabel.Foreground)
                 {
                     sourceCapacities[p] = hardWeight;
                     sinkCapacities[p] = 0.0;
                 }
-                else if (label == (byte)TrimapLabel.Background)
+                else if (label == TrimapLabel.Background)
                 {
                     sourceCapacities[p] = 0.0;
                     sinkCapacities[p] = hardWeight;
@@ -249,11 +227,10 @@ internal sealed class GrabCutSession
 
             for (int p = 0; p < pixelCount; p++)
             {
-                byte label = trimapLabels[p];
-                byte nextFg = label switch
+                byte nextFg = trimapLabels[p] switch
                 {
-                    (byte)TrimapLabel.Foreground => 1,
-                    (byte)TrimapLabel.Background => 0,
+                    TrimapLabel.Foreground => 1,
+                    TrimapLabel.Background => 0,
                     _ => solver.IsSourceSide(p) ? (byte)1 : (byte)0,
                 };
 
@@ -287,7 +264,7 @@ internal sealed class GrabCutSession
         {
             if (currentForeground[p] != 0)
                 fgIndices[fgCursor++] = p;
-            else if (!useHardBackgroundOnly || trimapLabels[p] == (byte)TrimapLabel.Background)
+            else if (!useHardBackgroundOnly || trimapLabels[p] == TrimapLabel.Background)
                 bgIndices[bgCursor++] = p;
         }
 
@@ -295,13 +272,13 @@ internal sealed class GrabCutSession
         backgroundGmm.InitializeAndFit(interleavedRgb, bgIndices);
     }
 
-    private Matrix<LongPixel> BuildMaskFromState()
+    private MaskMatrix BuildMaskFromState()
     {
-        var result = new SequentialMatrix<LongPixel>(width, height);
+        var result = new MaskMatrix(width, height);
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
-                result[x, y] = currentForeground[(y * width) + x];
+                result[x, y] = currentForeground[(y * width) + x] != 0;
         }
         return result;
     }

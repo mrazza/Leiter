@@ -1,39 +1,38 @@
 namespace Leiter.Algorithms.Morphology;
 
 using Leiter.Core;
-using Leiter.Pixels;
 
 /// <summary>
 /// Provides fast binary morphological operations (<see cref="Dilate"/>, <see cref="Erode"/>, <see cref="Open"/>, and <see cref="Close"/>)
-/// on mask matrices where zero represents background and any non-zero value represents foreground.
+/// on boolean mask matrices.
 /// </summary>
 public static class BinaryMorphology
 {
     /// <summary>
-    /// Dilates foreground pixels in a binary mask using a structuring element of the specified radius and shape.
+    /// Dilates foreground (<see langword="true"/>) pixels in a boolean mask using a structuring element of the specified radius and shape.
     /// </summary>
-    /// <param name="mask">The binary mask (<c>0</c> = background, non-zero = foreground).</param>
+    /// <param name="mask">The boolean mask (<see langword="false"/> = background, <see langword="true"/> = foreground).</param>
     /// <param name="radius">The non-negative structuring element radius in pixels.</param>
     /// <param name="shape">The shape of the structuring element.</param>
-    /// <returns>A normalized mask containing <c>1</c> for dilated foreground pixels and <c>0</c> for background.</returns>
+    /// <returns>A <see cref="MaskMatrix"/> containing <see langword="true"/> for dilated foreground pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="mask"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="radius"/> is negative or <paramref name="shape"/> is invalid.</exception>
-    public static Matrix<LongPixel> Dilate(
-        IReadOnlyMatrix<LongPixel> mask,
+    public static MaskMatrix Dilate(
+        IReadOnlyMatrix<bool> mask,
         int radius,
         StructuringElementShape shape = StructuringElementShape.Disk)
     {
         ValidateInputs(mask, radius, shape);
 
         if (mask.Count == 0 || radius == 0)
-            return NormalizeMask(mask);
+            return CloneMask(mask);
 
         int width = mask.Width;
         int height = mask.Height;
         int rowStride = width + 1;
         int[] rowPrefixSums = BuildRowPrefixSums(mask);
         int[] horizontalHalfWidths = BuildHorizontalHalfWidths(radius, shape);
-        var result = new SequentialMatrix<LongPixel>(width, height);
+        var result = new MaskMatrix(width, height);
 
         Parallel.For(0, height, y =>
         {
@@ -57,7 +56,7 @@ public static class BinaryMorphology
                     }
                 }
 
-                result[x, y] = hasForegroundNeighbor ? 1L : 0L;
+                result[x, y] = hasForegroundNeighbor;
             }
         });
 
@@ -65,20 +64,20 @@ public static class BinaryMorphology
     }
 
     /// <summary>
-    /// Erodes foreground pixels in a binary mask using a structuring element of the specified radius and shape.
+    /// Erodes foreground (<see langword="true"/>) pixels in a boolean mask using a structuring element of the specified radius and shape.
     /// </summary>
-    /// <param name="mask">The binary mask (<c>0</c> = background, non-zero = foreground).</param>
+    /// <param name="mask">The boolean mask (<see langword="false"/> = background, <see langword="true"/> = foreground).</param>
     /// <param name="radius">The non-negative structuring element radius in pixels.</param>
     /// <param name="shape">The shape of the structuring element.</param>
     /// <param name="borderIsBackground">
-    /// If <see langword="true"/>, samples outside the image bounds are treated as background (<c>0</c>);
+    /// If <see langword="true"/>, samples outside the image bounds are treated as background (<see langword="false"/>);
     /// otherwise coordinates are clamped to the nearest image edge.
     /// </param>
-    /// <returns>A normalized mask containing <c>1</c> for eroded foreground pixels and <c>0</c> for background.</returns>
+    /// <returns>A <see cref="MaskMatrix"/> containing <see langword="true"/> for eroded foreground pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="mask"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="radius"/> is negative or <paramref name="shape"/> is invalid.</exception>
-    public static Matrix<LongPixel> Erode(
-        IReadOnlyMatrix<LongPixel> mask,
+    public static MaskMatrix Erode(
+        IReadOnlyMatrix<bool> mask,
         int radius,
         StructuringElementShape shape = StructuringElementShape.Disk,
         bool borderIsBackground = false)
@@ -86,14 +85,14 @@ public static class BinaryMorphology
         ValidateInputs(mask, radius, shape);
 
         if (mask.Count == 0 || radius == 0)
-            return NormalizeMask(mask);
+            return CloneMask(mask);
 
         int width = mask.Width;
         int height = mask.Height;
         int rowStride = width + 1;
         int[] rowPrefixSums = BuildRowPrefixSums(mask);
         int[] horizontalHalfWidths = BuildHorizontalHalfWidths(radius, shape);
-        var result = new SequentialMatrix<LongPixel>(width, height);
+        var result = new MaskMatrix(width, height);
 
         Parallel.For(0, height, y =>
         {
@@ -124,7 +123,7 @@ public static class BinaryMorphology
                     }
                 }
 
-                result[x, y] = allForeground ? 1L : 0L;
+                result[x, y] = allForeground;
             }
         });
 
@@ -134,13 +133,13 @@ public static class BinaryMorphology
     /// <summary>
     /// Applies morphological opening (<see cref="Erode"/> followed by <see cref="Dilate"/>) to remove isolated foreground specks.
     /// </summary>
-    /// <param name="mask">The binary mask (<c>0</c> = background, non-zero = foreground).</param>
+    /// <param name="mask">The boolean mask.</param>
     /// <param name="radius">The non-negative structuring element radius in pixels.</param>
     /// <param name="shape">The shape of the structuring element.</param>
     /// <param name="borderIsBackground">Whether out-of-bounds samples during erosion are treated as background.</param>
-    /// <returns>The opened binary mask with values <c>0</c> and <c>1</c>.</returns>
-    public static Matrix<LongPixel> Open(
-        IReadOnlyMatrix<LongPixel> mask,
+    /// <returns>The opened <see cref="MaskMatrix"/>.</returns>
+    public static MaskMatrix Open(
+        IReadOnlyMatrix<bool> mask,
         int radius,
         StructuringElementShape shape = StructuringElementShape.Disk,
         bool borderIsBackground = false)
@@ -151,13 +150,13 @@ public static class BinaryMorphology
     /// <summary>
     /// Applies morphological closing (<see cref="Dilate"/> followed by <see cref="Erode"/>) to fill small background holes.
     /// </summary>
-    /// <param name="mask">The binary mask (<c>0</c> = background, non-zero = foreground).</param>
+    /// <param name="mask">The boolean mask.</param>
     /// <param name="radius">The non-negative structuring element radius in pixels.</param>
     /// <param name="shape">The shape of the structuring element.</param>
     /// <param name="borderIsBackground">Whether out-of-bounds samples during erosion are treated as background.</param>
-    /// <returns>The closed binary mask with values <c>0</c> and <c>1</c>.</returns>
-    public static Matrix<LongPixel> Close(
-        IReadOnlyMatrix<LongPixel> mask,
+    /// <returns>The closed <see cref="MaskMatrix"/>.</returns>
+    public static MaskMatrix Close(
+        IReadOnlyMatrix<bool> mask,
         int radius,
         StructuringElementShape shape = StructuringElementShape.Disk,
         bool borderIsBackground = false)
@@ -165,7 +164,7 @@ public static class BinaryMorphology
         return Erode(Dilate(mask, radius, shape), radius, shape, borderIsBackground);
     }
 
-    private static void ValidateInputs(IReadOnlyMatrix<LongPixel> mask, int radius, StructuringElementShape shape)
+    private static void ValidateInputs(IReadOnlyMatrix<bool> mask, int radius, StructuringElementShape shape)
     {
         ArgumentNullException.ThrowIfNull(mask);
         ArgumentOutOfRangeException.ThrowIfNegative(radius);
@@ -173,15 +172,10 @@ public static class BinaryMorphology
             throw new ArgumentOutOfRangeException(nameof(shape), shape, "Unsupported structuring element shape.");
     }
 
-    private static Matrix<LongPixel> NormalizeMask(IReadOnlyMatrix<LongPixel> mask)
-    {
-        var copy = new SequentialMatrix<LongPixel>(mask.Size);
-        for (int i = 0; i < mask.Count; i++)
-            copy[i] = mask.GetElement(i).Value != 0 ? 1L : 0L;
-        return copy;
-    }
+    private static MaskMatrix CloneMask(IReadOnlyMatrix<bool> mask) =>
+        MaskMatrix.From(mask);
 
-    private static int[] BuildRowPrefixSums(IReadOnlyMatrix<LongPixel> mask)
+    private static int[] BuildRowPrefixSums(IReadOnlyMatrix<bool> mask)
     {
         int width = mask.Width;
         int height = mask.Height;
@@ -194,7 +188,7 @@ public static class BinaryMorphology
             int runningSum = 0;
             for (int x = 0; x < width; x++)
             {
-                if (mask[x, y].Value != 0)
+                if (mask[x, y])
                     runningSum++;
                 rowPrefixSums[rowOffset + x + 1] = runningSum;
             }
