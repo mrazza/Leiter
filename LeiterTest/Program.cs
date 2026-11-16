@@ -129,6 +129,21 @@ internal static class Program
         Console.WriteLine($"  Matched Palette: {matchedPalette.Name}");
         SaveOutput(outputDir, $"{stem}_10_color_transfer.png", colorTransferred);
 
+        Matrix<LongPixel> salientMask = RunStep(
+            "11. SaliencyCut Binary Mask",
+            () => SaliencyCut.Extract(imageMatrix, regionalSaliency));
+        SaveOutput(outputDir, $"{stem}_11_saliency_cut_mask.png", BinaryMaskToRgb8(salientMask));
+
+        Matrix<DoublePixel> rawDistanceField = RunStep(
+            "12a. Saliency Distance Field (Normalized JFA)",
+            () => SaliencyDistanceField.ComputeNormalizedField(salientMask));
+        SaveOutput(outputDir, $"{stem}_12a_distance_field_raw.png", SaliencyToGrayscale(rawDistanceField));
+
+        Matrix<DoublePixel> smoothedDistanceField = RunStep(
+            "12b. Saliency Distance Field (Smoothed)",
+            () => SaliencyDistanceField.Compute(salientMask));
+        SaveOutput(outputDir, $"{stem}_12b_distance_field_smoothed.png", SaliencyToGrayscale(smoothedDistanceField));
+
         Console.WriteLine("Done.");
         return 0;
     }
@@ -195,6 +210,16 @@ internal static class Program
         Matrix<Rgb8> clone = source.Clone();
         EgbiSegmentation.ColorImageBySegmentation(clone, regions, colorAssigner);
         return clone;
+    }
+
+    /// <summary>
+    /// Converts a binary mask into an 8-bit grayscale RGB matrix (<c>0</c> = black, non-zero = white).
+    /// </summary>
+    /// <param name="mask">The binary mask matrix.</param>
+    /// <returns>An RGB matrix representing the binary mask.</returns>
+    private static Matrix<Rgb8> BinaryMaskToRgb8(Matrix<LongPixel> mask)
+    {
+        return mask.Map(pixel => pixel.Value != 0 ? new Rgb8(255, 255, 255) : Rgb8.Zero);
     }
 
     /// <summary>
