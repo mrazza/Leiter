@@ -3,6 +3,7 @@ namespace LeiterTest;
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using Leiter.Algorithms;
+using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Quantization;
 using Leiter.Algorithms.Saliency;
@@ -121,6 +122,12 @@ internal static class Program
             outputDir,
             $"{stem}_09_saliency_regional_masked.png",
             () => imageMatrix.HadamardProduct<Rgb8, DoublePixel>(regionalSaliency));
+
+        (Matrix<Rgb8> colorTransferred, WatercolorPalette matchedPalette) = RunStep(
+            "10. Reinhard Color Transfer (Closest Watercolor Palette)",
+            () => ColorTransfer.TransferToClosestPalette(imageMatrix));
+        Console.WriteLine($"  Matched Palette: {matchedPalette.Name}");
+        SaveOutput(outputDir, $"{stem}_10_color_transfer.png", colorTransferred);
 
         Console.WriteLine("Done.");
         return 0;

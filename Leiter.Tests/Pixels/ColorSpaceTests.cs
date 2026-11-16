@@ -118,4 +118,83 @@ public class ColorSpaceTests
         var mixed = new Rgb64(-10.0, 2.0, 0.5);
         Assert.Equal(new Rgb8(0, 255, 127), mixed.ToRgb8());
     }
+
+    [Fact]
+    public void Lab32_RoundTrip_D65_And_IlluminantE_ShouldBeCloseToIdentity()
+    {
+        foreach (Illuminant illuminant in new[] { Illuminant.D65, Illuminant.E })
+        {
+            var bright = new Rgb8(210, 120, 65);
+            Lab32 brightLab = bright.ToLab32(RgbColorSpace.sRGB, illuminant);
+            Rgb8 brightBack = brightLab.ToRgb8(RgbColorSpace.sRGB, illuminant);
+            Assert.True(Math.Abs(bright.R - brightBack.R) <= 1);
+            Assert.True(Math.Abs(bright.G - brightBack.G) <= 1);
+            Assert.True(Math.Abs(bright.B - brightBack.B) <= 1);
+
+            // Very dark RGB exercises the linear segment below epsilon in LabTransfer/InverseLabTransfer.
+            var dark = new Rgb64(3.0 / 255.0, 5.0 / 255.0, 8.0 / 255.0);
+            Lab32 darkLab = dark.ToLab32(RgbColorSpace.LinearRGB, illuminant);
+            Rgb64 darkBack = darkLab.ToRgb64(RgbColorSpace.LinearRGB, illuminant);
+            Assert.Equal(dark.R, darkBack.R, 4);
+            Assert.Equal(dark.G, darkBack.G, 4);
+            Assert.Equal(dark.B, darkBack.B, 4);
+
+            var xyz = new Xyz32(0.35f, 0.28f, 0.42f);
+            Xyz32 xyzBack = xyz.ToLab32(illuminant).ToXyz32(illuminant);
+            Assert.Equal(xyz.X, xyzBack.X, 4);
+            Assert.Equal(xyz.Y, xyzBack.Y, 4);
+            Assert.Equal(xyz.Z, xyzBack.Z, 4);
+        }
+
+        // Verify D65 and Illuminant E produce distinct Lab coordinates for the same XYZ color.
+        var sampleXyz = new Xyz32(0.5f, 0.5f, 0.5f);
+        Lab32 labD65 = sampleXyz.ToLab32(Illuminant.D65);
+        Lab32 labE = sampleXyz.ToLab32(Illuminant.E);
+        Assert.NotEqual(labD65.A, labE.A);
+        Assert.NotEqual(labD65.B, labE.B);
+
+        // Default D65 convenience overloads round-trip cleanly.
+        var mid = new Rgb64(0.4, 0.7, 0.25);
+        Rgb64 midBack = mid.ToLab32(RgbColorSpace.sRGB).ToRgb64(RgbColorSpace.sRGB);
+        Assert.Equal(mid.R, midBack.R, 4);
+        Assert.Equal(mid.G, midBack.G, 4);
+        Assert.Equal(mid.B, midBack.B, 4);
+
+        Assert.Throws<NotImplementedException>(() => sampleXyz.ToLab32((Illuminant)999));
+        Assert.Throws<NotImplementedException>(() => labD65.ToXyz32((Illuminant)999));
+    }
+
+    [Fact]
+    public void ColorMetrics_HueIntensitySaturationAndChroma_ShouldComputeCorrectly()
+    {
+        Assert.Equal(0.0, new Rgb8(255, 0, 0).GetHueDegrees(), 6);
+        Assert.Equal(60.0, new Rgb8(255, 255, 0).GetHueDegrees(), 6);
+        Assert.Equal(120.0, new Rgb8(0, 255, 0).GetHueDegrees(), 6);
+        Assert.Equal(180.0, new Rgb8(0, 255, 255).GetHueDegrees(), 6);
+        Assert.Equal(240.0, new Rgb8(0, 0, 255).GetHueDegrees(), 6);
+        Assert.Equal(300.0, new Rgb8(255, 0, 255).GetHueDegrees(), 6);
+        Assert.Equal(0.0, new Rgb8(128, 128, 128).GetHueDegrees(), 6);
+
+        Assert.Equal(1.0 / 3.0, new Rgb8(255, 0, 0).GetIntensity(), 6);
+        Assert.Equal(1.0, new Rgb8(255, 0, 0).GetSaturation(), 6);
+        Assert.Equal(0.0, new Rgb8(128, 128, 128).GetSaturation(), 6);
+        Assert.Equal(0.0, new Rgb64(0.0, 0.0, 0.0).GetSaturation(), 6);
+
+        var warm = new Rgb64(0.6, 0.3, 0.0);
+        Assert.Equal(30.0, warm.GetHueDegrees(), 6);
+        Assert.Equal(0.3, warm.GetIntensity(), 6);
+        Assert.Equal(1.0, warm.GetSaturation(), 6);
+
+        var lab = new Lab32(50f, 3f, 4f);
+        Assert.Equal(5.0, lab.GetChroma(), 6);
+        Assert.Equal(0.5, lab.GetNormalizedLightness(), 6);
+        Assert.Equal(Math.Atan2(4.0, 3.0) * (180.0 / Math.PI), lab.GetHueDegrees(), 6);
+        Assert.Equal(135.0, new Lab32(50f, -5f, 5f).GetHueDegrees(), 6);
+        Assert.Equal(270.0, new Lab32(50f, 0f, -5f).GetHueDegrees(), 6);
+        Assert.Equal(0.0, new Lab32(50f, 0f, 0f).GetHueDegrees(), 6);
+
+        Assert.Equal(15.0, ColorMetrics.HueDifferenceDegrees(355.0, 10.0), 6);
+        Assert.Equal(15.0, ColorMetrics.HueDifferenceDegrees(10.0, 355.0), 6);
+        Assert.Equal(180.0, ColorMetrics.HueDifferenceDegrees(0.0, 180.0), 6);
+    }
 }
