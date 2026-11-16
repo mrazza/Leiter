@@ -20,8 +20,8 @@ public class RegionBoundaryTests
         Coord[] secondPixels = [new Coord(1, 1), new Coord(1, 2)];
         var boundary = new RegionBoundary(0, 1, firstPixels, secondPixels);
 
-        Assert.Equal(0, boundary.FirstRegionId);
-        Assert.Equal(1, boundary.SecondRegionId);
+        Assert.Equal(0, boundary.First);
+        Assert.Equal(1, boundary.Second);
         Assert.Equal(2, boundary.FirstBorderPixels.Length);
         Assert.Equal(2, boundary.SecondBorderPixels.Length);
         Assert.Equal(new Coord(0, 1), boundary.FirstBorderPixels.Span[0]);
@@ -29,28 +29,85 @@ public class RegionBoundaryTests
     }
 
     /// <summary>
-    /// Verifies that <see cref="RegionBoundary.GetOtherRegionId"/> returns the opposite region for incident IDs.
+    /// Verifies that <see cref="RegionBoundary.IsIncidentTo"/> identifies incident regions accurately.
     /// </summary>
     [Fact]
-    public void GetOtherRegionId_IncidentRegions_ShouldReturnOpposite()
+    public void IsIncidentTo_ShouldIdentifyIncidentRegions()
     {
         var boundary = new RegionBoundary(2, 5, Array.Empty<Coord>(), Array.Empty<Coord>());
 
-        Assert.Equal(5, boundary.GetOtherRegionId(2));
-        Assert.Equal(2, boundary.GetOtherRegionId(5));
+        Assert.True(boundary.IsIncidentTo(2));
+        Assert.True(boundary.IsIncidentTo(5));
+        Assert.False(boundary.IsIncidentTo(0));
+        Assert.False(boundary.IsIncidentTo(3));
+        Assert.False(boundary.IsIncidentTo(-1));
     }
 
     /// <summary>
-    /// Verifies that <see cref="RegionBoundary.GetOtherRegionId"/> throws <see cref="ArgumentOutOfRangeException"/> for non-incident region IDs.
+    /// Verifies that <see cref="RegionBoundary.GetOther"/> returns the opposite region for incident IDs.
     /// </summary>
     [Fact]
-    public void GetOtherRegionId_NonIncidentRegion_ShouldThrowArgumentOutOfRangeException()
+    public void GetOther_IncidentRegions_ShouldReturnOpposite()
     {
         var boundary = new RegionBoundary(2, 5, Array.Empty<Coord>(), Array.Empty<Coord>());
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => boundary.GetOtherRegionId(0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => boundary.GetOtherRegionId(3));
-        Assert.Throws<ArgumentOutOfRangeException>(() => boundary.GetOtherRegionId(-1));
+        Assert.Equal(5, boundary.GetOther(2));
+        Assert.Equal(2, boundary.GetOther(5));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="RegionBoundary.GetOther"/> throws <see cref="ArgumentOutOfRangeException"/> for non-incident region IDs.
+    /// </summary>
+    [Fact]
+    public void GetOther_NonIncidentRegion_ShouldThrowArgumentOutOfRangeException()
+    {
+        var boundary = new RegionBoundary(2, 5, Array.Empty<Coord>(), Array.Empty<Coord>());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => boundary.GetOther(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => boundary.GetOther(3));
+        Assert.Throws<ArgumentOutOfRangeException>(() => boundary.GetOther(-1));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="RegionBoundary.ToEdge"/> creates a matching <see cref="UndirectedGraphEdge{T}"/>.
+    /// </summary>
+    [Fact]
+    public void ToEdge_ShouldProjectToUndirectedGraphEdge()
+    {
+        var boundary = new RegionBoundary(2, 5, Array.Empty<Coord>(), Array.Empty<Coord>());
+
+        UndirectedGraphEdge<int> defaultEdge = boundary.ToEdge();
+        Assert.Equal(2, defaultEdge.First);
+        Assert.Equal(5, defaultEdge.Second);
+        Assert.Equal(0.0, defaultEdge.Weight);
+
+        UndirectedGraphEdge<int> weightedEdge = boundary.ToEdge(3.5);
+        Assert.Equal(2, weightedEdge.First);
+        Assert.Equal(5, weightedEdge.Second);
+        Assert.Equal(3.5, weightedEdge.Weight);
+    }
+
+    /// <summary>
+    /// Verifies constrained generic dispatch via <see cref="IUndirectedEdge{TVertex}"/> on <see cref="RegionBoundary"/>.
+    /// </summary>
+    [Fact]
+    public void UndirectedEdgeInterface_GenericDispatch_ShouldMatchBoundaryMembers()
+    {
+        var boundary = new RegionBoundary(4, 9, Array.Empty<Coord>(), Array.Empty<Coord>());
+
+        Assert.Equal(9, GetOppositeViaInterface(boundary, 4));
+        Assert.Equal(4, GetOppositeViaInterface(boundary, 9));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GetOppositeViaInterface(boundary, 7));
+    }
+
+    private static int GetOppositeViaInterface<TEdge>(TEdge edge, int regionId)
+        where TEdge : IUndirectedEdge<int>
+    {
+        Assert.True(edge.First < edge.Second);
+        if (!edge.IsIncidentTo(regionId))
+            return edge.GetOther(regionId);
+
+        return edge.GetOther(regionId);
     }
 
     /// <summary>

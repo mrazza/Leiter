@@ -67,7 +67,7 @@ public sealed class RegionGraph
     public IReadOnlyList<Region<Coord>> Regions { get; }
 
     /// <summary>
-    /// Gets all undirected inter-region boundaries ordered deterministically by <c>(FirstRegionId, SecondRegionId)</c>.
+    /// Gets all undirected inter-region boundaries ordered deterministically by <c>(First, Second)</c>.
     /// </summary>
     public IReadOnlyList<RegionBoundary> Boundaries { get; }
 
@@ -216,12 +216,7 @@ public sealed class RegionGraph
         for (int i = 0; i < Boundaries.Count; i++)
         {
             RegionBoundary boundary = Boundaries[i];
-            edges[i] = new UndirectedGraphEdge<int>
-            {
-                First = boundary.FirstRegionId,
-                Second = boundary.SecondRegionId,
-                Weight = weightSelector(boundary),
-            };
+            edges[i] = boundary.ToEdge(weightSelector(boundary));
         }
 
         return edges;
@@ -384,12 +379,12 @@ public sealed class RegionGraph
         var boundaryIndices = new int[totalDirectedEdges];
         var cursors = neighborOffsets[..regionCount];
 
-        // Because boundaries are sorted ascending by (FirstRegionId, SecondRegionId),
+        // Because boundaries are sorted ascending by (First, Second),
         // scattering them in order guarantees each region's adjacency slice is strictly ascending.
         for (int b = 0; b < boundaryCount; b++)
         {
-            int first = boundaries[b].FirstRegionId;
-            int second = boundaries[b].SecondRegionId;
+            int first = boundaries[b].First;
+            int second = boundaries[b].Second;
 
             int pos1 = cursors[first]++;
             neighborIds[pos1] = second;

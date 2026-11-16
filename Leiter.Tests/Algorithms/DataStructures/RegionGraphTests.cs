@@ -140,8 +140,8 @@ public class RegionGraphTests
 
         Assert.Single(graph.Boundaries);
         RegionBoundary boundary = graph.Boundaries[0];
-        Assert.Equal(0, boundary.FirstRegionId);
-        Assert.Equal(1, boundary.SecondRegionId);
+        Assert.Equal(0, boundary.First);
+        Assert.Equal(1, boundary.Second);
 
         // Border pixels must be unique and in row-major order
         Assert.Equal(2, boundary.FirstBorderPixels.Length);
@@ -160,10 +160,10 @@ public class RegionGraphTests
         var multiGraph = RegionGraph.FromLabels(multiLabels);
 
         Assert.Equal(2, multiGraph.Boundaries.Count);
-        Assert.Equal(0, multiGraph.Boundaries[0].FirstRegionId);
-        Assert.Equal(1, multiGraph.Boundaries[0].SecondRegionId);
-        Assert.Equal(1, multiGraph.Boundaries[1].FirstRegionId);
-        Assert.Equal(2, multiGraph.Boundaries[1].SecondRegionId);
+        Assert.Equal(0, multiGraph.Boundaries[0].First);
+        Assert.Equal(1, multiGraph.Boundaries[0].Second);
+        Assert.Equal(1, multiGraph.Boundaries[1].First);
+        Assert.Equal(2, multiGraph.Boundaries[1].Second);
     }
 
     /// <summary>
@@ -204,8 +204,8 @@ public class RegionGraphTests
                 int bIndex = bIndices[i];
                 RegionBoundary boundary = graph.Boundaries[bIndex];
 
-                Assert.True(boundary.FirstRegionId == r || boundary.SecondRegionId == r);
-                Assert.Equal(neighborId, boundary.GetOtherRegionId(r));
+                Assert.True(boundary.IsIncidentTo(r));
+                Assert.Equal(neighborId, boundary.GetOther(r));
             }
         }
     }
@@ -263,7 +263,7 @@ public class RegionGraphTests
         labels[2, 0] = 2;
         var graph = RegionGraph.FromLabels(labels);
 
-        UndirectedGraphEdge<int>[] edges = graph.BuildWeightedEdges(b => (b.FirstRegionId * 10.0) + b.SecondRegionId);
+        UndirectedGraphEdge<int>[] edges = graph.BuildWeightedEdges(b => (b.First * 10.0) + b.Second);
 
         Assert.Equal(2, edges.Length);
         Assert.Equal(0, edges[0].First);
