@@ -102,6 +102,136 @@ public static class MatrixResampler
         return result;
     }
 
+    /// <summary>
+    /// Samples a numeric pixel from the matrix at the specified coordinates using bilinear interpolation with edge clamping.
+    /// </summary>
+    /// <typeparam name="T">The numeric pixel type stored in the matrix.</typeparam>
+    /// <param name="source">The source matrix to sample.</param>
+    /// <param name="x">The horizontal coordinate.</param>
+    /// <param name="y">The vertical coordinate.</param>
+    /// <param name="edgeHandling">The edge handling mode for out-of-bounds coordinates.</param>
+    /// <returns>The bilinearly interpolated pixel value.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="edgeHandling"/> is invalid, or <paramref name="x"/> or <paramref name="y"/> is not finite.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="source"/> is empty.</exception>
+    public static T SampleBilinear<T>(
+        this IReadOnlyMatrix<T> source,
+        double x,
+        double y,
+        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+    {
+        ValidateSampleInputs(source, x, y, edgeHandling);
+
+        double cx = Math.Clamp(x, 0.0, source.Width - 1.0);
+        double cy = Math.Clamp(y, 0.0, source.Height - 1.0);
+
+        int x0 = (int)Math.Floor(cx);
+        int x1 = Math.Min(source.Width - 1, x0 + 1);
+        double wx = cx - x0;
+
+        int y0 = (int)Math.Floor(cy);
+        int y1 = Math.Min(source.Height - 1, y0 + 1);
+        double wy = cy - y0;
+
+        double w00 = (1.0 - wx) * (1.0 - wy);
+        double w10 = wx * (1.0 - wy);
+        double w01 = (1.0 - wx) * wy;
+        double w11 = wx * wy;
+
+        Vector<double> interpolatedPixel =
+            (source[x0, y0].ToDoubleVector() * w00) +
+            (source[x1, y0].ToDoubleVector() * w10) +
+            (source[x0, y1].ToDoubleVector() * w01) +
+            (source[x1, y1].ToDoubleVector() * w11);
+
+        return T.FromDoubleVector(interpolatedPixel);
+    }
+
+    /// <summary>
+    /// Samples a numeric pixel from the matrix at the specified position using bilinear interpolation with edge clamping.
+    /// </summary>
+    /// <typeparam name="T">The numeric pixel type stored in the matrix.</typeparam>
+    /// <param name="source">The source matrix to sample.</param>
+    /// <param name="position">The 2D coordinate position.</param>
+    /// <param name="edgeHandling">The edge handling mode for out-of-bounds coordinates.</param>
+    /// <returns>The bilinearly interpolated pixel value.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="edgeHandling"/> is invalid, or <paramref name="position"/> has non-finite components.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="source"/> is empty.</exception>
+    public static T SampleBilinear<T>(
+        this IReadOnlyMatrix<T> source,
+        Vector2D position,
+        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T> =>
+        source.SampleBilinear(position.X, position.Y, edgeHandling);
+
+    /// <summary>
+    /// Samples an element from the matrix at the specified coordinates using nearest-neighbor sampling with edge clamping.
+    /// </summary>
+    /// <typeparam name="T">The element type stored in the matrix.</typeparam>
+    /// <param name="source">The source matrix to sample.</param>
+    /// <param name="x">The horizontal coordinate.</param>
+    /// <param name="y">The vertical coordinate.</param>
+    /// <param name="edgeHandling">The edge handling mode for out-of-bounds coordinates.</param>
+    /// <returns>The nearest element in the matrix.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="edgeHandling"/> is invalid, or <paramref name="x"/> or <paramref name="y"/> is not finite.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="source"/> is empty.</exception>
+    public static T SampleNearest<T>(
+        this IReadOnlyMatrix<T> source,
+        double x,
+        double y,
+        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        where T : struct
+    {
+        ValidateSampleInputs(source, x, y, edgeHandling);
+
+        int ix = Math.Clamp((int)Math.Round(x, MidpointRounding.AwayFromZero), 0, source.Width - 1);
+        int iy = Math.Clamp((int)Math.Round(y, MidpointRounding.AwayFromZero), 0, source.Height - 1);
+
+        return source[ix, iy];
+    }
+
+    /// <summary>
+    /// Samples an element from the matrix at the specified position using nearest-neighbor sampling with edge clamping.
+    /// </summary>
+    /// <typeparam name="T">The element type stored in the matrix.</typeparam>
+    /// <param name="source">The source matrix to sample.</param>
+    /// <param name="position">The 2D coordinate position.</param>
+    /// <param name="edgeHandling">The edge handling mode for out-of-bounds coordinates.</param>
+    /// <returns>The nearest element in the matrix.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="edgeHandling"/> is invalid, or <paramref name="position"/> has non-finite components.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="source"/> is empty.</exception>
+    public static T SampleNearest<T>(
+        this IReadOnlyMatrix<T> source,
+        Vector2D position,
+        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        where T : struct =>
+        source.SampleNearest(position.X, position.Y, edgeHandling);
+
+    private static void ValidateSampleInputs(
+        IUntypedMatrix source,
+        double x,
+        double y,
+        EdgeHandling edgeHandling)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        if (!Enum.IsDefined(edgeHandling))
+            throw new ArgumentOutOfRangeException(nameof(edgeHandling), edgeHandling, "Unsupported edge handling mode.");
+
+        if (source.Count == 0)
+            throw new ArgumentException("Cannot sample from an empty matrix.", nameof(source));
+
+        if (!double.IsFinite(x))
+            throw new ArgumentOutOfRangeException(nameof(x), x, "Coordinate X must be finite.");
+
+        if (!double.IsFinite(y))
+            throw new ArgumentOutOfRangeException(nameof(y), y, "Coordinate Y must be finite.");
+    }
+
     private static bool ValidateResampleInputs(IUntypedMatrix source, Size targetSize)
     {
         ArgumentNullException.ThrowIfNull(source);

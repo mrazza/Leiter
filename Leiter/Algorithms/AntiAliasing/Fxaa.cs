@@ -1,0 +1,184 @@
+namespace Leiter.Algorithms.AntiAliasing;
+
+using System;
+using System.Threading.Tasks;
+using Leiter.Algorithms;
+using Leiter.Core;
+using Leiter.Pixels;
+
+/// <summary>
+/// Implements Timothy Lottes' Fast Approximate Anti-Aliasing (FXAA 3.11).
+/// </summary>
+public static class Fxaa
+{
+    /// <summary>
+    /// Applies FXAA 3.11 anti-aliasing to an RGB image.
+    /// </summary>
+    /// <param name="image">The input RGB image to anti-alias.</param>
+    /// <param name="options">Optional FXAA configuration parameters.</param>
+    /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the anti-aliased image.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    public static Matrix<Rgb8> Apply(IReadOnlyMatrix<Rgb8> image, FxaaOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+
+        FxaaOptions opts = options ?? new FxaaOptions();
+        opts.Validate();
+
+        if (image.Count == 0)
+            return new SequentialMatrix<Rgb8>(image.Size);
+
+        int width = image.Width;
+        int height = image.Height;
+
+        var luma = new double[image.Count];
+        for (int y = 0; y < height; y++)
+        {
+            int rowOffset = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                Rgb8 pixel = image[x, y];
+                luma[rowOffset + x] = ((0.299 * pixel.R) + (0.587 * pixel.G) + (0.114 * pixel.B)) / 255.0;
+            }
+        }
+
+        var result = new SequentialMatrix<Rgb8>(image.Size);
+
+        Parallel.For(0, height, y =>
+        {
+            for (int x = 0; x < width; x++)
+            {
+                double lumaM = GetLumaClamped(luma, x, y, width, height);
+                double lumaN = GetLumaClamped(luma, x, y - 1, width, height);
+                double lumaS = GetLumaClamped(luma, x, y + 1, width, height);
+                double lumaW = GetLumaClamped(luma, x - 1, y, width, height);
+                double lumaE = GetLumaClamped(luma, x + 1, y, width, height);
+
+                double maxLuma = Math.Max(lumaM, Math.Max(Math.Max(lumaN, lumaS), Math.Max(lumaW, lumaE)));
+                double minLuma = Math.Min(lumaM, Math.Min(Math.Min(lumaN, lumaS), Math.Min(lumaW, lumaE)));
+                double range = maxLuma - minLuma;
+
+                double contrastThreshold = Math.Max(opts.AbsoluteContrastThreshold, maxLuma * opts.RelativeContrastThreshold);
+                if (range < contrastThreshold)
+                {
+                    result[x, y] = image[x, y];
+                    continue;
+                }
+
+                double lumaNW = GetLumaClamped(luma, x - 1, y - 1, width, height);
+                double lumaNE = GetLumaClamped(luma, x + 1, y - 1, width, height);
+                double lumaSW = GetLumaClamped(luma, x - 1, y + 1, width, height);
+                double lumaSE = GetLumaClamped(luma, x + 1, y + 1, width, height);
+
+                // Compute horizontal vs vertical gradient magnitude using 3x3 Sobel-like weights
+                double gradY = Math.Abs((lumaNW + (2.0 * lumaN) + lumaNE) - (lumaSW + (2.0 * lumaS) + lumaSE));
+                double gradX = Math.Abs((lumaNW + (2.0 * lumaW) + lumaSW) - (lumaNE + (2.0 * lumaE) + lumaSE));
+                bool isHorizontal = gradY >= gradX;
+
+                // Step direction perpendicular to the edge
+                double lumaPos = isHorizontal ? lumaS : lumaE;
+                double lumaNeg = isHorizontal ? lumaN : lumaW;
+                double gradientPos = Math.Abs(lumaPos - lumaM);
+                double gradientNeg = Math.Abs(lumaNeg - lumaM);
+
+                double stepSign;
+                double lumaOpposite;
+                double maxGrad;
+
+                if (gradientPos >= gradientNeg)
+                {
+                    stepSign = 1.0;
+                    lumaOpposite = lumaPos;
+                    maxGrad = gradientPos;
+                }
+                else
+                {
+                    stepSign = -1.0;
+                    lumaOpposite = lumaNeg;
+                    maxGrad = gradientNeg;
+                }
+
+                double lumaLocalAvg = 0.5 * (lumaM + lumaOpposite);
+                double gradientThreshold = 0.25 * maxGrad;
+
+                // Subpixel blend factor
+                double lumaSubpixelAvg = ((2.0 * (lumaN + lumaS + lumaW + lumaE)) + lumaNW + lumaNE + lumaSW + lumaSE) / 12.0;
+                double subpixelFilter = Math.Clamp(Math.Abs(lumaSubpixelAvg - lumaM) / range, 0.0, 1.0);
+                double s = subpixelFilter * subpixelFilter * (3.0 - (2.0 * subpixelFilter));
+                double subpixelOffset = s * s * opts.SubpixelBlendStrength;
+
+                // Bilateral span search along the edge tangent
+                int stepOffset = (int)stepSign;
+                var (distPos, lumaEndPos) = SearchSpanEndpoint(
+                    luma, x, y, width, height, isHorizontal, 1, stepOffset,
+                    lumaLocalAvg, gradientThreshold, opts.MaxSpanSearchSteps);
+                var (distNeg, lumaEndNeg) = SearchSpanEndpoint(
+                    luma, x, y, width, height, isHorizontal, -1, stepOffset,
+                    lumaLocalAvg, gradientThreshold, opts.MaxSpanSearchSteps);
+
+                double spanLength = distPos + distNeg;
+                bool isPosCloser = distPos < distNeg;
+                double nearDist = isPosCloser ? distPos : distNeg;
+                double lumaEndNear = isPosCloser ? lumaEndPos : lumaEndNeg;
+
+                // Check if closer endpoint has opposite sign relative to lumaLocalAvg - lumaM
+                bool goodSpan = (lumaM < lumaLocalAvg) != (lumaEndNear < lumaLocalAvg);
+                double edgeBlend = goodSpan
+                    ? Math.Max(0.0, 0.5 - (nearDist / spanLength))
+                    : 0.0;
+
+                double finalOffset = Math.Max(subpixelOffset, edgeBlend);
+
+                if (finalOffset <= 0.0)
+                {
+                    result[x, y] = image[x, y];
+                }
+                else
+                {
+                    double sampleX = x + (isHorizontal ? 0.0 : stepSign * finalOffset);
+                    double sampleY = y + (isHorizontal ? stepSign * finalOffset : 0.0);
+                    result[x, y] = image.SampleBilinear(sampleX, sampleY, EdgeHandling.EXTEND);
+                }
+            }
+        });
+
+        return result;
+    }
+
+    private static (double Dist, double EndLuma) SearchSpanEndpoint(
+        double[] luma,
+        int x,
+        int y,
+        int width,
+        int height,
+        bool isHorizontal,
+        int tangentSign,
+        int stepOffset,
+        double lumaLocalAvg,
+        double gradientThreshold,
+        int maxSteps)
+    {
+        for (int step = 1; step <= maxSteps; step++)
+        {
+            int signedStep = step * tangentSign;
+            int tx = isHorizontal ? x + signedStep : x;
+            int ty = isHorizontal ? y : y + signedStep;
+            int ox = isHorizontal ? tx : tx + stepOffset;
+            int oy = isHorizontal ? ty + stepOffset : ty;
+
+            double sampleLuma = 0.5 * (GetLumaClamped(luma, tx, ty, width, height) + GetLumaClamped(luma, ox, oy, width, height));
+            if (Math.Abs(sampleLuma - lumaLocalAvg) >= gradientThreshold)
+                return (step, sampleLuma);
+        }
+
+        return (maxSteps, lumaLocalAvg);
+    }
+
+    private static double GetLumaClamped(double[] luma, int x, int y, int width, int height)
+    {
+        int cx = Math.Clamp(x, 0, width - 1);
+        int cy = Math.Clamp(y, 0, height - 1);
+        return luma[(cy * width) + cx];
+    }
+}
