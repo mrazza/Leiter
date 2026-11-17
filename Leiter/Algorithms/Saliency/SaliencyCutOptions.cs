@@ -1,5 +1,10 @@
 namespace Leiter.Algorithms.Saliency;
 
+using System;
+using Leiter.Algorithms.Internal;
+using Leiter.Core;
+using Leiter.Pixels;
+
 /// <summary>
 /// Configures parameters for Cheng et al.'s iterative <see cref="SaliencyCut"/> salient object segmentation.
 /// </summary>
@@ -23,6 +28,70 @@ public sealed record SaliencyCutOptions(
     double MinAreaFraction = 0.01,
     int? MaxWorkingDimension = null)
 {
+    /// <summary>
+    /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default band radii and smoothness weights apply unscaled.
+    /// </summary>
+    public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
+
+    /// <summary>
+    /// Creates <see cref="SaliencyCutOptions"/> with trimap band radius and pairwise smoothness weight scaled linearly for full-resolution execution on <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="SaliencyCutOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static SaliencyCutOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    {
+        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
+        var defaults = new SaliencyCutOptions();
+        if (totalPixels == 0)
+        {
+            return defaults;
+        }
+
+        int maxBand = Math.Max(1, Math.Min(size.Width, size.Height) / 3);
+        int bandRadius = Math.Clamp(OptionTuning.RoundPositiveInt(defaults.TrimapBandRadius * s), 1, maxBand);
+
+        return defaults with
+        {
+            TrimapBandRadius = bandRadius,
+            SmoothnessWeight = defaults.SmoothnessWeight * s,
+            MaxWorkingDimension = null
+        };
+    }
+
+    /// <summary>
+    /// Creates <see cref="SaliencyCutOptions"/> tuned for the dimensions and color complexity of <paramref name="image"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image to analyze.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="SaliencyCutOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static SaliencyCutOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        double referenceDimension = DefaultReferenceDimension)
+    {
+        OptionTuning.ValidateImageAndReference(image, referenceDimension);
+        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
+        return ForProfile(in profile, referenceDimension);
+    }
+
+    internal static SaliencyCutOptions ForProfile(in ImageTuningProfile profile, double referenceDimension)
+    {
+        SaliencyCutOptions scaled = ForSize(profile.ImageSize, referenceDimension);
+        if (profile.IsEmpty)
+        {
+            return scaled;
+        }
+
+        int components = profile.LabDispersion < 14.0 ? 4 : profile.LabDispersion > 30.0 ? 6 : 5;
+        return scaled with
+        {
+            MixtureComponentCount = components
+        };
+    }
+
     internal void Validate()
     {
         if (!double.IsFinite(InitialThreshold) || InitialThreshold < 0.0 || InitialThreshold > 1.0)

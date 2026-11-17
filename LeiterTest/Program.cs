@@ -87,11 +87,12 @@ internal static class Program
             () => imageMatrix.Map(pixel => UniformQuantizer.QuantizeBitsToMidpoint(pixel, bitsPerChannel: 3)));
 
         IDisjointSet segmentation = RunStep(
-            "05. CIELAB + EGBI Segmentation (k=50, eps=1, minSize=200)",
+            "05. CIELAB + EGBI Segmentation (ForImage)",
             () =>
             {
                 Matrix<Lab32> labImage = gaussianBlurred.Map(pixel => pixel.ToLab32(RgbColorSpace.sRGB));
-                return EgbiSegmentation.Segment(labImage, new EgbiOptions(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200));
+                EgbiOptions egbiOptions = EgbiOptions.ForImage(labImage);
+                return EgbiSegmentation.Segment(labImage, egbiOptions);
             });
 
         var regions = segmentation.ToRegions();
@@ -134,7 +135,7 @@ internal static class Program
 
         MaskMatrix salientMask = RunStep(
             "11. SaliencyCut Binary Mask",
-            () => SaliencyCut.Extract(imageMatrix, regionalSaliency));
+            () => SaliencyCut.Extract(imageMatrix, regionalSaliency, SaliencyCutOptions.ForImage(imageMatrix)));
         SaveOutput(outputDir, $"{stem}_11_saliency_cut_mask.png", salientMask.Map(static isSalient => isSalient ? new Rgb8(255, 255, 255) : Rgb8.Zero));
 
         Matrix<DoublePixel> rawDistanceField = RunStep(
@@ -148,16 +149,16 @@ internal static class Program
         SaveOutput(outputDir, $"{stem}_12b_distance_field_smoothed.png", smoothedDistanceField.ToGrayscaleRgb8());
 
         RunStepAndSave(
-            "13a. Mean-Shift Mode Filter (hs=8, hr=5.5)",
+            "13a. Mean-Shift Mode Filter (ForImage)",
             outputDir,
             $"{stem}_13a_meanshift_filtered.png",
-            () => MeanShiftSegmentation.Filter(colorTransferred));
+            () => MeanShiftSegmentation.Filter(colorTransferred, MeanShiftOptions.ForImage(colorTransferred)));
 
         RegionGraph meanShiftGraph = RunStep(
-            "13b. Mean-Shift Segmentation (hs=8, hr=5.5, minSize=50) + RegionGraph",
+            "13b. Mean-Shift Segmentation (ForImage) + RegionGraph",
             () =>
             {
-                IDisjointSet meanShiftSeg = MeanShiftSegmentation.Segment(colorTransferred);
+                IDisjointSet meanShiftSeg = MeanShiftSegmentation.Segment(colorTransferred, MeanShiftOptions.ForImage(colorTransferred));
                 return RegionGraph.FromDisjointSet(meanShiftSeg);
             });
         Console.WriteLine($"  Regions: {meanShiftGraph.RegionCount}, Boundaries: {meanShiftGraph.Boundaries.Count}");
@@ -174,11 +175,11 @@ internal static class Program
             "14. Saliency-Guided LOD Abstraction (Stage 3)",
             outputDir,
             $"{stem}_14_lod_abstraction.png",
-            () => LodAbstraction.Apply(colorTransferred, meanShiftGraph, smoothedDistanceField, salientMask));
+            () => LodAbstraction.Apply(colorTransferred, meanShiftGraph, smoothedDistanceField, salientMask, LodAbstractionOptions.ForImage(colorTransferred)));
 
         WetInWetResult wetInWetResult = RunStep(
             "15. Wet-in-Wet Filter (Stage 4)",
-            () => WetInWetFilter.ApplyDetailed(lodAbstracted, meanShiftGraph, smoothedDistanceField, salientMask));
+            () => WetInWetFilter.ApplyDetailed(lodAbstracted, meanShiftGraph, smoothedDistanceField, salientMask, WetInWetOptions.ForImage(lodAbstracted)));
         int qualifyingWetCount = wetInWetResult.QualifyingBoundaries.Count(static qualified => qualified);
         Console.WriteLine($"  Qualifying Wet Boundaries: {qualifyingWetCount} / {wetInWetResult.QualifyingBoundaries.Count}");
         SaveOutput(outputDir, $"{stem}_15_wet_in_wet.png", wetInWetResult.Image);
@@ -187,43 +188,43 @@ internal static class Program
             "16. Hand Tremor Filter (Stage 5)",
             outputDir,
             $"{stem}_16_hand_tremor.png",
-            () => HandTremorFilter.Apply(wetInWetResult.Image, meanShiftGraph, smoothedDistanceField, wetInWetResult, salientMask));
+            () => HandTremorFilter.Apply(wetInWetResult.Image, meanShiftGraph, smoothedDistanceField, wetInWetResult, salientMask, HandTremorOptions.ForImage(wetInWetResult.Image)));
 
         Matrix<Rgb8> edgeDarkened = RunStepAndSave(
             "17a. Edge Darkening (Stage 6)",
             outputDir,
             $"{stem}_17a_edge_darkening.png",
-            () => EdgeDarkening.Apply(handTremor));
+            () => EdgeDarkening.Apply(handTremor, EdgeDarkeningOptions.ForImage(handTremor)));
 
         Matrix<Rgb8> turbulent = RunStepAndSave(
             "17b. Turbulence Flow (Stage 6)",
             outputDir,
             $"{stem}_17b_turbulence_flow.png",
-            () => TurbulenceFlow.Apply(edgeDarkened));
+            () => TurbulenceFlow.Apply(edgeDarkened, TurbulenceFlowOptions.ForImage(edgeDarkened)));
 
         Matrix<Rgb8> toneAdjusted = RunStepAndSave(
             "17c. Piecewise Tone Curve (Stage 6)",
             outputDir,
             $"{stem}_17c_tone_curve.png",
-            () => PiecewiseToneCurve.Apply(turbulent));
+            () => PiecewiseToneCurve.Apply(turbulent, PiecewiseToneCurveOptions.ForImage(turbulent)));
 
         Matrix<Rgb8> granulated = RunStepAndSave(
             "18. Paper Granulation (Stage 6)",
             outputDir,
             $"{stem}_18_paper_granulation.png",
-            () => PaperGranulation.Apply(toneAdjusted));
+            () => PaperGranulation.Apply(toneAdjusted, PaperGranulationOptions.ForImage(toneAdjusted)));
 
         RunStepAndSave(
             "19. FXAA Anti-Aliasing (Stage 6 Final)",
             outputDir,
             $"{stem}_19_fxaa_final.png",
-            () => Fxaa.Apply(granulated));
+            () => Fxaa.Apply(granulated, FxaaOptions.ForImage(granulated)));
 
         RunStepAndSave(
-            "20. End-to-End WatercolorPipeline.Render",
+            "20. End-to-End WatercolorPipeline.Render (ForImage)",
             outputDir,
             $"{stem}_20_watercolor_pipeline.png",
-            () => WatercolorPipeline.Render(imageMatrix));
+            () => WatercolorPipeline.Render(imageMatrix, WatercolorOptions.ForImage(imageMatrix)));
 
         Console.WriteLine("Done.");
         return 0;

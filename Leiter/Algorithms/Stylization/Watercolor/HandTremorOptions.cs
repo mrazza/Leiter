@@ -1,7 +1,9 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Noise;
+using Leiter.Core;
 using Leiter.Pixels;
 
 /// <summary>
@@ -23,6 +25,62 @@ public sealed record HandTremorOptions(
     PerlinNoiseOptions? PrimaryNoise = null,
     PerlinNoiseOptions? SecondaryNoise = null)
 {
+    /// <summary>
+    /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default tremor amplitude and noise frequencies apply unscaled.
+    /// </summary>
+    public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
+
+    internal static readonly PerlinNoiseOptions DefaultPrimaryNoise = new(Seed: 101, Frequency: 0.04, Octaves: 3);
+
+    internal static readonly PerlinNoiseOptions DefaultSecondaryNoise = new(Seed: 202, Frequency: 0.04, Octaves: 3);
+
+    /// <summary>
+    /// Creates <see cref="HandTremorOptions"/> with displacement amplitude and Perlin noise frequencies scaled for <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="HandTremorOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static HandTremorOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    {
+        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
+        var defaults = new HandTremorOptions();
+        if (totalPixels == 0)
+        {
+            return defaults with
+            {
+                PrimaryNoise = DefaultPrimaryNoise,
+                SecondaryNoise = DefaultSecondaryNoise
+            };
+        }
+
+        return defaults with
+        {
+            Amplitude = defaults.Amplitude * s,
+            PrimaryNoise = PerlinNoiseOptions.ForSize(size, DefaultPrimaryNoise, referenceDimension),
+            SecondaryNoise = PerlinNoiseOptions.ForSize(size, DefaultSecondaryNoise, referenceDimension)
+        };
+    }
+
+    /// <summary>
+    /// Creates <see cref="HandTremorOptions"/> tuned for the dimensions of <paramref name="image"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image whose dimensions guide scaling.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="HandTremorOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static HandTremorOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        double referenceDimension = DefaultReferenceDimension)
+    {
+        OptionTuning.ValidateImageAndReference(image, referenceDimension);
+        return ForSize(image.Size, referenceDimension);
+    }
+
+    internal static HandTremorOptions ForProfile(in ImageTuningProfile profile, double referenceDimension) =>
+        ForSize(profile.ImageSize, referenceDimension);
+
     /// <summary>
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>

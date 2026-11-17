@@ -3,6 +3,8 @@ namespace Leiter.Tests.Algorithms.Segmentation;
 using System;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
+using Leiter.Core;
+using Leiter.Pixels;
 using Xunit;
 
 /// <summary>
@@ -98,5 +100,75 @@ public class EgbiOptionsTests
         Assert.Equal(2.5, custom.Epsilon);
         Assert.Equal(200, custom.MinRegionSize);
         Assert.Equal(GridConnectivity.EightConnected, custom.Connectivity);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="EgbiOptions.ForSize(Size, double)"/> matches defaults at reference dimensions and scales across resolutions.
+    /// </summary>
+    [Fact]
+    public void ForSize_ShouldMatchBaselineAtReferenceAndScaleAcrossSizes()
+    {
+        EgbiOptions refOpts = EgbiOptions.ForSize(new Size(800, 800));
+        Assert.Equal(100.0, refOpts.KFactor, 6);
+        Assert.Equal(1.0, refOpts.Epsilon, 6);
+        Assert.Equal(100, refOpts.MinRegionSize);
+        Assert.Equal(refOpts, EgbiOptions.ForSize(new Size(1000, 640)));
+
+        EgbiOptions small = EgbiOptions.ForSize(new Size(200, 200));
+        EgbiOptions large = EgbiOptions.ForSize(new Size(3200, 2400));
+        Assert.True(small.KFactor < refOpts.KFactor);
+        Assert.True(large.KFactor > refOpts.KFactor);
+        Assert.True(small.MinRegionSize < refOpts.MinRegionSize);
+        Assert.True(large.MinRegionSize > refOpts.MinRegionSize);
+        Assert.True(large.Epsilon < refOpts.Epsilon);
+
+        var zeroDisable = new EgbiOptions(KFactor: 50.0, Epsilon: 0.0, MinRegionSize: 0);
+        EgbiOptions scaledDisable = EgbiOptions.ForSize(new Size(1600, 1600), zeroDisable);
+        Assert.Equal(0.0, scaledDisable.Epsilon, 6);
+        Assert.Equal(0, scaledDisable.MinRegionSize);
+
+        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
+        {
+            EgbiOptions.ForSize(size).Validate();
+        }
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => EgbiOptions.ForSize(new Size(-1, 100)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => EgbiOptions.ForSize(new Size(100, 100), double.NaN));
+        Assert.Throws<ArgumentNullException>(() => EgbiOptions.ForSize(new Size(100, 100), null!));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="EgbiOptions.ForImage(IReadOnlyMatrix{Rgb8}, double)"/> and CIELAB overloads adapt to image content and validate inputs.
+    /// </summary>
+    [Fact]
+    public void ForImage_RgbAndLabOverloads_ShouldAdaptToContentAndValidate()
+    {
+        var flatImage = new SequentialMatrix<Rgb8>(256, 256);
+        flatImage.SetAll(new Rgb8(120, 125, 130));
+
+        var busyImage = new SequentialMatrix<Rgb8>(256, 256);
+        for (int y = 0; y < busyImage.Height; y++)
+        {
+            for (int x = 0; x < busyImage.Width; x++)
+            {
+                busyImage[x, y] = (((x / 4) + (y / 4)) & 1) == 0 ? new Rgb8(245, 40, 30) : new Rgb8(20, 60, 230);
+            }
+        }
+
+        EgbiOptions flatOpts = EgbiOptions.ForImage(flatImage);
+        EgbiOptions busyOpts = EgbiOptions.ForImage(busyImage);
+        Assert.True(busyOpts.MinRegionSize > flatOpts.MinRegionSize);
+        Assert.True(busyOpts.KFactor > flatOpts.KFactor);
+
+        var labImage = new SequentialMatrix<Lab32>(64, 64);
+        labImage.SetAll(new Lab32(60f, 10f, -5f));
+        EgbiOptions labOpts = EgbiOptions.ForImage(labImage);
+        labOpts.Validate();
+        EgbiOptions.ForImage(labImage, new EgbiOptions(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200)).Validate();
+
+        Assert.Throws<ArgumentNullException>(() => EgbiOptions.ForImage((IReadOnlyMatrix<Rgb8>)null!));
+        Assert.Throws<ArgumentNullException>(() => EgbiOptions.ForImage((IReadOnlyMatrix<Lab32>)null!));
+        Assert.Throws<ArgumentNullException>(() => EgbiOptions.ForImage(flatImage, null!));
+        Assert.Throws<ArgumentNullException>(() => EgbiOptions.ForImage(labImage, null!));
     }
 }

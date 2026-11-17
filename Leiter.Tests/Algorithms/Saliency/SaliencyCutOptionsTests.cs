@@ -2,6 +2,8 @@ namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
 using Leiter.Algorithms.Saliency;
+using Leiter.Core;
+using Leiter.Pixels;
 using Xunit;
 
 /// <summary>
@@ -128,5 +130,45 @@ public class SaliencyCutOptionsTests
     {
         var options = new SaliencyCutOptions(MaxWorkingDimension: maxWorkingDimension);
         options.Validate();
+    }
+
+    [Fact]
+    public void ForSize_And_ForImage_ShouldScaleBandAndAdaptComponents()
+    {
+        SaliencyCutOptions refOpts = SaliencyCutOptions.ForSize(new Size(800, 800));
+        Assert.Equal(10, refOpts.TrimapBandRadius);
+        Assert.Equal(50.0, refOpts.SmoothnessWeight, 6);
+        Assert.Null(refOpts.MaxWorkingDimension);
+        Assert.Equal(refOpts, SaliencyCutOptions.ForSize(new Size(1000, 640)));
+
+        SaliencyCutOptions small = SaliencyCutOptions.ForSize(new Size(200, 200));
+        SaliencyCutOptions large = SaliencyCutOptions.ForSize(new Size(3200, 2400));
+        SaliencyCutOptions strip = SaliencyCutOptions.ForSize(new Size(4000, 80));
+        Assert.Equal(3, small.TrimapBandRadius);
+        Assert.True(large.TrimapBandRadius > refOpts.TrimapBandRadius);
+        Assert.InRange(strip.TrimapBandRadius, 1, 80 / 3);
+
+        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
+        {
+            SaliencyCutOptions.ForSize(size).Validate();
+        }
+
+        var flat = new SequentialMatrix<Rgb8>(64, 64);
+        flat.SetAll(new Rgb8(110, 110, 110));
+        var vibrant = new SequentialMatrix<Rgb8>(64, 64);
+        for (int y = 0; y < 64; y++)
+        {
+            for (int x = 0; x < 64; x++)
+            {
+                vibrant[x, y] = (x + y) % 2 == 0 ? new Rgb8(255, 250, 20) : new Rgb8(10, 20, 240);
+            }
+        }
+
+        Assert.Equal(4, SaliencyCutOptions.ForImage(flat).MixtureComponentCount);
+        Assert.Equal(6, SaliencyCutOptions.ForImage(vibrant).MixtureComponentCount);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCutOptions.ForSize(new Size(-1, 100)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCutOptions.ForSize(new Size(100, 100), double.NegativeInfinity));
+        Assert.Throws<ArgumentNullException>(() => SaliencyCutOptions.ForImage(null!));
     }
 }

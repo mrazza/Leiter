@@ -81,8 +81,8 @@ public static class HandTremorFilter
             return image.Clone();
         }
 
-        PerlinNoiseOptions primaryNoise = opts.PrimaryNoise ?? new PerlinNoiseOptions(Seed: 101, Frequency: 0.04, Octaves: 3);
-        PerlinNoiseOptions secondaryNoise = opts.SecondaryNoise ?? new PerlinNoiseOptions(Seed: 202, Frequency: 0.04, Octaves: 3);
+        PerlinNoiseOptions primaryNoise = opts.PrimaryNoise ?? HandTremorOptions.DefaultPrimaryNoise;
+        PerlinNoiseOptions secondaryNoise = opts.SecondaryNoise ?? HandTremorOptions.DefaultSecondaryNoise;
         Rgb8 paperColor = opts.PaperColor ?? new Rgb8(250, 248, 242);
 
         RegionColorStatistics[] stats = RegionColorStatistics.Compute(regionGraph, image, salientMask);

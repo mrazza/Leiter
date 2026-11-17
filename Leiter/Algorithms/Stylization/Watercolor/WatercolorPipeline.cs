@@ -53,7 +53,11 @@ public static class WatercolorPipeline
             : ColorTransfer.TransferToClosestPalette(image, strength: opts.ColorTransferStrength);
 
         // Stage 2: Regional Contrast Saliency & Saliency Distance Field
-        Matrix<Rgb8> blurred = Blur.GaussianBlur(colorTransferred, sigma: 0.8, radius: 2);
+        Matrix<Rgb8> blurred = opts.EgbiBlurSigma <= 0.0
+            ? colorTransferred
+            : opts.EgbiBlurSigma <= 2.0
+                ? Blur.GaussianBlur(colorTransferred, opts.EgbiBlurSigma, Math.Max(1, (int)Math.Ceiling(2.5 * opts.EgbiBlurSigma)))
+                : Blur.GaussianBlurRecursive(colorTransferred, opts.EgbiBlurSigma);
         Matrix<Lab32> labBlurred = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.sRGB));
         EgbiOptions resolvedEgbi = opts.Egbi ??
             new EgbiOptions(

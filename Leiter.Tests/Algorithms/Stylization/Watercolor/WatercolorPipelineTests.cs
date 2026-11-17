@@ -119,6 +119,26 @@ public class WatercolorPipelineTests
             WatercolorPipeline.RenderDetailed(validImage, paperHeightMap: mismatchedMap));
     }
 
+    /// <summary>
+    /// Verifies that <see cref="WatercolorPipeline.RenderDetailed"/> runs cleanly with <see cref="WatercolorOptions.ForImage"/>
+    /// and honors both disabled (<c>0.0</c>) and recursive (<c>&gt; 2.0</c>) <see cref="WatercolorOptions.EgbiBlurSigma"/> settings.
+    /// </summary>
+    [Fact]
+    public void RenderDetailed_WithForImageAndCustomEgbiBlurSigma_ShouldSucceedDeterministically()
+    {
+        Matrix<Rgb8> scene = CreateTestScene(32, 32);
+        WatercolorOptions autoOptions = WatercolorOptions.ForImage(scene);
+
+        WatercolorResult autoResult = WatercolorPipeline.RenderDetailed(scene, autoOptions);
+        Assert.Equal(scene.Size, autoResult.Output.Size);
+        Assert.Equal(autoOptions.TargetPalette, autoResult.SelectedPalette);
+
+        WatercolorResult noBlurResult = WatercolorPipeline.RenderDetailed(scene, new WatercolorOptions(EgbiBlurSigma: 0.0));
+        WatercolorResult recursiveBlurResult = WatercolorPipeline.RenderDetailed(scene, new WatercolorOptions(EgbiBlurSigma: 2.5));
+        Assert.Equal(scene.Size, noBlurResult.Output.Size);
+        Assert.Equal(scene.Size, recursiveBlurResult.Output.Size);
+    }
+
     private static Matrix<Rgb8> CreateTestScene(int width, int height)
     {
         var image = new SequentialMatrix<Rgb8>(width, height);

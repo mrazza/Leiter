@@ -2,6 +2,8 @@ namespace Leiter.Tests.Algorithms.Stylization;
 
 using System;
 using Leiter.Algorithms.Stylization;
+using Leiter.Core;
+using Leiter.Pixels;
 using Xunit;
 
 /// <summary>
@@ -121,5 +123,44 @@ public class PiecewiseToneCurveOptionsTests
         Assert.Equal(maxTone, options.MaxTone, PrecisionTolerance);
         Assert.Equal(shadowKnee, options.ShadowKnee, PrecisionTolerance);
         Assert.Equal(highlightKnee, options.HighlightKnee, PrecisionTolerance);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="PiecewiseToneCurveOptions.ForSize"/> preserves defaults and <see cref="PiecewiseToneCurveOptions.ForImage"/> adapts knee breakpoints safely.
+    /// </summary>
+    [Fact]
+    public void ForSize_And_ForImage_ShouldPreserveBoundsAndAdaptKnees()
+    {
+        PiecewiseToneCurveOptions refOpts = PiecewiseToneCurveOptions.ForSize(new Size(3200, 2400));
+        Assert.Equal(new PiecewiseToneCurveOptions(), refOpts);
+
+        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(4000, 80), new Size(12000, 9000) })
+        {
+            PiecewiseToneCurveOptions.ForSize(size).Validate();
+        }
+
+        var flat = new SequentialMatrix<Rgb8>(64, 64);
+        flat.SetAll(new Rgb8(128, 128, 128));
+        var highContrast = new SequentialMatrix<Rgb8>(64, 64);
+        for (int y = 0; y < 64; y++)
+        {
+            for (int x = 0; x < 64; x++)
+            {
+                highContrast[x, y] = x < 32 ? new Rgb8(5, 5, 5) : new Rgb8(250, 250, 250);
+            }
+        }
+
+        PiecewiseToneCurveOptions flatOpts = PiecewiseToneCurveOptions.ForImage(flat);
+        PiecewiseToneCurveOptions hcOpts = PiecewiseToneCurveOptions.ForImage(highContrast);
+        Assert.True(hcOpts.ShadowKnee > flatOpts.ShadowKnee);
+        Assert.True(hcOpts.HighlightKnee < flatOpts.HighlightKnee);
+        Assert.InRange(hcOpts.ShadowKnee, 0.12, 0.22);
+        Assert.InRange(hcOpts.HighlightKnee, 0.78, 0.88);
+        Assert.Equal(0.05, hcOpts.MinTone, PrecisionTolerance);
+        Assert.Equal(0.96, hcOpts.MaxTone, PrecisionTolerance);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => PiecewiseToneCurveOptions.ForSize(new Size(-1, 10)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PiecewiseToneCurveOptions.ForSize(new Size(10, 10), 0.0));
+        Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForImage(null!));
     }
 }

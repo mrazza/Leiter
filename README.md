@@ -98,7 +98,12 @@ Matrix<Rgb8> watercolor = WatercolorPipeline.Render(source);
 using Image<Rgb24> watercolorImg = watercolor.ToImage();
 watercolorImg.Save("watercolor.png");
 
-// Option B: Tune stage options and inspect intermediate pipeline artifacts
+// Option B: Automatically scale and tune all stage options to the input image
+// (individual stages also expose *Options.ForImage(...) and *Options.ForSize(...))
+WatercolorOptions autoOptions = WatercolorOptions.ForImage(source);
+Matrix<Rgb8> resolutionTuned = WatercolorPipeline.Render(source, autoOptions);
+
+// Option C: Tune stage options explicitly and inspect intermediate pipeline artifacts
 var options = new WatercolorOptions(
     TargetPalette: WatercolorPalettes.WarmOchreEarth,
     MeanShift: new MeanShiftOptions(SpatialRadius: 8, RangeRadius: 5.5, MinRegionSize: 50),
