@@ -24,6 +24,7 @@ public class WatercolorOptionsTests
 
         Assert.Null(options.TargetPalette);
         Assert.Equal(1.0, options.ColorTransferStrength);
+        Assert.Null(options.Egbi);
         Assert.Null(options.SaliencyCut);
         Assert.Null(options.MeanShift);
         Assert.Null(options.LodAbstraction);
@@ -62,6 +63,8 @@ public class WatercolorOptionsTests
     public void Validate_InvalidNestedOptions_ShouldThrow()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(Egbi: new EgbiOptions(KFactor: -1.0)).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
             new WatercolorOptions(SaliencyCut: new SaliencyCutOptions(InitialThreshold: 1.5)).Validate());
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new WatercolorOptions(MeanShift: new MeanShiftOptions(SpatialRadius: 0)).Validate());
@@ -92,6 +95,7 @@ public class WatercolorOptionsTests
         var custom = new WatercolorOptions(
             TargetPalette: WatercolorPalettes.Defaults[0],
             ColorTransferStrength: 0.75,
+            Egbi: new EgbiOptions(),
             SaliencyCut: new SaliencyCutOptions(),
             MeanShift: new MeanShiftOptions(),
             LodAbstraction: new LodAbstractionOptions(),

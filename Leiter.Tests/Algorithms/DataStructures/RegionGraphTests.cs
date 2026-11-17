@@ -76,7 +76,7 @@ public class RegionGraphTests
             }
         }
 
-        IDisjointSet segmentation = EgbiSegmentation.Segment(img, kFactor: 1.0, epsilon: 1.0, minSegmentSize: 4);
+        IDisjointSet segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
         var graph = RegionGraph.FromDisjointSet(segmentation);
 
         Assert.Equal(2, graph.RegionCount);

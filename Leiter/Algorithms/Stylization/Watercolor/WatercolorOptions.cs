@@ -12,6 +12,7 @@ using Leiter.Algorithms.Stylization;
 /// </summary>
 /// <param name="TargetPalette">Optional explicit watercolor target palette; when <see langword="null"/>, the closest palette is selected automatically.</param>
 /// <param name="ColorTransferStrength">The Reinhard color transfer blending strength in [0.0, 1.0] (default 1.0).</param>
+/// <param name="Egbi">Optional configuration for EGBI over-segmentation used in Stage 2 regional contrast saliency (when <see langword="null"/>, uses Cheng et al. defaults scaled safely for tiny images).</param>
 /// <param name="SaliencyCut">Optional configuration for iterative salient region extraction in Stage 2.</param>
 /// <param name="MeanShift">Optional configuration for CIELAB Mean-Shift segmentation in Stage 3 (when <see langword="null"/>, uses Wang et al. defaults scaled safely for tiny images).</param>
 /// <param name="LodAbstraction">Optional configuration for saliency-guided level-of-detail abstraction in Stage 3.</param>
@@ -26,6 +27,7 @@ using Leiter.Algorithms.Stylization;
 public sealed record WatercolorOptions(
     WatercolorPalette? TargetPalette = null,
     double ColorTransferStrength = 1.0,
+    EgbiOptions? Egbi = null,
     SaliencyCutOptions? SaliencyCut = null,
     MeanShiftOptions? MeanShift = null,
     LodAbstractionOptions? LodAbstraction = null,
@@ -49,6 +51,7 @@ public sealed record WatercolorOptions(
             throw new ArgumentOutOfRangeException(nameof(ColorTransferStrength), ColorTransferStrength, "ColorTransferStrength must be finite and within [0, 1].");
         }
 
+        Egbi?.Validate();
         SaliencyCut?.Validate();
         MeanShift?.Validate();
         LodAbstraction?.Validate();

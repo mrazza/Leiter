@@ -33,8 +33,8 @@ public class EgbiSegmentationTests
         }
 
         // Run EGBI segmentation
-        // Choose kFactor = 5.0, epsilon = 1.0, minSegmentSize = 20
-        var segmentation = EgbiSegmentation.Segment(img, kFactor: 5.0, epsilon: 1.0, minSegmentSize: 20);
+        // Choose KFactor = 5.0, Epsilon = 1.0, MinRegionSize = 20
+        var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 5.0, Epsilon: 1.0, MinRegionSize: 20));
 
         Assert.Equal(10, segmentation.Width);
         Assert.Equal(10, segmentation.Height);
@@ -70,13 +70,14 @@ public class EgbiSegmentationTests
             }
         }
 
-        var baselineSegmentation = EgbiSegmentation.Segment(img, kFactor: 5.0, epsilon: 0.0, minSegmentSize: 15);
+        var baselineOptions = new EgbiOptions(KFactor: 5.0, Epsilon: 0.0, MinRegionSize: 15);
+        var baselineSegmentation = EgbiSegmentation.Segment(img, baselineOptions);
         Assert.True(baselineSegmentation.ToRegions().Count > 10);
         Matrix<LongPixel> baseline = baselineSegmentation.ToMatrix();
 
         for (int run = 0; run < 5; run++)
         {
-            Matrix<LongPixel> current = EgbiSegmentation.Segment(img, kFactor: 5.0, epsilon: 0.0, minSegmentSize: 15).ToMatrix();
+            Matrix<LongPixel> current = EgbiSegmentation.Segment(img, baselineOptions).ToMatrix();
             Assert.Equal(baseline.Width, current.Width);
             Assert.Equal(baseline.Height, current.Height);
             for (int i = 0; i < baseline.Count; i++)
@@ -92,7 +93,7 @@ public class EgbiSegmentationTests
         var img = new SequentialMatrix<Rgb8>(10, 10);
         img.SetAll(new Rgb8(255, 0, 0));
 
-        var segmentation = EgbiSegmentation.Segment(img, kFactor: 1.0, epsilon: 10.0, minSegmentSize: 10);
+        var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 10.0, MinRegionSize: 10));
         var regions = segmentation.ToRegions();
 
         // 1. RandomColorAssigner
@@ -127,24 +128,49 @@ public class EgbiSegmentationTests
         Assert.Throws<ArgumentNullException>(() => EgbiSegmentation.Segment<Rgb8>(null!));
 
         var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
+        Assert.Throws<ArgumentOutOfRangeException>(() => EgbiSegmentation.Segment(emptyImg, new EgbiOptions(KFactor: -1.0)));
+
         IDisjointSet emptySeg = EgbiSegmentation.Segment(emptyImg);
         Assert.Equal(0, emptySeg.Count);
         Assert.Equal(0, emptySeg.Width);
         Assert.Equal(0, emptySeg.Height);
         Assert.Empty(emptySeg.ToRegions());
 
-        // Single high-contrast pixel surrounded by black pixels stays separate when minSegmentSize is 0,
-        // and merges into the background when minSegmentSize > 1.
+        // Single high-contrast pixel surrounded by black pixels stays separate when MinRegionSize is 0,
+        // and merges into the background when MinRegionSize > 1.
         var speckled = new SequentialMatrix<Rgb8>(6, 6);
         speckled.SetAll(new Rgb8(0, 0, 0));
         speckled[3, 3] = new Rgb8(255, 255, 255);
 
-        IDisjointSet withoutPostMerge = EgbiSegmentation.Segment(speckled, kFactor: 10.0, epsilon: 1.0, minSegmentSize: 0);
+        IDisjointSet withoutPostMerge = EgbiSegmentation.Segment(speckled, new EgbiOptions(KFactor: 10.0, Epsilon: 1.0, MinRegionSize: 0));
         Assert.Equal(2, withoutPostMerge.ToRegions().Count);
         Assert.NotEqual(withoutPostMerge[0, 0].Value, withoutPostMerge[3, 3].Value);
 
-        IDisjointSet withPostMerge = EgbiSegmentation.Segment(speckled, kFactor: 10.0, epsilon: 1.0, minSegmentSize: 5);
+        IDisjointSet withPostMerge = EgbiSegmentation.Segment(speckled, new EgbiOptions(KFactor: 10.0, Epsilon: 1.0, MinRegionSize: 5));
         Assert.Single(withPostMerge.ToRegions());
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="EgbiOptions.Connectivity"/> switches between 4-connected and 8-connected diagonal merging.
+    /// </summary>
+    [Fact]
+    public void Segment_FourConnectedVsEightConnected_ShouldControlDiagonalMerging()
+    {
+        var checkerboard = new SequentialMatrix<Rgb8>(2, 2);
+        checkerboard[0, 0] = new Rgb8(255, 0, 0);
+        checkerboard[1, 1] = new Rgb8(255, 0, 0);
+        checkerboard[1, 0] = new Rgb8(0, 0, 255);
+        checkerboard[0, 1] = new Rgb8(0, 0, 255);
+
+        IDisjointSet fourConnected = EgbiSegmentation.Segment(
+            checkerboard,
+            new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 0, Connectivity: GridConnectivity.FourConnected));
+        Assert.Equal(4, fourConnected.ToRegions().Count);
+
+        IDisjointSet eightConnected = EgbiSegmentation.Segment(
+            checkerboard,
+            new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 0, Connectivity: GridConnectivity.EightConnected));
+        Assert.Equal(2, eightConnected.ToRegions().Count);
     }
 
     /// <summary>
