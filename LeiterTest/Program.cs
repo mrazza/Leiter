@@ -3,12 +3,14 @@ namespace LeiterTest;
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using Leiter.Algorithms;
+using Leiter.Algorithms.AntiAliasing;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Quantization;
 using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Stylization;
+using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -168,11 +170,60 @@ internal static class Program
             $"{stem}_13c_meanshift_random.png",
             ColorBySegmentation(colorTransferred, meanShiftGraph.Regions, EgbiSegmentation.RandomColorAssigner(randomSeed: 42)));
 
-        RunStepAndSave(
+        Matrix<Rgb8> lodAbstracted = RunStepAndSave(
             "14. Saliency-Guided LOD Abstraction (Stage 3)",
             outputDir,
             $"{stem}_14_lod_abstraction.png",
             () => LodAbstraction.Apply(colorTransferred, meanShiftGraph, smoothedDistanceField, salientMask));
+
+        WetInWetResult wetInWetResult = RunStep(
+            "15. Wet-in-Wet Filter (Stage 4)",
+            () => WetInWetFilter.ApplyDetailed(lodAbstracted, meanShiftGraph, smoothedDistanceField, salientMask));
+        int qualifyingWetCount = wetInWetResult.QualifyingBoundaries.Count(static qualified => qualified);
+        Console.WriteLine($"  Qualifying Wet Boundaries: {qualifyingWetCount} / {wetInWetResult.QualifyingBoundaries.Count}");
+        SaveOutput(outputDir, $"{stem}_15_wet_in_wet.png", wetInWetResult.Image);
+
+        Matrix<Rgb8> handTremor = RunStepAndSave(
+            "16. Hand Tremor Filter (Stage 5)",
+            outputDir,
+            $"{stem}_16_hand_tremor.png",
+            () => HandTremorFilter.Apply(wetInWetResult.Image, meanShiftGraph, smoothedDistanceField, wetInWetResult, salientMask));
+
+        Matrix<Rgb8> edgeDarkened = RunStepAndSave(
+            "17a. Edge Darkening (Stage 6)",
+            outputDir,
+            $"{stem}_17a_edge_darkening.png",
+            () => EdgeDarkening.Apply(handTremor));
+
+        Matrix<Rgb8> turbulent = RunStepAndSave(
+            "17b. Turbulence Flow (Stage 6)",
+            outputDir,
+            $"{stem}_17b_turbulence_flow.png",
+            () => TurbulenceFlow.Apply(edgeDarkened));
+
+        Matrix<Rgb8> toneAdjusted = RunStepAndSave(
+            "17c. Piecewise Tone Curve (Stage 6)",
+            outputDir,
+            $"{stem}_17c_tone_curve.png",
+            () => PiecewiseToneCurve.Apply(turbulent));
+
+        Matrix<Rgb8> granulated = RunStepAndSave(
+            "18. Paper Granulation (Stage 6)",
+            outputDir,
+            $"{stem}_18_paper_granulation.png",
+            () => PaperGranulation.Apply(toneAdjusted));
+
+        RunStepAndSave(
+            "19. FXAA Anti-Aliasing (Stage 6 Final)",
+            outputDir,
+            $"{stem}_19_fxaa_final.png",
+            () => Fxaa.Apply(granulated));
+
+        RunStepAndSave(
+            "20. End-to-End WatercolorPipeline.Render",
+            outputDir,
+            $"{stem}_20_watercolor_pipeline.png",
+            () => WatercolorPipeline.Render(imageMatrix));
 
         Console.WriteLine("Done.");
         return 0;

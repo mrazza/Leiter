@@ -93,4 +93,133 @@ public class MatrixResamplerTests
         Assert.Throws<ArgumentException>(() => emptyDouble.ResizeNearest(new Size(2, 2)));
         Assert.Throws<ArgumentException>(() => emptyMask.ResizeMaskNearest(new Size(2, 2)));
     }
+
+    /// <summary>
+    /// Verifies that <see cref="MatrixResampler.SampleBilinear{T}(IReadOnlyMatrix{T}, double, double, EdgeHandling)"/>
+    /// and its <see cref="Vector2D"/> overload interpolate values with exact weights.
+    /// </summary>
+    [Fact]
+    public void SampleBilinear_ExactWeights_ShouldInterpolateAccurately()
+    {
+        var source = new SequentialMatrix<DoublePixel>(2, 2);
+        source[0, 0] = 10.0;
+        source[1, 0] = 20.0;
+        source[0, 1] = 30.0;
+        source[1, 1] = 40.0;
+
+        Assert.Equal(10.0, source.SampleBilinear(0.0, 0.0).Value, 9);
+        Assert.Equal(20.0, source.SampleBilinear(1.0, 0.0).Value, 9);
+        Assert.Equal(30.0, source.SampleBilinear(0.0, 1.0).Value, 9);
+        Assert.Equal(40.0, source.SampleBilinear(1.0, 1.0).Value, 9);
+        Assert.Equal(25.0, source.SampleBilinear(0.5, 0.5).Value, 9);
+        Assert.Equal(27.5, source.SampleBilinear(0.25, 0.75).Value, 9);
+
+        var position = new Vector2D(0.25, 0.75);
+        Assert.Equal(27.5, source.SampleBilinear(position).Value, 9);
+    }
+
+    /// <summary>
+    /// Verifies that bilinear sampling clamps coordinates that fall outside the matrix bounds.
+    /// </summary>
+    [Fact]
+    public void SampleBilinear_ClampingOutOfBounds_ShouldClampToEdge()
+    {
+        var source = new SequentialMatrix<DoublePixel>(2, 2);
+        source[0, 0] = 10.0;
+        source[1, 0] = 20.0;
+        source[0, 1] = 30.0;
+        source[1, 1] = 40.0;
+
+        Assert.Equal(10.0, source.SampleBilinear(-5.0, 0.0).Value, 9);
+        Assert.Equal(40.0, source.SampleBilinear(5.0, 1.0).Value, 9);
+        Assert.Equal(15.0, source.SampleBilinear(0.5, -2.0).Value, 9);
+        Assert.Equal(35.0, source.SampleBilinear(0.5, 10.0).Value, 9);
+    }
+
+    /// <summary>
+    /// Verifies that bilinear sampling works correctly on a 1x1 matrix.
+    /// </summary>
+    [Fact]
+    public void SampleBilinear_SinglePixelMatrix_ShouldReturnCenterValue()
+    {
+        var single = new SequentialMatrix<DoublePixel>(1, 1);
+        single[0, 0] = 42.0;
+
+        Assert.Equal(42.0, single.SampleBilinear(0.0, 0.0).Value, 9);
+        Assert.Equal(42.0, single.SampleBilinear(-2.0, 3.5).Value, 9);
+        Assert.Equal(42.0, single.SampleBilinear(new Vector2D(10.0, -10.0)).Value, 9);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="MatrixResampler.SampleNearest{T}(IReadOnlyMatrix{T}, double, double, EdgeHandling)"/>
+    /// and its <see cref="Vector2D"/> overload round away from zero and clamp coordinates.
+    /// </summary>
+    [Fact]
+    public void SampleNearest_DoubleAndVector_ShouldRoundAwayFromZeroAndClamp()
+    {
+        var source = new SequentialMatrix<DoublePixel>(2, 2);
+        source[0, 0] = 10.0;
+        source[1, 0] = 20.0;
+        source[0, 1] = 30.0;
+        source[1, 1] = 40.0;
+
+        Assert.Equal(10.0, source.SampleNearest(0.0, 0.0).Value, 9);
+        Assert.Equal(10.0, source.SampleNearest(0.49, 0.0).Value, 9);
+        Assert.Equal(20.0, source.SampleNearest(0.5, 0.0).Value, 9);
+        Assert.Equal(30.0, source.SampleNearest(0.0, 0.5).Value, 9);
+        Assert.Equal(40.0, source.SampleNearest(0.5, 0.5).Value, 9);
+        Assert.Equal(40.0, source.SampleNearest(new Vector2D(0.5, 0.5)).Value, 9);
+
+        Assert.Equal(10.0, source.SampleNearest(-10.0, -10.0).Value, 9);
+        Assert.Equal(40.0, source.SampleNearest(10.0, 10.0).Value, 9);
+    }
+
+    /// <summary>
+    /// Verifies that nearest sampling works correctly on a 1x1 matrix.
+    /// </summary>
+    [Fact]
+    public void SampleNearest_SinglePixelMatrix_ShouldReturnCenterValue()
+    {
+        var single = new SequentialMatrix<DoublePixel>(1, 1);
+        single[0, 0] = 99.0;
+
+        Assert.Equal(99.0, single.SampleNearest(0.0, 0.0).Value, 9);
+        Assert.Equal(99.0, single.SampleNearest(5.5, -2.3).Value, 9);
+        Assert.Equal(99.0, single.SampleNearest(new Vector2D(-1.0, 4.0)).Value, 9);
+    }
+
+    /// <summary>
+    /// Verifies argument validation for both bilinear and nearest sampling methods.
+    /// </summary>
+    [Fact]
+    public void SampleMethods_Validation_ShouldThrowCorrectExceptions()
+    {
+        var validMatrix = new SequentialMatrix<DoublePixel>(2, 2);
+        var emptyMatrix = new SequentialMatrix<DoublePixel>(0, 0);
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).SampleBilinear(0.0, 0.0));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).SampleBilinear(Vector2D.Zero));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).SampleNearest(0.0, 0.0));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).SampleNearest(Vector2D.Zero));
+
+        Assert.Throws<ArgumentException>(() => emptyMatrix.SampleBilinear(0.0, 0.0));
+        Assert.Throws<ArgumentException>(() => emptyMatrix.SampleBilinear(Vector2D.Zero));
+        Assert.Throws<ArgumentException>(() => emptyMatrix.SampleNearest(0.0, 0.0));
+        Assert.Throws<ArgumentException>(() => emptyMatrix.SampleNearest(Vector2D.Zero));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleBilinear(0.0, 0.0, (EdgeHandling)999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleBilinear(Vector2D.Zero, (EdgeHandling)999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleNearest(0.0, 0.0, (EdgeHandling)999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleNearest(Vector2D.Zero, (EdgeHandling)999));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleBilinear(double.NaN, 0.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleBilinear(0.0, double.PositiveInfinity));
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleBilinear(new Vector2D(double.NegativeInfinity, 0.0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleBilinear(new Vector2D(0.0, double.NaN)));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleNearest(double.NaN, 0.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleNearest(0.0, double.PositiveInfinity));
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleNearest(new Vector2D(double.NegativeInfinity, 0.0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleNearest(new Vector2D(0.0, double.NaN)));
+    }
 }
