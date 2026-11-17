@@ -2,6 +2,8 @@ namespace Leiter.Tests.Core;
 
 using System;
 using System.Collections.Generic;
+using Leiter.Algorithms;
+using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Tests.TestUtils;
@@ -193,5 +195,121 @@ public class MatrixExtensionsTests
 
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ContentEquals(left));
         Assert.Throws<ArgumentNullException>(() => left.ContentEquals(null!));
+    }
+
+    [Fact]
+    public void Clone_OnReadOnlyMatrix_ShouldPreserveSubtypesAndMaterializeViews()
+    {
+        var mask = new MaskMatrix(2, 2);
+        mask[0, 0] = true;
+        mask[1, 1] = true;
+        IReadOnlyMatrix<bool> maskReadOnly = mask;
+
+        Matrix<bool> maskClone = maskReadOnly.Clone();
+        Assert.IsType<MaskMatrix>(maskClone);
+        Assert.NotSame(mask, maskClone);
+        Assert.True(maskClone.ContentEquals(mask));
+        Assert.IsType<SequentialMatrix<bool>>(maskReadOnly.ToSequentialMatrix());
+
+        var trimap = new TrimapMatrix(2, 2);
+        trimap[0, 0] = TrimapLabel.Foreground;
+        trimap[1, 0] = TrimapLabel.ProbableForeground;
+        trimap[0, 1] = TrimapLabel.ProbableBackground;
+        IReadOnlyMatrix<TrimapLabel> trimapReadOnly = trimap;
+
+        Matrix<TrimapLabel> trimapClone = trimapReadOnly.Clone();
+        Assert.IsType<TrimapMatrix>(trimapClone);
+        Assert.NotSame(trimap, trimapClone);
+        Assert.True(trimapClone.ContentEquals(trimap));
+
+        var custom = new CustomMatrix(2, 2);
+        custom[0, 0] = 1.0;
+        custom[1, 0] = 2.0;
+        custom[0, 1] = 3.0;
+        custom[1, 1] = 4.0;
+        IReadOnlyMatrix<DoublePixel> customReadOnly = custom;
+
+        Matrix<DoublePixel> customClone = customReadOnly.Clone();
+        Assert.IsType<CustomMatrix>(customClone);
+        Assert.NotSame(custom, customClone);
+        Assert.True(customClone.ContentEquals(custom));
+
+        Matrix<DoublePixel> blurredCustom = Blur.GaussianBlur(customReadOnly, 1.0, 0);
+        Assert.IsType<CustomMatrix>(blurredCustom);
+        Assert.NotSame(custom, blurredCustom);
+        Assert.True(blurredCustom.ContentEquals(custom));
+
+        var source = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
+        var view = new MatrixView<DoublePixel>(source, 1, 0, 2, 2, EdgeHandling.EXTEND);
+        Matrix<DoublePixel> viewClone = view.Clone();
+        Assert.IsType<SequentialMatrix<DoublePixel>>(viewClone);
+        Assert.Equal(new Size(2, 2), viewClone.Size);
+        Assert.Equal([2.0, 2.0, 4.0, 4.0], Array.ConvertAll(viewClone.ToArray(), static p => p.Value));
+
+        IReadOnlyMatrix<DoublePixel> dummy = new DummyReadOnlyMatrix();
+        Matrix<DoublePixel> dummyClone = dummy.Clone();
+        Assert.IsType<SequentialMatrix<DoublePixel>>(dummyClone);
+        Assert.True(dummyClone.ContentEquals(dummy));
+
+        SequentialMatrix<DoublePixel> covariantSeq = source.Clone();
+        MaskMatrix covariantMask = mask.Clone();
+        TrimapMatrix covariantTrimap = trimap.Clone();
+        Assert.NotSame(source, covariantSeq);
+        Assert.NotSame(mask, covariantMask);
+        Assert.NotSame(trimap, covariantTrimap);
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).Clone());
+    }
+
+    private sealed class CustomMatrix : Matrix<DoublePixel>
+    {
+        private readonly DoublePixel[,] _elements;
+
+        public CustomMatrix(int width, int height)
+            : base(width, height)
+        {
+            _elements = new DoublePixel[width, height];
+        }
+
+        private CustomMatrix(int width, int height, DoublePixel[,] elements)
+            : base(width, height)
+        {
+            _elements = elements;
+        }
+
+        public override DoublePixel GetElement(int index) =>
+            GetElement(index % Width, index / Width);
+
+        public override DoublePixel GetElement(int x, int y) => _elements[x, y];
+
+        public override void SetElement(int index, DoublePixel value) =>
+            SetElement(index % Width, index / Width, value);
+
+        public override void SetElement(int x, int y, DoublePixel value) =>
+            _elements[x, y] = value;
+
+        public override void SetAll(DoublePixel value)
+        {
+            for (int y = 0; y < Height; y++)
+            {
+                for (int x = 0; x < Width; x++)
+                    _elements[x, y] = value;
+            }
+        }
+
+        public override Matrix<R> Map<R>(Func<DoublePixel, R> func)
+        {
+            var mapped = new SequentialMatrix<R>(Width, Height);
+            for (int y = 0; y < Height; y++)
+            {
+                for (int x = 0; x < Width; x++)
+                    mapped[x, y] = func(_elements[x, y]);
+            }
+
+            return mapped;
+        }
+
+        public override Matrix<DoublePixel> Clone() =>
+            new CustomMatrix(Width, Height, (DoublePixel[,])_elements.Clone());
     }
 }

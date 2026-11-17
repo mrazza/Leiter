@@ -78,7 +78,7 @@ public static class HandTremorFilter
         int boundaryCount = regionGraph.Boundaries.Count;
         if (image.Count == 0 || opts.Amplitude == 0.0 || boundaryCount == 0)
         {
-            return image.ToSequentialMatrix();
+            return image.Clone();
         }
 
         PerlinNoiseOptions primaryNoise = opts.PrimaryNoise ?? new PerlinNoiseOptions(Seed: 101, Frequency: 0.04, Octaves: 3);

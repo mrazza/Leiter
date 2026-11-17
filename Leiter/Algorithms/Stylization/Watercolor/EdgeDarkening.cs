@@ -27,14 +27,9 @@ public static class EdgeDarkening
         EdgeDarkeningOptions opts = options ?? new EdgeDarkeningOptions();
         opts.Validate();
 
-        if (image.Count == 0)
+        if (image.Count == 0 || opts.Intensity == 0.0)
         {
-            return new SequentialMatrix<Rgb8>(image.Size);
-        }
-
-        if (opts.Intensity == 0.0)
-        {
-            return image.ToSequentialMatrix();
+            return image.Clone();
         }
 
         var (_, _, edgeStrength) = SpatialGradients.ComputeColorGradients(image, opts.GradientOperator);

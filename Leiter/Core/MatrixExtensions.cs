@@ -36,7 +36,26 @@ public static class MatrixExtensions
     }
 
     /// <summary>
-    /// Materializes a read-only matrix into a standalone <see cref="SequentialMatrix{T}"/>.
+    /// Creates an independent <see cref="Matrix{T}"/> copy of a read-only matrix, preserving concrete <see cref="Matrix{T}"/> subtypes when possible.
+    /// </summary>
+    /// <typeparam name="T">The element type stored in the matrix.</typeparam>
+    /// <param name="matrix">The source matrix to copy.</param>
+    /// <returns>
+    /// The result of <see cref="Matrix{T}.Clone"/> when <paramref name="matrix"/> is a <see cref="Matrix{T}"/>;
+    /// otherwise, a materialized <see cref="SequentialMatrix{T}"/> containing the elements of <paramref name="matrix"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    public static Matrix<T> Clone<T>(this IReadOnlyMatrix<T> matrix)
+        where T : struct
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        return matrix is Matrix<T> concreteMatrix
+            ? concreteMatrix.Clone()
+            : SequentialMatrix<T>.From(matrix);
+    }
+
+    /// <summary>
+    /// Materializes a read-only matrix into a standalone, contiguous row-major <see cref="SequentialMatrix{T}"/> (for example, when contiguous span or array access is needed).
     /// </summary>
     /// <typeparam name="T">The element type stored in the matrix.</typeparam>
     /// <param name="source">The source matrix to copy.</param>
