@@ -31,8 +31,10 @@ public static class GlobalContrastSaliency
     /// <param name="enableColorSpaceSmoothing">Whether to enable color space smoothing.</param>
     /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    public static Matrix<DoublePixel> ComputeSaliency(Matrix<Rgb8> image, bool enableColorSpaceSmoothing = true)
+    public static Matrix<DoublePixel> ComputeSaliency(IReadOnlyMatrix<Rgb8> image, bool enableColorSpaceSmoothing = true)
     {
+        ArgumentNullException.ThrowIfNull(image);
+
         if (image.Count == 0)
         {
             return new SequentialMatrix<DoublePixel>(image.Size);

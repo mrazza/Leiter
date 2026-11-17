@@ -34,7 +34,7 @@ public static class EdgeDarkening
 
         if (opts.Intensity == 0.0)
         {
-            return image.Map(static pixel => pixel);
+            return image.ToSequentialMatrix();
         }
 
         var (_, _, edgeStrength) = SpatialGradients.ComputeColorGradients(image, opts.GradientOperator);

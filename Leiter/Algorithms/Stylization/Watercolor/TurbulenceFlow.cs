@@ -41,7 +41,7 @@ public static class TurbulenceFlow
 
         if (opts.Intensity == 0.0)
         {
-            return image.Map(static pixel => pixel);
+            return image.ToSequentialMatrix();
         }
 
         PerlinNoiseOptions noiseOpts = opts.NoiseOptions ?? DefaultNoiseOptions;

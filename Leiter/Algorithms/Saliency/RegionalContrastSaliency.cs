@@ -42,7 +42,7 @@ public static class RegionalContrastSaliency
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="segmentation"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> and <paramref name="segmentation"/> dimensions do not match.</exception>
     public static Matrix<DoublePixel> ComputeSaliency(
-        Matrix<Rgb8> image,
+        IReadOnlyMatrix<Rgb8> image,
         IDisjointSet segmentation,
         bool enableSmoothing = true,
         bool computeBorderRegions = true)
@@ -55,10 +55,7 @@ public static class RegionalContrastSaliency
             return new SequentialMatrix<DoublePixel>(image.Size);
         }
 
-        if (image.Size != segmentation.Size)
-        {
-            throw new ArgumentException("Image and segmentation dimensions must match.", nameof(segmentation));
-        }
+        Guard.ThrowIfSizeMismatch(image, segmentation);
 
         RegionGraph graph = RegionGraph.FromDisjointSet(segmentation);
         int regionCount = graph.RegionCount;

@@ -38,7 +38,7 @@ internal sealed class GrabCutSession
         pixelCount = image.Count;
         this.smoothnessWeight = smoothnessWeight;
 
-        pixels = ExtractPixelArray(image);
+        pixels = image.ToArray();
         double beta = ComputeContrastParameterBeta(image);
 
         solver = new GridMinCutSolver(image.Size);
@@ -225,22 +225,6 @@ internal sealed class GrabCutSession
     }
 
     private MaskMatrix BuildMaskFromState() => new(imageSize, isForeground);
-
-    private static Rgb8[] ExtractPixelArray(IReadOnlyMatrix<Rgb8> image)
-    {
-        int width = image.Width;
-        int height = image.Height;
-        var extracted = new Rgb8[image.Count];
-
-        Parallel.For(0, height, y =>
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-                extracted[rowBase + x] = image[x, y];
-        });
-
-        return extracted;
-    }
 
     private static double ComputeContrastParameterBeta(IReadOnlyMatrix<Rgb8> image)
     {

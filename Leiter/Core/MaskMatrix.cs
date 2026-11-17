@@ -53,25 +53,10 @@ public class MaskMatrix : SequentialMatrix<bool>
     /// <param name="source">The source boolean matrix to copy.</param>
     /// <returns>A new <see cref="MaskMatrix"/> containing the copied boolean values.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
-    public static MaskMatrix From(IReadOnlyMatrix<bool> source)
+    public static new MaskMatrix From(IReadOnlyMatrix<bool> source)
     {
         ArgumentNullException.ThrowIfNull(source);
-
-        if (source is MaskMatrix existing)
-            return existing.Clone();
-
-        int width = source.Width;
-        int height = source.Height;
-        var data = new bool[source.Count];
-
-        for (int y = 0; y < height; y++)
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-                data[rowBase + x] = source[x, y];
-        }
-
-        return new MaskMatrix(width, height, data);
+        return new(source.Width, source.Height, CopyElements(source));
     }
 
     /// <summary>

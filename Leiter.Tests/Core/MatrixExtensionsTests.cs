@@ -31,6 +31,48 @@ public class MatrixExtensionsTests
     {
         var source = new List<DoublePixel> { 1.0, 2.0, 3.0 };
         Assert.Throws<ArgumentException>(() => source.ToSequentialMatrix(2, 2));
+        Assert.Throws<ArgumentNullException>(() => ((IEnumerable<DoublePixel>)null!).ToSequentialMatrix(2, 2));
+    }
+
+    [Fact]
+    public void ToSequentialMatrix_ToArray_MapToArray_AndGetClamped_ShouldWork()
+    {
+        var source = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
+        var view = new MatrixView<DoublePixel>(source, 1, 0, 2, 2, EdgeHandling.EXTEND);
+
+        SequentialMatrix<DoublePixel> materialized = view.ToSequentialMatrix();
+        Assert.Equal(new Size(2, 2), materialized.Size);
+        Assert.Equal(2.0, materialized[0, 0].Value);
+        Assert.Equal(2.0, materialized[1, 0].Value);
+        Assert.Equal(4.0, materialized[0, 1].Value);
+        Assert.Equal(4.0, materialized[1, 1].Value);
+
+        DoublePixel[] rawArray = source.ToArray();
+        rawArray[0] = 99.0;
+        Assert.Equal(1.0, source[0, 0].Value);
+
+        DoublePixel[] viewArray = view.ToArray();
+        Assert.Equal([2.0, 2.0, 4.0, 4.0], Array.ConvertAll(viewArray, static p => p.Value));
+
+        double[] seqMapped = source.MapToArray(static p => p.Value * 10.0);
+        Assert.Equal([10.0, 20.0, 30.0, 40.0], seqMapped);
+
+        double[] viewMapped = view.MapToArray(static p => p.Value * 10.0);
+        Assert.Equal([20.0, 20.0, 40.0, 40.0], viewMapped);
+
+        Assert.Empty(new SequentialMatrix<DoublePixel>(0, 0).MapToArray(static p => p.Value));
+
+        Assert.Equal(1.0, source.GetClamped(-5, -3).Value);
+        Assert.Equal(4.0, source.GetClamped(10, 10).Value);
+        Assert.Equal(2.0, source.GetClamped(new Coord(5, -1)).Value);
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).ToSequentialMatrix());
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).ToArray());
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).MapToArray(static p => p.Value));
+        Assert.Throws<ArgumentNullException>(() => source.MapToArray<DoublePixel, double>(null!));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).GetClamped(0, 0));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).GetClamped(new Coord(0, 0)));
+        Assert.Throws<ArgumentException>(() => new SequentialMatrix<DoublePixel>(0, 0).GetClamped(0, 0));
     }
 
     [Fact]

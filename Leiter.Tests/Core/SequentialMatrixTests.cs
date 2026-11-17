@@ -214,4 +214,37 @@ public class SequentialMatrixTests
         Assert.True(enumerator.MoveNext());
         Assert.NotNull(enumerator.Current);
     }
+
+    [Fact]
+    public void From_AndAsReadOnlySpan_ShouldCopyAndViewCorrectly()
+    {
+        var original = new SequentialMatrix<DoublePixel>(2, 2);
+        original[0, 0] = 1.0;
+        original[1, 0] = 2.0;
+        original[0, 1] = 3.0;
+        original[1, 1] = 4.0;
+
+        ReadOnlySpan<DoublePixel> span = original.AsReadOnlySpan();
+        Assert.Equal(4, span.Length);
+        Assert.Equal(2.0, span[1].Value);
+        Assert.Equal(3.0, span[2].Value);
+
+        SequentialMatrix<DoublePixel> copied = SequentialMatrix<DoublePixel>.From(original);
+        copied[0, 0] = 99.0;
+        Assert.Equal(1.0, original[0, 0].Value);
+        Assert.Equal(99.0, copied[0, 0].Value);
+
+        var view = new MatrixView<DoublePixel>(original, 1, 0, 2, 2, EdgeHandling.EXTEND);
+        SequentialMatrix<DoublePixel> fromView = SequentialMatrix<DoublePixel>.From(view);
+        Assert.Equal(new Size(2, 2), fromView.Size);
+        Assert.Equal(2.0, fromView[0, 0].Value);
+        Assert.Equal(2.0, fromView[1, 0].Value);
+        Assert.Equal(4.0, fromView[0, 1].Value);
+        Assert.Equal(4.0, fromView[1, 1].Value);
+
+        SequentialMatrix<DoublePixel> empty = SequentialMatrix<DoublePixel>.From(new SequentialMatrix<DoublePixel>(0, 0));
+        Assert.Empty(empty);
+
+        Assert.Throws<ArgumentNullException>(() => SequentialMatrix<DoublePixel>.From(null!));
+    }
 }

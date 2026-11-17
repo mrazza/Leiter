@@ -45,15 +45,7 @@ public static class OrientedEllipticalFilter
         int width = image.Width;
         int height = image.Height;
 
-        var normalizedRgb = new Rgb64[image.Count];
-        for (int y = 0; y < height; y++)
-        {
-            int rowOffset = y * width;
-            for (int x = 0; x < width; x++)
-            {
-                normalizedRgb[rowOffset + x] = image[x, y].ToRgb64();
-            }
-        }
+        Rgb64[] normalizedRgb = image.MapToArray(static pixel => pixel.ToRgb64());
 
         double a = opts.MajorRadius;
         double b = opts.MinorRadius;

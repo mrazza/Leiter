@@ -187,5 +187,18 @@ public class ColorTransferTests
         var (d65Out, d65Selected) = ColorTransfer.TransferToClosestPalette(sampleRgb, [d65Palette]);
         Assert.Equal(d65Palette, d65Selected);
         Assert.Equal(sampleRgb.Size, d65Out.Size);
+
+        // Non-finite strength and IReadOnlyMatrix (MatrixView) inputs.
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(sampleRgb, d65Palette, strength: double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(sampleRgb, d65Palette, strength: double.PositiveInfinity));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(sampleRgb, sampleRgb, strength: double.NegativeInfinity));
+
+        var rgbView = new MatrixView<Rgb8>(sampleRgb, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        Matrix<Rgb8> viewTransferred = ColorTransfer.Transfer(rgbView, d65Palette);
+        Assert.Equal(rgbView.Size, viewTransferred.Size);
+
+        var (viewClosest, viewPalette) = ColorTransfer.TransferToClosestPalette(rgbView, [d65Palette], strength: 0.0);
+        Assert.Equal(d65Palette, viewPalette);
+        Assert.Equal(sampleRgb[1, 0], viewClosest[1, 0]);
     }
 }
