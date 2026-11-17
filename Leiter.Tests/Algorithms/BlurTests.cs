@@ -181,5 +181,23 @@ public class BlurTests
             Assert.Equal(12.5, smallSigma[i].Value, 10);
             Assert.Equal(12.5, mediumSigma[i].Value, 10);
         }
+
+        // Null, non-finite sigma, and non-Matrix IReadOnlyMatrix (MatrixView) inputs.
+        Assert.Throws<ArgumentNullException>(() => Blur.GaussianBlur<DoublePixel>(null!, 1.0, 1));
+        Assert.Throws<ArgumentNullException>(() => Blur.BoxBlur<DoublePixel>(null!, 1));
+        Assert.Throws<ArgumentNullException>(() => Blur.GaussianBlurRecursive<DoublePixel>(null!, 1.0));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlur(uniform, double.NaN, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlur(uniform, double.PositiveInfinity, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlur(uniform, double.NegativeInfinity, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlurRecursive(uniform, double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlurRecursive(uniform, double.PositiveInfinity));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlurRecursive(uniform, double.NegativeInfinity));
+
+        var view = new MatrixView<DoublePixel>(uniform, 0, 0, 4, 4, EdgeHandling.EXTEND);
+        Assert.Equal(12.5, Blur.GaussianBlur(view, 1.0, 1)[2, 2].Value, 10);
+        Assert.Equal(12.5, Blur.BoxBlur(view, 1)[2, 2].Value, 10);
+        Assert.Equal(12.5, Blur.GaussianBlurRecursive(view, 2.0)[2, 2].Value, 10);
+        Assert.Equal(12.5, Blur.GaussianBlur(view, 1.0, 0)[2, 2].Value, 10);
     }
 }

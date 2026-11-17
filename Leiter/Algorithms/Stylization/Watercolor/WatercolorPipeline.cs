@@ -47,12 +47,10 @@ public static class WatercolorPipeline
             return CreateEmptyResult(image.Size, opts);
         }
 
-        Matrix<Rgb8> sourceMatrix = image as Matrix<Rgb8> ?? image.Map(static pixel => pixel);
-
         // Stage 1: Reinhard Color Transfer
         (Matrix<Rgb8> colorTransferred, WatercolorPalette selectedPalette) = opts.TargetPalette is not null
-            ? (ColorTransfer.Transfer(sourceMatrix, opts.TargetPalette, strength: opts.ColorTransferStrength), opts.TargetPalette)
-            : ColorTransfer.TransferToClosestPalette(sourceMatrix, strength: opts.ColorTransferStrength);
+            ? (ColorTransfer.Transfer(image, opts.TargetPalette, strength: opts.ColorTransferStrength), opts.TargetPalette)
+            : ColorTransfer.TransferToClosestPalette(image, strength: opts.ColorTransferStrength);
 
         // Stage 2: Regional Contrast Saliency & Saliency Distance Field
         Matrix<Rgb8> blurred = Blur.GaussianBlur(colorTransferred, sigma: 0.8, radius: 2);

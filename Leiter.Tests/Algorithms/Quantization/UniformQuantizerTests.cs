@@ -34,8 +34,8 @@ public class UniformQuantizerTests
     public void QuantizeToMidpoint_InvalidLevels_ShouldThrow()
     {
         var pixel = new Rgb8(100, 150, 200);
-        Assert.Throws<ArgumentException>(() => UniformQuantizer.QuantizeToMidpoint(pixel, 0));
-        Assert.Throws<ArgumentException>(() => UniformQuantizer.QuantizeToMidpoint(pixel, 257));
+        Assert.Throws<ArgumentOutOfRangeException>(() => UniformQuantizer.QuantizeToMidpoint(pixel, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => UniformQuantizer.QuantizeToMidpoint(pixel, 257));
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public class UniformQuantizerTests
     public void QuantizeBitsToMidpoint_InvalidBits_ShouldThrow()
     {
         var pixel = new Rgb8(100, 150, 200);
-        Assert.Throws<ArgumentException>(() => UniformQuantizer.QuantizeBitsToMidpoint(pixel, 0));
-        Assert.Throws<ArgumentException>(() => UniformQuantizer.QuantizeBitsToMidpoint(pixel, 9));
+        Assert.Throws<ArgumentOutOfRangeException>(() => UniformQuantizer.QuantizeBitsToMidpoint(pixel, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => UniformQuantizer.QuantizeBitsToMidpoint(pixel, 9));
     }
 }

@@ -336,5 +336,10 @@ public class RegionalContrastSaliencyTests
         // Dimension mismatch with non-empty image
         var mismatchedSeg = EgbiSegmentation.Segment(new SequentialMatrix<Rgb8>(5, 5));
         Assert.Throws<ArgumentException>(() => RegionalContrastSaliency.ComputeSaliency(img, mismatchedSeg));
+
+        // Non-Matrix IReadOnlyMatrix (MatrixView) input
+        var view = new MatrixView<Rgb8>(img, 0, 0, 10, 10, EdgeHandling.EXTEND);
+        Matrix<DoublePixel> viewSaliency = RegionalContrastSaliency.ComputeSaliency(view, seg);
+        Assert.Equal(img.Size, viewSaliency.Size);
     }
 }

@@ -129,5 +129,13 @@ public class GlobalContrastSaliencyTests
         Assert.Empty(globalEmpty);
         Assert.Equal(0, globalEmpty.Width);
         Assert.Equal(0, globalEmpty.Height);
+
+        Assert.Throws<ArgumentNullException>(() => GlobalContrastSaliency.ComputeSaliency(null!));
+
+        var source = new SequentialMatrix<Rgb8>(4, 4);
+        source[1, 1] = new Rgb8(255, 0, 0);
+        var view = new MatrixView<Rgb8>(source, 0, 0, 4, 4, EdgeHandling.EXTEND);
+        Matrix<DoublePixel> viewSaliency = GlobalContrastSaliency.ComputeSaliency(view, enableColorSpaceSmoothing: false);
+        Assert.Equal(1.0, viewSaliency[1, 1].Value, 4);
     }
 }

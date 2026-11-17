@@ -22,15 +22,17 @@ public static class Blur
     /// <param name="sigma">The standard deviation of the Gaussian distribution. This value controls the amount of blur applied by the filter.</param>
     /// <param name="radius">The radius of the Gaussian blur kernel. The kernel size is <c>2 * radius + 1</c>.</param>
     /// <returns>A new matrix containing the result of the Gaussian blur.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="radius"/> is negative or <paramref name="sigma"/> is not positive.</exception>
-    public static Matrix<T> GaussianBlur<T>(Matrix<T> image, double sigma, int radius)
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="radius"/> is negative or <paramref name="sigma"/> is non-finite or not positive.</exception>
+    public static Matrix<T> GaussianBlur<T>(IReadOnlyMatrix<T> image, double sigma, int radius)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {
+        ArgumentNullException.ThrowIfNull(image);
         ArgumentOutOfRangeException.ThrowIfNegative(radius);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sigma, 0.0);
+        Guard.ThrowIfNotFinitePositive(sigma);
 
         if (image.Width == 0 || image.Height == 0 || radius == 0)
-            return image.Clone();
+            return image.ToSequentialMatrix();
 
         double[] kernel = CreateGaussianKernel1D(sigma, radius);
         return image.ConvolveSeparable(kernel, kernel);
@@ -47,14 +49,16 @@ public static class Blur
     /// <param name="image">The image to blur.</param>
     /// <param name="radius">The radius of the box blur kernel. This value controls the area from where blur samples are taken.</param>
     /// <returns>A new matrix containing the result of the box blur.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="radius"/> is negative.</exception>
-    public static Matrix<T> BoxBlur<T>(Matrix<T> image, int radius)
+    public static Matrix<T> BoxBlur<T>(IReadOnlyMatrix<T> image, int radius)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {
+        ArgumentNullException.ThrowIfNull(image);
         ArgumentOutOfRangeException.ThrowIfNegative(radius);
 
         if (image.Width == 0 || image.Height == 0 || radius == 0)
-            return image.Clone();
+            return image.ToSequentialMatrix();
 
         int kernelDimension = radius * 2 + 1;
         var kernel = new double[kernelDimension];
@@ -74,14 +78,16 @@ public static class Blur
     /// <param name="image">The image to blur.</param>
     /// <param name="sigma">The standard deviation of the Gaussian distribution.</param>
     /// <returns>A new matrix containing the smoothed image.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="sigma"/> is not positive.</exception>
-    public static Matrix<T> GaussianBlurRecursive<T>(Matrix<T> image, double sigma)
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="sigma"/> is non-finite or not positive.</exception>
+    public static Matrix<T> GaussianBlurRecursive<T>(IReadOnlyMatrix<T> image, double sigma)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sigma, 0.0);
+        ArgumentNullException.ThrowIfNull(image);
+        Guard.ThrowIfNotFinitePositive(sigma);
 
         if (image.Width == 0 || image.Height == 0)
-            return image.Clone();
+            return image.ToSequentialMatrix();
 
         if (sigma < 0.5)
             return GaussianBlur(image, sigma, Math.Max(1, (int)Math.Ceiling(3.0 * sigma)));
@@ -97,23 +103,19 @@ public static class Blur
     /// <param name="image">The image to filter.</param>
     /// <param name="filterLine">The 1D line filter delegate applied to each row and column.</param>
     /// <returns>A new matrix containing the filtered result.</returns>
-    private static Matrix<T> ApplySeparable1D<T>(Matrix<T> image, LineFilter1D filterLine)
+    private static Matrix<T> ApplySeparable1D<T>(IReadOnlyMatrix<T> image, LineFilter1D filterLine)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {
         int width = image.Width;
         int height = image.Height;
-        var buffer = new Vector<double>[width * height];
+        Vector<double>[] buffer = MatrixMath.VectorizeMatrix(image);
 
         Parallel.For(0, height, y =>
         {
-            int rowOffset = y * width;
-            for (int x = 0; x < width; x++)
-                buffer[rowOffset + x] = image[x, y].ToDoubleVector();
-
-            filterLine(buffer.AsSpan(rowOffset, width));
+            filterLine(buffer.AsSpan(y * width, width));
         });
 
-        var result = image.Clone();
+        var result = new SequentialMatrix<T>(width, height);
 
         Parallel.For(0, width, x =>
         {

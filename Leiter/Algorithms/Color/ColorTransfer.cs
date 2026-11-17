@@ -86,8 +86,8 @@ public static class ColorTransfer
         if (image.Count == 0)
             return default;
 
-        SequentialMatrix<Lab32> labImage = ConvertToLab32Matrix(image, colorSpace, illuminant);
-        return ComputeStatistics((IReadOnlyMatrix<Lab32>)labImage);
+        Matrix<Lab32> labImage = image.Map(pixel => pixel.ToLab32(colorSpace, illuminant));
+        return ComputeStatistics(labImage);
     }
 
     /// <summary>
@@ -135,15 +135,15 @@ public static class ColorTransfer
     /// <returns>A new <see cref="Matrix{Lab32}"/> with transferred colors.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="strength"/> is outside <c>[0, 1]</c>.</exception>
     public static Matrix<Lab32> Transfer(
-        Matrix<Lab32> source,
+        IReadOnlyMatrix<Lab32> source,
         LabColorStatistics targetStatistics,
         double strength = 1.0)
     {
         ArgumentNullException.ThrowIfNull(source);
-        ValidateStrength(strength);
+        Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         if (source.Count == 0 || strength == 0.0)
-            return source.Clone();
+            return source.ToSequentialMatrix();
 
         LabColorStatistics srcStats = ComputeStatistics(source);
         double scaleL = srcStats.StdDevL > 1e-6 ? targetStatistics.StdDevL / srcStats.StdDevL : 0.0;
@@ -174,7 +174,7 @@ public static class ColorTransfer
     /// <returns>A recolored <see cref="Matrix{Rgb8}"/> image.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="strength"/> is outside <c>[0, 1]</c>.</exception>
     public static Matrix<Rgb8> Transfer(
-        Matrix<Rgb8> source,
+        IReadOnlyMatrix<Rgb8> source,
         IReadOnlyMatrix<Rgb8> reference,
         RgbColorSpace colorSpace = RgbColorSpace.sRGB,
         Illuminant illuminant = Illuminant.E,
@@ -182,10 +182,10 @@ public static class ColorTransfer
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(reference);
-        ValidateStrength(strength);
+        Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         if (source.Count == 0 || strength == 0.0)
-            return source.Clone();
+            return source.ToSequentialMatrix();
 
         LabColorStatistics targetStats = ComputeStatistics(reference, colorSpace, illuminant);
         Matrix<Lab32> sourceLab = source.Map(pixel => pixel.ToLab32(colorSpace, illuminant));
@@ -202,17 +202,17 @@ public static class ColorTransfer
     /// <returns>A recolored <see cref="Matrix{Rgb8}"/> image.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="strength"/> is outside <c>[0, 1]</c>.</exception>
     public static Matrix<Rgb8> Transfer(
-        Matrix<Rgb8> source,
+        IReadOnlyMatrix<Rgb8> source,
         WatercolorPalette palette,
         RgbColorSpace colorSpace = RgbColorSpace.sRGB,
         double strength = 1.0)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(palette);
-        ValidateStrength(strength);
+        Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         if (source.Count == 0 || strength == 0.0)
-            return source.Clone();
+            return source.ToSequentialMatrix();
 
         Matrix<Lab32> sourceLab = source.Map(pixel => pixel.ToLab32(colorSpace, palette.Illuminant));
         return TransferLabToRgb8(sourceLab, palette.Statistics, colorSpace, palette.Illuminant, strength);
@@ -230,21 +230,21 @@ public static class ColorTransfer
     /// <exception cref="ArgumentException">Thrown when <paramref name="palettes"/> is empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="strength"/> is outside <c>[0, 1]</c> or any feature weight is negative.</exception>
     public static (Matrix<Rgb8> Result, WatercolorPalette SelectedPalette) TransferToClosestPalette(
-        Matrix<Rgb8> source,
+        IReadOnlyMatrix<Rgb8> source,
         IReadOnlyList<WatercolorPalette>? palettes = null,
         RgbColorSpace colorSpace = RgbColorSpace.sRGB,
         LabColorStatistics? featureWeights = null,
         double strength = 1.0)
     {
         ArgumentNullException.ThrowIfNull(source);
-        ValidateStrength(strength);
+        Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         Matrix<Lab32> sourceLabE = source.Map(pixel => pixel.ToLab32(colorSpace, Illuminant.E));
         LabColorStatistics sourceStats = ComputeStatistics(sourceLabE);
         WatercolorPalette selected = SelectClosestPalette(sourceStats, palettes, featureWeights);
 
         if (source.Count == 0 || strength == 0.0)
-            return (source.Clone(), selected);
+            return (source.ToSequentialMatrix(), selected);
 
         Matrix<Rgb8> result = selected.Illuminant == Illuminant.E
             ? TransferLabToRgb8(sourceLabE, selected.Statistics, colorSpace, Illuminant.E, strength)
@@ -254,34 +254,10 @@ public static class ColorTransfer
     }
 
     private static Matrix<Rgb8> TransferLabToRgb8(
-        Matrix<Lab32> sourceLab,
+        IReadOnlyMatrix<Lab32> sourceLab,
         LabColorStatistics targetStatistics,
         RgbColorSpace colorSpace,
         Illuminant illuminant,
         double strength) =>
         Transfer(sourceLab, targetStatistics, strength).Map(pixel => pixel.ToRgb8(colorSpace, illuminant));
-
-    private static SequentialMatrix<Lab32> ConvertToLab32Matrix(
-        IReadOnlyMatrix<Rgb8> image,
-        RgbColorSpace colorSpace,
-        Illuminant illuminant)
-    {
-        int width = image.Width;
-        int height = image.Height;
-        var labMatrix = new SequentialMatrix<Lab32>(width, height);
-
-        Parallel.For(0, height, y =>
-        {
-            for (int x = 0; x < width; x++)
-                labMatrix[x, y] = image[x, y].ToLab32(colorSpace, illuminant);
-        });
-
-        return labMatrix;
-    }
-
-    private static void ValidateStrength(double strength)
-    {
-        if (double.IsNaN(strength) || strength < 0.0 || strength > 1.0)
-            throw new ArgumentOutOfRangeException(nameof(strength), "Color transfer strength must be between 0 and 1.");
-    }
 }

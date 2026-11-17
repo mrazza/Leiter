@@ -18,7 +18,7 @@ public static class PixelConversion
     /// <param name="self">The XYZ pixel to convert.</param>
     /// <param name="colorSpace">The target RGB color space.</param>
     /// <returns>An <see cref="Rgb8"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if conversion to the specified color space is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> is not a defined <see cref="RgbColorSpace"/> value.</exception>
     public static Rgb8 ToRgb8(this Xyz32 self, RgbColorSpace colorSpace) =>
         self.ToRgb64(colorSpace).ToRgb8();
 
@@ -45,11 +45,10 @@ public static class PixelConversion
     /// <param name="self">The XYZ pixel to convert.</param>
     /// <param name="colorSpace">The target RGB color space.</param>
     /// <returns>An <see cref="Rgb64"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if conversion to the specified color space is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> is not a defined <see cref="RgbColorSpace"/> value.</exception>
     public static Rgb64 ToRgb64(this Xyz32 self, RgbColorSpace colorSpace)
     {
-        if (colorSpace is not (RgbColorSpace.LinearRGB or RgbColorSpace.sRGB))
-            throw new NotImplementedException($"Conversion from color space {colorSpace} is not implemented.");
+        Guard.ThrowIfUndefinedEnum(colorSpace);
 
         double r = 3.2404542 * self.X - 1.5371385 * self.Y - 0.4985314 * self.Z;
         double g = -0.9692660 * self.X + 1.8760108 * self.Y + 0.0415560 * self.Z;
@@ -77,7 +76,7 @@ public static class PixelConversion
     /// <param name="self">The 8-bit RGB pixel to convert.</param>
     /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
     /// <returns>An <see cref="Xyz32"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> is not a defined <see cref="RgbColorSpace"/> value.</exception>
     public static Xyz32 ToXyz32(this Rgb8 self, RgbColorSpace colorSpace) =>
         self.ToRgb64().ToXyz32(colorSpace);
 
@@ -90,11 +89,10 @@ public static class PixelConversion
     /// <param name="self">The RGB pixel to operate on.</param>
     /// <param name="colorSpace">The RGB color space the RGB pixel is in.</param>
     /// <returns>An XYZ pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> is not a defined <see cref="RgbColorSpace"/> value.</exception>
     public static Xyz32 ToXyz32(this Rgb64 self, RgbColorSpace colorSpace)
     {
-        if (colorSpace is not (RgbColorSpace.LinearRGB or RgbColorSpace.sRGB))
-            throw new NotImplementedException($"Conversion from color space {colorSpace} is not implemented.");
+        Guard.ThrowIfUndefinedEnum(colorSpace);
 
         var rgb64 = colorSpace == RgbColorSpace.sRGB
             ? RgbColorSpaceConversions.SRgbToLinearRgb(self)
@@ -115,7 +113,7 @@ public static class PixelConversion
     /// <param name="self">The 8-bit RGB pixel to convert.</param>
     /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
     /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> is not a defined <see cref="RgbColorSpace"/> value.</exception>
     public static Lab32 ToLab32(this Rgb8 self, RgbColorSpace colorSpace) =>
         self.ToLab32(colorSpace, Illuminant.D65);
 
@@ -126,7 +124,7 @@ public static class PixelConversion
     /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
     /// <param name="illuminant">The reference white illuminant to normalize against.</param>
     /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified color space or illuminant is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> or <paramref name="illuminant"/> is not a defined enum value.</exception>
     public static Lab32 ToLab32(this Rgb8 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
         self.ToXyz32(colorSpace).ToLab32(illuminant);
 
@@ -139,7 +137,7 @@ public static class PixelConversion
     /// <param name="self">The 64-bit RGB pixel to convert.</param>
     /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
     /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> is not a defined <see cref="RgbColorSpace"/> value.</exception>
     public static Lab32 ToLab32(this Rgb64 self, RgbColorSpace colorSpace) =>
         self.ToLab32(colorSpace, Illuminant.D65);
 
@@ -150,7 +148,7 @@ public static class PixelConversion
     /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
     /// <param name="illuminant">The reference white illuminant to normalize against.</param>
     /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified color space or illuminant is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> or <paramref name="illuminant"/> is not a defined enum value.</exception>
     public static Lab32 ToLab32(this Rgb64 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
         self.ToXyz32(colorSpace).ToLab32(illuminant);
 
@@ -161,7 +159,7 @@ public static class PixelConversion
     {
         Illuminant.D65 => XyzReferenceWhiteD65,
         Illuminant.E => XyzReferenceWhiteE,
-        _ => throw new NotImplementedException($"Conversion with illuminant {illuminant} is not implemented.")
+        _ => throw new ArgumentOutOfRangeException(nameof(illuminant), illuminant, $"Unsupported {nameof(Illuminant)} value.")
     };
 
     /// <summary>
@@ -181,7 +179,7 @@ public static class PixelConversion
     /// <param name="self">The XYZ pixel on which to operate.</param>
     /// <param name="illuminant">The reference white illuminant to normalize against.</param>
     /// <returns>A LAB pixel representing the same color under <paramref name="illuminant"/>.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified illuminant is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="illuminant"/> is not a defined <see cref="Illuminant"/> value.</exception>
     public static Lab32 ToLab32(this Xyz32 self, Illuminant illuminant)
     {
         Xyz32 white = GetReferenceWhite(illuminant);
@@ -205,7 +203,7 @@ public static class PixelConversion
     /// <param name="self">The CIELAB pixel to convert.</param>
     /// <param name="illuminant">The reference white illuminant used by the input CIELAB coordinates.</param>
     /// <returns>An <see cref="Xyz32"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified illuminant is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="illuminant"/> is not a defined <see cref="Illuminant"/> value.</exception>
     public static Xyz32 ToXyz32(this Lab32 self, Illuminant illuminant)
     {
         Xyz32 white = GetReferenceWhite(illuminant);
@@ -224,7 +222,7 @@ public static class PixelConversion
     /// <param name="self">The CIELAB pixel to convert.</param>
     /// <param name="colorSpace">The target RGB color space.</param>
     /// <returns>An <see cref="Rgb64"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> is not a defined <see cref="RgbColorSpace"/> value.</exception>
     public static Rgb64 ToRgb64(this Lab32 self, RgbColorSpace colorSpace) =>
         self.ToRgb64(colorSpace, Illuminant.D65);
 
@@ -235,7 +233,7 @@ public static class PixelConversion
     /// <param name="colorSpace">The target RGB color space.</param>
     /// <param name="illuminant">The reference white illuminant used by the input CIELAB coordinates.</param>
     /// <returns>An <see cref="Rgb64"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified color space or illuminant is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> or <paramref name="illuminant"/> is not a defined enum value.</exception>
     public static Rgb64 ToRgb64(this Lab32 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
         self.ToXyz32(illuminant).ToRgb64(colorSpace);
 
@@ -245,7 +243,7 @@ public static class PixelConversion
     /// <param name="self">The CIELAB pixel to convert.</param>
     /// <param name="colorSpace">The target RGB color space.</param>
     /// <returns>An <see cref="Rgb8"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified color space conversion is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> is not a defined <see cref="RgbColorSpace"/> value.</exception>
     public static Rgb8 ToRgb8(this Lab32 self, RgbColorSpace colorSpace) =>
         self.ToRgb8(colorSpace, Illuminant.D65);
 
@@ -256,7 +254,7 @@ public static class PixelConversion
     /// <param name="colorSpace">The target RGB color space.</param>
     /// <param name="illuminant">The reference white illuminant used by the input CIELAB coordinates.</param>
     /// <returns>An <see cref="Rgb8"/> pixel representing the same color.</returns>
-    /// <exception cref="NotImplementedException">Thrown if the specified color space or illuminant is not implemented.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> or <paramref name="illuminant"/> is not a defined enum value.</exception>
     public static Rgb8 ToRgb8(this Lab32 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
         self.ToRgb64(colorSpace, illuminant).ToRgb8();
 

@@ -24,7 +24,7 @@ public static class PaletteQuantizer
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="bucketizer"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="coverageFraction"/> is NaN, less than or equal to 0.0, or greater than 1.0.</exception>
     public static QuantizedPalette<TPixel, TPixel> QuantizeAndTruncate<TPixel>(
-        Matrix<TPixel> image,
+        IReadOnlyMatrix<TPixel> image,
         Func<TPixel, TPixel> bucketizer,
         double coverageFraction = 0.95)
         where TPixel : struct, IPixel<TPixel>
@@ -45,7 +45,7 @@ public static class PaletteQuantizer
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="bucketizer"/>, or <paramref name="metricSelector"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="coverageFraction"/> is NaN, less than or equal to 0.0, or greater than 1.0.</exception>
     public static QuantizedPalette<TPixel, TMetric> QuantizeAndTruncate<TPixel, TMetric>(
-        Matrix<TPixel> image,
+        IReadOnlyMatrix<TPixel> image,
         Func<TPixel, TPixel> bucketizer,
         Func<TPixel, TMetric> metricSelector,
         double coverageFraction = 0.95)
@@ -56,7 +56,7 @@ public static class PaletteQuantizer
         ArgumentNullException.ThrowIfNull(bucketizer);
         ArgumentNullException.ThrowIfNull(metricSelector);
 
-        if (double.IsNaN(coverageFraction) || coverageFraction is <= 0.0 or > 1.0)
+        if (!double.IsFinite(coverageFraction) || coverageFraction is <= 0.0 or > 1.0)
         {
             throw new ArgumentOutOfRangeException(nameof(coverageFraction), "Coverage fraction must be in the range (0, 1].");
         }

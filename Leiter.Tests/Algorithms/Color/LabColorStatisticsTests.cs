@@ -49,6 +49,7 @@ public class LabColorStatisticsTests
         Assert.Throws<ArgumentOutOfRangeException>(() => statA.FeatureDistance(statB, new LabColorStatistics(1, 1, 1, 1, -0.5, 1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => statA.FeatureDistance(statB, new LabColorStatistics(1, 1, 1, 1, 1, -0.5)));
         Assert.Throws<ArgumentOutOfRangeException>(() => statA.FeatureDistance(statB, new LabColorStatistics(double.NaN, 1, 1, 1, 1, 1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => statA.FeatureDistance(statB, new LabColorStatistics(double.PositiveInfinity, 1, 1, 1, 1, 1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => statA.FeatureDistance(statB, new LabColorStatistics(double.NegativeInfinity, 1, 1, 1, 1, 1)));
     }
 

@@ -13,12 +13,15 @@ public static class MatrixExtensions
     /// <param name="width">The number of columns in the resulting matrix.</param>
     /// <param name="height">The number of rows in the resulting matrix.</param>
     /// <returns>A new <see cref="SequentialMatrix{T}"/> containing the elements from <paramref name="values"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="values"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The sequence in <paramref name="values"/> contains fewer elements than <paramref name="width"/> * <paramref name="height"/>.</exception>
     public static SequentialMatrix<T> ToSequentialMatrix<T>(this IEnumerable<T> values, int width, int height)
         where T : struct
     {
+        ArgumentNullException.ThrowIfNull(values);
+
         var result = new SequentialMatrix<T>(width, height);
-        var enumerator = values.GetEnumerator();
+        using var enumerator = values.GetEnumerator();
 
         for (int index = 0; index < result.Count; index++)
         {
@@ -30,6 +33,68 @@ public static class MatrixExtensions
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Materializes a read-only matrix into a standalone <see cref="SequentialMatrix{T}"/>.
+    /// </summary>
+    /// <typeparam name="T">The element type stored in the matrix.</typeparam>
+    /// <param name="source">The source matrix to copy.</param>
+    /// <returns>A new <see cref="SequentialMatrix{T}"/> containing the elements of <paramref name="source"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    public static SequentialMatrix<T> ToSequentialMatrix<T>(this IReadOnlyMatrix<T> source)
+        where T : struct =>
+        SequentialMatrix<T>.From(source);
+
+    /// <summary>
+    /// Copies the elements of a read-only matrix into a flat row-major array.
+    /// </summary>
+    /// <typeparam name="T">The element type stored in the matrix.</typeparam>
+    /// <param name="source">The source matrix to copy.</param>
+    /// <returns>A new row-major array containing the elements of <paramref name="source"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    public static T[] ToArray<T>(this IReadOnlyMatrix<T> source)
+        where T : struct =>
+        SequentialMatrix<T>.CopyElements(source);
+
+    /// <summary>
+    /// Applies a transformation function to each element of a read-only matrix in parallel, returning a flat row-major array.
+    /// </summary>
+    /// <typeparam name="T">The element type of the source matrix.</typeparam>
+    /// <typeparam name="R">The element type of the resulting array.</typeparam>
+    /// <param name="matrix">The source matrix to transform.</param>
+    /// <param name="selector">The transformation function applied to each element.</param>
+    /// <returns>A row-major array containing the mapped elements.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> or <paramref name="selector"/> is <see langword="null"/>.</exception>
+    public static R[] MapToArray<T, R>(this IReadOnlyMatrix<T> matrix, Func<T, R> selector)
+        where T : struct
+        where R : struct
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        ArgumentNullException.ThrowIfNull(selector);
+
+        int count = matrix.Count;
+        if (count == 0)
+            return [];
+
+        var mappedData = new R[count];
+        if (matrix is SequentialMatrix<T> sequential)
+        {
+            T[] raw = sequential.RawData;
+            Parallel.For(0, raw.Length, index => mappedData[index] = selector(raw[index]));
+            return mappedData;
+        }
+
+        int width = matrix.Width;
+        int height = matrix.Height;
+        Parallel.For(0, height, y =>
+        {
+            int rowBase = y * width;
+            for (int x = 0; x < width; x++)
+                mappedData[rowBase + x] = selector(matrix[x, y]);
+        });
+
+        return mappedData;
     }
 
     /// <summary>
@@ -51,17 +116,7 @@ public static class MatrixExtensions
         if (matrix is Matrix<T> concreteMatrix)
             return concreteMatrix.Map(selector);
 
-        int width = matrix.Width;
-        int height = matrix.Height;
-        var result = new SequentialMatrix<R>(width, height);
-
-        Parallel.For(0, height, y =>
-        {
-            for (int x = 0; x < width; x++)
-                result[x, y] = selector(matrix[x, y]);
-        });
-
-        return result;
+        return new SequentialMatrix<R>(matrix.Width, matrix.Height, matrix.MapToArray(selector));
     }
 
     /// <summary>
@@ -154,4 +209,38 @@ public static class MatrixExtensions
 
         return true;
     }
+
+    /// <summary>
+    /// Gets the element at the specified coordinates clamped to the matrix bounds.
+    /// </summary>
+    /// <typeparam name="T">The element type stored in the matrix.</typeparam>
+    /// <param name="matrix">The source matrix to read from.</param>
+    /// <param name="x">The column (X) coordinate to clamp.</param>
+    /// <param name="y">The row (Y) coordinate to clamp.</param>
+    /// <returns>The element at the clamped coordinates.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="matrix"/> is empty.</exception>
+    public static T GetClamped<T>(this IReadOnlyMatrix<T> matrix, int x, int y)
+        where T : struct
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+
+        if (matrix.Count == 0)
+            throw new ArgumentException("Cannot read from an empty matrix.", nameof(matrix));
+
+        return matrix[Math.Clamp(x, 0, matrix.Width - 1), Math.Clamp(y, 0, matrix.Height - 1)];
+    }
+
+    /// <summary>
+    /// Gets the element at the specified coordinate clamped to the matrix bounds.
+    /// </summary>
+    /// <typeparam name="T">The element type stored in the matrix.</typeparam>
+    /// <param name="matrix">The source matrix to read from.</param>
+    /// <param name="coord">The 2D coordinate to clamp.</param>
+    /// <returns>The element at the clamped coordinate.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="matrix"/> is empty.</exception>
+    public static T GetClamped<T>(this IReadOnlyMatrix<T> matrix, Coord coord)
+        where T : struct =>
+        matrix.GetClamped(coord.X, coord.Y);
 }

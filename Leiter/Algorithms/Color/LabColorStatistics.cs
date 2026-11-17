@@ -1,5 +1,7 @@
 namespace Leiter.Algorithms.Color;
 
+using Leiter.Core;
+
 /// <summary>
 /// Represents the 6-dimensional CIELAB color distribution statistics <c>(L*, a*, b*)</c>
 /// mean and standard deviation for an image or palette.
@@ -36,7 +38,7 @@ public readonly record struct LabColorStatistics(
     /// <param name="other">The target statistics to compare against.</param>
     /// <param name="weights">Per-component non-negative squared weights applied to each dimension difference.</param>
     /// <returns>The non-negative weighted Euclidean distance in 6D CIELAB feature space.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when any weight is negative or <see cref="double.NaN"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any weight is negative or non-finite.</exception>
     public double FeatureDistance(LabColorStatistics other, LabColorStatistics weights)
     {
         ValidateWeight(weights.MeanL, nameof(weights));
@@ -62,9 +64,6 @@ public readonly record struct LabColorStatistics(
             + (weights.StdDevB * dStdB * dStdB));
     }
 
-    private static void ValidateWeight(double weight, string paramName)
-    {
-        if (double.IsNaN(weight) || weight < 0.0)
-            throw new ArgumentOutOfRangeException(paramName, "Feature weights must be non-negative.");
-    }
+    private static void ValidateWeight(double weight, string paramName) =>
+        Guard.ThrowIfNotFiniteNonNegative(weight, paramName);
 }

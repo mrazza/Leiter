@@ -57,25 +57,10 @@ public class TrimapMatrix : SequentialMatrix<TrimapLabel>
     /// <param name="source">The source trimap matrix to copy.</param>
     /// <returns>A new <see cref="TrimapMatrix"/> containing the copied <see cref="TrimapLabel"/> values.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
-    public static TrimapMatrix From(IReadOnlyMatrix<TrimapLabel> source)
+    public static new TrimapMatrix From(IReadOnlyMatrix<TrimapLabel> source)
     {
         ArgumentNullException.ThrowIfNull(source);
-
-        if (source is TrimapMatrix existing)
-            return existing.Clone();
-
-        int width = source.Width;
-        int height = source.Height;
-        var data = new TrimapLabel[source.Count];
-
-        for (int y = 0; y < height; y++)
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-                data[rowBase + x] = source[x, y];
-        }
-
-        return new TrimapMatrix(width, height, data);
+        return new(source.Width, source.Height, CopyElements(source));
     }
 
     /// <summary>

@@ -230,4 +230,37 @@ public class MatrixMathTests
         for (int i = 0; i < convolvedLargeV.Count; i++)
             Assert.Equal(5.0, convolvedLargeV[i].Value, 10);
     }
+
+    [Fact]
+    public void MatrixMath_NullArgumentsAndMatrixViewInputs_ShouldWork()
+    {
+        var img = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
+        var view = new MatrixView<DoublePixel>(img, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var identityKernel = new SequentialMatrix<DoublePixel>(new Size(1, 1), [1.0]);
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).HadamardProduct<DoublePixel>(img));
+        Assert.Throws<ArgumentNullException>(() => img.HadamardProduct<DoublePixel>(null!));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).HadamardProduct<DoublePixel, DoublePixel>(img));
+        Assert.Throws<ArgumentNullException>(() => img.HadamardProduct<DoublePixel, DoublePixel>(null!));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).FrobeniusProduct<DoublePixel>(img));
+        Assert.Throws<ArgumentNullException>(() => img.FrobeniusProduct<DoublePixel>(null!));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).FrobeniusProduct<DoublePixel, DoublePixel>(img));
+        Assert.Throws<ArgumentNullException>(() => img.FrobeniusProduct<DoublePixel, DoublePixel>(null!));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).Convolve(identityKernel));
+        Assert.Throws<ArgumentNullException>(() => img.Convolve<DoublePixel, DoublePixel>(null!));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).ConvolveSeparable([1.0], [1.0]));
+
+        Matrix<DoublePixel> hadamardView = view.HadamardProduct<DoublePixel>(img);
+        Assert.Equal(1.0, hadamardView[0, 0].Value);
+        Assert.Equal(16.0, hadamardView[1, 1].Value);
+
+        Matrix<DoublePixel> hadamardScalarView = view.HadamardProduct<DoublePixel, DoublePixel>(img);
+        Assert.Equal(4.0, hadamardScalarView[1, 0].Value);
+
+        Matrix<DoublePixel> convolvedView = view.Convolve(identityKernel);
+        Assert.Equal(3.0, convolvedView[0, 1].Value);
+
+        Matrix<DoublePixel> convolvedSepView = view.ConvolveSeparable([1.0], [1.0]);
+        Assert.Equal(2.0, convolvedSepView[1, 0].Value);
+    }
 }

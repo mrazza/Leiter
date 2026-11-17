@@ -168,5 +168,11 @@ public class PaletteQuantizerTests
             PaletteQuantizer.QuantizeAndTruncate(img, static p => p, coverageFraction: 1.01));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             PaletteQuantizer.QuantizeAndTruncate(img, static p => p, coverageFraction: double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            PaletteQuantizer.QuantizeAndTruncate(img, static p => p, coverageFraction: double.PositiveInfinity));
+
+        var view = new MatrixView<Rgb8>(img, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var viewResult = PaletteQuantizer.QuantizeAndTruncate(view, static p => p);
+        Assert.Equal(view.Size, viewResult.Image.Size);
     }
 }

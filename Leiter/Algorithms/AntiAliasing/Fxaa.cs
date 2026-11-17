@@ -32,16 +32,7 @@ public static class Fxaa
         int width = image.Width;
         int height = image.Height;
 
-        var luma = new double[image.Count];
-        for (int y = 0; y < height; y++)
-        {
-            int rowOffset = y * width;
-            for (int x = 0; x < width; x++)
-            {
-                Rgb8 pixel = image[x, y];
-                luma[rowOffset + x] = ((0.299 * pixel.R) + (0.587 * pixel.G) + (0.114 * pixel.B)) / 255.0;
-            }
-        }
+        double[] luma = image.MapToArray(static pixel => ((0.299 * pixel.R) + (0.587 * pixel.G) + (0.114 * pixel.B)) / 255.0);
 
         var result = new SequentialMatrix<Rgb8>(image.Size);
 

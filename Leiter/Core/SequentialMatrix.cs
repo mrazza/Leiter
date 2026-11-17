@@ -47,13 +47,56 @@ public class SequentialMatrix<T> : Matrix<T>
     /// <param name="height">The number of rows in the matrix.</param>
     /// <param name="data">The contiguous row-major data array to take direct ownership of.</param>
     /// <exception cref="ArgumentException">The length of <paramref name="data"/> does not match <paramref name="width"/> * <paramref name="height"/>.</exception>
-    private protected SequentialMatrix(int width, int height, T[] data)
+    internal SequentialMatrix(int width, int height, T[] data)
         : base(width, height)
     {
         if (data.Length != width * height)
             throw new ArgumentException("Data length does not match matrix size.");
 
         this.data = data;
+    }
+
+    internal T[] RawData => data;
+
+    /// <summary>
+    /// Returns a read-only span over the underlying contiguous row-major element buffer.
+    /// </summary>
+    /// <returns>A <see cref="ReadOnlySpan{T}"/> viewing the matrix elements in row-major order.</returns>
+    public ReadOnlySpan<T> AsReadOnlySpan() => data;
+
+    internal Span<T> AsSpan() => data;
+
+    /// <summary>
+    /// Materializes any <see cref="IReadOnlyMatrix{T}"/> into a standalone <see cref="SequentialMatrix{T}"/>.
+    /// </summary>
+    /// <param name="source">The source matrix to copy.</param>
+    /// <returns>A new <see cref="SequentialMatrix{T}"/> containing the copied elements.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    public static SequentialMatrix<T> From(IReadOnlyMatrix<T> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return new(source.Width, source.Height, CopyElements(source));
+    }
+
+    internal static T[] CopyElements(IReadOnlyMatrix<T> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        if (source is SequentialMatrix<T> sequential)
+            return sequential.CloneData();
+
+        int width = source.Width;
+        int height = source.Height;
+        var copied = new T[source.Count];
+
+        for (int y = 0; y < height; y++)
+        {
+            int rowBase = y * width;
+            for (int x = 0; x < width; x++)
+                copied[rowBase + x] = source[x, y];
+        }
+
+        return copied;
     }
 
     /// <summary>

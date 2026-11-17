@@ -80,8 +80,8 @@ public class PixelConversionTests
     {
         var rgb64 = new Rgb64(0.5, 0.5, 0.5);
         var xyz = new Xyz32(0.5f, 0.5f, 0.5f);
-        Assert.Throws<NotImplementedException>(() => rgb64.ToXyz32((RgbColorSpace)999));
-        Assert.Throws<NotImplementedException>(() => xyz.ToRgb64((RgbColorSpace)999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => rgb64.ToXyz32((RgbColorSpace)999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => xyz.ToRgb64((RgbColorSpace)999));
     }
 
     /// <summary>
@@ -146,7 +146,7 @@ public class PixelConversionTests
         Rgb8 defaultRgb8Back = labD65.ToRgb8(RgbColorSpace.sRGB);
         Assert.InRange(defaultRgb8Back.R, (byte)0, (byte)255);
 
-        Assert.Throws<NotImplementedException>(() => sampleXyz.ToLab32((Illuminant)999));
-        Assert.Throws<NotImplementedException>(() => labD65.ToXyz32((Illuminant)999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => sampleXyz.ToLab32((Illuminant)999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => labD65.ToXyz32((Illuminant)999));
     }
 }

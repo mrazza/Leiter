@@ -91,7 +91,7 @@ public static class PaperGranulation
 
         if (opts.DensityStrength == 0.0 && opts.WarpAmplitude == 0.0)
         {
-            return image.Map(static pixel => pixel);
+            return image.ToSequentialMatrix();
         }
 
         IReadOnlyMatrix<DoublePixel> heightMap = paperHeightMap ?? GeneratePaperHeightMap(image.Size, opts.GrainNoiseOptions);

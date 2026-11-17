@@ -48,19 +48,27 @@ public static class MatrixMath
     /// <param name="self">The left-hand matrix.</param>
     /// <param name="right">The right-hand matrix.</param>
     /// <returns>A new matrix containing the element-wise product.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
-    public static Matrix<T> HadamardProduct<T>(this Matrix<T> self, IReadOnlyMatrix<T> right)
+    public static Matrix<T> HadamardProduct<T>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<T> right)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {
-        if (self.Height != right.Height || self.Width != right.Width)
-            throw new ArgumentException("Hadamard multiplication requires matrices of the same dimensions.");
+        ArgumentNullException.ThrowIfNull(self);
+        ArgumentNullException.ThrowIfNull(right);
+        Guard.ThrowIfSizeMismatch(self, right);
 
-        var result = self.Clone();
+        int width = self.Width;
+        int height = self.Height;
+        var data = new T[self.Count];
 
-        for (int index = 0; index < self.Count; index++)
-            result[index] = self[index].Multiply(right[index]);
+        for (int y = 0; y < height; y++)
+        {
+            int rowBase = y * width;
+            for (int x = 0; x < width; x++)
+                data[rowBase + x] = self[x, y].Multiply(right[x, y]);
+        }
 
-        return result;
+        return new SequentialMatrix<T>(width, height, data);
     }
 
     /// <summary>
@@ -71,20 +79,28 @@ public static class MatrixMath
     /// <param name="self">The left-hand matrix.</param>
     /// <param name="right">The right-hand scalar matrix.</param>
     /// <returns>A new matrix containing the scaled elements.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
-    public static Matrix<T> HadamardProduct<T, R>(this Matrix<T> self, IReadOnlyMatrix<R> right)
+    public static Matrix<T> HadamardProduct<T, R>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<R> right)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
         where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
     {
-        if (self.Height != right.Height || self.Width != right.Width)
-            throw new ArgumentException("Hadamard multiplication requires matrices of the same dimensions.");
+        ArgumentNullException.ThrowIfNull(self);
+        ArgumentNullException.ThrowIfNull(right);
+        Guard.ThrowIfSizeMismatch(self, right);
 
-        var result = self.Clone();
+        int width = self.Width;
+        int height = self.Height;
+        var data = new T[self.Count];
 
-        for (int index = 0; index < self.Count; index++)
-            result[index] = self[index].Multiply(right[index]);
+        for (int y = 0; y < height; y++)
+        {
+            int rowBase = y * width;
+            for (int x = 0; x < width; x++)
+                data[rowBase + x] = self[x, y].Multiply(right[x, y]);
+        }
 
-        return result;
+        return new SequentialMatrix<T>(width, height, data);
     }
 
     /// <summary>
@@ -94,6 +110,7 @@ public static class MatrixMath
     /// <param name="self">The left-hand matrix.</param>
     /// <param name="right">The right-hand matrix.</param>
     /// <returns>The channel-wise sum of element-wise products as <typeparamref name="T"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static T FrobeniusProduct<T>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<T> right)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T> =>
@@ -106,6 +123,7 @@ public static class MatrixMath
     /// <param name="self">The left-hand matrix view.</param>
     /// <param name="right">The right-hand matrix.</param>
     /// <returns>The channel-wise sum of element-wise products as <typeparamref name="T"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static T FrobeniusProduct<T>(this MatrixView<T> self, IReadOnlyMatrix<T> right)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T> =>
@@ -119,6 +137,7 @@ public static class MatrixMath
     /// <param name="self">The left-hand matrix.</param>
     /// <param name="right">The right-hand scalar matrix.</param>
     /// <returns>The weighted sum of elements as <typeparamref name="T"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static T FrobeniusProduct<T, R>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<R> right)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
@@ -133,6 +152,7 @@ public static class MatrixMath
     /// <param name="self">The left-hand matrix view.</param>
     /// <param name="right">The right-hand scalar matrix.</param>
     /// <returns>The weighted sum of elements as <typeparamref name="T"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static T FrobeniusProduct<T, R>(this MatrixView<T> self, IReadOnlyMatrix<R> right)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
@@ -147,24 +167,30 @@ public static class MatrixMath
     /// <param name="self">The matrix to convolve.</param>
     /// <param name="kernel">The 2D convolution kernel.</param>
     /// <returns>A new matrix containing the convolved result.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="kernel"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="kernel"/> has non-positive dimensions.</exception>
-    public static Matrix<T> Convolve<T, R>(this Matrix<T> self, IReadOnlyMatrix<R> kernel)
+    public static Matrix<T> Convolve<T, R>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<R> kernel)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
         where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
     {
+        ArgumentNullException.ThrowIfNull(self);
+        ArgumentNullException.ThrowIfNull(kernel);
+
         if (kernel.Width <= 0 || kernel.Height <= 0)
             throw new ArgumentException("Kernel dimensions must be positive.", nameof(kernel));
 
-        var result = self.Clone();
-        if (self.Width == 0 || self.Height == 0)
+        int width = self.Width;
+        int height = self.Height;
+        var result = new SequentialMatrix<T>(width, height);
+        if (width == 0 || height == 0)
             return result;
 
         int halfX = kernel.Width / 2;
         int halfY = kernel.Height / 2;
 
-        Parallel.For(0, self.Height, y =>
+        Parallel.For(0, height, y =>
         {
-            for (int x = 0; x < self.Width; x++)
+            for (int x = 0; x < width; x++)
             {
                 var view = new MatrixView<T>(self, x - halfX, y - halfY, kernel.Width, kernel.Height, EdgeHandling.EXTEND);
                 result[x, y] = view.FrobeniusProduct(kernel);
@@ -182,13 +208,16 @@ public static class MatrixMath
     /// <param name="horizontalKernel">The 1D horizontal kernel weights.</param>
     /// <param name="verticalKernel">The 1D vertical kernel weights.</param>
     /// <returns>A new matrix containing the convolved result.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when either kernel is empty.</exception>
     public static Matrix<T> ConvolveSeparable<T>(
-        this Matrix<T> self,
+        this IReadOnlyMatrix<T> self,
         ReadOnlySpan<double> horizontalKernel,
         ReadOnlySpan<double> verticalKernel)
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {
+        ArgumentNullException.ThrowIfNull(self);
+
         if (horizontalKernel.IsEmpty)
             throw new ArgumentException("Horizontal kernel must not be empty.", nameof(horizontalKernel));
         if (verticalKernel.IsEmpty)
@@ -196,7 +225,7 @@ public static class MatrixMath
 
         int width = self.Width;
         int height = self.Height;
-        var result = self.Clone();
+        var result = new SequentialMatrix<T>(width, height);
         if (width == 0 || height == 0)
             return result;
 
@@ -248,13 +277,16 @@ public static class MatrixMath
     /// <param name="self">The left-hand matrix operand.</param>
     /// <param name="right">The right-hand matrix operand.</param>
     /// <returns>The channel-wise sum of element-wise products as <typeparamref name="T"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     private static T FrobeniusCore<TLeft, T>(TLeft self, IReadOnlyMatrix<T> right)
         where TLeft : IReadOnlyMatrix<T>
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
     {
-        if (self.Height != right.Height || self.Width != right.Width)
-            throw new ArgumentException("Frobenius multiplication requires matrices of the same dimensions.");
+        if (self is null)
+            throw new ArgumentNullException(nameof(self));
+        ArgumentNullException.ThrowIfNull(right);
+        Guard.ThrowIfSizeMismatch(self, right);
 
         Vector<double> sum = Vector<double>.Zero;
         int width = self.Width;
@@ -275,14 +307,17 @@ public static class MatrixMath
     /// <param name="self">The left-hand matrix operand.</param>
     /// <param name="right">The right-hand scalar matrix operand.</param>
     /// <returns>The weighted sum of elements as <typeparamref name="T"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     private static T FrobeniusScalarCore<TLeft, T, R>(TLeft self, IReadOnlyMatrix<R> right)
         where TLeft : IReadOnlyMatrix<T>
         where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
         where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
     {
-        if (self.Height != right.Height || self.Width != right.Width)
-            throw new ArgumentException("Frobenius multiplication requires matrices of the same dimensions.");
+        if (self is null)
+            throw new ArgumentNullException(nameof(self));
+        ArgumentNullException.ThrowIfNull(right);
+        Guard.ThrowIfSizeMismatch(self, right);
 
         Vector<double> sum = Vector<double>.Zero;
         int width = self.Width;
@@ -300,20 +335,7 @@ public static class MatrixMath
     /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
     /// <param name="matrix">The matrix to vectorize.</param>
     /// <returns>A flattened array of SIMD vectors corresponding to the matrix pixels.</returns>
-    private static Vector<double>[] VectorizeMatrix<T>(Matrix<T> matrix)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
-    {
-        int width = matrix.Width;
-        int height = matrix.Height;
-        var vectors = new Vector<double>[width * height];
-
-        Parallel.For(0, height, y =>
-        {
-            int rowOffset = y * width;
-            for (int x = 0; x < width; x++)
-                vectors[rowOffset + x] = matrix[x, y].ToDoubleVector();
-        });
-
-        return vectors;
-    }
+    internal static Vector<double>[] VectorizeMatrix<T>(IReadOnlyMatrix<T> matrix)
+        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T> =>
+        matrix.MapToArray(static pixel => pixel.ToDoubleVector());
 }
