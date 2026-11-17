@@ -16,10 +16,8 @@ using Leiter.Core;
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz32, float>
 {
-    private static readonly Xyz32 INTERNAL_ZERO = new();
-
     /// <inheritdoc/>
-    public static Xyz32 Zero => INTERNAL_ZERO;
+    public static Xyz32 Zero => default;
 
     /// <inheritdoc/>
     public Xyz32 Add(Xyz32 right) =>
@@ -58,48 +56,72 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
         };
 
     /// <inheritdoc/>
-    public Xyz32 Add(decimal right) => ComponentMap(channel => channel + (float)right);
+    public Xyz32 Add(decimal right)
+    {
+        float v = (float)right;
+        return new(X + v, Y + v, Z + v);
+    }
 
     /// <inheritdoc/>
-    public Xyz32 Subtract(decimal right) => ComponentMap(channel => channel - (float)right);
+    public Xyz32 Subtract(decimal right)
+    {
+        float v = (float)right;
+        return new(X - v, Y - v, Z - v);
+    }
 
     /// <inheritdoc/>
-    public Xyz32 Multiply(decimal right) => ComponentMap(channel => channel * (float)right);
+    public Xyz32 Multiply(decimal right)
+    {
+        float v = (float)right;
+        return new(X * v, Y * v, Z * v);
+    }
 
     /// <inheritdoc/>
-    public Xyz32 Divide(decimal right) => ComponentMap(channel => channel / (float)right);
+    public Xyz32 Divide(decimal right)
+    {
+        float v = (float)right;
+        return new(X / v, Y / v, Z / v);
+    }
 
     /// <inheritdoc/>
-    public Xyz32 Add(double right) => ComponentMap(channel => channel + (float)right);
+    public Xyz32 Add(double right)
+    {
+        float v = (float)right;
+        return new(X + v, Y + v, Z + v);
+    }
 
     /// <inheritdoc/>
-    public Xyz32 Subtract(double right) => ComponentMap(channel => channel - (float)right);
+    public Xyz32 Subtract(double right)
+    {
+        float v = (float)right;
+        return new(X - v, Y - v, Z - v);
+    }
 
     /// <inheritdoc/>
-    public Xyz32 Multiply(double right) => ComponentMap(channel => channel * (float)right);
+    public Xyz32 Multiply(double right)
+    {
+        float v = (float)right;
+        return new(X * v, Y * v, Z * v);
+    }
 
     /// <inheritdoc/>
-    public Xyz32 Divide(double right) => ComponentMap(channel => channel / (float)right);
+    public Xyz32 Divide(double right)
+    {
+        float v = (float)right;
+        return new(X / v, Y / v, Z / v);
+    }
 
     /// <inheritdoc/>
-    public Xyz32 Add<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel + (float)right.AsDouble());
+    public Xyz32 Add<S>(IScalar<S> right) where S : IScalar<S> => Add(right.AsDouble());
 
     /// <inheritdoc/>
-    public Xyz32 Divide<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel / (float)right.AsDouble());
+    public Xyz32 Divide<S>(IScalar<S> right) where S : IScalar<S> => Divide(right.AsDouble());
 
     /// <inheritdoc/>
-    public Xyz32 Multiply<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel * (float)right.AsDouble());
+    public Xyz32 Multiply<S>(IScalar<S> right) where S : IScalar<S> => Multiply(right.AsDouble());
 
     /// <inheritdoc/>
-    public Xyz32 Subtract<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel - (float)right.AsDouble());
+    public Xyz32 Subtract<S>(IScalar<S> right) where S : IScalar<S> => Subtract(right.AsDouble());
 
     /// <summary>
     /// Maps the <see cref="X"/> and <see cref="Z"/> chromaticity components using the specified mapping function while preserving luminance <see cref="Y"/>.

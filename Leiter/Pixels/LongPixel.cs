@@ -13,10 +13,8 @@ using Leiter.Core;
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct LongPixel(long Value) : ITypedPixel<LongPixel, long>, ITypedScalar<LongPixel, long>
 {
-    private static readonly LongPixel INTERNAL_ZERO = new();
-
     /// <inheritdoc/>
-    public static LongPixel Zero => INTERNAL_ZERO;
+    public static LongPixel Zero => default;
 
     /// <inheritdoc/>
     public LongPixel ColorComponentMap(Func<long, long> func) => new() { Value = func(Value) };
@@ -53,43 +51,43 @@ public readonly record struct LongPixel(long Value) : ITypedPixel<LongPixel, lon
         };
 
     /// <inheritdoc/>
-    public LongPixel Add(decimal right) => ComponentMap(channel => channel + (long)right);
+    public LongPixel Add(decimal right) => new(Value + (long)right);
 
     /// <inheritdoc/>
-    public LongPixel Subtract(decimal right) => ComponentMap(channel => channel - (long)right);
+    public LongPixel Subtract(decimal right) => new(Value - (long)right);
 
     /// <inheritdoc/>
-    public LongPixel Multiply(decimal right) => ComponentMap(channel => channel * (long)right);
+    public LongPixel Multiply(decimal right) => new(Value * (long)right);
 
     /// <inheritdoc/>
-    public LongPixel Divide(decimal right) => ComponentMap(channel => channel / (long)right);
+    public LongPixel Divide(decimal right) => new(Value / (long)right);
 
     /// <inheritdoc/>
-    public LongPixel Add(double right) => ComponentMap(channel => channel + (long)right);
+    public LongPixel Add(double right) => new(Value + (long)right);
 
     /// <inheritdoc/>
-    public LongPixel Subtract(double right) => ComponentMap(channel => channel - (long)right);
+    public LongPixel Subtract(double right) => new(Value - (long)right);
 
     /// <inheritdoc/>
-    public LongPixel Multiply(double right) => ComponentMap(channel => channel * (long)right);
+    public LongPixel Multiply(double right) => new(Value * (long)right);
 
     /// <inheritdoc/>
-    public LongPixel Divide(double right) => ComponentMap(channel => channel / (long)right);
+    public LongPixel Divide(double right) => new(Value / (long)right);
 
     /// <inheritdoc/>
-    public LongPixel Add<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
+    public LongPixel Add<S>(IScalar<S> right) where S : IScalar<S> =>
         Add(right.AsDouble());
 
     /// <inheritdoc/>
-    public LongPixel Subtract<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
+    public LongPixel Subtract<S>(IScalar<S> right) where S : IScalar<S> =>
         Subtract(right.AsDouble());
 
     /// <inheritdoc/>
-    public LongPixel Multiply<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
+    public LongPixel Multiply<S>(IScalar<S> right) where S : IScalar<S> =>
         Multiply(right.AsDouble());
 
     /// <inheritdoc/>
-    public LongPixel Divide<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
+    public LongPixel Divide<S>(IScalar<S> right) where S : IScalar<S> =>
         Divide(right.AsDouble());
 
     /// <inheritdoc/>

@@ -307,10 +307,10 @@ public static class HandTremorFilter
         }
 
         double invWeight = 1.0 / weightSum;
-        byte r = (byte)Math.Clamp((int)Math.Round(sumR * invWeight), 0, 255);
-        byte g = (byte)Math.Clamp((int)Math.Round(sumG * invWeight), 0, 255);
-        byte b = (byte)Math.Clamp((int)Math.Round(sumB * invWeight), 0, 255);
-        return new Rgb8(r, g, b);
+        return new Rgb8(
+            Rgb8.ClampRoundedByte(sumR * invWeight),
+            Rgb8.ClampRoundedByte(sumG * invWeight),
+            Rgb8.ClampRoundedByte(sumB * invWeight));
     }
 
     private static void EnqueueBoundaryPixels(

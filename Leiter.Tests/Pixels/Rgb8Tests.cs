@@ -178,4 +178,52 @@ public class Rgb8Tests
         Assert.Equal(new Rgb8(20, 40, 60), p.ComponentMap(b => (byte)(b * 2)));
         Assert.Equal(new Rgb8(20, 40, 60), p.ColorComponentMap(b => (byte)(b * 2)));
     }
+
+    [Fact]
+    public void ClampRoundedByte_FromNormalized_AndFromDoubleVector_ShouldRoundAwayFromZeroAndClamp()
+    {
+        Assert.Equal((byte)0, Rgb8.ClampRoundedByte(double.NaN));
+        Assert.Equal((byte)0, Rgb8.ClampRoundedByte(double.NegativeInfinity));
+        Assert.Equal((byte)0, Rgb8.ClampRoundedByte(-5.0));
+        Assert.Equal((byte)128, Rgb8.ClampRoundedByte(127.5));
+        Assert.Equal((byte)255, Rgb8.ClampRoundedByte(255.0));
+        Assert.Equal((byte)255, Rgb8.ClampRoundedByte(double.PositiveInfinity));
+
+        Assert.Equal(new Rgb8(0, 128, 255), Rgb8.FromNormalized(-0.1, 0.5, 1.2));
+
+        if (Vector<double>.Count >= 3)
+        {
+            var vecData = new double[Vector<double>.Count];
+            vecData[0] = 0.5;
+            vecData[1] = double.PositiveInfinity;
+            vecData[2] = double.NegativeInfinity;
+            Assert.Equal(new Rgb8(128, 255, 0), Rgb8.FromDoubleVector(new Vector<double>(vecData)));
+        }
+    }
+
+    [Fact]
+    public void ScalarOperableDefaultMethods_ShouldDelegateToDoubleOperations()
+    {
+        IScalarOperable<MinimalScalarOperable> value = new MinimalScalarOperable(10.0);
+        var scalar = new DummyScalar(2.0);
+
+        Assert.Equal(12.0, value.Add(scalar).Value);
+        Assert.Equal(8.0, value.Subtract(scalar).Value);
+        Assert.Equal(20.0, value.Multiply(scalar).Value);
+        Assert.Equal(5.0, value.Divide(scalar).Value);
+    }
+
+    private readonly record struct MinimalScalarOperable(double Value) : IScalarOperable<MinimalScalarOperable>
+    {
+        public MinimalScalarOperable Add(decimal right) => new(Value + (double)right);
+        public MinimalScalarOperable Subtract(decimal right) => new(Value - (double)right);
+        public MinimalScalarOperable Multiply(decimal right) => new(Value * (double)right);
+        public MinimalScalarOperable Divide(decimal right) => new(Value / (double)right);
+        public MinimalScalarOperable Add(double right) => new(Value + right);
+        public MinimalScalarOperable Subtract(double right) => new(Value - right);
+        public MinimalScalarOperable Multiply(double right) => new(Value * right);
+        public MinimalScalarOperable Divide(double right) => new(Value / right);
+        public Vector<double> ToDoubleVector() => new(Value);
+        public static MinimalScalarOperable FromDoubleVector(Vector<double> vector) => new(vector[0]);
+    }
 }

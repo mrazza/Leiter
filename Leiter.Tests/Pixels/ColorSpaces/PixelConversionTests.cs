@@ -1,7 +1,7 @@
-namespace Leiter.Tests.Algorithms;
+namespace Leiter.Tests.Pixels.ColorSpaces;
 
 using System;
-using Leiter.Algorithms;
+using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 using Xunit;
@@ -85,16 +85,38 @@ public class PixelConversionTests
     }
 
     /// <summary>
-    /// Verifies that converting out-of-gamut <see cref="Rgb64"/> values to <see cref="Rgb8"/> clamps to byte range.
+    /// Verifies that converting out-of-gamut <see cref="Rgb64"/> values to <see cref="Rgb8"/> rounds away from zero and clamps to byte range.
     /// </summary>
     [Fact]
-    public void ToRgb8_OutOfGamut_ShouldClampToByteRange()
+    public void ToRgb8_OutOfGamut_ShouldRoundAndClampToByteRange()
     {
         var outOfGamut = new Rgb64(-0.5, 1.5, double.NaN);
         Assert.Equal(new Rgb8(0, 255, 0), outOfGamut.ToRgb8());
 
         var mixed = new Rgb64(-10.0, 2.0, 0.5);
-        Assert.Equal(new Rgb8(0, 255, 127), mixed.ToRgb8());
+        Assert.Equal(new Rgb8(0, 255, 128), mixed.ToRgb8());
+    }
+
+    [Fact]
+    public void ToGrayscaleRgb8_ScalarAndMatrix_ShouldRoundAndClamp()
+    {
+        Assert.Equal(new Rgb8(0, 0, 0), new DoublePixel(0.0).ToGrayscaleRgb8());
+        Assert.Equal(new Rgb8(128, 128, 128), new DoublePixel(0.5).ToGrayscaleRgb8());
+        Assert.Equal(new Rgb8(255, 255, 255), new DoublePixel(1.0).ToGrayscaleRgb8());
+        Assert.Equal(new Rgb8(0, 0, 0), new DoublePixel(-1.0).ToGrayscaleRgb8());
+        Assert.Equal(new Rgb8(255, 255, 255), new DoublePixel(2.0).ToGrayscaleRgb8());
+        Assert.Equal(new Rgb8(0, 0, 0), new DoublePixel(double.NaN).ToGrayscaleRgb8());
+
+        var source = new SequentialMatrix<DoublePixel>(new Size(2, 2), [0.0, 0.5, 1.0, -0.25]);
+        var view = new MatrixView<DoublePixel>(source, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        Matrix<Rgb8> grayscale = view.ToGrayscaleRgb8();
+
+        Assert.Equal(new Rgb8(0, 0, 0), grayscale[0, 0]);
+        Assert.Equal(new Rgb8(128, 128, 128), grayscale[1, 0]);
+        Assert.Equal(new Rgb8(255, 255, 255), grayscale[0, 1]);
+        Assert.Equal(new Rgb8(0, 0, 0), grayscale[1, 1]);
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).ToGrayscaleRgb8());
     }
 
     [Fact]

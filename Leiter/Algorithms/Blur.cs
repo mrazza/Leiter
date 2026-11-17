@@ -25,7 +25,7 @@ public static class Blur
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="radius"/> is negative or <paramref name="sigma"/> is non-finite or not positive.</exception>
     public static Matrix<T> GaussianBlur<T>(IReadOnlyMatrix<T> image, double sigma, int radius)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+        where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentOutOfRangeException.ThrowIfNegative(radius);
@@ -52,7 +52,7 @@ public static class Blur
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="radius"/> is negative.</exception>
     public static Matrix<T> BoxBlur<T>(IReadOnlyMatrix<T> image, int radius)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+        where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentOutOfRangeException.ThrowIfNegative(radius);
@@ -81,7 +81,7 @@ public static class Blur
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="sigma"/> is non-finite or not positive.</exception>
     public static Matrix<T> GaussianBlurRecursive<T>(IReadOnlyMatrix<T> image, double sigma)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+        where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(image);
         Guard.ThrowIfNotFinitePositive(sigma);
@@ -104,7 +104,7 @@ public static class Blur
     /// <param name="filterLine">The 1D line filter delegate applied to each row and column.</param>
     /// <returns>A new matrix containing the filtered result.</returns>
     private static Matrix<T> ApplySeparable1D<T>(IReadOnlyMatrix<T> image, LineFilter1D filterLine)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+        where T : struct, IPixel<T>
     {
         int width = image.Width;
         int height = image.Height;

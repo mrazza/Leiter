@@ -400,12 +400,12 @@ public class LodAbstractionTests
         var options = new LodAbstractionOptions(SalientKernelSize: 4);
         Matrix<Rgb8> result = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask, options);
 
-        // Center pixel receives 255 / 4.0 = 63.75 -> truncated byte 63
-        Assert.Equal((byte)63, result[2, 0].R);
+        // Center pixel receives 255 / 4.0 = 63.75 -> rounded byte 64
+        Assert.Equal((byte)64, result[2, 0].R);
 
-        // Inner symmetric pixels (72)
-        Assert.Equal((byte)72, result[1, 0].R);
-        Assert.Equal((byte)72, result[3, 0].R);
+        // Inner symmetric pixels: 255 / 3.5 = 72.857... -> rounded byte 73
+        Assert.Equal((byte)73, result[1, 0].R);
+        Assert.Equal((byte)73, result[3, 0].R);
 
         // Outer symmetric pixels (51)
         Assert.Equal((byte)51, result[0, 0].R);

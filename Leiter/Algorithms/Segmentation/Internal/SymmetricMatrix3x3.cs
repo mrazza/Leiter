@@ -1,54 +1,54 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
-using Leiter.Pixels;
+using Leiter.Core;
 
 /// <summary>
-/// Represents a symmetric 3x3 matrix for 3D RGB covariance and precision operations.
+/// Represents a symmetric 3x3 matrix for 3D covariance and precision operations.
 /// </summary>
 internal readonly record struct SymmetricMatrix3x3(
-    double RR,
-    double RG,
-    double RB,
-    double GG,
-    double GB,
-    double BB)
+    double XX,
+    double XY,
+    double XZ,
+    double YY,
+    double YZ,
+    double ZZ)
 {
     public static SymmetricMatrix3x3 Zero => default;
 
-    public SymmetricMatrix3x3 AddOuterProduct(Rgb64 color) => new(
-        RR + (color.R * color.R),
-        RG + (color.R * color.G),
-        RB + (color.R * color.B),
-        GG + (color.G * color.G),
-        GB + (color.G * color.B),
-        BB + (color.B * color.B));
+    public SymmetricMatrix3x3 AddOuterProduct(Vector3D vector) => new(
+        XX + (vector.X * vector.X),
+        XY + (vector.X * vector.Y),
+        XZ + (vector.X * vector.Z),
+        YY + (vector.Y * vector.Y),
+        YZ + (vector.Y * vector.Z),
+        ZZ + (vector.Z * vector.Z));
 
-    public static SymmetricMatrix3x3 FromColorSums(
-        Rgb64 sumColors,
+    public static SymmetricMatrix3x3 FromSums(
+        Vector3D sumVectors,
         SymmetricMatrix3x3 sumOuterProducts,
         int sampleCount,
         double diagonalRegularization = 0.0)
     {
-        Rgb64 mean = sumColors.Divide((double)sampleCount);
+        Vector3D mean = sumVectors / sampleCount;
         return new SymmetricMatrix3x3(
-            RR: Math.Max(0.0, (sumOuterProducts.RR / sampleCount) - (mean.R * mean.R)) + diagonalRegularization,
-            RG: (sumOuterProducts.RG / sampleCount) - (mean.R * mean.G),
-            RB: (sumOuterProducts.RB / sampleCount) - (mean.R * mean.B),
-            GG: Math.Max(0.0, (sumOuterProducts.GG / sampleCount) - (mean.G * mean.G)) + diagonalRegularization,
-            GB: (sumOuterProducts.GB / sampleCount) - (mean.G * mean.B),
-            BB: Math.Max(0.0, (sumOuterProducts.BB / sampleCount) - (mean.B * mean.B)) + diagonalRegularization);
+            XX: Math.Max(0.0, (sumOuterProducts.XX / sampleCount) - (mean.X * mean.X)) + diagonalRegularization,
+            XY: (sumOuterProducts.XY / sampleCount) - (mean.X * mean.Y),
+            XZ: (sumOuterProducts.XZ / sampleCount) - (mean.X * mean.Z),
+            YY: Math.Max(0.0, (sumOuterProducts.YY / sampleCount) - (mean.Y * mean.Y)) + diagonalRegularization,
+            YZ: (sumOuterProducts.YZ / sampleCount) - (mean.Y * mean.Z),
+            ZZ: Math.Max(0.0, (sumOuterProducts.ZZ / sampleCount) - (mean.Z * mean.Z)) + diagonalRegularization);
     }
 
     public SymmetricMatrix3x3 Invert(double fallbackDiagonal, out double determinant)
     {
-        double cofactorRR = (GG * BB) - (GB * GB);
-        double cofactorRG = (RB * GB) - (RG * BB);
-        double cofactorRB = (RG * GB) - (RB * GG);
-        double cofactorGG = (RR * BB) - (RB * RB);
-        double cofactorGB = (RG * RB) - (RR * GB);
-        double cofactorBB = (RR * GG) - (RG * RG);
+        double cofactorXX = (YY * ZZ) - (YZ * YZ);
+        double cofactorXY = (XZ * YZ) - (XY * ZZ);
+        double cofactorXZ = (XY * YZ) - (XZ * YY);
+        double cofactorYY = (XX * ZZ) - (XZ * XZ);
+        double cofactorYZ = (XY * XZ) - (XX * YZ);
+        double cofactorZZ = (XX * YY) - (XY * XY);
 
-        determinant = (RR * cofactorRR) + (RG * cofactorRG) + (RB * cofactorRB);
+        determinant = (XX * cofactorXX) + (XY * cofactorXY) + (XZ * cofactorXZ);
         if (determinant <= 1e-12)
         {
             determinant = fallbackDiagonal * fallbackDiagonal * fallbackDiagonal;
@@ -58,26 +58,26 @@ internal readonly record struct SymmetricMatrix3x3(
 
         double invDet = 1.0 / determinant;
         return new SymmetricMatrix3x3(
-            cofactorRR * invDet,
-            cofactorRG * invDet,
-            cofactorRB * invDet,
-            cofactorGG * invDet,
-            cofactorGB * invDet,
-            cofactorBB * invDet);
+            cofactorXX * invDet,
+            cofactorXY * invDet,
+            cofactorXZ * invDet,
+            cofactorYY * invDet,
+            cofactorYZ * invDet,
+            cofactorZZ * invDet);
     }
 
-    public double QuadraticForm(Rgb64 delta) =>
-        (delta.R * ((RR * delta.R) + (RG * delta.G) + (RB * delta.B))) +
-        (delta.G * ((RG * delta.R) + (GG * delta.G) + (GB * delta.B))) +
-        (delta.B * ((RB * delta.R) + (GB * delta.G) + (BB * delta.B)));
+    public double QuadraticForm(Vector3D delta) =>
+        (delta.X * ((XX * delta.X) + (XY * delta.Y) + (XZ * delta.Z))) +
+        (delta.Y * ((XY * delta.X) + (YY * delta.Y) + (YZ * delta.Z))) +
+        (delta.Z * ((XZ * delta.X) + (YZ * delta.Y) + (ZZ * delta.Z)));
 
-    public (double Eigenvalue, Rgb64 Eigenvector) FindPrincipalEigenpair()
+    public (double Eigenvalue, Vector3D Eigenvector) FindPrincipalEigenpair()
     {
         Span<double> matrix =
         [
-            RR, RG, RB,
-            RG, GG, GB,
-            RB, GB, BB,
+            XX, XY, XZ,
+            XY, YY, YZ,
+            XZ, YZ, ZZ,
         ];
 
         Span<double> eigenvectors =
@@ -104,7 +104,7 @@ internal readonly record struct SymmetricMatrix3x3(
 
         return (
             matrix[(bestCol * 3) + bestCol],
-            new Rgb64(eigenvectors[bestCol], eigenvectors[3 + bestCol], eigenvectors[6 + bestCol]));
+            new Vector3D(eigenvectors[bestCol], eigenvectors[3 + bestCol], eigenvectors[6 + bestCol]));
     }
 
     private static void SelectPivotIndices(

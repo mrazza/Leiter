@@ -51,7 +51,7 @@ public static class MatrixMath
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static Matrix<T> HadamardProduct<T>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<T> right)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+        where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(self);
         ArgumentNullException.ThrowIfNull(right);
@@ -82,8 +82,8 @@ public static class MatrixMath
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static Matrix<T> HadamardProduct<T, R>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<R> right)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
-        where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
+        where T : struct, IPixel<T>
+        where R : struct, IScalar<R>
     {
         ArgumentNullException.ThrowIfNull(self);
         ArgumentNullException.ThrowIfNull(right);
@@ -113,7 +113,7 @@ public static class MatrixMath
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static T FrobeniusProduct<T>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<T> right)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T> =>
+        where T : struct, IPixel<T> =>
         FrobeniusCore<IReadOnlyMatrix<T>, T>(self, right);
 
     /// <summary>
@@ -126,7 +126,7 @@ public static class MatrixMath
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static T FrobeniusProduct<T>(this MatrixView<T> self, IReadOnlyMatrix<T> right)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T> =>
+        where T : struct, IPixel<T> =>
         FrobeniusCore<MatrixView<T>, T>(self, right);
 
     /// <summary>
@@ -140,8 +140,8 @@ public static class MatrixMath
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static T FrobeniusProduct<T, R>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<R> right)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
-        where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R> =>
+        where T : struct, IPixel<T>
+        where R : struct, IScalar<R> =>
         FrobeniusScalarCore<IReadOnlyMatrix<T>, T, R>(self, right);
 
     /// <summary>
@@ -155,8 +155,8 @@ public static class MatrixMath
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static T FrobeniusProduct<T, R>(this MatrixView<T> self, IReadOnlyMatrix<R> right)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
-        where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R> =>
+        where T : struct, IPixel<T>
+        where R : struct, IScalar<R> =>
         FrobeniusScalarCore<MatrixView<T>, T, R>(self, right);
 
     /// <summary>
@@ -170,8 +170,8 @@ public static class MatrixMath
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="kernel"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="kernel"/> has non-positive dimensions.</exception>
     public static Matrix<T> Convolve<T, R>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<R> kernel)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
-        where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
+        where T : struct, IPixel<T>
+        where R : struct, IScalar<R>
     {
         ArgumentNullException.ThrowIfNull(self);
         ArgumentNullException.ThrowIfNull(kernel);
@@ -214,7 +214,7 @@ public static class MatrixMath
         this IReadOnlyMatrix<T> self,
         ReadOnlySpan<double> horizontalKernel,
         ReadOnlySpan<double> verticalKernel)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+        where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(self);
 
@@ -281,7 +281,7 @@ public static class MatrixMath
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     private static T FrobeniusCore<TLeft, T>(TLeft self, IReadOnlyMatrix<T> right)
         where TLeft : IReadOnlyMatrix<T>
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+        where T : struct, IPixel<T>
     {
         if (self is null)
             throw new ArgumentNullException(nameof(self));
@@ -311,8 +311,8 @@ public static class MatrixMath
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     private static T FrobeniusScalarCore<TLeft, T, R>(TLeft self, IReadOnlyMatrix<R> right)
         where TLeft : IReadOnlyMatrix<T>
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
-        where R : struct, IScalar<R>, ISelfOperable<R>, INumericOperable<R>, IScalarOperable<R>
+        where T : struct, IPixel<T>
+        where R : struct, IScalar<R>
     {
         if (self is null)
             throw new ArgumentNullException(nameof(self));
@@ -336,6 +336,6 @@ public static class MatrixMath
     /// <param name="matrix">The matrix to vectorize.</param>
     /// <returns>A flattened array of SIMD vectors corresponding to the matrix pixels.</returns>
     internal static Vector<double>[] VectorizeMatrix<T>(IReadOnlyMatrix<T> matrix)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T> =>
+        where T : struct, IPixel<T> =>
         matrix.MapToArray(static pixel => pixel.ToDoubleVector());
 }

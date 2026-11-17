@@ -1,11 +1,9 @@
-namespace Leiter.Algorithms;
+namespace Leiter.Pixels.ColorSpaces;
 
 using Leiter.Core;
-using Leiter.Pixels;
-using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
-/// Provides extension methods to convert between pixel types.
+/// Provides extension methods to convert between pixel types and color spaces.
 /// </summary>
 public static class PixelConversion
 {
@@ -13,7 +11,7 @@ public static class PixelConversion
     /// Converts an <see cref="Xyz32"/> pixel to an 8-bit per channel <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/>.
     /// </summary>
     /// <remarks>
-    /// This method assumes a D65 white point for the XYZ pixel. Values outside [0, 255] are clamped.
+    /// This method assumes a D65 white point for the XYZ pixel. Values outside [0, 255] are rounded using <see cref="MidpointRounding.AwayFromZero"/> and clamped.
     /// </remarks>
     /// <param name="self">The XYZ pixel to convert.</param>
     /// <param name="colorSpace">The target RGB color space.</param>
@@ -22,19 +20,39 @@ public static class PixelConversion
     public static Rgb8 ToRgb8(this Xyz32 self, RgbColorSpace colorSpace) =>
         self.ToRgb64(colorSpace).ToRgb8();
 
-    private static byte ClampToByte(double value) =>
-        double.IsNaN(value) ? (byte)0 : (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
-
     /// <summary>
     /// Converts an <see cref="Rgb64"/> pixel with channel values in [0, 1] to an 8-bit per channel <see cref="Rgb8"/> pixel.
     /// </summary>
     /// <remarks>
-    /// Channel values are scaled by 255 and clamped to [0, 255].
+    /// Channel values are scaled by 255, rounded using <see cref="MidpointRounding.AwayFromZero"/>, and clamped to [0, 255].
     /// </remarks>
     /// <param name="self">The 64-bit floating-point RGB pixel to convert.</param>
-    /// <returns>An <see cref="Rgb8"/> pixel with byte-clamped channels.</returns>
+    /// <returns>An <see cref="Rgb8"/> pixel with rounded, byte-clamped channels.</returns>
     public static Rgb8 ToRgb8(this Rgb64 self) =>
-        new(ClampToByte(self.R * 255.0), ClampToByte(self.G * 255.0), ClampToByte(self.B * 255.0));
+        Rgb8.FromNormalized(self.R, self.G, self.B);
+
+    /// <summary>
+    /// Converts a normalized scalar <see cref="DoublePixel"/> in <c>[0, 1]</c> to a neutral grayscale <see cref="Rgb8"/> pixel.
+    /// </summary>
+    /// <param name="self">The scalar pixel whose value is scaled by 255, rounded away from zero, and clamped to [0, 255].</param>
+    /// <returns>An <see cref="Rgb8"/> pixel with equal R, G, and B channels.</returns>
+    public static Rgb8 ToGrayscaleRgb8(this DoublePixel self)
+    {
+        byte channel = Rgb8.ClampRoundedByte(self.Value * 255.0);
+        return new Rgb8(channel, channel, channel);
+    }
+
+    /// <summary>
+    /// Converts a matrix of normalized scalar <see cref="DoublePixel"/> values in <c>[0, 1]</c> to a grayscale <see cref="Matrix{Rgb8}"/> image.
+    /// </summary>
+    /// <param name="source">The scalar image matrix to convert.</param>
+    /// <returns>A new <see cref="Matrix{Rgb8}"/> containing rounded grayscale RGB pixels.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    public static Matrix<Rgb8> ToGrayscaleRgb8(this IReadOnlyMatrix<DoublePixel> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return source.Map(static pixel => pixel.ToGrayscaleRgb8());
+    }
 
     /// <summary>
     /// Converts an <see cref="Xyz32"/> pixel to an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/>.
@@ -238,7 +256,7 @@ public static class PixelConversion
         self.ToXyz32(illuminant).ToRgb64(colorSpace);
 
     /// <summary>
-    /// Converts a <see cref="Lab32"/> pixel (D65 white point) to a byte-clamped <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/>.
+    /// Converts a <see cref="Lab32"/> pixel (D65 white point) to a rounded, byte-clamped <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/>.
     /// </summary>
     /// <param name="self">The CIELAB pixel to convert.</param>
     /// <param name="colorSpace">The target RGB color space.</param>
@@ -248,7 +266,7 @@ public static class PixelConversion
         self.ToRgb8(colorSpace, Illuminant.D65);
 
     /// <summary>
-    /// Converts a <see cref="Lab32"/> pixel under <paramref name="illuminant"/> to a byte-clamped <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/>.
+    /// Converts a <see cref="Lab32"/> pixel under <paramref name="illuminant"/> to a rounded, byte-clamped <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/>.
     /// </summary>
     /// <param name="self">The CIELAB pixel to convert.</param>
     /// <param name="colorSpace">The target RGB color space.</param>

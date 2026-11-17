@@ -7,6 +7,7 @@ using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
 /// Efficient Graph-Based Image Segmentation

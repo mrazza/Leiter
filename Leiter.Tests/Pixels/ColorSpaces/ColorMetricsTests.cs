@@ -43,5 +43,17 @@ public class ColorMetricsTests
         Assert.Equal(15.0, ColorMetrics.HueDifferenceDegrees(355.0, 10.0), 6);
         Assert.Equal(15.0, ColorMetrics.HueDifferenceDegrees(10.0, 355.0), 6);
         Assert.Equal(180.0, ColorMetrics.HueDifferenceDegrees(0.0, 180.0), 6);
+
+        Assert.Equal(0.299, new Rgb64(1.0, 0.0, 0.0).GetLuma(), 9);
+        Assert.Equal(0.587, new Rgb64(0.0, 1.0, 0.0).GetLuma(), 9);
+        Assert.Equal(0.114, new Rgb64(0.0, 0.0, 1.0).GetLuma(), 9);
+        Assert.Equal(1.0, new Rgb64(1.0, 1.0, 1.0).GetLuma(), 9);
+        Assert.Equal(0.0, Rgb64.Zero.GetLuma(), 9);
+
+        Assert.Equal(0.299, new Rgb8(255, 0, 0).GetLuma(), 9);
+        Assert.Equal(0.587, new Rgb8(0, 255, 0).GetLuma(), 9);
+        Assert.Equal(0.114, new Rgb8(0, 0, 255).GetLuma(), 9);
+        Assert.Equal(1.0, new Rgb8(255, 255, 255).GetLuma(), 9);
+        Assert.Equal(0.0, Rgb8.Zero.GetLuma(), 9);
     }
 }

@@ -6,6 +6,7 @@ using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
 /// Implements Wang et al.'s saliency-guided level-of-detail (LOD) abstraction (Sec. 3.3 of "Towards Photo Watercolorization").

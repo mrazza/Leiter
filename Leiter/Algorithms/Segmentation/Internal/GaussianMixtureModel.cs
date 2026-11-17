@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
 using Leiter.Algorithms.Segmentation;
+using Leiter.Core;
 using Leiter.Pixels;
 
 /// <summary>
@@ -14,20 +15,20 @@ internal sealed class GaussianMixtureModel
 
     private readonly record struct GaussianComponent(
         double Weight,
-        Rgb64 Mean,
+        Vector3D Mean,
         SymmetricMatrix3x3 InverseCovariance,
         double HalfLogDetMinusLogWeight);
 
     private record struct ComponentAccumulator(
         int Count,
-        Rgb64 SumColors,
+        Vector3D SumVectors,
         SymmetricMatrix3x3 SumOuterProducts)
     {
         public void AddSample(Rgb8 pixel)
         {
             Count++;
-            Rgb64 color = ToUnnormalizedRgb64(pixel);
-            SumColors = SumColors.Add(color);
+            Vector3D color = ToColorVector(pixel);
+            SumVectors += color;
             SumOuterProducts = SumOuterProducts.AddOuterProduct(color);
         }
     }
@@ -60,7 +61,7 @@ internal sealed class GaussianMixtureModel
         while (activeClusters < componentCount)
         {
             AccumulateClusterStatistics(pixels, samplePixelIndices, clusterAssignments, activeClusters);
-            if (!TryFindClusterToSplit(activeClusters, out int splitTarget, out Rgb64 splitMean, out Rgb64 splitAxis))
+            if (!TryFindClusterToSplit(activeClusters, out int splitTarget, out Vector3D splitMean, out Vector3D splitAxis))
                 break;
 
             SplitClusterAlongAxis(
@@ -178,12 +179,12 @@ internal sealed class GaussianMixtureModel
     private bool TryFindClusterToSplit(
         int activeClusters,
         out int splitTarget,
-        out Rgb64 splitMean,
-        out Rgb64 splitAxis)
+        out Vector3D splitMean,
+        out Vector3D splitAxis)
     {
         splitTarget = -1;
-        splitMean = Rgb64.Zero;
-        splitAxis = Rgb64.Zero;
+        splitMean = Vector3D.Zero;
+        splitAxis = Vector3D.Zero;
         double bestEigenvalue = 0.0;
 
         for (int k = 0; k < activeClusters; k++)
@@ -192,17 +193,17 @@ internal sealed class GaussianMixtureModel
             if (accumulator.Count <= 1)
                 continue;
 
-            SymmetricMatrix3x3 covariance = SymmetricMatrix3x3.FromColorSums(
-                accumulator.SumColors,
+            SymmetricMatrix3x3 covariance = SymmetricMatrix3x3.FromSums(
+                accumulator.SumVectors,
                 accumulator.SumOuterProducts,
                 accumulator.Count);
-            (double maxEigenvalue, Rgb64 eigenvector) = covariance.FindPrincipalEigenpair();
+            (double maxEigenvalue, Vector3D eigenvector) = covariance.FindPrincipalEigenpair();
 
             if (maxEigenvalue > bestEigenvalue)
             {
                 bestEigenvalue = maxEigenvalue;
                 splitTarget = k;
-                splitMean = accumulator.SumColors.Divide((double)accumulator.Count);
+                splitMean = accumulator.SumVectors / accumulator.Count;
                 splitAxis = eigenvector;
             }
         }
@@ -216,16 +217,16 @@ internal sealed class GaussianMixtureModel
         Span<int> clusterAssignments,
         int splitTarget,
         int newClusterId,
-        Rgb64 splitMean,
-        Rgb64 splitAxis)
+        Vector3D splitMean,
+        Vector3D splitAxis)
     {
         for (int i = 0; i < samplePixelIndices.Length; i++)
         {
             if (clusterAssignments[i] != splitTarget)
                 continue;
 
-            Rgb64 delta = ToUnnormalizedRgb64(pixels[samplePixelIndices[i]]).Subtract(splitMean);
-            double projection = (delta.R * splitAxis.R) + (delta.G * splitAxis.G) + (delta.B * splitAxis.B);
+            Vector3D delta = ToColorVector(pixels[samplePixelIndices[i]]) - splitMean;
+            double projection = delta.Dot(splitAxis);
             if (projection > 0.0)
                 clusterAssignments[i] = newClusterId;
         }
@@ -243,9 +244,9 @@ internal sealed class GaussianMixtureModel
             }
 
             double weight = (double)accumulator.Count / totalSampleCount;
-            Rgb64 mean = accumulator.SumColors.Divide((double)accumulator.Count);
-            SymmetricMatrix3x3 regularizedCovariance = SymmetricMatrix3x3.FromColorSums(
-                accumulator.SumColors,
+            Vector3D mean = accumulator.SumVectors / accumulator.Count;
+            SymmetricMatrix3x3 regularizedCovariance = SymmetricMatrix3x3.FromSums(
+                accumulator.SumVectors,
                 accumulator.SumOuterProducts,
                 accumulator.Count,
                 CovarianceRegularization);
@@ -260,11 +261,11 @@ internal sealed class GaussianMixtureModel
 
     private static double ComputeComponentEnergy(in GaussianComponent component, Rgb8 pixel)
     {
-        Rgb64 delta = ToUnnormalizedRgb64(pixel).Subtract(component.Mean);
+        Vector3D delta = ToColorVector(pixel) - component.Mean;
         double quadForm = component.InverseCovariance.QuadraticForm(delta);
         return component.HalfLogDetMinusLogWeight + (0.5 * Math.Max(0.0, quadForm));
     }
 
     // GrabCut GMM parameters and regularization are defined in unnormalized [0, 255] RGB units.
-    private static Rgb64 ToUnnormalizedRgb64(Rgb8 pixel) => new(pixel.R, pixel.G, pixel.B);
+    private static Vector3D ToColorVector(Rgb8 pixel) => new(pixel.R, pixel.G, pixel.B);
 }
