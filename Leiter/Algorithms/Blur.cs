@@ -32,7 +32,7 @@ public static class Blur
         Guard.ThrowIfNotFinitePositive(sigma);
 
         if (image.Width == 0 || image.Height == 0 || radius == 0)
-            return image.ToSequentialMatrix();
+            return image.Clone();
 
         double[] kernel = CreateGaussianKernel1D(sigma, radius);
         return image.ConvolveSeparable(kernel, kernel);
@@ -58,7 +58,7 @@ public static class Blur
         ArgumentOutOfRangeException.ThrowIfNegative(radius);
 
         if (image.Width == 0 || image.Height == 0 || radius == 0)
-            return image.ToSequentialMatrix();
+            return image.Clone();
 
         int kernelDimension = radius * 2 + 1;
         var kernel = new double[kernelDimension];
@@ -87,7 +87,7 @@ public static class Blur
         Guard.ThrowIfNotFinitePositive(sigma);
 
         if (image.Width == 0 || image.Height == 0)
-            return image.ToSequentialMatrix();
+            return image.Clone();
 
         if (sigma < 0.5)
             return GaussianBlur(image, sigma, Math.Max(1, (int)Math.Ceiling(3.0 * sigma)));

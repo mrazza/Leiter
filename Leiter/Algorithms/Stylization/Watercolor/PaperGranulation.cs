@@ -84,14 +84,9 @@ public static class PaperGranulation
             throw new ArgumentException("The paper height map dimensions must match the image dimensions.", nameof(paperHeightMap));
         }
 
-        if (image.Count == 0)
+        if (image.Count == 0 || (opts.DensityStrength == 0.0 && opts.WarpAmplitude == 0.0))
         {
-            return new SequentialMatrix<Rgb8>(image.Size);
-        }
-
-        if (opts.DensityStrength == 0.0 && opts.WarpAmplitude == 0.0)
-        {
-            return image.ToSequentialMatrix();
+            return image.Clone();
         }
 
         IReadOnlyMatrix<DoublePixel> heightMap = paperHeightMap ?? GeneratePaperHeightMap(image.Size, opts.GrainNoiseOptions);

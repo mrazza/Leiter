@@ -34,14 +34,9 @@ public static class TurbulenceFlow
         TurbulenceFlowOptions opts = options ?? new TurbulenceFlowOptions();
         opts.Validate();
 
-        if (image.Count == 0)
+        if (image.Count == 0 || opts.Intensity == 0.0)
         {
-            return new SequentialMatrix<Rgb8>(image.Size);
-        }
-
-        if (opts.Intensity == 0.0)
-        {
-            return image.ToSequentialMatrix();
+            return image.Clone();
         }
 
         PerlinNoiseOptions noiseOpts = opts.NoiseOptions ?? DefaultNoiseOptions;

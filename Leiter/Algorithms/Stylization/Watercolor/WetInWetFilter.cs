@@ -62,7 +62,7 @@ public static class WetInWetFilter
         if (image.Count == 0 || opts.Mode == WetInWetMode.Disabled || boundaryCount == 0)
         {
             return new WetInWetResult(
-                image.ToSequentialMatrix(),
+                image.Clone(),
                 new MaskMatrix(image.Size),
                 new bool[boundaryCount]);
         }
@@ -142,7 +142,7 @@ public static class WetInWetFilter
         if (!hasQualifying)
         {
             return new WetInWetResult(
-                image.ToSequentialMatrix(),
+                image.Clone(),
                 new MaskMatrix(image.Size),
                 qualifying);
         }
@@ -233,7 +233,7 @@ public static class WetInWetFilter
             }
         }
 
-        Matrix<Rgb8> seeded = image.ToSequentialMatrix();
+        Matrix<Rgb8> seeded = image.Clone();
         var wetAreaMask = new MaskMatrix(width, height);
 
         for (int y = 0; y < height; y++)

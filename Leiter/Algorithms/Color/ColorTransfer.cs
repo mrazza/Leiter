@@ -143,7 +143,7 @@ public static class ColorTransfer
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         if (source.Count == 0 || strength == 0.0)
-            return source.ToSequentialMatrix();
+            return source.Clone();
 
         LabColorStatistics srcStats = ComputeStatistics(source);
         double scaleL = srcStats.StdDevL > 1e-6 ? targetStatistics.StdDevL / srcStats.StdDevL : 0.0;
@@ -185,7 +185,7 @@ public static class ColorTransfer
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         if (source.Count == 0 || strength == 0.0)
-            return source.ToSequentialMatrix();
+            return source.Clone();
 
         LabColorStatistics targetStats = ComputeStatistics(reference, colorSpace, illuminant);
         Matrix<Lab32> sourceLab = source.Map(pixel => pixel.ToLab32(colorSpace, illuminant));
@@ -212,7 +212,7 @@ public static class ColorTransfer
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         if (source.Count == 0 || strength == 0.0)
-            return source.ToSequentialMatrix();
+            return source.Clone();
 
         Matrix<Lab32> sourceLab = source.Map(pixel => pixel.ToLab32(colorSpace, palette.Illuminant));
         return TransferLabToRgb8(sourceLab, palette.Statistics, colorSpace, palette.Illuminant, strength);
@@ -244,7 +244,7 @@ public static class ColorTransfer
         WatercolorPalette selected = SelectClosestPalette(sourceStats, palettes, featureWeights);
 
         if (source.Count == 0 || strength == 0.0)
-            return (source.ToSequentialMatrix(), selected);
+            return (source.Clone(), selected);
 
         Matrix<Rgb8> result = selected.Illuminant == Illuminant.E
             ? TransferLabToRgb8(sourceLabE, selected.Statistics, colorSpace, Illuminant.E, strength)
