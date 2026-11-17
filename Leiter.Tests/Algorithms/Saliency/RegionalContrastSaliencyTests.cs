@@ -30,7 +30,7 @@ public class RegionalContrastSaliencyTests
         }
 
         // Get segmentation
-        var segmentation = EgbiSegmentation.Segment(img, kFactor: 1.0, epsilon: 1.0, minSegmentSize: 5);
+        var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
 
         // Compute regional saliency
         var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: true);
@@ -71,7 +71,7 @@ public class RegionalContrastSaliencyTests
         }
 
         // Segment the image. With exact colors, the segment boundaries are completely clear.
-        var segmentation = EgbiSegmentation.Segment(img, kFactor: 1.0, epsilon: 1.0, minSegmentSize: 4);
+        var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
 
         // Compute regional saliency
         var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: false, computeBorderRegions: false);
@@ -92,7 +92,7 @@ public class RegionalContrastSaliencyTests
         var img = new SequentialMatrix<Rgb8>(10, 10);
         img.SetAll(new Rgb8(100, 150, 200));
 
-        var segmentation = EgbiSegmentation.Segment(img, kFactor: 1.0, epsilon: 1.0, minSegmentSize: 4);
+        var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
 
         var withOptions = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: true);
         var withoutOptions = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: false, computeBorderRegions: false);
@@ -127,7 +127,7 @@ public class RegionalContrastSaliencyTests
             }
         }
 
-        var segmentation = EgbiSegmentation.Segment(img, kFactor: 1.0, epsilon: 1.0, minSegmentSize: 4);
+        var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
 
         var withoutBorderSuppression = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: false);
         var withBorderSuppression = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: true);
@@ -169,7 +169,7 @@ public class RegionalContrastSaliencyTests
             }
         }
 
-        var segmentation = EgbiSegmentation.Segment(img, kFactor: 1.0, epsilon: 1.0, minSegmentSize: 5);
+        var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
 
         // Confirm the white border strip has higher raw saliency than the interior gray region before border suppression.
         var unsuppressed = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: false, computeBorderRegions: false);
@@ -223,7 +223,7 @@ public class RegionalContrastSaliencyTests
             }
         }
 
-        var segmentation = EgbiSegmentation.Segment(img, kFactor: 1.0, epsilon: 1.0, minSegmentSize: 10);
+        var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 10));
         var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: true);
 
         Assert.All(saliency, p =>
@@ -293,7 +293,7 @@ public class RegionalContrastSaliencyTests
             img[noiseCoords[i].X, noiseCoords[i].Y] = rareColors[i];
         }
 
-        var segmentation = EgbiSegmentation.Segment(img, kFactor: 1.0, epsilon: 1.0, minSegmentSize: 4);
+        var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
 
         foreach (bool enableSmoothing in new[] { false, true })
         {

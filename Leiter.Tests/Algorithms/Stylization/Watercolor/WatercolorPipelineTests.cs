@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
 using Leiter.Algorithms.Color;
+using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Stylization;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
@@ -59,6 +60,7 @@ public class WatercolorPipelineTests
         var options = new WatercolorOptions(
             TargetPalette: customPalette,
             ColorTransferStrength: 0.5,
+            Egbi: new EgbiOptions(KFactor: 25.0, Epsilon: 1.0, MinRegionSize: 4),
             ToneCurve: new PiecewiseToneCurveOptions(MinTone: 0.1, MaxTone: 0.9),
             PaperGranulation: new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: 0.0),
             EnableFxaa: false);

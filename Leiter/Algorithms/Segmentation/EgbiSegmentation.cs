@@ -31,40 +31,38 @@ public static class EgbiSegmentation
     /// Segments an image using the Efficient Graph-Based Image Segmentation (EGBI) algorithm.
     /// </summary>
     /// <remarks>
-    /// This method performs the segmentation and returns a set of regions, one for each segment.
+    /// This method performs the segmentation and returns a disjoint-set partition, one region per segment.
     /// It is recommended to perform a Gaussian or similar blur to the image before segmentation to
     /// remove compression or other artifacts which may show up in the resulting segmentation. The
     /// original paper recommends a Gaussian blur with a sigma value of 0.8.
     ///
-    /// This method has a number of configurable constants that can be used to tune the final output.
-    /// The default values are tuned for larger images in the L*a*b* color space using the CIEDE2000
-    /// color difference method. For segmentation using other color spaces or different differencing
-    /// methodologies, they may not produce good results.
-    ///
-    /// <c>epsilon</c> is a non-standard EGBI parameter which controls how pixel difference is interpreted.
-    /// If two adjacent pixels have a color difference of less than epsilon, they will, necessarily,
-    /// be part of the same segment.
-    ///
-    /// <c>minSegmentSize</c> is a non-standard EGBI parameter. If, after running the EGBI algorithm, a
-    /// segment is less than <c>minSegmentSize</c> it will be joined with its most similar neighboring pixel.
+    /// Default values in <see cref="EgbiOptions"/> are tuned for larger images in the L*a*b* color space
+    /// using the CIEDE2000 color difference method. For segmentation using other color spaces or
+    /// differencing methodologies, customize the options accordingly.
     /// </remarks>
     /// <typeparam name="T">The type of the pixels for the underlying image.</typeparam>
     /// <param name="image">The image to segment.</param>
-    /// <param name="kFactor">The k value of the EGBI algorithm. Larger values will bias the system towards larger segment regions.</param>
-    /// <param name="epsilon">Specifies the minimum distance for two pixels to be considered different.</param>
-    /// <param name="minSegmentSize">The minimum size for any one segment.</param>
-    /// <returns>A collection of regions (themselves a collection of pixel coordinates); one for each segment.</returns>
+    /// <param name="options">The EGBI configuration options, or <see langword="null"/> to use default options.</param>
+    /// <returns>An <see cref="IDisjointSet"/> representing the partitioned regions of the image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    public static IDisjointSet Segment<T>(IReadOnlyMatrix<T> image, double kFactor = 100.0, double epsilon = 1.0, int minSegmentSize = 100)
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any option in <paramref name="options"/> is invalid.</exception>
+    public static IDisjointSet Segment<T>(IReadOnlyMatrix<T> image, EgbiOptions? options = null)
         where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(image);
+
+        EgbiOptions resolvedOptions = options ?? new EgbiOptions();
+        resolvedOptions.Validate();
+
+        double kFactor = resolvedOptions.KFactor;
+        double epsilon = resolvedOptions.Epsilon;
+        int minRegionSize = resolvedOptions.MinRegionSize;
 
         var disjointSet = new DisjointSet<PartitionInfo>(image, (_) => new PartitionInfo(kFactor));
         if (image.Count == 0)
             return disjointSet;
 
-        UndirectedGraphEdge<Coord>[] graphEdges = BuildSortedGraphEdges(image);
+        UndirectedGraphEdge<Coord>[] graphEdges = BuildSortedGraphEdges(image, resolvedOptions.Connectivity);
 
         // Reuse graphEdges in place for deferred edges: Segment owns this array exclusively,
         // and deferredCount <= i holds on every iteration so unread entries are never overwritten.
@@ -84,34 +82,36 @@ public static class EgbiSegmentation
             {
                 MergePartitions(disjointSet, firstPartition, secondPartition, edge.Weight, kFactor);
             }
-            else if (minSegmentSize > 0)
+            else if (minRegionSize > 0)
             {
                 graphEdges[deferredCount++] = edge;
             }
         }
 
-        if (minSegmentSize > 0 && deferredCount > 0)
+        if (minRegionSize > 0 && deferredCount > 0)
         {
-            MergeSmallPartitions(disjointSet, graphEdges.AsSpan(0, deferredCount), minSegmentSize, kFactor);
+            MergeSmallPartitions(disjointSet, graphEdges.AsSpan(0, deferredCount), minRegionSize, kFactor);
         }
 
         return disjointSet;
     }
 
-    private static UndirectedGraphEdge<Coord>[] BuildSortedGraphEdges<T>(IReadOnlyMatrix<T> image)
+    private static UndirectedGraphEdge<Coord>[] BuildSortedGraphEdges<T>(IReadOnlyMatrix<T> image, GridConnectivity connectivity)
         where T : struct, IPixel<T>
     {
+        int edgesPerPixel = connectivity == GridConnectivity.EightConnected ? 4 : 2;
         var rowEdges = new List<UndirectedGraphEdge<Coord>>[image.Height];
         Parallel.For(0, image.Height, y =>
         {
-            var localEdges = new List<UndirectedGraphEdge<Coord>>(image.Width * 4);
+            ReadOnlySpan<GridNeighbor> forwardNeighbors = GridNeighborhood.GetForward(connectivity);
+            var localEdges = new List<UndirectedGraphEdge<Coord>>(image.Width * edgesPerPixel);
             for (int x = 0; x < image.Width; x++)
             {
                 var self = new Coord(x, y);
                 T selfPixel = image[self];
-                foreach (GridNeighbor neighbor in GridNeighborhood.Forward8Connected)
+                for (int n = 0; n < forwardNeighbors.Length; n++)
                 {
-                    Coord other = self + neighbor.Offset;
+                    Coord other = self + forwardNeighbors[n].Offset;
                     if (!image.Contains(other))
                         continue;
 
@@ -179,7 +179,7 @@ public static class EgbiSegmentation
     private static void MergeSmallPartitions(
         DisjointSet<PartitionInfo> disjointSet,
         ReadOnlySpan<UndirectedGraphEdge<Coord>> deferredEdges,
-        int minSegmentSize,
+        int minRegionSize,
         double kFactor)
     {
         foreach (ref readonly UndirectedGraphEdge<Coord> edge in deferredEdges)
@@ -190,7 +190,7 @@ public static class EgbiSegmentation
             if (firstPartition.RootIndex == secondPartition.RootIndex)
                 continue;
 
-            if (firstPartition.Size < minSegmentSize || secondPartition.Size < minSegmentSize)
+            if (firstPartition.Size < minRegionSize || secondPartition.Size < minRegionSize)
                 MergePartitions(disjointSet, firstPartition, secondPartition, edge.Weight, kFactor);
         }
     }

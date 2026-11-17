@@ -91,7 +91,7 @@ internal static class Program
             () =>
             {
                 Matrix<Lab32> labImage = gaussianBlurred.Map(pixel => pixel.ToLab32(RgbColorSpace.sRGB));
-                return EgbiSegmentation.Segment(labImage, kFactor: 50.0, epsilon: 1.0, minSegmentSize: 200);
+                return EgbiSegmentation.Segment(labImage, new EgbiOptions(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200));
             });
 
         var regions = segmentation.ToRegions();

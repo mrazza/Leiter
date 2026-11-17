@@ -57,8 +57,12 @@ public static class WatercolorPipeline
         // Stage 2: Regional Contrast Saliency & Saliency Distance Field
         Matrix<Rgb8> blurred = Blur.GaussianBlur(colorTransferred, sigma: 0.8, radius: 2);
         Matrix<Lab32> labBlurred = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.sRGB));
-        int egbiMinSize = Math.Min(200, Math.Max(1, image.Count / 16));
-        IDisjointSet egbiSeg = EgbiSegmentation.Segment(labBlurred, kFactor: 50.0, epsilon: 1.0, minSegmentSize: egbiMinSize);
+        EgbiOptions resolvedEgbi = opts.Egbi ??
+            new EgbiOptions(
+                KFactor: 50.0,
+                Epsilon: 1.0,
+                MinRegionSize: Math.Min(200, Math.Max(1, image.Count / 16)));
+        IDisjointSet egbiSeg = EgbiSegmentation.Segment(labBlurred, resolvedEgbi);
         Matrix<DoublePixel> saliencyMap = RegionalContrastSaliency.ComputeSaliency(colorTransferred, egbiSeg);
         (MaskMatrix salientMask, Matrix<DoublePixel> distanceField) = SaliencyDistanceField.Compute(
             colorTransferred,
