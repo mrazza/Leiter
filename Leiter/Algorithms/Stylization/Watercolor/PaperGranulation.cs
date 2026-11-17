@@ -13,13 +13,6 @@ using Leiter.Pixels;
 /// </summary>
 public static class PaperGranulation
 {
-    private static readonly PerlinNoiseOptions DefaultGrainNoise = new(
-        Seed: 707,
-        Frequency: 0.35,
-        Octaves: 3,
-        Lacunarity: 2.1,
-        Persistence: 0.55);
-
     /// <summary>
     /// Generates a realistic paper surface height map combining fractal fiber noise and inverted turbulence valleys.
     /// </summary>
@@ -32,7 +25,7 @@ public static class PaperGranulation
         ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
         ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
 
-        PerlinNoiseOptions opts = grainOptions ?? DefaultGrainNoise;
+        PerlinNoiseOptions opts = grainOptions ?? PaperGranulationOptions.DefaultGrainNoise;
         opts.Validate();
 
         if (size.Width == 0 || size.Height == 0)

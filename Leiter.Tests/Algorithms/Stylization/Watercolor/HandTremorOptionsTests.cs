@@ -3,6 +3,7 @@ namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 using System;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
+using Leiter.Core;
 using Leiter.Pixels;
 using Xunit;
 
@@ -204,5 +205,39 @@ public class HandTremorOptionsTests
         Assert.True(opt1 == opt2);
         Assert.False(opt1 == opt3);
         Assert.Equal(opt1.GetHashCode(), opt2.GetHashCode());
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="HandTremorOptions.ForSize"/> and <see cref="HandTremorOptions.ForImage"/> scale displacement amplitude and noise frequencies.
+    /// </summary>
+    [Fact]
+    public void ForSize_And_ForImage_ShouldScaleAmplitudeAndDelegateNoise()
+    {
+        HandTremorOptions refOpts = HandTremorOptions.ForSize(new Size(800, 800));
+        Assert.Equal(2.5, refOpts.Amplitude, 6);
+        Assert.NotNull(refOpts.PrimaryNoise);
+        Assert.NotNull(refOpts.SecondaryNoise);
+        Assert.Equal(0.04, refOpts.PrimaryNoise!.Frequency, 6);
+        Assert.Equal(0.04, refOpts.SecondaryNoise!.Frequency, 6);
+        Assert.Equal(refOpts, HandTremorOptions.ForSize(new Size(1000, 640)));
+
+        HandTremorOptions small = HandTremorOptions.ForSize(new Size(200, 200));
+        HandTremorOptions large = HandTremorOptions.ForSize(new Size(3200, 2400));
+        Assert.Equal(0.625, small.Amplitude, 6);
+        Assert.True(large.Amplitude > refOpts.Amplitude);
+        Assert.True(small.PrimaryNoise!.Frequency > refOpts.PrimaryNoise.Frequency);
+        Assert.True(large.PrimaryNoise!.Frequency < refOpts.PrimaryNoise.Frequency);
+
+        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
+        {
+            HandTremorOptions.ForSize(size).Validate();
+        }
+
+        var image = new SequentialMatrix<Rgb8>(400, 400);
+        Assert.Equal(HandTremorOptions.ForSize(image.Size), HandTremorOptions.ForImage(image));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => HandTremorOptions.ForSize(new Size(-1, 10)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => HandTremorOptions.ForSize(new Size(10, 10), 0.0));
+        Assert.Throws<ArgumentNullException>(() => HandTremorOptions.ForImage(null!));
     }
 }

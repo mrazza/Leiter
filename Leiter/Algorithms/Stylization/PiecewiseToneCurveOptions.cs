@@ -1,6 +1,9 @@
 namespace Leiter.Algorithms.Stylization;
 
 using System;
+using Leiter.Algorithms.Internal;
+using Leiter.Core;
+using Leiter.Pixels;
 
 /// <summary>
 /// Configures parameters for a piecewise tone reproduction curve with shadow toe, linear midtone, and highlight shoulder.
@@ -15,6 +18,61 @@ public sealed record PiecewiseToneCurveOptions(
     double ShadowKnee = 0.15,
     double HighlightKnee = 0.85)
 {
+    /// <summary>
+    /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) accepted for uniform <c>ForSize</c> signatures.
+    /// </summary>
+    public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
+
+    /// <summary>
+    /// Creates <see cref="PiecewiseToneCurveOptions"/> for <paramref name="size"/>. Tone mapping is resolution-invariant and returns validated default parameters.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="PiecewiseToneCurveOptions"/> instance.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static PiecewiseToneCurveOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    {
+        OptionTuning.ValidateSizeAndReference(size, referenceDimension);
+        return new PiecewiseToneCurveOptions();
+    }
+
+    /// <summary>
+    /// Creates <see cref="PiecewiseToneCurveOptions"/> with knee breakpoints gently adapted to the lightness dispersion of <paramref name="image"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image to analyze.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="PiecewiseToneCurveOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static PiecewiseToneCurveOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        double referenceDimension = DefaultReferenceDimension)
+    {
+        OptionTuning.ValidateImageAndReference(image, referenceDimension);
+        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
+        return ForProfile(in profile, referenceDimension);
+    }
+
+    internal static PiecewiseToneCurveOptions ForProfile(in ImageTuningProfile profile, double referenceDimension)
+    {
+        PiecewiseToneCurveOptions defaults = ForSize(profile.ImageSize, referenceDimension);
+        if (profile.IsEmpty)
+        {
+            return defaults;
+        }
+
+        const double ReferenceStdDevL = 17.6;
+        double contrastDelta = Math.Clamp((profile.LabStats.StdDevL - ReferenceStdDevL) / ReferenceStdDevL, -0.5, 1.0);
+        double shadowKnee = Math.Clamp(defaults.ShadowKnee + (0.06 * contrastDelta), 0.12, 0.22);
+        double highlightKnee = Math.Clamp(defaults.HighlightKnee - (0.06 * contrastDelta), 0.78, 0.88);
+
+        return defaults with
+        {
+            ShadowKnee = shadowKnee,
+            HighlightKnee = highlightKnee
+        };
+    }
+
     /// <summary>
     /// Validates that all tone curve parameters are finite, satisfy output bounds 0.0 &lt;= MinTone &lt; MaxTone &lt;= 1.0, and satisfy input knots 0.0 &lt; ShadowKnee &lt; HighlightKnee &lt; 1.0.
     /// </summary>

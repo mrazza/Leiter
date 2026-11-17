@@ -2,6 +2,8 @@ namespace Leiter.Tests.Algorithms.Stylization;
 
 using System;
 using Leiter.Algorithms.Stylization;
+using Leiter.Core;
+using Leiter.Pixels;
 using Xunit;
 
 /// <summary>
@@ -179,5 +181,53 @@ public class LodAbstractionOptionsTests
             SalientOverlapThreshold: 0.6);
 
         options.Validate();
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="LodAbstractionOptions.ForSize"/> and <see cref="LodAbstractionOptions.ForImage"/> scale kernel widths linearly and adapt cross-segment thresholds.
+    /// </summary>
+    [Fact]
+    public void ForSize_And_ForImage_ShouldScaleKernelsAndAdaptColorScale()
+    {
+        LodAbstractionOptions refOpts = LodAbstractionOptions.ForSize(new Size(800, 800));
+        Assert.Equal(5, refOpts.SalientKernelSize);
+        Assert.Equal(4, refOpts.MinNonSalientKernelSize);
+        Assert.Equal(9, refOpts.MaxNonSalientKernelSize);
+        Assert.Equal(10.0, refOpts.DistanceKernelScale, 6);
+        Assert.Equal(refOpts, LodAbstractionOptions.ForSize(new Size(1000, 640)));
+
+        LodAbstractionOptions small = LodAbstractionOptions.ForSize(new Size(200, 200));
+        LodAbstractionOptions large = LodAbstractionOptions.ForSize(new Size(3200, 2400));
+        Assert.Equal(1, small.SalientKernelSize);
+        Assert.Equal(1, small.MinNonSalientKernelSize);
+        Assert.Equal(2, small.MaxNonSalientKernelSize);
+        Assert.True(large.SalientKernelSize > refOpts.SalientKernelSize);
+        Assert.True(large.MaxNonSalientKernelSize >= large.MinNonSalientKernelSize);
+        Assert.True(large.DistanceKernelScale > refOpts.DistanceKernelScale);
+
+        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
+        {
+            LodAbstractionOptions.ForSize(size).Validate();
+        }
+
+        var flat = new SequentialMatrix<Rgb8>(64, 64);
+        flat.SetAll(new Rgb8(120, 120, 120));
+        var vibrant = new SequentialMatrix<Rgb8>(64, 64);
+        for (int y = 0; y < 64; y++)
+        {
+            for (int x = 0; x < 64; x++)
+            {
+                vibrant[x, y] = (x + y) % 2 == 0 ? new Rgb8(255, 240, 20) : new Rgb8(10, 20, 235);
+            }
+        }
+
+        LodAbstractionOptions flatOpts = LodAbstractionOptions.ForImage(flat);
+        LodAbstractionOptions vibrantOpts = LodAbstractionOptions.ForImage(vibrant);
+        Assert.True(vibrantOpts.CrossSegmentColorScale > flatOpts.CrossSegmentColorScale);
+        Assert.InRange(vibrantOpts.CrossSegmentColorScale, 0.15, 0.50);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => LodAbstractionOptions.ForSize(new Size(-1, 10)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => LodAbstractionOptions.ForSize(new Size(10, 10), double.NaN));
+        Assert.Throws<ArgumentNullException>(() => LodAbstractionOptions.ForImage(null!));
     }
 }

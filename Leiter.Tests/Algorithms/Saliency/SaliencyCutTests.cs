@@ -96,6 +96,34 @@ public class SaliencyCutTests
     }
 
     [Fact]
+    public void Extract_LargeTrimapBandRadius_ShouldScaleErosionAndRefineOverspill()
+    {
+        var image = new SequentialMatrix<Rgb8>(96, 96);
+        var overspillSaliency = new SequentialMatrix<DoublePixel>(96, 96);
+
+        for (int y = 0; y < image.Height; y++)
+        {
+            for (int x = 0; x < image.Width; x++)
+            {
+                bool isObject = x >= 24 && x <= 71 && y >= 24 && y <= 71;
+                image[x, y] = isObject ? new Rgb8(220, 40, 35) : new Rgb8(25, 55, 195);
+
+                bool isOverspillSeed = x >= 20 && x <= 75 && y >= 20 && y <= 60;
+                overspillSaliency[x, y] = isOverspillSeed ? 0.90 : 0.05;
+            }
+        }
+
+        MaskMatrix mask = SaliencyCut.Extract(
+            image,
+            overspillSaliency,
+            new SaliencyCutOptions(MaxOuterIterations: 4, TrimapBandRadius: 20));
+
+        Assert.True(mask[48, 66]);
+        Assert.False(mask[22, 40]);
+        Assert.False(mask[4, 4]);
+    }
+
+    [Fact]
     public void Extract_FallbackEdgeCases_ShouldHandleVaryingIterations()
     {
         var image = new SequentialMatrix<Rgb8>(6, 6);

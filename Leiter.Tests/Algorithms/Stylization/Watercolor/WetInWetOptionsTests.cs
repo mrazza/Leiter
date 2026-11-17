@@ -1,7 +1,10 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.Stylization.Watercolor;
+using Leiter.Core;
+using Leiter.Pixels;
 using Xunit;
 
 /// <summary>
@@ -349,5 +352,49 @@ public class WetInWetOptionsTests
         Assert.True(opt1 == opt2);
         Assert.False(opt1 == opt3);
         Assert.Equal(opt1.GetHashCode(), opt2.GetHashCode());
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="WetInWetOptions.ForSize"/> delegates elliptical radii and scales scatter/gradient thresholds, and <see cref="WetInWetOptions.ForImage"/> adapts to clutter.
+    /// </summary>
+    [Fact]
+    public void ForSize_And_ForImage_ShouldScaleAndAdaptGradientThreshold()
+    {
+        WetInWetOptions refOpts = WetInWetOptions.ForSize(new Size(800, 800));
+        Assert.Equal(4, refOpts.ScatterRadius);
+        Assert.Equal(6.0, refOpts.MajorRadius, 6);
+        Assert.Equal(1.5, refOpts.MinorRadius, 6);
+        Assert.Equal(0.1, refOpts.ColorGradientThreshold, 6);
+        Assert.Equal(refOpts, WetInWetOptions.ForSize(new Size(1000, 640)));
+
+        Size largeSize = new(3200, 2400);
+        WetInWetOptions large = WetInWetOptions.ForSize(largeSize);
+        OrientedEllipticalFilterOptions expectedEllipse = OrientedEllipticalFilterOptions.ForSize(largeSize);
+        Assert.Equal(expectedEllipse.MajorRadius, large.MajorRadius, 6);
+        Assert.Equal(expectedEllipse.MinorRadius, large.MinorRadius, 6);
+        Assert.True(large.ScatterRadius > refOpts.ScatterRadius);
+        Assert.True(large.ColorGradientThreshold < refOpts.ColorGradientThreshold);
+
+        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
+        {
+            WetInWetOptions.ForSize(size).Validate();
+        }
+
+        var flat = new SequentialMatrix<Rgb8>(256, 256);
+        flat.SetAll(new Rgb8(120, 120, 120));
+        var busy = new SequentialMatrix<Rgb8>(256, 256);
+        for (int y = 0; y < 256; y++)
+        {
+            for (int x = 0; x < 256; x++)
+            {
+                busy[x, y] = (((x / 4) + (y / 4)) & 1) == 0 ? new Rgb8(255, 255, 255) : Rgb8.Zero;
+            }
+        }
+
+        Assert.True(WetInWetOptions.ForImage(busy).ColorGradientThreshold > WetInWetOptions.ForImage(flat).ColorGradientThreshold);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => WetInWetOptions.ForSize(new Size(-1, 10)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WetInWetOptions.ForSize(new Size(10, 10), double.NaN));
+        Assert.Throws<ArgumentNullException>(() => WetInWetOptions.ForImage(null!));
     }
 }

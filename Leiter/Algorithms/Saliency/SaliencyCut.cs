@@ -155,7 +155,7 @@ public static class SaliencyCut
             return false;
         }
 
-        int erodeRadius = Math.Clamp(bandRadius / 4, 1, 3);
+        int erodeRadius = Math.Max(1, bandRadius / 4);
         MaskMatrix eroded = BinaryMorphology.Erode(currentMask, erodeRadius, StructuringElementShape.Disk);
         refinedTrimap = TrimapMatrix.FromConfidenceBands(currentMask, eroded, dilated);
         return true;

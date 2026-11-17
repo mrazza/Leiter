@@ -1,6 +1,10 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
+using Leiter.Algorithms;
+using Leiter.Algorithms.Internal;
+using Leiter.Core;
+using Leiter.Pixels;
 
 /// <summary>
 /// Configures parameters for the wet-in-wet watercolor edge bleeding filter.
@@ -29,6 +33,68 @@ public sealed record WetInWetOptions(
     double MinorRadius = 1.5,
     int RandomSeed = 1337)
 {
+    /// <summary>
+    /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default bleed radii and gradient thresholds apply unscaled.
+    /// </summary>
+    public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
+
+    /// <summary>
+    /// Creates <see cref="WetInWetOptions"/> with scatter radius, elliptical filter radii, and color gradient threshold scaled for <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static WetInWetOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    {
+        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
+        var defaults = new WetInWetOptions();
+        if (totalPixels == 0)
+        {
+            return defaults;
+        }
+
+        OrientedEllipticalFilterOptions ellipse = OrientedEllipticalFilterOptions.ForSize(size, referenceDimension);
+        return defaults with
+        {
+            ScatterRadius = OptionTuning.RoundPositiveInt(defaults.ScatterRadius * s),
+            MajorRadius = ellipse.MajorRadius,
+            MinorRadius = ellipse.MinorRadius,
+            ColorGradientThreshold = Math.Clamp(defaults.ColorGradientThreshold / s, 0.005, 0.5)
+        };
+    }
+
+    /// <summary>
+    /// Creates <see cref="WetInWetOptions"/> tuned for both the dimensions and scene clutter of <paramref name="image"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image to analyze.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static WetInWetOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        double referenceDimension = DefaultReferenceDimension)
+    {
+        OptionTuning.ValidateImageAndReference(image, referenceDimension);
+        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
+        return ForProfile(in profile, referenceDimension);
+    }
+
+    internal static WetInWetOptions ForProfile(in ImageTuningProfile profile, double referenceDimension)
+    {
+        WetInWetOptions scaled = ForSize(profile.ImageSize, referenceDimension);
+        if (profile.IsEmpty)
+        {
+            return scaled;
+        }
+
+        return scaled with
+        {
+            ColorGradientThreshold = Math.Clamp(scaled.ColorGradientThreshold * profile.ClutterFactor, 0.005, 0.5)
+        };
+    }
+
     /// <summary>
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>

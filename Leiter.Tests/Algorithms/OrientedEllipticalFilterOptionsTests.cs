@@ -2,6 +2,8 @@ namespace Leiter.Tests.Algorithms;
 
 using System;
 using Leiter.Algorithms;
+using Leiter.Core;
+using Leiter.Pixels;
 using Xunit;
 
 /// <summary>
@@ -87,5 +89,38 @@ public class OrientedEllipticalFilterOptionsTests
             SigmaScale: 0.3);
 
         options.Validate();
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="OrientedEllipticalFilterOptions.ForSize"/> and <see cref="OrientedEllipticalFilterOptions.ForImage{T}"/> scale radii linearly and validate inputs.
+    /// </summary>
+    [Fact]
+    public void ForSize_And_ForImage_ShouldScaleRadiiLinearlyAndValidate()
+    {
+        OrientedEllipticalFilterOptions refOptions = OrientedEllipticalFilterOptions.ForSize(new Size(800, 800));
+        Assert.Equal(6.0, refOptions.MajorRadius, 6);
+        Assert.Equal(1.5, refOptions.MinorRadius, 6);
+        Assert.Equal(refOptions, OrientedEllipticalFilterOptions.ForSize(new Size(1000, 640)));
+
+        OrientedEllipticalFilterOptions small = OrientedEllipticalFilterOptions.ForSize(new Size(200, 200));
+        OrientedEllipticalFilterOptions large = OrientedEllipticalFilterOptions.ForSize(new Size(3200, 2400));
+        Assert.Equal(1.5, small.MajorRadius, 6);
+        Assert.Equal(0.375, small.MinorRadius, 6);
+        Assert.True(large.MajorRadius > refOptions.MajorRadius);
+        Assert.True(large.MinorRadius > refOptions.MinorRadius);
+
+        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
+        {
+            OrientedEllipticalFilterOptions.ForSize(size).Validate();
+        }
+
+        var image = new SequentialMatrix<Rgb8>(400, 400);
+        Assert.Equal(OrientedEllipticalFilterOptions.ForSize(image.Size), OrientedEllipticalFilterOptions.ForImage(image));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(-1, 100)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(100, -1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(100, 100), -5.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(100, 100), double.PositiveInfinity));
+        Assert.Throws<ArgumentNullException>(() => OrientedEllipticalFilterOptions.ForImage<Rgb8>(null!));
     }
 }

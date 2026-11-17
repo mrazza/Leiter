@@ -12,13 +12,6 @@ using Leiter.Pixels;
 /// </summary>
 public static class TurbulenceFlow
 {
-    private static readonly PerlinNoiseOptions DefaultNoiseOptions = new(
-        Seed: 404,
-        Frequency: 0.015,
-        Octaves: 4,
-        Lacunarity: 2.0,
-        Persistence: 0.5);
-
     /// <summary>
     /// Applies turbulence flow displacement to an RGB image using multi-octave fractal noise.
     /// </summary>
@@ -39,7 +32,7 @@ public static class TurbulenceFlow
             return image.Clone();
         }
 
-        PerlinNoiseOptions noiseOpts = opts.NoiseOptions ?? DefaultNoiseOptions;
+        PerlinNoiseOptions noiseOpts = opts.NoiseOptions ?? TurbulenceFlowOptions.DefaultNoise;
         Matrix<DoublePixel> noiseField = PerlinNoise.GenerateFractalField(image.Size, noiseOpts);
 
         int width = image.Width;

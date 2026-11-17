@@ -3,6 +3,8 @@ namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 using System;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
+using Leiter.Core;
+using Leiter.Pixels;
 using Xunit;
 
 /// <summary>
@@ -82,5 +84,38 @@ public class PaperGranulationOptionsTests
         var invalidNoise = new PerlinNoiseOptions(Octaves: 0);
         var options = new PaperGranulationOptions(GrainNoiseOptions: invalidNoise);
         Assert.Throws<ArgumentOutOfRangeException>(() => options.Validate());
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="PaperGranulationOptions.ForSize"/> and <see cref="PaperGranulationOptions.ForImage"/> scale warp amplitude quadratically and grain frequency inversely.
+    /// </summary>
+    [Fact]
+    public void ForSize_And_ForImage_ShouldScaleWarpAndGrainFrequency()
+    {
+        PaperGranulationOptions refOpts = PaperGranulationOptions.ForSize(new Size(800, 800));
+        Assert.Equal(0.6, refOpts.WarpAmplitude, 6);
+        Assert.NotNull(refOpts.GrainNoiseOptions);
+        Assert.Equal(0.35, refOpts.GrainNoiseOptions!.Frequency, 6);
+        Assert.Equal(707, refOpts.GrainNoiseOptions.Seed);
+        Assert.Equal(refOpts, PaperGranulationOptions.ForSize(new Size(1000, 640)));
+
+        PaperGranulationOptions small = PaperGranulationOptions.ForSize(new Size(200, 200));
+        PaperGranulationOptions large = PaperGranulationOptions.ForSize(new Size(3200, 2400));
+        Assert.Equal(0.0375, small.WarpAmplitude, 6);
+        Assert.Equal(0.5, small.GrainNoiseOptions!.Frequency, 6); // Clamped to Nyquist limit
+        Assert.True(large.WarpAmplitude > refOpts.WarpAmplitude);
+        Assert.True(large.GrainNoiseOptions!.Frequency < refOpts.GrainNoiseOptions.Frequency);
+
+        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
+        {
+            PaperGranulationOptions.ForSize(size).Validate();
+        }
+
+        var image = new SequentialMatrix<Rgb8>(400, 400);
+        Assert.Equal(PaperGranulationOptions.ForSize(image.Size), PaperGranulationOptions.ForImage(image));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaperGranulationOptions.ForSize(new Size(-1, 10)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaperGranulationOptions.ForSize(new Size(10, 10), double.NaN));
+        Assert.Throws<ArgumentNullException>(() => PaperGranulationOptions.ForImage(null!));
     }
 }

@@ -2,6 +2,8 @@ namespace Leiter.Tests.Algorithms.AntiAliasing;
 
 using System;
 using Leiter.Algorithms.AntiAliasing;
+using Leiter.Core;
+using Leiter.Pixels;
 using Xunit;
 
 /// <summary>
@@ -152,5 +154,40 @@ public class FxaaOptionsTests
             MaxSpanSearchSteps: 12);
 
         options.Validate();
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="FxaaOptions.ForSize"/> scales span search steps and <see cref="FxaaOptions.ForImage"/> adapts contrast thresholds for dark scenes.
+    /// </summary>
+    [Fact]
+    public void ForSize_And_ForImage_ShouldScaleAndAdaptForLowKeyImages()
+    {
+        FxaaOptions refOptions = FxaaOptions.ForSize(new Size(800, 800));
+        Assert.Equal(8, refOptions.MaxSpanSearchSteps);
+        Assert.Equal(refOptions, FxaaOptions.ForSize(new Size(1000, 640)));
+
+        FxaaOptions small = FxaaOptions.ForSize(new Size(200, 200));
+        FxaaOptions large = FxaaOptions.ForSize(new Size(3200, 2400));
+        Assert.Equal(4, small.MaxSpanSearchSteps);
+        Assert.True(large.MaxSpanSearchSteps > refOptions.MaxSpanSearchSteps);
+
+        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
+        {
+            FxaaOptions.ForSize(size).Validate();
+        }
+
+        var darkImage = new SequentialMatrix<Rgb8>(64, 64);
+        darkImage.SetAll(new Rgb8(8, 8, 10));
+        var brightImage = new SequentialMatrix<Rgb8>(64, 64);
+        brightImage.SetAll(new Rgb8(210, 210, 210));
+
+        FxaaOptions darkOpts = FxaaOptions.ForImage(darkImage);
+        FxaaOptions brightOpts = FxaaOptions.ForImage(brightImage);
+        Assert.True(darkOpts.AbsoluteContrastThreshold < brightOpts.AbsoluteContrastThreshold);
+        Assert.Equal(0.0625, brightOpts.AbsoluteContrastThreshold, 6);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => FxaaOptions.ForSize(new Size(-1, 10)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FxaaOptions.ForSize(new Size(10, 10), 0.0));
+        Assert.Throws<ArgumentNullException>(() => FxaaOptions.ForImage(null!));
     }
 }
