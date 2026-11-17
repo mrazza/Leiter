@@ -25,7 +25,7 @@ public static class MatrixResampler
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="targetSize"/> has a negative width or height.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="source"/> is empty while <paramref name="targetSize"/> has positive dimensions.</exception>
     public static Matrix<T> ResizeBilinear<T>(this IReadOnlyMatrix<T> source, Size targetSize)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+        where T : struct, IPixel<T>
     {
         if (!ValidateResampleInputs(source, targetSize))
             return new SequentialMatrix<T>(targetSize);
@@ -119,7 +119,7 @@ public static class MatrixResampler
         double x,
         double y,
         EdgeHandling edgeHandling = EdgeHandling.EXTEND)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T>
+        where T : struct, IPixel<T>
     {
         ValidateSampleInputs(source, x, y, edgeHandling);
 
@@ -163,7 +163,7 @@ public static class MatrixResampler
         this IReadOnlyMatrix<T> source,
         Vector2D position,
         EdgeHandling edgeHandling = EdgeHandling.EXTEND)
-        where T : struct, ISelfOperable<T>, INumericOperable<T>, IScalarOperable<T> =>
+        where T : struct, IPixel<T> =>
         source.SampleBilinear(position.X, position.Y, edgeHandling);
 
     /// <summary>

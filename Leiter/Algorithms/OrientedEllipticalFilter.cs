@@ -4,6 +4,7 @@ using System;
 using System.Threading.Tasks;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
 /// Implements an oriented elliptical Gaussian smoothing filter that adaptively blurs along local tangent vector orientations.

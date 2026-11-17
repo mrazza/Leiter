@@ -1,7 +1,6 @@
 namespace Leiter.Algorithms.Stylization;
 
 using System;
-using Leiter.Algorithms;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 
@@ -73,7 +72,7 @@ public static class PigmentBlend
             throw new ArgumentOutOfRangeException(nameof(densityOffset), densityOffset, "Density offset must be finite.");
         }
 
-        return ToRoundedRgb8(AdjustDensity(color.ToRgb64(), densityOffset));
+        return AdjustDensity(color.ToRgb64(), densityOffset).ToRgb8();
     }
 
     /// <summary>
@@ -144,14 +143,8 @@ public static class PigmentBlend
             throw new ArgumentOutOfRangeException(nameof(overlapDarkening), overlapDarkening, "Overlap darkening factor must be finite and within [0, 1].");
         }
 
-        return ToRoundedRgb8(MixPigments(first.ToRgb64(), second.ToRgb64(), overlapDarkening));
+        return MixPigments(first.ToRgb64(), second.ToRgb64(), overlapDarkening).ToRgb8();
     }
-
-    private static Rgb8 ToRoundedRgb8(Rgb64 color) =>
-        new(
-            (byte)Math.Clamp((int)Math.Round(color.R * 255.0, MidpointRounding.AwayFromZero), 0, 255),
-            (byte)Math.Clamp((int)Math.Round(color.G * 255.0, MidpointRounding.AwayFromZero), 0, 255),
-            (byte)Math.Clamp((int)Math.Round(color.B * 255.0, MidpointRounding.AwayFromZero), 0, 255));
 
     private static void ValidateFiniteColor(Rgb64 color, string paramName)
     {

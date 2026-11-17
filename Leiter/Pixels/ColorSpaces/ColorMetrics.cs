@@ -1,9 +1,7 @@
 namespace Leiter.Pixels.ColorSpaces;
 
-using Leiter.Algorithms;
-
 /// <summary>
-/// Provides hue, intensity, saturation, chroma, and lightness metrics for RGB and CIELAB pixels.
+/// Provides hue, intensity, luma, saturation, chroma, and lightness metrics for RGB and CIELAB pixels.
 /// </summary>
 public static class ColorMetrics
 {
@@ -57,6 +55,22 @@ public static class ColorMetrics
     /// <param name="pixel">The pixel to evaluate.</param>
     /// <returns>The normalized intensity in <c>[0, 1]</c>.</returns>
     public static double GetIntensity(this Rgb8 pixel) => (pixel.R + pixel.G + pixel.B) / (3.0 * 255.0);
+
+    /// <summary>
+    /// Computes the Rec. 601 luma <c>0.299 * R + 0.587 * G + 0.114 * B</c> for an <see cref="Rgb64"/> pixel.
+    /// </summary>
+    /// <param name="pixel">The pixel to evaluate.</param>
+    /// <returns>The Rec. 601 luminance value.</returns>
+    public static double GetLuma(this Rgb64 pixel) =>
+        (0.299 * pixel.R) + (0.587 * pixel.G) + (0.114 * pixel.B);
+
+    /// <summary>
+    /// Computes the normalized Rec. 601 luma in <c>[0, 1]</c> for an <see cref="Rgb8"/> pixel.
+    /// </summary>
+    /// <param name="pixel">The pixel to evaluate.</param>
+    /// <returns>The normalized Rec. 601 luminance in <c>[0, 1]</c>.</returns>
+    public static double GetLuma(this Rgb8 pixel) =>
+        ((0.299 * pixel.R) + (0.587 * pixel.G) + (0.114 * pixel.B)) / 255.0;
 
     /// <summary>
     /// Computes the HSV saturation in <c>[0, 1]</c> for an <see cref="Rgb64"/> pixel.

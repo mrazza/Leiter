@@ -17,10 +17,8 @@ using Leiter.Core;
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab32, float>
 {
-    private static readonly Lab32 INTERNAL_ZERO = new();
-
     /// <inheritdoc/>
-    public static Lab32 Zero => INTERNAL_ZERO;
+    public static Lab32 Zero => default;
 
     /// <inheritdoc/>
     public Lab32 Add(Lab32 right) =>
@@ -59,48 +57,72 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
         };
 
     /// <inheritdoc/>
-    public Lab32 Add(decimal right) => ComponentMap(channel => channel + (float)right);
+    public Lab32 Add(decimal right)
+    {
+        float v = (float)right;
+        return new(L + v, A + v, B + v);
+    }
 
     /// <inheritdoc/>
-    public Lab32 Subtract(decimal right) => ComponentMap(channel => channel - (float)right);
+    public Lab32 Subtract(decimal right)
+    {
+        float v = (float)right;
+        return new(L - v, A - v, B - v);
+    }
 
     /// <inheritdoc/>
-    public Lab32 Multiply(decimal right) => ComponentMap(channel => channel * (float)right);
+    public Lab32 Multiply(decimal right)
+    {
+        float v = (float)right;
+        return new(L * v, A * v, B * v);
+    }
 
     /// <inheritdoc/>
-    public Lab32 Divide(decimal right) => ComponentMap(channel => channel / (float)right);
+    public Lab32 Divide(decimal right)
+    {
+        float v = (float)right;
+        return new(L / v, A / v, B / v);
+    }
 
     /// <inheritdoc/>
-    public Lab32 Add(double right) => ComponentMap(channel => channel + (float)right);
+    public Lab32 Add(double right)
+    {
+        float v = (float)right;
+        return new(L + v, A + v, B + v);
+    }
 
     /// <inheritdoc/>
-    public Lab32 Subtract(double right) => ComponentMap(channel => channel - (float)right);
+    public Lab32 Subtract(double right)
+    {
+        float v = (float)right;
+        return new(L - v, A - v, B - v);
+    }
 
     /// <inheritdoc/>
-    public Lab32 Multiply(double right) => ComponentMap(channel => channel * (float)right);
+    public Lab32 Multiply(double right)
+    {
+        float v = (float)right;
+        return new(L * v, A * v, B * v);
+    }
 
     /// <inheritdoc/>
-    public Lab32 Divide(double right) => ComponentMap(channel => channel / (float)right);
+    public Lab32 Divide(double right)
+    {
+        float v = (float)right;
+        return new(L / v, A / v, B / v);
+    }
 
     /// <inheritdoc/>
-    public Lab32 Add<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel + (float)right.AsDouble());
+    public Lab32 Add<S>(IScalar<S> right) where S : IScalar<S> => Add(right.AsDouble());
 
     /// <inheritdoc/>
-    public Lab32 Divide<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel / (float)right.AsDouble());
+    public Lab32 Divide<S>(IScalar<S> right) where S : IScalar<S> => Divide(right.AsDouble());
 
     /// <inheritdoc/>
-    public Lab32 Multiply<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel * (float)right.AsDouble());
+    public Lab32 Multiply<S>(IScalar<S> right) where S : IScalar<S> => Multiply(right.AsDouble());
 
     /// <inheritdoc/>
-    public Lab32 Subtract<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel - (float)right.AsDouble());
+    public Lab32 Subtract<S>(IScalar<S> right) where S : IScalar<S> => Subtract(right.AsDouble());
 
     /// <summary>
     /// Maps the chromaticity channels (<see cref="A"/> and <see cref="B"/>) using the specified mapping function while preserving the lightness channel (<see cref="L"/>).

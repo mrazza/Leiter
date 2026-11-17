@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
 /// Implements Timothy Lottes' Fast Approximate Anti-Aliasing (FXAA 3.11).
@@ -32,7 +33,7 @@ public static class Fxaa
         int width = image.Width;
         int height = image.Height;
 
-        double[] luma = image.MapToArray(static pixel => ((0.299 * pixel.R) + (0.587 * pixel.G) + (0.114 * pixel.B)) / 255.0);
+        double[] luma = image.MapToArray(static pixel => pixel.GetLuma());
 
         var result = new SequentialMatrix<Rgb8>(image.Size);
 

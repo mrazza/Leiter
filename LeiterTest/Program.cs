@@ -113,12 +113,12 @@ internal static class Program
             "07. Global Contrast Saliency",
             outputDir,
             $"{stem}_07_saliency_global.png",
-            () => SaliencyToGrayscale(GlobalContrastSaliency.ComputeSaliency(imageMatrix)));
+            () => GlobalContrastSaliency.ComputeSaliency(imageMatrix).ToGrayscaleRgb8());
 
         Matrix<DoublePixel> regionalSaliency = RunStep(
             "08. Regional Contrast Saliency",
             () => RegionalContrastSaliency.ComputeSaliency(imageMatrix, segmentation));
-        SaveOutput(outputDir, $"{stem}_08_saliency_regional.png", SaliencyToGrayscale(regionalSaliency));
+        SaveOutput(outputDir, $"{stem}_08_saliency_regional.png", regionalSaliency.ToGrayscaleRgb8());
 
         RunStepAndSave(
             "09. Saliency-Masked Composite (HadamardProduct)",
@@ -140,12 +140,12 @@ internal static class Program
         Matrix<DoublePixel> rawDistanceField = RunStep(
             "12a. Saliency Distance Field (Normalized JFA)",
             () => SaliencyDistanceField.ComputeNormalizedField(salientMask));
-        SaveOutput(outputDir, $"{stem}_12a_distance_field_raw.png", SaliencyToGrayscale(rawDistanceField));
+        SaveOutput(outputDir, $"{stem}_12a_distance_field_raw.png", rawDistanceField.ToGrayscaleRgb8());
 
         Matrix<DoublePixel> smoothedDistanceField = RunStep(
             "12b. Saliency Distance Field (Smoothed)",
             () => SaliencyDistanceField.Compute(salientMask));
-        SaveOutput(outputDir, $"{stem}_12b_distance_field_smoothed.png", SaliencyToGrayscale(smoothedDistanceField));
+        SaveOutput(outputDir, $"{stem}_12b_distance_field_smoothed.png", smoothedDistanceField.ToGrayscaleRgb8());
 
         RunStepAndSave(
             "13a. Mean-Shift Mode Filter (hs=8, hr=5.5)",
@@ -291,20 +291,6 @@ internal static class Program
         Matrix<Rgb8> clone = source.Clone();
         EgbiSegmentation.ColorImageBySegmentation(clone, regions, colorAssigner);
         return clone;
-    }
-
-    /// <summary>
-    /// Converts a continuous [0, 1] saliency map into an 8-bit grayscale image matrix.
-    /// </summary>
-    /// <param name="saliency">The matrix of saliency values in the [0, 1] range.</param>
-    /// <returns>An RGB matrix where each channel represents the clamped grayscale intensity.</returns>
-    private static Matrix<Rgb8> SaliencyToGrayscale(Matrix<DoublePixel> saliency)
-    {
-        return saliency.Map(pixel =>
-        {
-            byte value = (byte)Math.Clamp(Math.Round(pixel.Value * 255.0), 0.0, 255.0);
-            return new Rgb8(value, value, value);
-        });
     }
 
     /// <summary>

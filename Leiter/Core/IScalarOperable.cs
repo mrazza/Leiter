@@ -4,7 +4,7 @@ namespace Leiter.Core;
 /// Defines arithmetic operations with scalar values for a type.
 /// </summary>
 /// <typeparam name="T">The type that implements this interface.</typeparam>
-public interface IScalarOperable<T>
+public interface IScalarOperable<T> : INumericOperable<T>
 {
     /// <summary>
     /// Adds a scalar value to this instance.
@@ -12,7 +12,7 @@ public interface IScalarOperable<T>
     /// <typeparam name="S">The scalar type.</typeparam>
     /// <param name="right">The scalar value to add.</param>
     /// <returns>A new <typeparamref name="T"/> containing the result of the addition.</returns>
-    T Add<S>(IScalar<S> right) where S : IScalar<S>;
+    T Add<S>(IScalar<S> right) where S : IScalar<S> => Add(right.AsDouble());
 
     /// <summary>
     /// Subtracts a scalar value from this instance.
@@ -20,7 +20,7 @@ public interface IScalarOperable<T>
     /// <typeparam name="S">The scalar type.</typeparam>
     /// <param name="right">The scalar value to subtract.</param>
     /// <returns>A new <typeparamref name="T"/> containing the result of the subtraction.</returns>
-    T Subtract<S>(IScalar<S> right) where S : IScalar<S>;
+    T Subtract<S>(IScalar<S> right) where S : IScalar<S> => Subtract(right.AsDouble());
 
     /// <summary>
     /// Multiplies this instance by a scalar value.
@@ -28,7 +28,7 @@ public interface IScalarOperable<T>
     /// <typeparam name="S">The scalar type.</typeparam>
     /// <param name="right">The scalar multiplier.</param>
     /// <returns>A new <typeparamref name="T"/> containing the result of the multiplication.</returns>
-    T Multiply<S>(IScalar<S> right) where S : IScalar<S>;
+    T Multiply<S>(IScalar<S> right) where S : IScalar<S> => Multiply(right.AsDouble());
 
     /// <summary>
     /// Divides this instance by a scalar value.
@@ -36,5 +36,5 @@ public interface IScalarOperable<T>
     /// <typeparam name="S">The scalar type.</typeparam>
     /// <param name="right">The scalar divisor.</param>
     /// <returns>A new <typeparamref name="T"/> containing the result of the division.</returns>
-    T Divide<S>(IScalar<S> right) where S : IScalar<S>;
+    T Divide<S>(IScalar<S> right) where S : IScalar<S> => Divide(right.AsDouble());
 }

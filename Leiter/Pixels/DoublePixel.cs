@@ -13,10 +13,8 @@ using Leiter.Core;
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct DoublePixel(double Value) : ITypedPixel<DoublePixel, double>, ITypedScalar<DoublePixel, double>
 {
-    private static readonly DoublePixel INTERNAL_ZERO = new();
-
     /// <inheritdoc/>
-    public static DoublePixel Zero => INTERNAL_ZERO;
+    public static DoublePixel Zero => default;
 
     /// <inheritdoc/>
     public DoublePixel ColorComponentMap(Func<double, double> func) => new() { Value = func(Value) };
@@ -53,43 +51,43 @@ public readonly record struct DoublePixel(double Value) : ITypedPixel<DoublePixe
         };
 
     /// <inheritdoc/>
-    public DoublePixel Add(decimal right) => ComponentMap(channel => channel + (double)right);
+    public DoublePixel Add(decimal right) => new(Value + (double)right);
 
     /// <inheritdoc/>
-    public DoublePixel Subtract(decimal right) => ComponentMap(channel => channel - (double)right);
+    public DoublePixel Subtract(decimal right) => new(Value - (double)right);
 
     /// <inheritdoc/>
-    public DoublePixel Multiply(decimal right) => ComponentMap(channel => channel * (double)right);
+    public DoublePixel Multiply(decimal right) => new(Value * (double)right);
 
     /// <inheritdoc/>
-    public DoublePixel Divide(decimal right) => ComponentMap(channel => channel / (double)right);
+    public DoublePixel Divide(decimal right) => new(Value / (double)right);
 
     /// <inheritdoc/>
-    public DoublePixel Add(double right) => ComponentMap(channel => channel + right);
+    public DoublePixel Add(double right) => new(Value + right);
 
     /// <inheritdoc/>
-    public DoublePixel Subtract(double right) => ComponentMap(channel => channel - right);
+    public DoublePixel Subtract(double right) => new(Value - right);
 
     /// <inheritdoc/>
-    public DoublePixel Multiply(double right) => ComponentMap(channel => channel * right);
+    public DoublePixel Multiply(double right) => new(Value * right);
 
     /// <inheritdoc/>
-    public DoublePixel Divide(double right) => ComponentMap(channel => channel / right);
+    public DoublePixel Divide(double right) => new(Value / right);
 
     /// <inheritdoc/>
-    public DoublePixel Add<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
+    public DoublePixel Add<S>(IScalar<S> right) where S : IScalar<S> =>
         Add(right.AsDouble());
 
     /// <inheritdoc/>
-    public DoublePixel Subtract<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
+    public DoublePixel Subtract<S>(IScalar<S> right) where S : IScalar<S> =>
         Subtract(right.AsDouble());
 
     /// <inheritdoc/>
-    public DoublePixel Multiply<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
+    public DoublePixel Multiply<S>(IScalar<S> right) where S : IScalar<S> =>
         Multiply(right.AsDouble());
 
     /// <inheritdoc/>
-    public DoublePixel Divide<S>(IScalar<S> right) where S : notnull, IScalar<S> =>
+    public DoublePixel Divide<S>(IScalar<S> right) where S : IScalar<S> =>
         Divide(right.AsDouble());
 
     /// <inheritdoc/>

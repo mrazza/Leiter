@@ -4,6 +4,7 @@ using System;
 using System.Threading.Tasks;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
 /// Provides spatial gradient computation operations using convolution kernels such as Sobel and Scharr.
@@ -75,22 +76,17 @@ public static class SpatialGradients
         if (width == 0 || height == 0)
             return new SequentialMatrix<Vector2D>(image.Size);
 
-        var luma = new SequentialMatrix<DoublePixel>(width, height);
-        Parallel.For(0, height, y =>
-        {
-            for (int x = 0; x < width; x++)
-            {
-                Rgb8 p = image[x, y];
-                luma[x, y] = ((0.299 * p.R) + (0.587 * p.G) + (0.114 * p.B)) / 255.0;
-            }
-        });
-
+        Matrix<DoublePixel> luma = image.Map(static p => new DoublePixel(p.GetLuma()));
         return Compute(luma, gradientOperator);
     }
 
     /// <summary>
     /// Computes spatial color gradients and Frobenius gradient magnitude for an RGB image.
     /// </summary>
+    /// <remarks>
+    /// <c>GradientX</c> and <c>GradientY</c> store signed per-channel spatial derivatives <c>(∂R, ∂G, ∂B)</c> of normalized <c>[0, 1]</c>
+    /// RGB channels in <see cref="Rgb64"/> (channel components may be negative).
+    /// </remarks>
     /// <param name="image">The source RGB image.</param>
     /// <param name="gradientOperator">The gradient operator kernel to use.</param>
     /// <returns>A tuple containing the horizontal RGB derivative matrix, vertical RGB derivative matrix, and Frobenius magnitude matrix.</returns>

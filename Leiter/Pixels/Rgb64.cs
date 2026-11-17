@@ -16,10 +16,8 @@ using Leiter.Core;
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<Rgb64, double>
 {
-    private static readonly Rgb64 INTERNAL_ZERO = new();
-
     /// <inheritdoc/>
-    public static Rgb64 Zero => INTERNAL_ZERO;
+    public static Rgb64 Zero => default;
 
     /// <inheritdoc/>
     public Rgb64 Add(Rgb64 right) =>
@@ -58,48 +56,56 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
         };
 
     /// <inheritdoc/>
-    public Rgb64 Add(decimal right) => ComponentMap(channel => channel + (double)right);
+    public Rgb64 Add(decimal right)
+    {
+        double v = (double)right;
+        return new(R + v, G + v, B + v);
+    }
 
     /// <inheritdoc/>
-    public Rgb64 Subtract(decimal right) => ComponentMap(channel => channel - (double)right);
+    public Rgb64 Subtract(decimal right)
+    {
+        double v = (double)right;
+        return new(R - v, G - v, B - v);
+    }
 
     /// <inheritdoc/>
-    public Rgb64 Multiply(decimal right) => ComponentMap(channel => channel * (double)right);
+    public Rgb64 Multiply(decimal right)
+    {
+        double v = (double)right;
+        return new(R * v, G * v, B * v);
+    }
 
     /// <inheritdoc/>
-    public Rgb64 Divide(decimal right) => ComponentMap(channel => channel / (double)right);
+    public Rgb64 Divide(decimal right)
+    {
+        double v = (double)right;
+        return new(R / v, G / v, B / v);
+    }
 
     /// <inheritdoc/>
-    public Rgb64 Add(double right) => ComponentMap(channel => channel + right);
+    public Rgb64 Add(double right) => new(R + right, G + right, B + right);
 
     /// <inheritdoc/>
-    public Rgb64 Subtract(double right) => ComponentMap(channel => channel - right);
+    public Rgb64 Subtract(double right) => new(R - right, G - right, B - right);
 
     /// <inheritdoc/>
-    public Rgb64 Multiply(double right) => ComponentMap(channel => channel * right);
+    public Rgb64 Multiply(double right) => new(R * right, G * right, B * right);
 
     /// <inheritdoc/>
-    public Rgb64 Divide(double right) => ComponentMap(channel => channel / right);
+    public Rgb64 Divide(double right) => new(R / right, G / right, B / right);
 
     /// <inheritdoc/>
-    public Rgb64 Add<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel + right.AsDouble());
+    public Rgb64 Add<S>(IScalar<S> right) where S : IScalar<S> => Add(right.AsDouble());
 
     /// <inheritdoc/>
-    public Rgb64 Divide<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel / right.AsDouble());
+    public Rgb64 Divide<S>(IScalar<S> right) where S : IScalar<S> => Divide(right.AsDouble());
 
     /// <inheritdoc/>
-    public Rgb64 Multiply<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel * right.AsDouble());
+    public Rgb64 Multiply<S>(IScalar<S> right) where S : IScalar<S> => Multiply(right.AsDouble());
 
     /// <inheritdoc/>
-    public Rgb64 Subtract<S>(IScalar<S> right)
-        where S : IScalar<S> =>
-        ComponentMap(channel => channel - right.AsDouble());
+    public Rgb64 Subtract<S>(IScalar<S> right) where S : IScalar<S> => Subtract(right.AsDouble());
 
     /// <inheritdoc/>
     public Rgb64 ColorComponentMap(Func<double, double> func) => new() { R = func(R), G = func(G), B = func(B) };

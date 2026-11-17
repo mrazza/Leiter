@@ -109,10 +109,7 @@ public static class PiecewiseToneCurve
         for (int channelValue = 0; channelValue < 256; channelValue++)
         {
             double mappedTone = Evaluate(channelValue / 255.0, resolvedOptions);
-            toneLookupTable[channelValue] = (byte)Math.Clamp(
-                (int)Math.Round(mappedTone * 255.0, MidpointRounding.AwayFromZero),
-                0,
-                255);
+            toneLookupTable[channelValue] = Rgb8.ClampRoundedByte(mappedTone * 255.0);
         }
 
         int width = image.Width;
