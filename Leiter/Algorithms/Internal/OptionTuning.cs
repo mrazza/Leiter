@@ -14,7 +14,7 @@ internal static class OptionTuning
     public const double DefaultReferenceDimension = 800.0;
 
     /// <summary>
-    /// The mean 3D CIELAB color dispersion across <see cref="Color.WatercolorPalettes.Defaults"/> used to normalize color spread adaptation.
+    /// The mean 3D CIELAB color dispersion across <see cref="Stylization.Watercolor.WatercolorPalettes.Defaults"/> used to normalize color spread adaptation.
     /// </summary>
     public const double ReferenceLabDispersion = 23.72;
 

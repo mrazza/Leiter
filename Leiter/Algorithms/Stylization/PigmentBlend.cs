@@ -1,6 +1,8 @@
 namespace Leiter.Algorithms.Stylization;
 
 using System;
+using System.Threading.Tasks;
+using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 
@@ -144,6 +146,74 @@ public static class PigmentBlend
         }
 
         return MixPigments(first.ToRgb64(), second.ToRgb64(), overlapDarkening).ToRgb8();
+    }
+
+    /// <summary>
+    /// Applies per-pixel pigment density adjustments across <paramref name="image"/> scaled by <paramref name="intensity"/>.
+    /// </summary>
+    /// <param name="image">The input 8-bit RGB image.</param>
+    /// <param name="densityField">The scalar density field matching <paramref name="image"/> dimensions.</param>
+    /// <param name="intensity">The scalar multiplier applied to each field sample (default <c>1.0</c>).</param>
+    /// <returns>A new <see cref="Matrix{Rgb8}"/> containing density-adjusted pixels.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="densityField"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="densityField"/> dimensions do not match <paramref name="image"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="intensity"/> or any field sample is non-finite.</exception>
+    public static Matrix<Rgb8> ApplyDensityField(
+        IReadOnlyMatrix<Rgb8> image,
+        IReadOnlyMatrix<DoublePixel> densityField,
+        double intensity = 1.0)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        Guard.ThrowIfSizeMismatch(image, densityField);
+        Guard.ThrowIfNotFinite(intensity);
+
+        if (image.Count == 0 || intensity == 0.0)
+        {
+            return image.Clone();
+        }
+
+        return ApplyDensityField(image, densityField, value => intensity * value);
+    }
+
+    /// <summary>
+    /// Applies per-pixel pigment density adjustments across <paramref name="image"/> using a custom scalar mapper.
+    /// </summary>
+    /// <param name="image">The input 8-bit RGB image.</param>
+    /// <param name="field">The scalar field matching <paramref name="image"/> dimensions.</param>
+    /// <param name="densityOffsetSelector">Maps each raw field sample to the density offset passed to <see cref="AdjustDensity(Rgb8, double)"/>.</param>
+    /// <returns>A new <see cref="Matrix{Rgb8}"/> containing density-adjusted pixels.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="image"/>, <paramref name="field"/>, or <paramref name="densityOffsetSelector"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="field"/> dimensions do not match <paramref name="image"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="densityOffsetSelector"/> returns a non-finite density offset.</exception>
+    public static Matrix<Rgb8> ApplyDensityField(
+        IReadOnlyMatrix<Rgb8> image,
+        IReadOnlyMatrix<DoublePixel> field,
+        Func<double, double> densityOffsetSelector)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        Guard.ThrowIfSizeMismatch(image, field);
+        ArgumentNullException.ThrowIfNull(densityOffsetSelector);
+
+        if (image.Count == 0)
+        {
+            return new SequentialMatrix<Rgb8>(image.Size);
+        }
+
+        int width = image.Width;
+        int height = image.Height;
+        var result = new SequentialMatrix<Rgb8>(width, height);
+
+        Parallel.For(0, height, y =>
+        {
+            for (int x = 0; x < width; x++)
+            {
+                result[x, y] = AdjustDensity(image[x, y], densityOffsetSelector(field[x, y].Value));
+            }
+        });
+
+        return result;
     }
 
     private static void ValidateFiniteColor(Rgb64 color, string paramName)

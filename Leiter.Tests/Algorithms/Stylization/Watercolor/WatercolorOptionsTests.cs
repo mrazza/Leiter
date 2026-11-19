@@ -235,7 +235,7 @@ public class WatercolorOptionsTests
         Assert.True(largeOpts.HandTremor!.Amplitude >= smallOpts.HandTremor!.Amplitude * 3.5);
         Assert.True(largeOpts.EgbiBlurSigma >= smallOpts.EgbiBlurSigma * 3.5);
 
-        IReadOnlyList<WatercolorPalette> customSubset = [WatercolorPalettes.CoastalCerulean];
+        IReadOnlyList<ColorTransferProfile> customSubset = [WatercolorPalettes.CoastalCerulean];
         WatercolorOptions subsetOpts = WatercolorOptions.ForImage(largeScene, candidatePalettes: customSubset);
         Assert.Same(WatercolorPalettes.CoastalCerulean, subsetOpts.TargetPalette);
 

@@ -1,7 +1,6 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
-using System.Threading.Tasks;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
@@ -35,18 +34,6 @@ public static class TurbulenceFlow
         PerlinNoiseOptions noiseOpts = opts.NoiseOptions ?? TurbulenceFlowOptions.DefaultNoise;
         Matrix<DoublePixel> noiseField = PerlinNoise.GenerateFractalField(image.Size, noiseOpts);
 
-        int width = image.Width;
-        int height = image.Height;
-        var result = new SequentialMatrix<Rgb8>(width, height);
-
-        Parallel.For(0, height, y =>
-        {
-            for (int x = 0; x < width; x++)
-            {
-                result[x, y] = PigmentBlend.AdjustDensity(image[x, y], opts.Intensity * noiseField[x, y].Value);
-            }
-        });
-
-        return result;
+        return PigmentBlend.ApplyDensityField(image, noiseField, opts.Intensity);
     }
 }

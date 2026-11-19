@@ -1,7 +1,9 @@
 namespace Leiter.Algorithms.Noise;
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -49,7 +51,7 @@ public sealed class PerlinNoise
         ulong state = unchecked((ulong)seed);
         for (int i = 255; i > 0; i--)
         {
-            ulong rnd = NextSplitMix64(ref state);
+            ulong rnd = SplitMix64.Next(ref state);
             int j = (int)(rnd % (ulong)(i + 1));
             (p[i], p[j]) = (p[j], p[i]);
         }
@@ -75,6 +77,12 @@ public sealed class PerlinNoise
         if (!double.IsFinite(y))
             throw new ArgumentOutOfRangeException(nameof(y), y, "Coordinate y must be finite.");
 
+        return SampleUnchecked(x, y);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private double SampleUnchecked(double x, double y)
+    {
         int x0 = (int)Math.Floor(x);
         int y0 = (int)Math.Floor(y);
 
@@ -117,21 +125,7 @@ public sealed class PerlinNoise
     public double SampleFractal(double x, double y, int octaves = 4, double lacunarity = 2.0, double persistence = 0.5)
     {
         ValidateOctaveParameters(x, y, octaves, lacunarity, persistence);
-
-        double total = 0.0;
-        double frequency = 1.0;
-        double amplitude = 1.0;
-        double maxAmplitude = 0.0;
-
-        for (int i = 0; i < octaves; i++)
-        {
-            total += Sample(x * frequency, y * frequency) * amplitude;
-            maxAmplitude += amplitude;
-            frequency *= lacunarity;
-            amplitude *= persistence;
-        }
-
-        return Math.Clamp(total / maxAmplitude, -1.0, 1.0);
+        return SampleOctavesUnchecked(x, y, octaves, lacunarity, persistence, absolute: false);
     }
 
     /// <summary>
@@ -147,7 +141,45 @@ public sealed class PerlinNoise
     public double SampleTurbulence(double x, double y, int octaves = 4, double lacunarity = 2.0, double persistence = 0.5)
     {
         ValidateOctaveParameters(x, y, octaves, lacunarity, persistence);
+        return SampleOctavesUnchecked(x, y, octaves, lacunarity, persistence, absolute: true);
+    }
 
+    internal (double Fractal, double Turbulence) SampleFractalAndTurbulenceUnchecked(
+        double x,
+        double y,
+        int octaves,
+        double lacunarity,
+        double persistence)
+    {
+        double fractalTotal = 0.0;
+        double turbulenceTotal = 0.0;
+        double frequency = 1.0;
+        double amplitude = 1.0;
+        double maxAmplitude = 0.0;
+
+        for (int i = 0; i < octaves; i++)
+        {
+            double sample = SampleUnchecked(x * frequency, y * frequency);
+            fractalTotal += sample * amplitude;
+            turbulenceTotal += Math.Abs(sample) * amplitude;
+            maxAmplitude += amplitude;
+            frequency *= lacunarity;
+            amplitude *= persistence;
+        }
+
+        return (
+            Math.Clamp(fractalTotal / maxAmplitude, -1.0, 1.0),
+            Math.Clamp(turbulenceTotal / maxAmplitude, 0.0, 1.0));
+    }
+
+    private double SampleOctavesUnchecked(
+        double x,
+        double y,
+        int octaves,
+        double lacunarity,
+        double persistence,
+        bool absolute)
+    {
         double total = 0.0;
         double frequency = 1.0;
         double amplitude = 1.0;
@@ -155,13 +187,16 @@ public sealed class PerlinNoise
 
         for (int i = 0; i < octaves; i++)
         {
-            total += Math.Abs(Sample(x * frequency, y * frequency)) * amplitude;
+            double sample = SampleUnchecked(x * frequency, y * frequency);
+            total += (absolute ? Math.Abs(sample) : sample) * amplitude;
             maxAmplitude += amplitude;
             frequency *= lacunarity;
             amplitude *= persistence;
         }
 
-        return Math.Clamp(total / maxAmplitude, 0.0, 1.0);
+        return absolute
+            ? Math.Clamp(total / maxAmplitude, 0.0, 1.0)
+            : Math.Clamp(total / maxAmplitude, -1.0, 1.0);
     }
 
     /// <summary>
@@ -172,10 +207,7 @@ public sealed class PerlinNoise
     /// <returns>A new <see cref="Matrix{DoublePixel}"/> containing normalized fractal noise samples.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when matrix dimensions or options are invalid.</exception>
     public static Matrix<DoublePixel> GenerateFractalField(Size size, PerlinNoiseOptions? options = null) =>
-        GenerateScalarField(
-            size,
-            options,
-            static (noise, sx, sy, opts) => noise.SampleFractal(sx, sy, opts.Octaves, opts.Lacunarity, opts.Persistence));
+        GenerateScalarField(size, options, absolute: false);
 
     /// <summary>
     /// Generates a two-dimensional matrix of absolute turbulence noise values in [0.0, 1.0].
@@ -185,15 +217,12 @@ public sealed class PerlinNoise
     /// <returns>A new <see cref="Matrix{DoublePixel}"/> containing normalized turbulence noise samples.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when matrix dimensions or options are invalid.</exception>
     public static Matrix<DoublePixel> GenerateTurbulenceField(Size size, PerlinNoiseOptions? options = null) =>
-        GenerateScalarField(
-            size,
-            options,
-            static (noise, sx, sy, opts) => noise.SampleTurbulence(sx, sy, opts.Octaves, opts.Lacunarity, opts.Persistence));
+        GenerateScalarField(size, options, absolute: true);
 
     private static Matrix<DoublePixel> GenerateScalarField(
         Size size,
         PerlinNoiseOptions? options,
-        Func<PerlinNoise, double, double, PerlinNoiseOptions, double> sampleSelector)
+        bool absolute)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
         ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
@@ -209,9 +238,10 @@ public sealed class PerlinNoise
 
         Parallel.For(0, size.Height, y =>
         {
+            double sy = y * opts.Frequency;
             for (int x = 0; x < size.Width; x++)
             {
-                double val = sampleSelector(noise, x * opts.Frequency, y * opts.Frequency, opts);
+                double val = noise.SampleOctavesUnchecked(x * opts.Frequency, sy, opts.Octaves, opts.Lacunarity, opts.Persistence, absolute);
                 result[x, y] = new DoublePixel(val);
             }
         });
@@ -247,24 +277,17 @@ public sealed class PerlinNoise
 
         Parallel.For(0, size.Height, y =>
         {
+            double sy = y * opts.Frequency;
             for (int x = 0; x < size.Width; x++)
             {
-                double dx = noiseX.SampleFractal(x * opts.Frequency, y * opts.Frequency, opts.Octaves, opts.Lacunarity, opts.Persistence) * amplitude;
-                double dy = noiseY.SampleFractal(x * opts.Frequency, y * opts.Frequency, opts.Octaves, opts.Lacunarity, opts.Persistence) * amplitude;
+                double sx = x * opts.Frequency;
+                double dx = noiseX.SampleOctavesUnchecked(sx, sy, opts.Octaves, opts.Lacunarity, opts.Persistence, absolute: false) * amplitude;
+                double dy = noiseY.SampleOctavesUnchecked(sx, sy, opts.Octaves, opts.Lacunarity, opts.Persistence, absolute: false) * amplitude;
                 result[x, y] = new Vector2D(dx, dy);
             }
         });
 
         return result;
-    }
-
-    private static ulong NextSplitMix64(ref ulong state)
-    {
-        state += 0x9E3779B97F4A7C15UL;
-        ulong z = state;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
-        return z ^ (z >> 31);
     }
 
     private static double Fade(double t) => t * t * t * ((t * ((t * 6.0) - 15.0)) + 10.0);

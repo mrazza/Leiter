@@ -1,6 +1,6 @@
 namespace Leiter.Algorithms.Saliency;
 
-using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Morphology;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -59,122 +59,11 @@ public static class SaliencyMask
         double minAreaFraction = 0.01)
     {
         double threshold = ComputeThreshold(saliencyMap, method, fixedThreshold);
-        ValidateRetentionArgs(retentionPolicy, minAreaFraction);
+        Guard.ThrowIfUndefinedEnum(retentionPolicy);
+        Guard.ThrowIfNotFiniteInRange(minAreaFraction, 0.0, 1.0);
 
         MaskMatrix rawMask = saliencyMap.ToMaskMatrix(pixel => ClampUnit(pixel.Value) > threshold);
-        return FilterConnectedComponents(rawMask, retentionPolicy, minAreaFraction);
-    }
-
-    /// <summary>
-    /// Filters 8-connected foreground components in a boolean mask according to the specified retention policy.
-    /// </summary>
-    /// <param name="mask">The boolean mask (<see langword="false"/> = background, <see langword="true"/> = foreground).</param>
-    /// <param name="retentionPolicy">The connected-component retention rule.</param>
-    /// <param name="minAreaFraction">The minimum fraction of total pixels in [0, 1] required when using <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/>.</param>
-    /// <returns>A filtered <see cref="MaskMatrix"/> containing only the retained components.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="mask"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="retentionPolicy"/> is invalid or <paramref name="minAreaFraction"/> is outside [0, 1].</exception>
-    public static MaskMatrix FilterConnectedComponents(
-        IReadOnlyMatrix<bool> mask,
-        ComponentRetentionPolicy retentionPolicy = ComponentRetentionPolicy.MinimumAreaFraction,
-        double minAreaFraction = 0.01)
-    {
-        ArgumentNullException.ThrowIfNull(mask);
-        ValidateRetentionArgs(retentionPolicy, minAreaFraction);
-
-        if (mask.Count == 0)
-            return new MaskMatrix(mask.Size);
-
-        if (retentionPolicy == ComponentRetentionPolicy.KeepAll)
-            return MaskMatrix.From(mask);
-
-        int width = mask.Width;
-        int height = mask.Height;
-        var filtered = new MaskMatrix(width, height);
-        var isForeground = new bool[mask.Count];
-        bool hasAnyForeground = false;
-
-        for (int y = 0; y < height; y++)
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-            {
-                if (mask[x, y])
-                {
-                    isForeground[rowBase + x] = true;
-                    hasAnyForeground = true;
-                }
-            }
-        }
-
-        if (!hasAnyForeground)
-            return filtered;
-
-        var disjointSet = new DisjointSet<byte>(mask, static _ => 0);
-
-        for (int y = 0; y < height; y++)
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-            {
-                int currentIndex = rowBase + x;
-                if (!isForeground[currentIndex])
-                    continue;
-
-                var current = new Coord(x, y);
-                foreach (GridNeighbor neighbor in GridNeighborhood.Forward8Connected)
-                {
-                    Coord other = current + neighbor.Offset;
-                    if (!mask.Contains(other))
-                        continue;
-
-                    int neighborIndex = (other.Y * width) + other.X;
-                    if (!isForeground[neighborIndex])
-                        continue;
-
-                    var currentPartition = disjointSet.GetPartition(currentIndex);
-                    var neighborPartition = disjointSet.GetPartition(neighborIndex);
-                    if (currentPartition.RootIndex != neighborPartition.RootIndex)
-                        disjointSet.Union(currentPartition, neighborPartition, 0);
-                }
-            }
-        }
-
-        if (retentionPolicy == ComponentRetentionPolicy.LargestComponentOnly)
-        {
-            int largestRoot = -1;
-            int largestSize = 0;
-
-            for (int i = 0; i < isForeground.Length; i++)
-            {
-                if (!isForeground[i])
-                    continue;
-
-                var partition = disjointSet.GetPartition(i);
-                if (partition.Size > largestSize)
-                {
-                    largestSize = partition.Size;
-                    largestRoot = partition.RootIndex;
-                }
-            }
-
-            for (int i = 0; i < isForeground.Length; i++)
-            {
-                if (isForeground[i] && disjointSet.GetPartition(i).RootIndex == largestRoot)
-                    filtered[i] = true;
-            }
-        }
-        else
-        {
-            int minPixels = Math.Max(1, (int)Math.Ceiling(minAreaFraction * mask.Count));
-            for (int i = 0; i < isForeground.Length; i++)
-            {
-                if (isForeground[i] && disjointSet.GetPartition(i).Size >= minPixels)
-                    filtered[i] = true;
-            }
-        }
-
-        return filtered;
+        return BinaryMorphology.FilterConnectedComponents(rawMask, retentionPolicy, minAreaFraction);
     }
 
     private static double ComputeAdaptiveMeanThreshold(IReadOnlyMatrix<DoublePixel> saliencyMap)
@@ -256,12 +145,4 @@ public static class SaliencyMask
 
     private static double ClampUnit(double value) =>
         double.IsFinite(value) ? Math.Clamp(value, 0.0, 1.0) : 0.0;
-
-    private static void ValidateRetentionArgs(ComponentRetentionPolicy retentionPolicy, double minAreaFraction)
-    {
-        if (!Enum.IsDefined(retentionPolicy))
-            throw new ArgumentOutOfRangeException(nameof(retentionPolicy), retentionPolicy, "Unsupported component retention policy.");
-        if (!double.IsFinite(minAreaFraction) || minAreaFraction < 0.0 || minAreaFraction > 1.0)
-            throw new ArgumentOutOfRangeException(nameof(minAreaFraction), minAreaFraction, "MinAreaFraction must be finite and within [0, 1].");
-    }
 }

@@ -222,4 +222,68 @@ public class MatrixResamplerTests
         Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleNearest(new Vector2D(double.NegativeInfinity, 0.0)));
         Assert.Throws<ArgumentOutOfRangeException>(() => validMatrix.SampleNearest(new Vector2D(0.0, double.NaN)));
     }
+
+    /// <summary>
+    /// Verifies predicated bilinear sampling and fallback behavior across matching and non-matching corners.
+    /// </summary>
+    [Fact]
+    public void SampleBilinearWhere_ShouldRestrictCornersAndHandleFallback()
+    {
+        var image = new SequentialMatrix<Rgb8>(2, 2);
+        image[0, 0] = new Rgb8(200, 0, 0);
+        image[1, 0] = new Rgb8(0, 200, 0);
+        image[0, 1] = new Rgb8(200, 0, 0);
+        image[1, 1] = new Rgb8(0, 200, 0);
+
+        // Only left column passes predicate: midpoint x=0.5, y=0.5 must evaluate purely to (200, 0, 0)
+        Rgb8 leftOnly = image.SampleBilinearWhere(0.5, 0.5, static (cx, _) => cx == 0);
+        Assert.Equal(new Rgb8(200, 0, 0), leftOnly);
+
+        // Using state avoids closures
+        Rgb8 stateOnly = image.SampleBilinearWhere(0.5, 0.5, state: 1, static (cx, _, tx) => cx == tx);
+        Assert.Equal(new Rgb8(0, 200, 0), stateOnly);
+
+        // No corner passes -> returns fallback
+        var fallback = new Rgb8(42, 43, 44);
+        Rgb8 noneMatched = image.SampleBilinearWhere(0.5, 0.5, static (_, _) => false, fallback);
+        Assert.Equal(fallback, noneMatched);
+
+        Assert.Throws<ArgumentNullException>(() => image.SampleBilinearWhere(0.0, 0.0, (Func<int, int, bool>)null!));
+        Assert.Throws<ArgumentNullException>(() => image.SampleBilinearWhere(0.0, 0.0, 0, (Func<int, int, int, bool>)null!));
+    }
+
+    /// <summary>
+    /// Verifies bilinear matrix warping for constant shifts, zero scale, non-finite vectors, empty inputs, and invalid arguments.
+    /// </summary>
+    [Fact]
+    public void WarpBilinear_ShouldWarpSmoothlyAndValidateInputs()
+    {
+        var image = new SequentialMatrix<DoublePixel>(4, 4);
+        for (int y = 0; y < 4; y++)
+        {
+            for (int x = 0; x < 4; x++)
+                image[x, y] = (x * 10.0) + y;
+        }
+
+        var field = new SequentialMatrix<Vector2D>(4, 4);
+        field.SetAll(new Vector2D(0.5, 1.0));
+        field[0, 0] = new Vector2D(double.NaN, double.PositiveInfinity);
+
+        Matrix<DoublePixel> warped = image.WarpBilinear(field, scale: 1.0);
+        Assert.Equal(image[0, 0].Value, warped[0, 0].Value, 9); // non-finite Treated as 0 shift
+        Assert.Equal(image.SampleBilinear(1.5, 2.0).Value, warped[1, 1].Value, 9);
+
+        Matrix<DoublePixel> unchanged = image.WarpBilinear(field, scale: 0.0);
+        Assert.Equal(image[2, 3].Value, unchanged[2, 3].Value, 9);
+
+        var emptyImg = new SequentialMatrix<DoublePixel>(0, 0);
+        var emptyField = new SequentialMatrix<Vector2D>(0, 0);
+        Assert.Empty(emptyImg.WarpBilinear(emptyField));
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).WarpBilinear(field));
+        Assert.Throws<ArgumentNullException>(() => image.WarpBilinear(null!));
+        Assert.Throws<ArgumentException>(() => image.WarpBilinear(new SequentialMatrix<Vector2D>(3, 4)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => image.WarpBilinear(field, scale: double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => image.WarpBilinear(field, edgeHandling: (EdgeHandling)99));
+    }
 }

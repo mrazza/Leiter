@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Saliency;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -165,7 +166,7 @@ public static class WetInWetFilter
 
                         if (regionGraph.Labels[x, y] == brighterId)
                         {
-                            double hash = HashSplitMix64(opts.RandomSeed, x, y);
+                            double hash = SplitMix64.HashToUnitDouble(opts.RandomSeed, x, y);
                             if (hash < opts.SeedProbability)
                             {
                                 seeded[x, y] = stats[darkerId].MeanColor.ToRgb8();
@@ -283,16 +284,5 @@ public static class WetInWetFilter
         }
 
         return (avgGradX, avgGradY);
-    }
-
-    private static double HashSplitMix64(int seed, int x, int y)
-    {
-        ulong z = ((ulong)(uint)seed * 0x9E3779B97F4A7C15UL)
-                ^ ((ulong)(uint)x * 0xBF58476D1CE4E5B9UL)
-                ^ ((ulong)(uint)y * 0x94D049BB133111EBUL);
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
-        z ^= z >> 31;
-        return (z >> 11) * (1.0 / 9007199254740992.0);
     }
 }

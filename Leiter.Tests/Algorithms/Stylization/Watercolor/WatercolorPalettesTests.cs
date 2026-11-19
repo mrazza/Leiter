@@ -1,6 +1,6 @@
-namespace Leiter.Tests.Algorithms.Color;
+namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
-using Leiter.Algorithms.Color;
+using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Pixels.ColorSpaces;
 using Xunit;
 
@@ -38,13 +38,6 @@ public class WatercolorPalettesTests
         Assert.Same(WatercolorPalettes.WarmOchreEarth, WatercolorPalettes.Defaults[3]);
         Assert.Same(WatercolorPalettes.PastoralSunlight, WatercolorPalettes.Defaults[4]);
         Assert.Same(WatercolorPalettes.AtmosphericDusk, WatercolorPalettes.Defaults[5]);
-
-        Assert.Contains(WatercolorPalettes.BalancedWash, WatercolorPalettes.Defaults);
-        Assert.Contains(WatercolorPalettes.BotanicalFoliage, WatercolorPalettes.Defaults);
-        Assert.Contains(WatercolorPalettes.CoastalCerulean, WatercolorPalettes.Defaults);
-        Assert.Contains(WatercolorPalettes.WarmOchreEarth, WatercolorPalettes.Defaults);
-        Assert.Contains(WatercolorPalettes.PastoralSunlight, WatercolorPalettes.Defaults);
-        Assert.Contains(WatercolorPalettes.AtmosphericDusk, WatercolorPalettes.Defaults);
 
         Assert.All(WatercolorPalettes.Defaults, palette =>
         {

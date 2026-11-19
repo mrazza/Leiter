@@ -5,8 +5,7 @@ using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
-/// Implements Reinhard et al. (2001) linear CIELAB color transfer and watercolor palette matching
-/// (Wang et al., Sec. 3.1).
+/// Implements Reinhard et al. (2001) linear CIELAB color transfer and color profile matching.
 /// </summary>
 public static class ColorTransfer
 {
@@ -91,30 +90,31 @@ public static class ColorTransfer
     }
 
     /// <summary>
-    /// Selects the palette whose CIELAB feature vector minimizes weighted Euclidean distance to <paramref name="sourceStatistics"/>.
+    /// Selects the profile whose CIELAB feature vector minimizes weighted Euclidean distance to <paramref name="sourceStatistics"/>.
     /// </summary>
     /// <param name="sourceStatistics">The CIELAB statistics of the input image.</param>
-    /// <param name="palettes">Optional candidate palettes (defaults to <see cref="WatercolorPalettes.Defaults"/>).</param>
+    /// <param name="profiles">The candidate color transfer profiles to evaluate.</param>
     /// <param name="featureWeights">Optional weights for comparing the 6D feature components (defaults to unit weights).</param>
-    /// <returns>The closest matching <see cref="WatercolorPalette"/>.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="palettes"/> is empty.</exception>
+    /// <returns>The closest matching <see cref="ColorTransferProfile"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="profiles"/> or any entry in <paramref name="profiles"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="profiles"/> is empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any weight in <paramref name="featureWeights"/> is negative.</exception>
-    public static WatercolorPalette SelectClosestPalette(
+    public static ColorTransferProfile SelectClosestProfile(
         LabColorStatistics sourceStatistics,
-        IReadOnlyList<WatercolorPalette>? palettes = null,
+        IReadOnlyList<ColorTransferProfile> profiles,
         LabColorStatistics? featureWeights = null)
     {
-        IReadOnlyList<WatercolorPalette> candidates = palettes ?? WatercolorPalettes.Defaults;
-        if (candidates.Count == 0)
-            throw new ArgumentException("At least one candidate palette must be provided.", nameof(palettes));
+        ArgumentNullException.ThrowIfNull(profiles);
+        if (profiles.Count == 0)
+            throw new ArgumentException("At least one candidate profile must be provided.", nameof(profiles));
 
         LabColorStatistics weights = featureWeights ?? LabColorStatistics.UnitWeights;
-        WatercolorPalette best = candidates[0] ?? throw new ArgumentNullException(nameof(palettes), "Palette entries cannot be null.");
+        ColorTransferProfile best = profiles[0] ?? throw new ArgumentNullException(nameof(profiles), "Profile entries cannot be null.");
         double bestDistance = sourceStatistics.FeatureDistance(best.Statistics, weights);
 
-        for (int i = 1; i < candidates.Count; i++)
+        for (int i = 1; i < profiles.Count; i++)
         {
-            WatercolorPalette candidate = candidates[i] ?? throw new ArgumentNullException(nameof(palettes), "Palette entries cannot be null.");
+            ColorTransferProfile candidate = profiles[i] ?? throw new ArgumentNullException(nameof(profiles), "Profile entries cannot be null.");
             double distance = sourceStatistics.FeatureDistance(candidate.Statistics, weights);
             if (distance < bestDistance)
             {
@@ -193,55 +193,58 @@ public static class ColorTransfer
     }
 
     /// <summary>
-    /// Transfers colors from a curated <see cref="WatercolorPalette"/> to <paramref name="source"/>.
+    /// Transfers colors from a <see cref="ColorTransferProfile"/> to <paramref name="source"/>.
     /// </summary>
     /// <param name="source">The source RGB image to recolor.</param>
-    /// <param name="palette">The target watercolor palette.</param>
+    /// <param name="profile">The target color transfer profile.</param>
     /// <param name="colorSpace">The RGB color space of the input and output images.</param>
     /// <param name="strength">Blending strength in <c>[0, 1]</c>.</param>
     /// <returns>A recolored <see cref="Matrix{Rgb8}"/> image.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="profile"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="strength"/> is outside <c>[0, 1]</c>.</exception>
     public static Matrix<Rgb8> Transfer(
         IReadOnlyMatrix<Rgb8> source,
-        WatercolorPalette palette,
+        ColorTransferProfile profile,
         RgbColorSpace colorSpace = RgbColorSpace.sRGB,
         double strength = 1.0)
     {
         ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(palette);
+        ArgumentNullException.ThrowIfNull(profile);
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         if (source.Count == 0 || strength == 0.0)
             return source.Clone();
 
-        Matrix<Lab32> sourceLab = source.Map(pixel => pixel.ToLab32(colorSpace, palette.Illuminant));
-        return TransferLabToRgb8(sourceLab, palette.Statistics, colorSpace, palette.Illuminant, strength);
+        Matrix<Lab32> sourceLab = source.Map(pixel => pixel.ToLab32(colorSpace, profile.Illuminant));
+        return TransferLabToRgb8(sourceLab, profile.Statistics, colorSpace, profile.Illuminant, strength);
     }
 
     /// <summary>
-    /// Automatically selects the closest watercolor palette under <see cref="Illuminant.E"/> and applies color transfer to <paramref name="source"/>.
+    /// Automatically selects the closest matching profile under <see cref="Illuminant.E"/> and applies color transfer to <paramref name="source"/>.
     /// </summary>
     /// <param name="source">The source RGB image to recolor.</param>
-    /// <param name="palettes">Optional candidate palettes (defaults to <see cref="WatercolorPalettes.Defaults"/>).</param>
+    /// <param name="profiles">The candidate color transfer profiles to evaluate.</param>
     /// <param name="colorSpace">The RGB color space of the input and output images.</param>
     /// <param name="featureWeights">Optional weights for comparing the 6D feature components (defaults to unit weights).</param>
     /// <param name="strength">Blending strength in <c>[0, 1]</c>.</param>
-    /// <returns>The recolored <see cref="Matrix{Rgb8}"/> image and the selected <see cref="WatercolorPalette"/>.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="palettes"/> is empty.</exception>
+    /// <returns>The recolored <see cref="Matrix{Rgb8}"/> image and the selected <see cref="ColorTransferProfile"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/>, <paramref name="profiles"/>, or any profile entry is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="profiles"/> is empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="strength"/> is outside <c>[0, 1]</c> or any feature weight is negative.</exception>
-    public static (Matrix<Rgb8> Result, WatercolorPalette SelectedPalette) TransferToClosestPalette(
+    public static (Matrix<Rgb8> Result, ColorTransferProfile SelectedProfile) TransferToClosestProfile(
         IReadOnlyMatrix<Rgb8> source,
-        IReadOnlyList<WatercolorPalette>? palettes = null,
+        IReadOnlyList<ColorTransferProfile> profiles,
         RgbColorSpace colorSpace = RgbColorSpace.sRGB,
         LabColorStatistics? featureWeights = null,
         double strength = 1.0)
     {
         ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(profiles);
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         Matrix<Lab32> sourceLabE = source.Map(pixel => pixel.ToLab32(colorSpace, Illuminant.E));
         LabColorStatistics sourceStats = ComputeStatistics(sourceLabE);
-        WatercolorPalette selected = SelectClosestPalette(sourceStats, palettes, featureWeights);
+        ColorTransferProfile selected = SelectClosestProfile(sourceStats, profiles, featureWeights);
 
         if (source.Count == 0 || strength == 0.0)
             return (source.Clone(), selected);

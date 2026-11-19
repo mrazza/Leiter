@@ -2,6 +2,7 @@ namespace Leiter.Algorithms.Saliency;
 
 using System;
 using Leiter.Algorithms.Internal;
+using Leiter.Algorithms.Morphology;
 using Leiter.Core;
 using Leiter.Pixels;
 
