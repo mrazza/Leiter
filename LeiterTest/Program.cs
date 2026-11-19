@@ -99,9 +99,12 @@ internal static class Program
             "05. CIELAB + EGBI Segmentation (Stage 2 on ColorTransferred)",
             () =>
             {
-                Matrix<Rgb8> blurredTransferred = Blur.GaussianBlur(colorTransferred, sigma: 0.8, radius: 2);
+                double egbiSigma = WatercolorOptions.ForSize(colorTransferred.Size).EgbiBlurSigma;
+                Matrix<Rgb8> blurredTransferred = egbiSigma <= 2.0
+                    ? Blur.GaussianBlur(colorTransferred, egbiSigma, Math.Max(1, (int)Math.Ceiling(2.5 * egbiSigma)))
+                    : Blur.GaussianBlurRecursive(colorTransferred, egbiSigma);
                 Matrix<Lab32> labImage = blurredTransferred.Map(pixel => pixel.ToLab32(RgbColorSpace.SRgb));
-                EgbiOptions egbiOptions = EgbiOptions.ForImage(labImage);
+                EgbiOptions egbiOptions = EgbiOptions.ForImage(labImage, new EgbiOptions(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200));
                 return EgbiSegmentation.Segment(labImage, egbiOptions);
             });
 

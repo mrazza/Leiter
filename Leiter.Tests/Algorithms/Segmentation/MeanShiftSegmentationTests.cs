@@ -533,4 +533,82 @@ public class MeanShiftSegmentationTests
         Assert.True(expectedLab.ContentEquals(actualLab));
         Assert.True(expectedLabSeg.ToMatrix().ContentEquals(actualLabSeg.ToMatrix()));
     }
+
+    [Fact]
+    public void HighSpatialRadius_CoarseToFinePath_PreservesThinEdgeAndDeterminism()
+    {
+        const int width = 48;
+        const int height = 48;
+        var img = new SequentialMatrix<Lab32>(width, height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (x < 24)
+                {
+                    float l = 15.0f + (x * (40.0f / 23.0f));
+                    img[x, y] = new Lab32(l, 0.0f, 0.0f);
+                }
+                else
+                {
+                    img[x, y] = (x == 34) ? new Lab32(10.0f, 0.0f, 0.0f) : new Lab32(85.0f, 0.0f, 0.0f);
+                }
+            }
+        }
+
+        var options = new MeanShiftOptions(
+            SpatialRadius: 18,
+            RangeRadius: 8.0,
+            MinRegionSize: 10);
+
+        Matrix<Lab32> filtered = MeanShiftSegmentation.Filter(img, options);
+        Assert.True(filtered[34, 24].L < 25.0f);
+        Assert.True(filtered[33, 24].L > 75.0f);
+        Assert.True(filtered[35, 24].L > 75.0f);
+
+        IDisjointSet seg = MeanShiftSegmentation.Segment(img, options);
+        (Matrix<Lab32> fusedFiltered, IDisjointSet fusedSeg) = MeanShiftSegmentation.FilterAndSegment(img, options);
+        Assert.True(filtered.ContentEquals(fusedFiltered));
+        Assert.True(seg.ToMatrix().ContentEquals(fusedSeg.ToMatrix()));
+
+        Matrix<LongPixel> baseline = seg.ToMatrix();
+        Matrix<LongPixel> repeated = MeanShiftSegmentation.Segment(img, options).ToMatrix();
+        Assert.True(baseline.ContentEquals(repeated));
+    }
+
+    [Fact]
+    public void LargeSpatialRadius_StridedLatticePath_ShouldSegmentCleanlyAndDeterministically()
+    {
+        const int width = 64;
+        const int height = 64;
+        var img = new SequentialMatrix<Lab32>(width, height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                img[x, y] = x < 32 ? new Lab32(20.0f, 0.0f, 0.0f) : new Lab32(80.0f, 0.0f, 0.0f);
+            }
+        }
+
+        var options = new MeanShiftOptions(
+            SpatialRadius: 24,
+            RangeRadius: 10.0,
+            MinRegionSize: 50);
+
+        Matrix<Lab32> filtered = MeanShiftSegmentation.Filter(img, options);
+        IDisjointSet segmentation = MeanShiftSegmentation.Segment(img, options);
+        var regions = segmentation.ToRegions();
+
+        Assert.Equal(2, regions.Count);
+        Assert.NotEqual(segmentation[0, 0], segmentation[63, 63]);
+        Assert.Equal(segmentation[0, 0], segmentation[31, 32]);
+        Assert.Equal(segmentation[63, 63], segmentation[32, 32]);
+
+        (Matrix<Lab32> fusedFiltered, IDisjointSet fusedSeg) = MeanShiftSegmentation.FilterAndSegment(img, options);
+        Assert.True(filtered.ContentEquals(fusedFiltered));
+        Assert.True(segmentation.ToMatrix().ContentEquals(fusedSeg.ToMatrix()));
+
+        Matrix<LongPixel> repeated = MeanShiftSegmentation.Segment(img, options).ToMatrix();
+        Assert.True(segmentation.ToMatrix().ContentEquals(repeated));
+    }
 }

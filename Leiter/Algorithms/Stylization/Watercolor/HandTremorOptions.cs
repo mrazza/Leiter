@@ -16,6 +16,9 @@ using Leiter.Pixels;
 /// <param name="PaperColor">The paper background color revealed in gap regions between contrasting strokes (default null; resolves to (250, 248, 242) if null).</param>
 /// <param name="PrimaryNoise">Optional configuration for the primary Perlin noise displacement field.</param>
 /// <param name="SecondaryNoise">Optional configuration for the secondary Perlin noise displacement field.</param>
+/// <param name="MinContrastingChroma">The minimum normalized RGB chroma (<c>max(R,G,B) - min(R,G,B)</c> in [0.0, 1.0]) required on both adjacent regions to emit contrasting-hue paper gaps and overlaps (default 0.08; set to 0.0 to allow gaps on neutral/achromatic boundaries).</param>
+/// <param name="PaperGapBias">The normalized boundary-normal bias in [-1.0, 1.0] controlling white paper-gap coverage on contrasting boundaries (default 0.0; positive values pull washes apart to widen gaps, negative values push washes together to suppress gaps and increase overlaps).</param>
+/// <param name="PaperGapOpacity">The opacity in [0.0, 1.0] used to blend <see cref="PaperColor"/> inside contrasting paper gaps (default 1.0; 0.0 leaves underlying image pixels unchanged).</param>
 public sealed record HandTremorOptions(
     double Amplitude = 3.0,
     double SalientAmplitudeScale = 0.65,
@@ -23,7 +26,10 @@ public sealed record HandTremorOptions(
     double OverlapDarkening = 0.5,
     Rgb8? PaperColor = null,
     PerlinNoiseOptions? PrimaryNoise = null,
-    PerlinNoiseOptions? SecondaryNoise = null)
+    PerlinNoiseOptions? SecondaryNoise = null,
+    double MinContrastingChroma = 0.08,
+    double PaperGapBias = 0.0,
+    double PaperGapOpacity = 1.0)
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default tremor amplitude and noise frequencies apply unscaled.
@@ -96,6 +102,9 @@ public sealed record HandTremorOptions(
         Guard.ThrowIfNotFiniteInRange(SalientAmplitudeScale, 0.0, 1.0);
         Guard.ThrowIfNotFiniteInRange(SimilarHueThresholdDegrees, 0.0, 180.0);
         Guard.ThrowIfNotFiniteInRange(OverlapDarkening, 0.0, 1.0);
+        Guard.ThrowIfNotFiniteInRange(MinContrastingChroma, 0.0, 1.0);
+        Guard.ThrowIfNotFiniteInRange(PaperGapBias, -1.0, 1.0);
+        Guard.ThrowIfNotFiniteInRange(PaperGapOpacity, 0.0, 1.0);
 
         PrimaryNoise?.Validate();
         SecondaryNoise?.Validate();

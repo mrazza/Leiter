@@ -79,6 +79,7 @@ public static class HandTremorFilter
 
         RegionColorStatistics<Rgb64>[] stats = RegionColorStatistics.Compute(regionGraph, image);
 
+        double minContrastingChroma = opts.MinContrastingChroma;
         byte[] boundaryGroup = new byte[boundaryCount];
         for (int bi = 0; bi < boundaryCount; bi++)
         {
@@ -89,14 +90,22 @@ public static class HandTremorFilter
             else
             {
                 RegionBoundary b = regionGraph.Boundaries[bi];
+                Rgb64 colorA = stats[b.First].MeanColor;
+                Rgb64 colorB = stats[b.Second].MeanColor;
+                double chromaA = Math.Max(colorA.R, Math.Max(colorA.G, colorA.B)) - Math.Min(colorA.R, Math.Min(colorA.G, colorA.B));
+                double chromaB = Math.Max(colorB.R, Math.Max(colorB.G, colorB.B)) - Math.Min(colorB.R, Math.Min(colorB.G, colorB.B));
                 double hueDiff = ColorMetrics.HueDifferenceDegrees(stats[b.First].MeanHueDegrees, stats[b.Second].MeanHueDegrees);
-                boundaryGroup[bi] = hueDiff < opts.SimilarHueThresholdDegrees ? (byte)1 : (byte)2;
+                boundaryGroup[bi] = (chromaA >= minContrastingChroma &&
+                                     chromaB >= minContrastingChroma &&
+                                     hueDiff >= opts.SimilarHueThresholdDegrees)
+                    ? (byte)2
+                    : (byte)1;
             }
         }
 
         int width = image.Width;
         int height = image.Height;
-        int innerRadius = (int)Math.Ceiling(opts.Amplitude);
+        int innerRadius = (int)Math.Ceiling(opts.Amplitude * (1.0 + Math.Abs(opts.PaperGapBias)));
         int bandRadius = innerRadius + 3;
 
         RegionBoundaryBand band = regionGraph.ComputeBoundaryBand(bandRadius, restrictToIncidentRegions: true);
@@ -157,6 +166,16 @@ public static class HandTremorFilter
                     double px2 = x + (s * t2[x, y].X);
                     double py2 = y + (s * t2[x, y].Y);
 
+                    if (opts.PaperGapBias != 0.0)
+                    {
+                        (double nx, double ny) = ComputeBoundaryNormalAToB(regionGraph.Labels, band.Distances, x, y, a, bId);
+                        double biasOffset = opts.PaperGapBias * s * opts.Amplitude;
+                        px1 += biasOffset * nx;
+                        py1 += biasOffset * ny;
+                        px2 -= biasOffset * nx;
+                        py2 -= biasOffset * ny;
+                    }
+
                     int label1 = regionGraph.Labels.SampleNearest(px1, py1);
                     int label2 = regionGraph.Labels.SampleNearest(px2, py2);
 
@@ -179,7 +198,23 @@ public static class HandTremorFilter
                     }
                     else if (label1 == bId && label2 == a)
                     {
-                        result[x, y] = paperColor;
+                        if (opts.PaperGapOpacity >= 1.0)
+                        {
+                            result[x, y] = paperColor;
+                        }
+                        else if (opts.PaperGapOpacity <= 0.0)
+                        {
+                            result[x, y] = image[x, y];
+                        }
+                        else
+                        {
+                            Rgb8 src = image[x, y];
+                            double opacity = opts.PaperGapOpacity;
+                            result[x, y] = new Rgb8(
+                                (byte)Math.Clamp(Math.Round(src.R + ((paperColor.R - src.R) * opacity)), 0, 255),
+                                (byte)Math.Clamp(Math.Round(src.G + ((paperColor.G - src.G) * opacity)), 0, 255),
+                                (byte)Math.Clamp(Math.Round(src.B + ((paperColor.B - src.B) * opacity)), 0, 255));
+                        }
                     }
                     else
                     {
@@ -190,5 +225,48 @@ public static class HandTremorFilter
         });
 
         return result;
+    }
+
+    private static (double NormalX, double NormalY) ComputeBoundaryNormalAToB(
+        IReadOnlyMatrix<int> labels,
+        IReadOnlyMatrix<int> distances,
+        int x,
+        int y,
+        int regionA,
+        int regionB)
+    {
+        double sdLeft = SampleSignedDistance(labels, distances, x - 1, y, regionA, regionB);
+        double sdRight = SampleSignedDistance(labels, distances, x + 1, y, regionA, regionB);
+        double sdUp = SampleSignedDistance(labels, distances, x, y - 1, regionA, regionB);
+        double sdDown = SampleSignedDistance(labels, distances, x, y + 1, regionA, regionB);
+
+        double gx = sdRight - sdLeft;
+        double gy = sdDown - sdUp;
+        double len = Math.Sqrt((gx * gx) + (gy * gy));
+        if (len <= 1e-6)
+        {
+            return (0.0, 0.0);
+        }
+
+        double invLen = 1.0 / len;
+        return (-gx * invLen, -gy * invLen);
+    }
+
+    private static double SampleSignedDistance(
+        IReadOnlyMatrix<int> labels,
+        IReadOnlyMatrix<int> distances,
+        int x,
+        int y,
+        int regionA,
+        int regionB)
+    {
+        int cx = Math.Clamp(x, 0, labels.Width - 1);
+        int cy = Math.Clamp(y, 0, labels.Height - 1);
+        int lbl = labels[cx, cy];
+        if (lbl == regionA)
+            return distances[cx, cy] + 0.5;
+        if (lbl == regionB)
+            return -(distances[cx, cy] + 0.5);
+        return 0.0;
     }
 }
