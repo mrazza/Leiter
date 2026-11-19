@@ -21,7 +21,7 @@ public class WatercolorResultTests
     {
         var output = new SequentialMatrix<Rgb8>(2, 2);
         var transferred = new SequentialMatrix<Rgb8>(2, 2);
-        WatercolorPalette palette = WatercolorPalettes.Defaults[0];
+        ColorTransferProfile palette = WatercolorPalettes.Defaults[0];
         var saliency = new SequentialMatrix<DoublePixel>(2, 2);
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
@@ -62,7 +62,7 @@ public class WatercolorResultTests
     {
         var output = new SequentialMatrix<Rgb8>(2, 2);
         var transferred = new SequentialMatrix<Rgb8>(2, 2);
-        WatercolorPalette palette = WatercolorPalettes.Defaults[0];
+        ColorTransferProfile palette = WatercolorPalettes.Defaults[0];
         var saliency = new SequentialMatrix<DoublePixel>(2, 2);
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);

@@ -48,9 +48,9 @@ public static class WatercolorPipeline
         }
 
         // Stage 1: Reinhard Color Transfer
-        (Matrix<Rgb8> colorTransferred, WatercolorPalette selectedPalette) = opts.TargetPalette is not null
+        (Matrix<Rgb8> colorTransferred, ColorTransferProfile selectedPalette) = opts.TargetPalette is not null
             ? (ColorTransfer.Transfer(image, opts.TargetPalette, strength: opts.ColorTransferStrength), opts.TargetPalette)
-            : ColorTransfer.TransferToClosestPalette(image, strength: opts.ColorTransferStrength);
+            : ColorTransfer.TransferToClosestProfile(image, WatercolorPalettes.Defaults, strength: opts.ColorTransferStrength);
 
         // Stage 2: Regional Contrast Saliency & Saliency Distance Field
         Matrix<Rgb8> blurred = opts.EgbiBlurSigma <= 0.0

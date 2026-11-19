@@ -33,17 +33,22 @@ public static class PaperGranulation
             return new SequentialMatrix<DoublePixel>(size);
         }
 
-        Matrix<DoublePixel> fractal = PerlinNoise.GenerateFractalField(size, opts);
-        Matrix<DoublePixel> turbulence = PerlinNoise.GenerateTurbulenceField(size, opts);
-
+        var noise = new PerlinNoise(opts.Seed);
         var result = new SequentialMatrix<DoublePixel>(size);
 
         Parallel.For(0, size.Height, y =>
         {
+            double sy = y * opts.Frequency;
             for (int x = 0; x < size.Width; x++)
             {
-                double f = (fractal[x, y].Value + 1.0) * 0.5;
-                double t = 1.0 - turbulence[x, y].Value;
+                var (fractal, turbulence) = noise.SampleFractalAndTurbulenceUnchecked(
+                    x * opts.Frequency,
+                    sy,
+                    opts.Octaves,
+                    opts.Lacunarity,
+                    opts.Persistence);
+                double f = (fractal + 1.0) * 0.5;
+                double t = 1.0 - turbulence;
                 double combined = Math.Clamp((0.65 * f) + (0.35 * t), 0.0, 1.0);
                 result[x, y] = new DoublePixel(combined);
             }
@@ -84,49 +89,22 @@ public static class PaperGranulation
 
         IReadOnlyMatrix<DoublePixel> heightMap = paperHeightMap ?? GeneratePaperHeightMap(image.Size, opts.GrainNoiseOptions);
 
-        Matrix<Vector2D>? heightGrad = opts.WarpAmplitude > 0.0
-            ? SpatialGradients.Compute(heightMap)
+        Matrix<Rgb8>? warped = opts.WarpAmplitude > 0.0
+            ? image.WarpBilinear(SpatialGradients.Compute(heightMap), opts.WarpAmplitude, EdgeHandling.EXTEND)
             : null;
 
-        int width = image.Width;
-        int height = image.Height;
-        var result = new SequentialMatrix<Rgb8>(width, height);
-
-        Parallel.For(0, height, y =>
+        if (opts.DensityStrength == 0.0)
         {
-            for (int x = 0; x < width; x++)
+            return warped ?? image.Clone();
+        }
+
+        return PigmentBlend.ApplyDensityField(
+            warped ?? image,
+            heightMap,
+            rawHeight =>
             {
-                double rawH = heightMap[x, y].Value;
-                double h = double.IsFinite(rawH) ? Math.Clamp(rawH, 0.0, 1.0) : 0.5;
-
-                Rgb8 sampled;
-                if (opts.WarpAmplitude > 0.0)
-                {
-                    Vector2D grad = heightGrad![x, y];
-                    double sampleX = x;
-                    double sampleY = y;
-                    if (double.IsFinite(grad.X))
-                    {
-                        sampleX += opts.WarpAmplitude * grad.X;
-                    }
-
-                    if (double.IsFinite(grad.Y))
-                    {
-                        sampleY += opts.WarpAmplitude * grad.Y;
-                    }
-
-                    sampled = image.SampleBilinear(sampleX, sampleY, EdgeHandling.EXTEND);
-                }
-                else
-                {
-                    sampled = image[x, y];
-                }
-
-                double densityOffset = opts.DensityStrength * ((0.5 - h) * 2.0);
-                result[x, y] = PigmentBlend.AdjustDensity(sampled, densityOffset);
-            }
-        });
-
-        return result;
+                double h = double.IsFinite(rawHeight) ? Math.Clamp(rawHeight, 0.0, 1.0) : 0.5;
+                return opts.DensityStrength * ((0.5 - h) * 2.0);
+            });
     }
 }

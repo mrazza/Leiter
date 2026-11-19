@@ -30,7 +30,7 @@ using Leiter.Pixels;
 /// <param name="EnableFxaa">Whether to apply final FXAA boundary smoothing (default <see langword="true"/>).</param>
 /// <param name="EgbiBlurSigma">The standard deviation for the Stage 2 Gaussian pre-blur applied before EGBI segmentation (default 0.8; set to 0.0 to disable pre-blur).</param>
 public sealed record WatercolorOptions(
-    WatercolorPalette? TargetPalette = null,
+    ColorTransferProfile? TargetPalette = null,
     double ColorTransferStrength = 1.0,
     EgbiOptions? Egbi = null,
     SaliencyCutOptions? SaliencyCut = null,
@@ -99,12 +99,14 @@ public sealed record WatercolorOptions(
     public static WatercolorOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
         double referenceDimension = DefaultReferenceDimension,
-        IReadOnlyList<WatercolorPalette>? candidatePalettes = null)
+        IReadOnlyList<ColorTransferProfile>? candidatePalettes = null)
     {
         OptionTuning.ValidateImageAndReference(image, referenceDimension);
 
         ImageTuningProfile rawProfile = ImageTuningProfile.Analyze(image);
-        WatercolorPalette selectedPalette = ColorTransfer.SelectClosestPalette(rawProfile.LabStats, candidatePalettes);
+        ColorTransferProfile selectedPalette = ColorTransfer.SelectClosestProfile(
+            rawProfile.LabStats,
+            candidatePalettes ?? WatercolorPalettes.Defaults);
 
         if (rawProfile.IsEmpty)
         {

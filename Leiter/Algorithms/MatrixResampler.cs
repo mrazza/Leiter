@@ -122,7 +122,12 @@ public static class MatrixResampler
         where T : struct, IPixel<T>
     {
         ValidateSampleInputs(source, x, y, edgeHandling);
+        return SampleBilinearUnchecked(source, x, y);
+    }
 
+    private static T SampleBilinearUnchecked<T>(IReadOnlyMatrix<T> source, double x, double y)
+        where T : struct, IPixel<T>
+    {
         double cx = Math.Clamp(x, 0.0, source.Width - 1.0);
         double cy = Math.Clamp(y, 0.0, source.Height - 1.0);
 
@@ -146,6 +151,161 @@ public static class MatrixResampler
             (source[x1, y1].ToDoubleVector() * w11);
 
         return T.FromDoubleVector(interpolatedPixel);
+    }
+
+    /// <summary>
+    /// Samples a numeric pixel from the matrix at the specified coordinates using bilinear interpolation
+    /// restricted to 2×2 corner neighbors satisfying <paramref name="predicate"/>.
+    /// </summary>
+    /// <typeparam name="T">The numeric pixel type stored in the matrix.</typeparam>
+    /// <typeparam name="TState">A state value passed to <paramref name="predicate"/> to avoid closure allocations.</typeparam>
+    /// <param name="source">The source matrix to sample.</param>
+    /// <param name="x">The horizontal coordinate.</param>
+    /// <param name="y">The vertical coordinate.</param>
+    /// <param name="state">Caller state passed to <paramref name="predicate"/>.</param>
+    /// <param name="predicate">Predicate determining whether each integer neighbor coordinate contributes to interpolation.</param>
+    /// <param name="fallback">The value returned when no contributing neighbor satisfies <paramref name="predicate"/>.</param>
+    /// <param name="edgeHandling">The edge handling mode for out-of-bounds coordinates.</param>
+    /// <returns>The normalized weighted bilinear sample, or <paramref name="fallback"/> if all matching weights sum to zero.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="predicate"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="edgeHandling"/> is invalid, or <paramref name="x"/> or <paramref name="y"/> is not finite.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="source"/> is empty.</exception>
+    public static T SampleBilinearWhere<T, TState>(
+        this IReadOnlyMatrix<T> source,
+        double x,
+        double y,
+        TState state,
+        Func<int, int, TState, bool> predicate,
+        T fallback = default,
+        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        where T : struct, IPixel<T>
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        ValidateSampleInputs(source, x, y, edgeHandling);
+
+        double cx = Math.Clamp(x, 0.0, source.Width - 1.0);
+        double cy = Math.Clamp(y, 0.0, source.Height - 1.0);
+
+        int x0 = (int)Math.Floor(cx);
+        int x1 = Math.Min(source.Width - 1, x0 + 1);
+        double wx = cx - x0;
+
+        int y0 = (int)Math.Floor(cy);
+        int y1 = Math.Min(source.Height - 1, y0 + 1);
+        double wy = cy - y0;
+
+        double w00 = (1.0 - wx) * (1.0 - wy);
+        double w10 = wx * (1.0 - wy);
+        double w01 = (1.0 - wx) * wy;
+        double w11 = wx * wy;
+
+        Vector<double> sum = Vector<double>.Zero;
+        double weightSum = 0.0;
+
+        if (predicate(x0, y0, state))
+        {
+            sum += source[x0, y0].ToDoubleVector() * w00;
+            weightSum += w00;
+        }
+
+        if (predicate(x1, y0, state))
+        {
+            sum += source[x1, y0].ToDoubleVector() * w10;
+            weightSum += w10;
+        }
+
+        if (predicate(x0, y1, state))
+        {
+            sum += source[x0, y1].ToDoubleVector() * w01;
+            weightSum += w01;
+        }
+
+        if (predicate(x1, y1, state))
+        {
+            sum += source[x1, y1].ToDoubleVector() * w11;
+            weightSum += w11;
+        }
+
+        return weightSum > 0.0
+            ? T.FromDoubleVector(sum / weightSum)
+            : fallback;
+    }
+
+    /// <summary>
+    /// Samples a numeric pixel from the matrix at the specified coordinates using bilinear interpolation
+    /// restricted to 2×2 corner neighbors satisfying <paramref name="predicate"/>.
+    /// </summary>
+    /// <typeparam name="T">The numeric pixel type stored in the matrix.</typeparam>
+    /// <param name="source">The source matrix to sample.</param>
+    /// <param name="x">The horizontal coordinate.</param>
+    /// <param name="y">The vertical coordinate.</param>
+    /// <param name="predicate">Predicate determining whether each integer neighbor coordinate contributes to interpolation.</param>
+    /// <param name="fallback">The value returned when no contributing neighbor satisfies <paramref name="predicate"/>.</param>
+    /// <param name="edgeHandling">The edge handling mode for out-of-bounds coordinates.</param>
+    /// <returns>The normalized weighted bilinear sample, or <paramref name="fallback"/> if all matching weights sum to zero.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="predicate"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="edgeHandling"/> is invalid, or <paramref name="x"/> or <paramref name="y"/> is not finite.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="source"/> is empty.</exception>
+    public static T SampleBilinearWhere<T>(
+        this IReadOnlyMatrix<T> source,
+        double x,
+        double y,
+        Func<int, int, bool> predicate,
+        T fallback = default,
+        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        where T : struct, IPixel<T>
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        return source.SampleBilinearWhere(x, y, predicate, static (cx, cy, pred) => pred(cx, cy), fallback, edgeHandling);
+    }
+
+    /// <summary>
+    /// Warps a numeric pixel matrix using per-pixel 2D displacement vectors sampled with bilinear interpolation.
+    /// Non-finite displacement components are treated as zero displacement along that axis.
+    /// </summary>
+    /// <typeparam name="T">The numeric pixel type stored in the matrix.</typeparam>
+    /// <param name="source">The source matrix to warp.</param>
+    /// <param name="displacementField">The per-pixel 2D offset vectors matching <paramref name="source"/> dimensions.</param>
+    /// <param name="scale">Scalar multiplier applied to each displacement vector.</param>
+    /// <param name="edgeHandling">The edge handling mode for out-of-bounds coordinates.</param>
+    /// <returns>A new <see cref="Matrix{T}"/> containing the warped image.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="displacementField"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="displacementField"/> dimensions do not match <paramref name="source"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="scale"/> is not finite or <paramref name="edgeHandling"/> is invalid.</exception>
+    public static Matrix<T> WarpBilinear<T>(
+        this IReadOnlyMatrix<T> source,
+        IReadOnlyMatrix<Vector2D> displacementField,
+        double scale = 1.0,
+        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        where T : struct, IPixel<T>
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfSizeMismatch(source, displacementField);
+        Guard.ThrowIfNotFinite(scale);
+        Guard.ThrowIfUndefinedEnum(edgeHandling);
+
+        if (source.Count == 0)
+            return new SequentialMatrix<T>(source.Size);
+
+        if (scale == 0.0)
+            return source.Clone();
+
+        int width = source.Width;
+        int height = source.Height;
+        var result = new SequentialMatrix<T>(width, height);
+
+        Parallel.For(0, height, y =>
+        {
+            for (int x = 0; x < width; x++)
+            {
+                Vector2D d = displacementField[x, y];
+                double sampleX = double.IsFinite(d.X) ? x + (scale * d.X) : x;
+                double sampleY = double.IsFinite(d.Y) ? y + (scale * d.Y) : y;
+                result[x, y] = SampleBilinearUnchecked(source, sampleX, sampleY);
+            }
+        });
+
+        return result;
     }
 
     /// <summary>

@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.Color;
 
 using System;
 using Leiter.Algorithms.Color;
+using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -95,7 +96,7 @@ public class ColorTransferTests
     }
 
     [Fact]
-    public void SelectClosestPalette_And_TransferToClosestPalette_ShouldSelectExpectedPreset()
+    public void SelectClosestProfile_And_TransferToClosestProfile_ShouldSelectExpectedPreset()
     {
         var coastalImg = new SequentialMatrix<Rgb8>(4, 4);
         Rgb8[] coastalSamples =
@@ -110,7 +111,7 @@ public class ColorTransferTests
             coastalImg[i] = coastalSamples[i % coastalSamples.Length];
         }
 
-        var (coastalOut, coastalSelected) = ColorTransfer.TransferToClosestPalette(coastalImg);
+        var (coastalOut, coastalSelected) = ColorTransfer.TransferToClosestProfile(coastalImg, WatercolorPalettes.Defaults);
         Assert.Equal(WatercolorPalettes.CoastalCerulean, coastalSelected);
         Assert.Equal(coastalImg.Size, coastalOut.Size);
 
@@ -127,7 +128,7 @@ public class ColorTransferTests
             botanicalImg[i] = botanicalSamples[i % botanicalSamples.Length];
         }
 
-        var (botanicalOut, botanicalSelected) = ColorTransfer.TransferToClosestPalette(botanicalImg);
+        var (botanicalOut, botanicalSelected) = ColorTransfer.TransferToClosestProfile(botanicalImg, WatercolorPalettes.Defaults);
         Assert.Equal(WatercolorPalettes.BotanicalFoliage, botanicalSelected);
         Assert.Equal(botanicalImg.Size, botanicalOut.Size);
 
@@ -137,8 +138,10 @@ public class ColorTransferTests
         Assert.True(Math.Abs(refResultStats.MeanA - botanicalStats.MeanA) < 5.0);
         Assert.True(Math.Abs(refResultStats.MeanB - botanicalStats.MeanB) < 5.0);
 
+        Assert.Throws<ArgumentNullException>(() =>
+            ColorTransfer.SelectClosestProfile(LabColorStatistics.UnitWeights, null!));
         Assert.Throws<ArgumentException>(() =>
-            ColorTransfer.SelectClosestPalette(LabColorStatistics.UnitWeights, Array.Empty<WatercolorPalette>()));
+            ColorTransfer.SelectClosestProfile(LabColorStatistics.UnitWeights, Array.Empty<ColorTransferProfile>()));
     }
 
     [Fact]
@@ -147,15 +150,15 @@ public class ColorTransferTests
         var statA = new LabColorStatistics(10, 0, 0, 5, 0, 0);
 
         Assert.Throws<ArgumentNullException>(() =>
-            ColorTransfer.SelectClosestPalette(LabColorStatistics.UnitWeights, new WatercolorPalette[] { null! }));
+            ColorTransfer.SelectClosestProfile(LabColorStatistics.UnitWeights, new ColorTransferProfile[] { null! }));
         Assert.Throws<ArgumentNullException>(() =>
-            ColorTransfer.SelectClosestPalette(LabColorStatistics.UnitWeights, new WatercolorPalette[] { WatercolorPalettes.BalancedWash, null! }));
+            ColorTransfer.SelectClosestProfile(LabColorStatistics.UnitWeights, new ColorTransferProfile[] { WatercolorPalettes.BalancedWash, null! }));
 
         var customWeights = new LabColorStatistics(2.0, 1.0, 1.0, 0.5, 0.5, 0.5);
-        WatercolorPalette weightedMatch = ColorTransfer.SelectClosestPalette(statA, featureWeights: customWeights);
+        ColorTransferProfile weightedMatch = ColorTransfer.SelectClosestProfile(statA, WatercolorPalettes.Defaults, featureWeights: customWeights);
         Assert.NotNull(weightedMatch);
 
-        var d65Palette = new WatercolorPalette("Custom D65", new(65, 2, 8, 14, 5, 6), Illuminant.D65);
+        var d65Palette = new ColorTransferProfile("Custom D65", new(65, 2, 8, 14, 5, 6), Illuminant.D65);
 
         var emptyLab = new SequentialMatrix<Lab32>(0, 0);
         Assert.Empty(ColorTransfer.Transfer(emptyLab, statA));
@@ -167,6 +170,7 @@ public class ColorTransferTests
         sampleRgb[0, 1] = new Rgb8(140, 170, 190);
         sampleRgb[1, 1] = new Rgb8(200, 210, 220);
 
+        Assert.Throws<ArgumentNullException>(() => ColorTransfer.TransferToClosestProfile(sampleRgb, null!));
         Assert.Empty(ColorTransfer.Transfer(emptyRgb, sampleRgb));
         Matrix<Rgb8> refNoOp = ColorTransfer.Transfer(sampleRgb, sampleRgb, strength: 0.0);
         Assert.Equal(sampleRgb[0, 0], refNoOp[0, 0]);
@@ -178,13 +182,13 @@ public class ColorTransferTests
         Matrix<Rgb8> palTransferred = ColorTransfer.Transfer(sampleRgb, d65Palette);
         Assert.Equal(sampleRgb.Size, palTransferred.Size);
 
-        var (emptyClosest, _) = ColorTransfer.TransferToClosestPalette(emptyRgb, [d65Palette]);
+        var (emptyClosest, _) = ColorTransfer.TransferToClosestProfile(emptyRgb, [d65Palette]);
         Assert.Empty(emptyClosest);
 
-        var (zeroStrengthClosest, _) = ColorTransfer.TransferToClosestPalette(sampleRgb, [d65Palette], strength: 0.0);
+        var (zeroStrengthClosest, _) = ColorTransfer.TransferToClosestProfile(sampleRgb, [d65Palette], strength: 0.0);
         Assert.Equal(sampleRgb[0, 1], zeroStrengthClosest[0, 1]);
 
-        var (d65Out, d65Selected) = ColorTransfer.TransferToClosestPalette(sampleRgb, [d65Palette]);
+        var (d65Out, d65Selected) = ColorTransfer.TransferToClosestProfile(sampleRgb, [d65Palette]);
         Assert.Equal(d65Palette, d65Selected);
         Assert.Equal(sampleRgb.Size, d65Out.Size);
 
@@ -197,7 +201,7 @@ public class ColorTransferTests
         Matrix<Rgb8> viewTransferred = ColorTransfer.Transfer(rgbView, d65Palette);
         Assert.Equal(rgbView.Size, viewTransferred.Size);
 
-        var (viewClosest, viewPalette) = ColorTransfer.TransferToClosestPalette(rgbView, [d65Palette], strength: 0.0);
+        var (viewClosest, viewPalette) = ColorTransfer.TransferToClosestProfile(rgbView, [d65Palette], strength: 0.0);
         Assert.Equal(d65Palette, viewPalette);
         Assert.Equal(sampleRgb[1, 0], viewClosest[1, 0]);
     }

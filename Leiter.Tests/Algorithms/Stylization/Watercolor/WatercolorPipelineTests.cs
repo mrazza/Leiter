@@ -56,7 +56,7 @@ public class WatercolorPipelineTests
         var flatHeightMap = new SequentialMatrix<DoublePixel>(16, 16);
         flatHeightMap.SetAll(0.5);
 
-        WatercolorPalette customPalette = WatercolorPalettes.Defaults[^1];
+        ColorTransferProfile customPalette = WatercolorPalettes.Defaults[^1];
         var options = new WatercolorOptions(
             TargetPalette: customPalette,
             ColorTransferStrength: 0.5,
@@ -95,7 +95,7 @@ public class WatercolorPipelineTests
         Assert.Empty(resultDefault.WetInWet.QualifyingBoundaries);
         Assert.Equal(WatercolorPalettes.Defaults[0], resultDefault.SelectedPalette);
 
-        WatercolorPalette chosenPalette = WatercolorPalettes.Defaults[^1];
+        ColorTransferProfile chosenPalette = WatercolorPalettes.Defaults[^1];
         WatercolorResult resultCustom = WatercolorPipeline.RenderDetailed(empty, new WatercolorOptions(TargetPalette: chosenPalette));
         Assert.Same(chosenPalette, resultCustom.SelectedPalette);
     }

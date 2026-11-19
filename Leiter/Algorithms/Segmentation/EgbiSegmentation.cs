@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -197,99 +198,11 @@ public static class EgbiSegmentation
     }
 
     /// <summary>
-    /// Delegate type for a method that determines the color (or pixel value) for a
-    /// given region.
-    /// </summary>
-    /// <typeparam name="T">The type of the pixel.</typeparam>
-    /// <param name="image">The original image used to generate the segmentation.</param>
-    /// <param name="segment">The segment for which a color is required.</param>
-    /// <returns>A color for the given segment.</returns>
-    public delegate T ColorAssigner<T>(IReadOnlyMatrix<T> image, Region<Coord> segment)
-        where T : struct, IPixel<T>;
-
-    /// <summary>
-    /// Returns a <see cref="ColorAssigner{T}"/> that assigns a random color to each segment.
-    /// </summary>
-    /// <param name="randomSeed">An optional seed for the random number generator.</param>
-    /// <returns>A <see cref="ColorAssigner{T}"/> for use in <see cref="ColorImageBySegmentation{T}"/>.</returns>
-    public static ColorAssigner<Rgb8> RandomColorAssigner(int? randomSeed = null)
-    {
-        Random r = randomSeed is int seed ? new Random(seed) : new Random();
-        return (_, _) => new Rgb8((byte)r.Next(255), (byte)r.Next(255), (byte)r.Next(255));
-    }
-
-    /// <summary>
-    /// Returns a <see cref="ColorAssigner{T}"/> that assigns each segment the average color of all the pixels
-    /// contained in the segment.
-    /// </summary>
-    /// <returns>A <see cref="ColorAssigner{T}"/> for use in <see cref="ColorImageBySegmentation{T}"/>.</returns>
-    public static ColorAssigner<Rgb8> AverageColorAssigner()
-        => (image, region) =>
-        {
-            if (region.Pixels.Count <= 0)
-                throw new ArgumentException("All regions of the segmentation must have at least one pixel.");
-
-            return region.Pixels.Select(coord => image[coord].ToRgb64()).Aggregate(Rgb64.Zero, (current, next) => current.Add(next)).Divide((double)region.Pixels.Count).ToRgb8();
-        };
-
-    /// <summary>
-    /// Returns a <see cref="ColorAssigner{T}"/> that assigns each segment a unique integer.
-    /// </summary>
-    /// <returns>A <see cref="ColorAssigner{T}"/> for use in <see cref="ColorImageBySegmentation{T}"/>.</returns>
-    public static ColorAssigner<LongPixel> IntegerColorAssigner()
-    {
-        long index = 0;
-        return (_, _) => index++;
-    }
-
-    /// <summary>
-    /// Colors the specified 8-bit RGB image matrix such that each segment in the specified segmentation is a random color.
-    /// </summary>
-    /// <param name="image">The image to color.</param>
-    /// <param name="segmentation">The segmentation containing regions of coordinates to color.</param>
-    public static void ColorImageBySegmentation(Matrix<Rgb8> image, IEnumerable<Region<Coord>> segmentation)
-        => ColorImageBySegmentation(image, segmentation, RandomColorAssigner());
-
-    /// <summary>
-    /// Colors the specified image matrix such that each segment in the specified segmentation is colored
-    /// according to the specified <see cref="ColorAssigner{T}"/>.
-    /// </summary>
-    /// <typeparam name="T">The pixel type for the input matrix.</typeparam>
-    /// <param name="image">The image to color.</param>
-    /// <param name="segmentation">The segmentation containing regions of coordinates to color.</param>
-    /// <param name="colorAssigner">The <see cref="ColorAssigner{T}"/> used to select a color for each segment.</param>
-    public static void ColorImageBySegmentation<T>(Matrix<T> image, IEnumerable<Region<Coord>> segmentation, ColorAssigner<T> colorAssigner)
-        where T : struct, IPixel<T>
-    {
-        foreach (var currSegment in segmentation)
-        {
-            T color = colorAssigner(image, currSegment);
-            foreach (var pixel in currSegment.Pixels)
-            {
-                image[pixel.X, pixel.Y] = color;
-            }
-        }
-    }
-
-    /// <summary>
     /// Computes a deterministic, fixed-seed SplitMix64 tie-breaker from edge endpoint coordinates
     /// so equal-weight edges break ties pseudo-randomly rather than sweeping in scanline order.
     /// </summary>
     /// <param name="edge">The graph edge whose endpoints are hashed.</param>
     /// <returns>A 64-bit pseudo-random hash value for tie-breaking.</returns>
-    private static ulong ComputeEdgeTieBreaker(UndirectedGraphEdge<Coord> edge)
-    {
-        ulong x1 = (uint)edge.First.X;
-        ulong y1 = (uint)edge.First.Y;
-        ulong x2 = (uint)edge.Second.X;
-        ulong y2 = (uint)edge.Second.Y;
-
-        ulong z = (x1 * 0x9E3779B97F4A7C15UL)
-                ^ (y1 * 0xBF58476D1CE4E5B9UL)
-                ^ (x2 * 0x94D049BB133111EBUL)
-                ^ (y2 * 0xD6E8FEB86659FD93UL);
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
-        return z ^ (z >> 31);
-    }
+    private static ulong ComputeEdgeTieBreaker(UndirectedGraphEdge<Coord> edge) =>
+        SplitMix64.HashCoordinates(edge.First.X, edge.First.Y, edge.Second.X, edge.Second.Y);
 }

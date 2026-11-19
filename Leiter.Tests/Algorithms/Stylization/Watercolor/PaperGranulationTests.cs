@@ -92,6 +92,20 @@ public class PaperGranulationTests
         Matrix<DoublePixel> map2 = PaperGranulation.GeneratePaperHeightMap(size, optsA);
         Matrix<DoublePixel> mapOther = PaperGranulation.GeneratePaperHeightMap(size, optsB);
 
+        // Verify fused single-pass output matches separate GenerateFractalField + GenerateTurbulenceField formula
+        Matrix<DoublePixel> fractal = PerlinNoise.GenerateFractalField(size, optsA);
+        Matrix<DoublePixel> turbulence = PerlinNoise.GenerateTurbulenceField(size, optsA);
+        for (int y = 0; y < 12; y++)
+        {
+            for (int x = 0; x < 12; x++)
+            {
+                double f = (fractal[x, y].Value + 1.0) * 0.5;
+                double t = 1.0 - turbulence[x, y].Value;
+                double expected = Math.Clamp((0.65 * f) + (0.35 * t), 0.0, 1.0);
+                Assert.Equal(expected, map1[x, y].Value, 12);
+            }
+        }
+
         for (int y = 0; y < 12; y++)
         {
             for (int x = 0; x < 12; x++)

@@ -146,17 +146,17 @@ public static class HandTremorFilter
 
                     if (hasA && hasB)
                     {
-                        Rgb64 colA = SampleSameRegionBilinear(image, regionGraph.Labels, px1, py1, a).ToRgb64();
-                        Rgb64 colB = SampleSameRegionBilinear(image, regionGraph.Labels, px2, py2, bId).ToRgb64();
+                        Rgb64 colA = image.SampleBilinearWhere(px1, py1, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId).ToRgb64();
+                        Rgb64 colB = image.SampleBilinearWhere(px2, py2, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId).ToRgb64();
                         result[x, y] = PigmentBlend.MixPigments(colA, colB, opts.OverlapDarkening).ToRgb8();
                     }
                     else if (hasA)
                     {
-                        result[x, y] = SampleSameRegionBilinear(image, regionGraph.Labels, px1, py1, a);
+                        result[x, y] = image.SampleBilinearWhere(px1, py1, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
                     }
                     else if (hasB)
                     {
-                        result[x, y] = SampleSameRegionBilinear(image, regionGraph.Labels, px2, py2, bId);
+                        result[x, y] = image.SampleBilinearWhere(px2, py2, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
                     }
                     else if (label1 == bId || label2 == a)
                     {
@@ -171,76 +171,5 @@ public static class HandTremorFilter
         });
 
         return result;
-    }
-
-    private static Rgb8 SampleSameRegionBilinear(
-        IReadOnlyMatrix<Rgb8> image,
-        IReadOnlyMatrix<int> labels,
-        double px,
-        double py,
-        int targetRegionId)
-    {
-        double cx = Math.Clamp(px, 0.0, image.Width - 1.0);
-        double cy = Math.Clamp(py, 0.0, image.Height - 1.0);
-
-        int x0 = (int)Math.Floor(cx);
-        int x1 = Math.Min(image.Width - 1, x0 + 1);
-        double wx = cx - x0;
-
-        int y0 = (int)Math.Floor(cy);
-        int y1 = Math.Min(image.Height - 1, y0 + 1);
-        double wy = cy - y0;
-
-        double w00 = (1.0 - wx) * (1.0 - wy);
-        double w10 = wx * (1.0 - wy);
-        double w01 = (1.0 - wx) * wy;
-        double w11 = wx * wy;
-
-        double sumR = 0.0;
-        double sumG = 0.0;
-        double sumB = 0.0;
-        double weightSum = 0.0;
-
-        if (labels[x0, y0] == targetRegionId)
-        {
-            Rgb8 p = image[x0, y0];
-            sumR += p.R * w00;
-            sumG += p.G * w00;
-            sumB += p.B * w00;
-            weightSum += w00;
-        }
-
-        if (labels[x1, y0] == targetRegionId)
-        {
-            Rgb8 p = image[x1, y0];
-            sumR += p.R * w10;
-            sumG += p.G * w10;
-            sumB += p.B * w10;
-            weightSum += w10;
-        }
-
-        if (labels[x0, y1] == targetRegionId)
-        {
-            Rgb8 p = image[x0, y1];
-            sumR += p.R * w01;
-            sumG += p.G * w01;
-            sumB += p.B * w01;
-            weightSum += w01;
-        }
-
-        if (labels[x1, y1] == targetRegionId)
-        {
-            Rgb8 p = image[x1, y1];
-            sumR += p.R * w11;
-            sumG += p.G * w11;
-            sumB += p.B * w11;
-            weightSum += w11;
-        }
-
-        double invWeight = 1.0 / weightSum;
-        return new Rgb8(
-            Rgb8.ClampRoundedByte(sumR * invWeight),
-            Rgb8.ClampRoundedByte(sumG * invWeight),
-            Rgb8.ClampRoundedByte(sumB * invWeight));
     }
 }

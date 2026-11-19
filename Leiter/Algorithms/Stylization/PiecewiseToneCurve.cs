@@ -1,7 +1,7 @@
 namespace Leiter.Algorithms.Stylization;
 
 using System;
-using System.Threading.Tasks;
+using Leiter.Algorithms.Color;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -105,30 +105,8 @@ public static class PiecewiseToneCurve
             return new SequentialMatrix<Rgb8>(image.Size);
         }
 
-        var toneLookupTable = new byte[256];
-        for (int channelValue = 0; channelValue < 256; channelValue++)
-        {
-            double mappedTone = Evaluate(channelValue / 255.0, resolvedOptions);
-            toneLookupTable[channelValue] = Rgb8.ClampRoundedByte(mappedTone * 255.0);
-        }
-
-        int width = image.Width;
-        int height = image.Height;
-        var result = new SequentialMatrix<Rgb8>(width, height);
-
-        Parallel.For(0, height, y =>
-        {
-            for (int x = 0; x < width; x++)
-            {
-                Rgb8 pixel = image[x, y];
-                result[x, y] = new Rgb8(
-                    toneLookupTable[pixel.R],
-                    toneLookupTable[pixel.G],
-                    toneLookupTable[pixel.B]);
-            }
-        });
-
-        return result;
+        byte[] toneLookupTable = ChannelLut.Build(normalized => Evaluate(normalized, resolvedOptions));
+        return ChannelLut.Apply(image, toneLookupTable);
     }
 
     private static double EvaluateCubicHermite(

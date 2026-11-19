@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
+using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Saliency;
 using Leiter.Core;
 using Leiter.Pixels;

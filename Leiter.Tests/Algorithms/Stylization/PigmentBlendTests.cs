@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.Stylization;
 
 using System;
 using Leiter.Algorithms.Stylization;
+using Leiter.Core;
 using Leiter.Pixels;
 using Xunit;
 
@@ -361,5 +362,44 @@ public class PigmentBlendTests
     {
         var color = new Rgb8(100, 100, 100);
         Assert.Throws<ArgumentOutOfRangeException>(() => PigmentBlend.MixPigments(color, color, overlap));
+    }
+
+    /// <summary>
+    /// Verifies both <see cref="PigmentBlend.ApplyDensityField"/> overloads and argument validation.
+    /// </summary>
+    [Fact]
+    public void ApplyDensityField_BothOverloads_ShouldMatchAdjustDensityAndValidate()
+    {
+        var image = new SequentialMatrix<Rgb8>(2, 2);
+        image[0, 0] = new Rgb8(120, 140, 160);
+        image[1, 0] = new Rgb8(80, 100, 120);
+        image[0, 1] = new Rgb8(200, 210, 220);
+        image[1, 1] = new Rgb8(40, 60, 80);
+
+        var field = new SequentialMatrix<DoublePixel>(2, 2);
+        field[0, 0] = 0.25;
+        field[1, 0] = -0.5;
+        field[0, 1] = 1.0;
+        field[1, 1] = 0.0;
+
+        Matrix<Rgb8> scaled = PigmentBlend.ApplyDensityField(image, field, intensity: 0.8);
+        Matrix<Rgb8> mapped = PigmentBlend.ApplyDensityField(image, field, static v => 0.8 * v);
+        for (int i = 0; i < image.Count; i++)
+        {
+            Assert.Equal(PigmentBlend.AdjustDensity(image[i], 0.8 * field[i].Value), scaled[i]);
+            Assert.Equal(scaled[i], mapped[i]);
+        }
+
+        Matrix<Rgb8> zeroIntensity = PigmentBlend.ApplyDensityField(image, field, intensity: 0.0);
+        Assert.Equal(image[0, 0], zeroIntensity[0, 0]);
+
+        var empty = new SequentialMatrix<Rgb8>(0, 0);
+        Assert.Empty(PigmentBlend.ApplyDensityField(empty, new SequentialMatrix<DoublePixel>(0, 0)));
+
+        Assert.Throws<ArgumentNullException>(() => PigmentBlend.ApplyDensityField(null!, field));
+        Assert.Throws<ArgumentNullException>(() => PigmentBlend.ApplyDensityField(image, null!));
+        Assert.Throws<ArgumentNullException>(() => PigmentBlend.ApplyDensityField(image, field, null!));
+        Assert.Throws<ArgumentException>(() => PigmentBlend.ApplyDensityField(image, new SequentialMatrix<DoublePixel>(3, 2)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PigmentBlend.ApplyDensityField(image, field, double.NaN));
     }
 }

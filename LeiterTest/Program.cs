@@ -102,13 +102,13 @@ internal static class Program
             "06a. Color Segments (Average Color)",
             outputDir,
             $"{stem}_05_segmented_average.png",
-            () => ColorBySegmentation(imageMatrix, regions, EgbiSegmentation.AverageColorAssigner()));
+            () => SegmentationVisualizer.ColorRegions(imageMatrix, regions, SegmentationVisualizer.AverageColorAssigner()));
 
         RunStepAndSave(
             "06b. Color Segments (Random Color, seed=42)",
             outputDir,
             $"{stem}_06_segmented_random.png",
-            () => ColorBySegmentation(imageMatrix, regions, EgbiSegmentation.RandomColorAssigner(randomSeed: 42)));
+            () => SegmentationVisualizer.ColorRegions(imageMatrix, regions, SegmentationVisualizer.RandomColorAssigner(randomSeed: 42)));
 
         RunStepAndSave(
             "07. Global Contrast Saliency",
@@ -127,9 +127,9 @@ internal static class Program
             $"{stem}_09_saliency_regional_masked.png",
             () => imageMatrix.HadamardProduct<Rgb8, DoublePixel>(regionalSaliency));
 
-        (Matrix<Rgb8> colorTransferred, WatercolorPalette matchedPalette) = RunStep(
+        (Matrix<Rgb8> colorTransferred, ColorTransferProfile matchedPalette) = RunStep(
             "10. Reinhard Color Transfer (Closest Watercolor Palette)",
-            () => ColorTransfer.TransferToClosestPalette(imageMatrix));
+            () => ColorTransfer.TransferToClosestProfile(imageMatrix, WatercolorPalettes.Defaults));
         Console.WriteLine($"  Matched Palette: {matchedPalette.Name}");
         SaveOutput(outputDir, $"{stem}_10_color_transfer.png", colorTransferred);
 
@@ -165,11 +165,11 @@ internal static class Program
         SaveOutput(
             outputDir,
             $"{stem}_13b_meanshift_average.png",
-            ColorBySegmentation(colorTransferred, meanShiftGraph.Regions, EgbiSegmentation.AverageColorAssigner()));
+            SegmentationVisualizer.ColorRegions(colorTransferred, meanShiftGraph.Regions, SegmentationVisualizer.AverageColorAssigner()));
         SaveOutput(
             outputDir,
             $"{stem}_13c_meanshift_random.png",
-            ColorBySegmentation(colorTransferred, meanShiftGraph.Regions, EgbiSegmentation.RandomColorAssigner(randomSeed: 42)));
+            SegmentationVisualizer.ColorRegions(colorTransferred, meanShiftGraph.Regions, SegmentationVisualizer.RandomColorAssigner(randomSeed: 42)));
 
         Matrix<Rgb8> lodAbstracted = RunStepAndSave(
             "14. Saliency-Guided LOD Abstraction (Stage 3)",
@@ -275,23 +275,6 @@ internal static class Program
         string outputPath = Path.Combine(outputDir, fileName);
         SaveImage(matrix, outputPath);
         Console.WriteLine($"  Saved -> {outputPath}");
-    }
-
-    /// <summary>
-    /// Creates a copy of the source image with segmented regions recolored using the specified color assigner.
-    /// </summary>
-    /// <param name="source">The original image matrix to recolor.</param>
-    /// <param name="regions">The set of segmented coordinate regions.</param>
-    /// <param name="colorAssigner">The delegate used to determine the color for each region.</param>
-    /// <returns>A new image matrix with recolored segment regions.</returns>
-    private static Matrix<Rgb8> ColorBySegmentation(
-        Matrix<Rgb8> source,
-        IEnumerable<Region<Coord>> regions,
-        EgbiSegmentation.ColorAssigner<Rgb8> colorAssigner)
-    {
-        Matrix<Rgb8> clone = source.Clone();
-        EgbiSegmentation.ColorImageBySegmentation(clone, regions, colorAssigner);
-        return clone;
     }
 
     /// <summary>

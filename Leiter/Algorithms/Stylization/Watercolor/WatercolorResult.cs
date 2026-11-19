@@ -28,7 +28,7 @@ public sealed record WatercolorResult
     public WatercolorResult(
         Matrix<Rgb8> output,
         Matrix<Rgb8> colorTransferred,
-        WatercolorPalette selectedPalette,
+        ColorTransferProfile selectedPalette,
         Matrix<DoublePixel> saliencyMap,
         MaskMatrix salientMask,
         Matrix<DoublePixel> saliencyDistanceField,
@@ -73,7 +73,7 @@ public sealed record WatercolorResult
     /// <summary>
     /// Gets the watercolor palette applied during Stage 1.
     /// </summary>
-    public WatercolorPalette SelectedPalette { get; init; }
+    public ColorTransferProfile SelectedPalette { get; init; }
 
     /// <summary>
     /// Gets the Stage 2 continuous regional contrast saliency map.

@@ -111,7 +111,7 @@ public static class SaliencyCut
         for (int outer = 0; outer < options.MaxOuterIterations; outer++)
         {
             MaskMatrix rawMask = session.Run(trimap, options.InnerGrabCutIterations);
-            MaskMatrix currentMask = SaliencyMask.FilterConnectedComponents(
+            MaskMatrix currentMask = BinaryMorphology.FilterConnectedComponents(
                 rawMask,
                 options.RetentionPolicy,
                 options.MinAreaFraction);

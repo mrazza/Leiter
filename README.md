@@ -55,11 +55,10 @@ class Program
         var egbiOptions = new EgbiOptions(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200);
         IDisjointSet segmentation = EgbiSegmentation.Segment(labImage, egbiOptions);
 
-        Matrix<Rgb8> segmented = imageMatrix.Clone();
-        EgbiSegmentation.ColorImageBySegmentation(
-            segmented,
+        Matrix<Rgb8> segmented = SegmentationVisualizer.ColorRegions(
+            imageMatrix,
             segmentation.ToRegions(),
-            EgbiSegmentation.AverageColorAssigner());
+            SegmentationVisualizer.AverageColorAssigner());
         using Image<Rgb24> segmentedImg = segmented.ToImage();
         segmentedImg.Save("segmented.png");
 

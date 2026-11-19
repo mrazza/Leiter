@@ -1,5 +1,6 @@
 namespace Leiter.Tests.Algorithms.Morphology;
 
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Morphology;
 using Leiter.Core;
 using Xunit;
@@ -112,5 +113,93 @@ public class BinaryMorphologyTests
         Assert.Throws<ArgumentOutOfRangeException>(() => BinaryMorphology.Dilate(mixed, -1));
         Assert.Throws<ArgumentOutOfRangeException>(() => BinaryMorphology.Erode(mixed, -1));
         Assert.Throws<ArgumentOutOfRangeException>(() => BinaryMorphology.Dilate(mixed, 1, (StructuringElementShape)999));
+    }
+
+    [Fact]
+    public void FilterConnectedComponents_AllRetentionPolicies_ShouldRetainExpectedComponents()
+    {
+        // 10x10 mask with a 4x4 component (16 px), a 2x2 component (4 px), and a 1x1 component (1 px)
+        var mask = new MaskMatrix(10, 10);
+        for (int y = 1; y <= 4; y++)
+        {
+            for (int x = 1; x <= 4; x++)
+                mask[x, y] = true;
+        }
+
+        for (int y = 7; y <= 8; y++)
+        {
+            for (int x = 7; x <= 8; x++)
+                mask[x, y] = true;
+        }
+
+        mask[0, 9] = true;
+
+        // MinimumAreaFraction: 0.03 requires at least 3 pixels. 4x4 and 2x2 survive, 1x1 is discarded.
+        MaskMatrix areaFiltered = BinaryMorphology.FilterConnectedComponents(
+            mask,
+            ComponentRetentionPolicy.MinimumAreaFraction,
+            minAreaFraction: 0.03);
+        Assert.True(areaFiltered[2, 2]);
+        Assert.True(areaFiltered[7, 7]);
+        Assert.False(areaFiltered[0, 9]);
+
+        // LargestComponentOnly: only the 4x4 component survives.
+        MaskMatrix largestOnly = BinaryMorphology.FilterConnectedComponents(
+            mask,
+            ComponentRetentionPolicy.LargestComponentOnly);
+        Assert.True(largestOnly[2, 2]);
+        Assert.False(largestOnly[7, 7]);
+        Assert.False(largestOnly[0, 9]);
+
+        // KeepAll: all components survive.
+        MaskMatrix keepAll = BinaryMorphology.FilterConnectedComponents(
+            mask,
+            ComponentRetentionPolicy.KeepAll);
+        Assert.True(keepAll[2, 2]);
+        Assert.True(keepAll[7, 7]);
+        Assert.True(keepAll[0, 9]);
+
+        Assert.Empty(BinaryMorphology.FilterConnectedComponents(new MaskMatrix(0, 0)));
+        MaskMatrix allFalse = BinaryMorphology.FilterConnectedComponents(new MaskMatrix(3, 3));
+        Assert.False(allFalse[0, 0]);
+    }
+
+    [Fact]
+    public void FilterConnectedComponents_FourVsEightConnected_ShouldSeparateOrMergeDiagonalPixels()
+    {
+        // One 2x1 horizontal bar (2 px) plus two diagonally touching 1x1 pixels ((0,3)-(1,4) -> 2 px only when 8-connected)
+        var mask = new MaskMatrix(5, 5);
+        mask[3, 0] = true;
+        mask[4, 0] = true;
+        mask[0, 3] = true;
+        mask[1, 4] = true;
+
+        // Threshold 2/25 = 0.08: under 4-connected, (0,3) and (1,4) are size-1 components -> filtered out!
+        MaskMatrix fourConnected = BinaryMorphology.FilterConnectedComponents(
+            mask,
+            ComponentRetentionPolicy.MinimumAreaFraction,
+            minAreaFraction: 0.08,
+            connectivity: GridConnectivity.FourConnected);
+        Assert.True(fourConnected[3, 0]);
+        Assert.False(fourConnected[0, 3]);
+        Assert.False(fourConnected[1, 4]);
+
+        // Under 8-connected, (0,3) and (1,4) merge into a size-2 component -> retained!
+        MaskMatrix eightConnected = BinaryMorphology.FilterConnectedComponents(
+            mask,
+            ComponentRetentionPolicy.MinimumAreaFraction,
+            minAreaFraction: 0.08,
+            connectivity: GridConnectivity.EightConnected);
+        Assert.True(eightConnected[3, 0]);
+        Assert.True(eightConnected[0, 3]);
+        Assert.True(eightConnected[1, 4]);
+
+        // Validation
+        Assert.Throws<ArgumentNullException>(() => BinaryMorphology.FilterConnectedComponents(null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => BinaryMorphology.FilterConnectedComponents(mask, (ComponentRetentionPolicy)99));
+        Assert.Throws<ArgumentOutOfRangeException>(() => BinaryMorphology.FilterConnectedComponents(mask, minAreaFraction: -0.05));
+        Assert.Throws<ArgumentOutOfRangeException>(() => BinaryMorphology.FilterConnectedComponents(mask, minAreaFraction: 1.05));
+        Assert.Throws<ArgumentOutOfRangeException>(() => BinaryMorphology.FilterConnectedComponents(mask, minAreaFraction: double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => BinaryMorphology.FilterConnectedComponents(mask, connectivity: (GridConnectivity)99));
     }
 }

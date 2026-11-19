@@ -1,7 +1,6 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
-using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
@@ -38,19 +37,6 @@ public static class EdgeDarkening
             ? Blur.GaussianBlurRecursive(edgeStrength, opts.BlurSigma)
             : edgeStrength;
 
-        int width = image.Width;
-        int height = image.Height;
-        var result = new SequentialMatrix<Rgb8>(width, height);
-
-        Parallel.For(0, height, y =>
-        {
-            for (int x = 0; x < width; x++)
-            {
-                double strength = Math.Clamp(smoothedEdges[x, y].Value, 0.0, 1.0);
-                result[x, y] = PigmentBlend.AdjustDensity(image[x, y], opts.Intensity * strength);
-            }
-        });
-
-        return result;
+        return PigmentBlend.ApplyDensityField(image, smoothedEdges, value => opts.Intensity * Math.Clamp(value, 0.0, 1.0));
     }
 }
