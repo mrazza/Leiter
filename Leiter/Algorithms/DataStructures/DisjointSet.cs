@@ -101,13 +101,13 @@ public class DisjointSet<T> : IDisjointSet
     public Size Size => image.Size;
 
     /// <inheritdoc/>
-    public LongPixel this[int index] => Find(index);
+    public LongPixel this[int index] => FindRootReadOnly(index);
 
     /// <inheritdoc/>
-    public LongPixel this[Coord coord] => Find(image.IndexFromCoord(coord));
+    public LongPixel this[Coord coord] => FindRootReadOnly(image.IndexFromCoord(coord));
 
     /// <inheritdoc/>
-    public LongPixel this[int x, int y] => Find(image.IndexFromCoord(new Coord(x, y)));
+    public LongPixel this[int x, int y] => FindRootReadOnly(image.IndexFromCoord(new Coord(x, y)));
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DisjointSet{T}" /> class.
@@ -164,7 +164,7 @@ public class DisjointSet<T> : IDisjointSet
     /// <inheritdoc/>
     public Region<Coord> GetRegion(int index)
     {
-        int rootIndex = Find(index);
+        int rootIndex = FindRootReadOnly(index);
         var region = new Region<Coord>(elements[rootIndex].Size);
         var currIndex = rootIndex;
         do
@@ -234,7 +234,7 @@ public class DisjointSet<T> : IDisjointSet
         var matrix = new SequentialMatrix<LongPixel>(image.Size);
         for (int pixelIndex = 0; pixelIndex < image.Count; pixelIndex++)
         {
-            matrix[pixelIndex] = Find(pixelIndex);
+            matrix[pixelIndex] = FindRootReadOnly(pixelIndex);
         }
         return matrix;
     }
@@ -245,7 +245,7 @@ public class DisjointSet<T> : IDisjointSet
         var components = new Dictionary<int, Region<Coord>>();
         for (int pixelIndex = 0; pixelIndex < image.Count; pixelIndex++)
         {
-            int root = Find(pixelIndex);
+            int root = FindRootReadOnly(pixelIndex);
 
             if (!components.TryGetValue(root, out var region))
             {
@@ -268,18 +268,35 @@ public class DisjointSet<T> : IDisjointSet
     /// <returns>The root index of the partition containing <paramref name="index"/>.</returns>
     private int Find(int index)
     {
-        if (elements[index].ParentIndex == index)
-            return index;
+        int root = FindRootReadOnly(index);
 
-        elements[index].ParentIndex = Find(elements[index].ParentIndex);
-        return elements[index].ParentIndex;
+        int current = index;
+        while (current != root)
+        {
+            int next = elements[current].ParentIndex;
+            elements[current].ParentIndex = root;
+            current = next;
+        }
+
+        return root;
+    }
+
+    private int FindRootReadOnly(int index)
+    {
+        int current = index;
+        while (elements[current].ParentIndex != current)
+        {
+            current = elements[current].ParentIndex;
+        }
+
+        return current;
     }
 
     /// <inheritdoc/>
-    public LongPixel GetElement(int index) => Find(index);
+    public LongPixel GetElement(int index) => FindRootReadOnly(index);
 
     /// <inheritdoc/>
-    public LongPixel GetElement(int width, int height) => Find(image.IndexFromCoord(new Coord(width, height)));
+    public LongPixel GetElement(int width, int height) => FindRootReadOnly(image.IndexFromCoord(new Coord(width, height)));
 
     /// <summary>
     /// Converts a linear index into the corresponding 2D matrix coordinate.
@@ -300,7 +317,7 @@ public class DisjointSet<T> : IDisjointSet
     {
         for (int pixelIndex = 0; pixelIndex < image.Count; pixelIndex++)
         {
-            yield return Find(pixelIndex);
+            yield return FindRootReadOnly(pixelIndex);
         }
     }
 

@@ -4,6 +4,7 @@ using System;
 using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Saliency;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -56,29 +57,11 @@ public static class LodAbstraction
 
         Rgb64[] normalizedRgb = image.MapToArray(static pixel => pixel.ToRgb64());
 
-        bool[] isSalientRegion = regionGraph.ComputeRegionStatistics(region =>
-        {
-            int salientCount = 0;
-            if (salientMask is not null)
-            {
-                foreach (Coord coord in region.Pixels)
-                {
-                    if (salientMask[coord])
-                        salientCount++;
-                }
-            }
-            else
-            {
-                foreach (Coord coord in region.Pixels)
-                {
-                    double val = distanceField[coord].Value;
-                    if (double.IsFinite(val) && val <= 1e-6)
-                        salientCount++;
-                }
-            }
-
-            return ((double)salientCount / region.Pixels.Count) >= resolvedOptions.SalientOverlapThreshold;
-        });
+        IReadOnlyMatrix<bool> effectiveSalientMask = salientMask ?? SaliencyDistanceField.ExtractSalientMask(distanceField);
+        double[] salientFractions = regionGraph.ComputeRegionFractions(effectiveSalientMask);
+        bool[] isSalientRegion = new bool[salientFractions.Length];
+        for (int i = 0; i < salientFractions.Length; i++)
+            isSalientRegion[i] = salientFractions[i] >= resolvedOptions.SalientOverlapThreshold;
 
         var result = new SequentialMatrix<Rgb8>(width, height);
 

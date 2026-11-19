@@ -115,4 +115,30 @@ public class SaliencyDistanceFieldTests
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, smoothingSigma: -1.0));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, smoothingSigma: double.NaN));
     }
+
+    [Fact]
+    public void ExtractSalientMask_ShouldThresholdFiniteValuesAndValidate()
+    {
+        var field = new SequentialMatrix<DoublePixel>(5, 1);
+        field[0, 0] = 0.0;
+        field[1, 0] = 1e-6;
+        field[2, 0] = 0.25;
+        field[3, 0] = double.NaN;
+        field[4, 0] = double.PositiveInfinity;
+
+        MaskMatrix defaultMask = SaliencyDistanceField.ExtractSalientMask(field);
+        Assert.True(defaultMask[0, 0]);
+        Assert.True(defaultMask[1, 0]);
+        Assert.False(defaultMask[2, 0]);
+        Assert.False(defaultMask[3, 0]);
+        Assert.False(defaultMask[4, 0]);
+
+        MaskMatrix customMask = SaliencyDistanceField.ExtractSalientMask(field, threshold: 0.3);
+        Assert.True(customMask[2, 0]);
+        Assert.False(customMask[3, 0]);
+
+        Assert.Throws<ArgumentNullException>(() => SaliencyDistanceField.ExtractSalientMask(null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.ExtractSalientMask(field, threshold: -0.1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.ExtractSalientMask(field, threshold: double.NaN));
+    }
 }

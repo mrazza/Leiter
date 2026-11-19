@@ -120,4 +120,27 @@ public class UndirectedGraphEdgeTests
         Assert.Equal(first, edge.GetOther(second));
         Assert.Throws<ArgumentOutOfRangeException>(() => edge.GetOther(nonIncident));
     }
+
+    /// <summary>
+    /// Verifies default interface methods on <see cref="IUndirectedEdge{TVertex}"/> for implementations that only provide endpoints.
+    /// </summary>
+    [Fact]
+    public void DefaultInterfaceMethods_ShouldEvaluateIncidenceAndOppositeVertex()
+    {
+        IUndirectedEdge<int> edge = new MinimalTestEdge(4, 9);
+
+        Assert.True(edge.IsIncidentTo(4));
+        Assert.True(edge.IsIncidentTo(9));
+        Assert.False(edge.IsIncidentTo(5));
+        Assert.Equal(9, edge.GetOther(4));
+        Assert.Equal(4, edge.GetOther(9));
+        Assert.Throws<ArgumentOutOfRangeException>(() => edge.GetOther(5));
+    }
+
+    private readonly struct MinimalTestEdge(int first, int second) : IUndirectedEdge<int>
+    {
+        public int First => first;
+
+        public int Second => second;
+    }
 }

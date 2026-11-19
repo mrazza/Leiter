@@ -1,5 +1,6 @@
 namespace Leiter.Algorithms.DataStructures;
 
+using System.Runtime.CompilerServices;
 using Leiter.Core;
 
 /// <summary>
@@ -100,6 +101,7 @@ public static class GridNeighborhood
     /// <param name="direction">The grid direction to invert.</param>
     /// <returns>The opposite <see cref="GridDirection"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="direction"/> is not a defined <see cref="GridDirection"/> value.</exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static GridDirection Opposite(this GridDirection direction)
     {
         if ((byte)direction >= 8)

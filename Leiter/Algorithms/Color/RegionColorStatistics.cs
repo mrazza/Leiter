@@ -1,105 +1,160 @@
 namespace Leiter.Algorithms.Color;
 
-using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
-/// Stores per-region color, hue, intensity, and saliency-overlap summaries computed over a <see cref="RegionGraph"/>.
+/// Stores per-region mean color, hue, and intensity summaries computed over a <see cref="RegionGraph"/>.
 /// </summary>
-/// <param name="MeanRgb">The region's mean normalized <c>[0, 1]</c> linear/sRGB color.</param>
-/// <param name="MeanLab">The region's mean CIELAB color under the configured color space and illuminant.</param>
-/// <param name="MeanHueDegrees">The hue angle in degrees <c>[0, 360)</c> derived from <paramref name="MeanRgb"/>.</param>
-/// <param name="MeanIntensity">The HSI intensity <c>(R + G + B) / 3</c> derived from <paramref name="MeanRgb"/>.</param>
-/// <param name="SalientFraction">The fraction <c>[0, 1]</c> of pixels in the region marked salient, or <c>0</c> if no salient mask was supplied.</param>
-public readonly record struct RegionColorStatistics(
-    Rgb64 MeanRgb,
-    Lab32 MeanLab,
+/// <typeparam name="TColor">The pixel color type used to accumulate and represent the region mean.</typeparam>
+/// <param name="MeanColor">The region's mean pixel color in <typeparamref name="TColor"/>.</param>
+/// <param name="MeanHueDegrees">The hue angle in degrees <c>[0, 360)</c> derived from <paramref name="MeanColor"/>.</param>
+/// <param name="MeanIntensity">The normalized intensity/lightness derived from <paramref name="MeanColor"/>.</param>
+public readonly record struct RegionColorStatistics<TColor>(
+    TColor MeanColor,
     double MeanHueDegrees,
-    double MeanIntensity,
-    double SalientFraction)
+    double MeanIntensity)
+    where TColor : struct, IPixel<TColor>;
+
+/// <summary>
+/// Computes per-region color, hue, and intensity summaries across the regions of a <see cref="RegionGraph"/>.
+/// </summary>
+public static class RegionColorStatistics
 {
     /// <summary>
-    /// Computes per-region color and saliency statistics in parallel across all regions of <paramref name="graph"/>.
+    /// Computes per-region <see cref="Rgb64"/> color, hue, and intensity statistics from an <see cref="Rgb8"/> image.
     /// </summary>
     /// <param name="graph">The region adjacency graph defining each region's pixel coordinates.</param>
-    /// <param name="image">The RGB image matching <paramref name="graph"/> dimensions.</param>
-    /// <param name="salientMask">Optional boolean salient foreground mask matching <paramref name="graph"/> dimensions.</param>
+    /// <param name="image">The 8-bit RGB image matching <paramref name="graph"/> dimensions.</param>
+    /// <returns>An array of <see cref="RegionColorStatistics{Rgb64}"/> indexed by dense region ID in <c>[0, graph.RegionCount)</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="graph"/> or <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> dimensions do not match <paramref name="graph"/>.</exception>
+    public static RegionColorStatistics<Rgb64>[] Compute(
+        RegionGraph graph,
+        IReadOnlyMatrix<Rgb8> image) =>
+        Compute(
+            graph,
+            image,
+            static pixel => pixel.ToRgb64(),
+            static color => color.GetHueDegrees(),
+            static color => color.GetIntensity());
+
+    /// <summary>
+    /// Computes per-region <see cref="Rgb64"/> color, hue, and intensity statistics from an <see cref="Rgb64"/> image.
+    /// </summary>
+    /// <param name="graph">The region adjacency graph defining each region's pixel coordinates.</param>
+    /// <param name="image">The 64-bit floating-point RGB image matching <paramref name="graph"/> dimensions.</param>
+    /// <returns>An array of <see cref="RegionColorStatistics{Rgb64}"/> indexed by dense region ID in <c>[0, graph.RegionCount)</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="graph"/> or <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> dimensions do not match <paramref name="graph"/>.</exception>
+    public static RegionColorStatistics<Rgb64>[] Compute(
+        RegionGraph graph,
+        IReadOnlyMatrix<Rgb64> image) =>
+        Compute(
+            graph,
+            image,
+            static pixel => pixel,
+            static color => color.GetHueDegrees(),
+            static color => color.GetIntensity());
+
+    /// <summary>
+    /// Computes per-region CIELAB color, hue, and normalized lightness statistics from a <see cref="Lab32"/> image.
+    /// </summary>
+    /// <param name="graph">The region adjacency graph defining each region's pixel coordinates.</param>
+    /// <param name="image">The CIELAB image matching <paramref name="graph"/> dimensions.</param>
+    /// <returns>An array of <see cref="RegionColorStatistics{Lab32}"/> indexed by dense region ID in <c>[0, graph.RegionCount)</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="graph"/> or <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> dimensions do not match <paramref name="graph"/>.</exception>
+    public static RegionColorStatistics<Lab32>[] Compute(
+        RegionGraph graph,
+        IReadOnlyMatrix<Lab32> image) =>
+        Compute(
+            graph,
+            image,
+            static pixel => pixel,
+            static color => color.GetHueDegrees(),
+            static color => color.GetNormalizedLightness());
+
+    /// <summary>
+    /// Converts pixels from an <see cref="Rgb8"/> image into CIELAB and computes per-region color, hue, and lightness statistics.
+    /// </summary>
+    /// <param name="graph">The region adjacency graph defining each region's pixel coordinates.</param>
+    /// <param name="image">The 8-bit RGB image matching <paramref name="graph"/> dimensions.</param>
     /// <param name="colorSpace">The RGB color space interpretation used when converting pixels to CIELAB.</param>
     /// <param name="illuminant">The CIE reference white illuminant used when converting pixels to CIELAB.</param>
-    /// <returns>An array of <see cref="RegionColorStatistics"/> indexed by dense region ID in <c>[0, graph.RegionCount)</c>.</returns>
+    /// <returns>An array of <see cref="RegionColorStatistics{Lab32}"/> indexed by dense region ID in <c>[0, graph.RegionCount)</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="graph"/> or <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> or <paramref name="salientMask"/> dimensions do not match <paramref name="graph"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> dimensions do not match <paramref name="graph"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> or <paramref name="illuminant"/> is undefined.</exception>
-    public static RegionColorStatistics[] Compute(
+    public static RegionColorStatistics<Lab32>[] ComputeLab(
         RegionGraph graph,
         IReadOnlyMatrix<Rgb8> image,
-        IReadOnlyMatrix<bool>? salientMask = null,
         RgbColorSpace colorSpace = RgbColorSpace.sRGB,
         Illuminant illuminant = Illuminant.D65)
     {
-        ArgumentNullException.ThrowIfNull(graph);
-        ArgumentNullException.ThrowIfNull(image);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        Guard.ThrowIfUndefinedEnum(illuminant);
 
-        if (image.Size != graph.Size)
-            throw new ArgumentException("Image dimensions must match RegionGraph dimensions.", nameof(image));
-
-        if (salientMask is not null && salientMask.Size != graph.Size)
-            throw new ArgumentException("Salient mask dimensions must match RegionGraph dimensions.", nameof(salientMask));
-
-        if (!Enum.IsDefined(colorSpace))
-            throw new ArgumentOutOfRangeException(nameof(colorSpace), colorSpace, "Unsupported RGB color space.");
-
-        if (!Enum.IsDefined(illuminant))
-            throw new ArgumentOutOfRangeException(nameof(illuminant), illuminant, "Unsupported CIE illuminant.");
-
-        return graph.ComputeRegionStatistics(region => ComputeSingleRegion(region, image, salientMask, colorSpace, illuminant));
+        return Compute(
+            graph,
+            image,
+            pixel => pixel.ToRgb64().ToLab32(colorSpace, illuminant),
+            static color => color.GetHueDegrees(),
+            static color => color.GetNormalizedLightness());
     }
 
-    private static RegionColorStatistics ComputeSingleRegion(
-        Region<Coord> region,
-        IReadOnlyMatrix<Rgb8> image,
-        IReadOnlyMatrix<bool>? salientMask,
-        RgbColorSpace colorSpace,
-        Illuminant illuminant)
+    /// <summary>
+    /// Computes per-region color statistics in parallel across all regions of <paramref name="graph"/>
+    /// using caller-supplied conversion, hue, and intensity delegates.
+    /// </summary>
+    /// <typeparam name="TSource">The source image element type.</typeparam>
+    /// <typeparam name="TColor">The pixel color type used to accumulate and represent region means.</typeparam>
+    /// <param name="graph">The region adjacency graph defining each region's pixel coordinates.</param>
+    /// <param name="image">The source image matching <paramref name="graph"/> dimensions.</param>
+    /// <param name="colorConverter">Converts each source pixel into <typeparamref name="TColor"/> prior to averaging.</param>
+    /// <param name="hueSelector">Extracts the hue angle in degrees from the region mean color.</param>
+    /// <param name="intensitySelector">Extracts the scalar intensity/lightness from the region mean color.</param>
+    /// <returns>An array of <see cref="RegionColorStatistics{TColor}"/> indexed by dense region ID in <c>[0, graph.RegionCount)</c>.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="graph"/>, <paramref name="image"/>, <paramref name="colorConverter"/>,
+    /// <paramref name="hueSelector"/>, or <paramref name="intensitySelector"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> dimensions do not match <paramref name="graph"/>.</exception>
+    public static RegionColorStatistics<TColor>[] Compute<TSource, TColor>(
+        RegionGraph graph,
+        IReadOnlyMatrix<TSource> image,
+        Func<TSource, TColor> colorConverter,
+        Func<TColor, double> hueSelector,
+        Func<TColor, double> intensitySelector)
+        where TSource : struct
+        where TColor : struct, IPixel<TColor>
     {
-        int count = region.Pixels.Count;
-        double sumR = 0.0;
-        double sumG = 0.0;
-        double sumB = 0.0;
-        double sumL = 0.0;
-        double sumA = 0.0;
-        double sumLabB = 0.0;
-        int salientCount = 0;
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(colorConverter);
+        ArgumentNullException.ThrowIfNull(hueSelector);
+        ArgumentNullException.ThrowIfNull(intensitySelector);
 
-        foreach (Coord coord in region.Pixels)
+        if (image.Size != graph.Size)
+            throw new ArgumentException($"Image dimensions {image.Size} must match RegionGraph dimensions {graph.Size}.", nameof(image));
+
+        return graph.ComputeRegionStatistics(region =>
         {
-            Rgb8 pixel = image[coord];
-            Rgb64 rgb64 = pixel.ToRgb64();
-            Lab32 lab = rgb64.ToLab32(colorSpace, illuminant);
+            HashSet<Coord> pixels = region.Pixels;
+            if (pixels.Count == 0)
+                return new RegionColorStatistics<TColor>(default, 0.0, 0.0);
 
-            sumR += rgb64.R;
-            sumG += rgb64.G;
-            sumB += rgb64.B;
-            sumL += lab.L;
-            sumA += lab.A;
-            sumLabB += lab.B;
+            TColor sum = default;
+            foreach (Coord coord in pixels)
+                sum = sum.Add(colorConverter(image[coord]));
 
-            if (salientMask is not null && salientMask[coord])
-                salientCount++;
-        }
-
-        double invCount = 1.0 / count;
-        var meanRgb = new Rgb64(sumR * invCount, sumG * invCount, sumB * invCount);
-        var meanLab = new Lab32((float)(sumL * invCount), (float)(sumA * invCount), (float)(sumLabB * invCount));
-
-        return new RegionColorStatistics(
-            meanRgb,
-            meanLab,
-            meanRgb.GetHueDegrees(),
-            meanRgb.GetIntensity(),
-            salientMask is null ? 0.0 : salientCount * invCount);
+            TColor meanColor = sum.Divide((double)pixels.Count);
+            return new RegionColorStatistics<TColor>(
+                meanColor,
+                hueSelector(meanColor),
+                intensitySelector(meanColor));
+        });
     }
 }

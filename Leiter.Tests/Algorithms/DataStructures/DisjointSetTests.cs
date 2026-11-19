@@ -2,10 +2,12 @@ using Leiter.Tests.TestUtils;
 using Xunit;
 using Leiter.Core;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Pixels;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Leiter.Tests.Algorithms.DataStructures;
 
@@ -185,5 +187,73 @@ public class DisjointSetTests
         var seqEnum = seq.GetEnumerator();
         Assert.True(seqEnum.MoveNext());
         Assert.NotNull(seqEnum.Current);
+    }
+
+    [Fact]
+    public void ReadOnlyLookups_ConcurrentThreads_ShouldReturnConsistentRoots()
+    {
+        const int size = 128;
+        var mat = new DummyUntypedMatrix(size, size);
+        var dsu = new DisjointSet<int>(mat, index => index);
+
+        // Merge into 4 quadrants without querying read-only indexers during construction
+        int half = size / 2;
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                int qx = x < half ? 0 : half;
+                int qy = y < half ? 0 : half;
+                int anchor = (qy * size) + qx;
+                int idx = (y * size) + x;
+                if (idx != anchor)
+                {
+                    dsu.Union(anchor, idx, anchor);
+                }
+            }
+        }
+
+        Matrix<LongPixel> snapshot = dsu.ToMatrix();
+        var regions = dsu.ToRegions();
+        Assert.Equal(4, regions.Count);
+
+        Parallel.For(0, mat.Count, i =>
+        {
+            Coord coord = dsu.CoordFromIndex(i);
+            LongPixel expected = snapshot[i];
+            Assert.Equal(expected, dsu[i]);
+            Assert.Equal(expected, dsu[coord]);
+            Assert.Equal(expected, dsu[coord.X, coord.Y]);
+            Assert.Equal(expected, dsu.GetElement(i));
+            Assert.Equal(expected, dsu.GetElement(coord.X, coord.Y));
+        });
+
+        int enumeratedCount = 0;
+        foreach (LongPixel root in dsu)
+        {
+            Assert.Equal(snapshot[enumeratedCount], root);
+            enumeratedCount++;
+        }
+
+        Assert.Equal(mat.Count, enumeratedCount);
+    }
+
+    [Fact]
+    public void IterativeFind_LargePartitionMerge_ShouldCompleteWithoutStackOverflow()
+    {
+        const int length = 10_000;
+        var mat = new DummyUntypedMatrix(length, 1);
+        var dsu = new DisjointSet<int>(mat, index => index);
+
+        for (int i = 1; i < length; i++)
+        {
+            dsu.Union(i - 1, i, i);
+        }
+
+        LongPixel root = dsu[0];
+        for (int i = 0; i < length; i++)
+        {
+            Assert.Equal(root, dsu[i]);
+        }
     }
 }

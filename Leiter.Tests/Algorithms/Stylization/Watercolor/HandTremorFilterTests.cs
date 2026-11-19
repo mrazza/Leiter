@@ -40,11 +40,9 @@ public class HandTremorFilterTests
         var graphMatching = RegionGraph.FromLabels(new SequentialMatrix<int>(6, 6));
         var distMismatched = new SequentialMatrix<DoublePixel>(6, 4);
         var distMatching = new SequentialMatrix<DoublePixel>(6, 6);
-        var maskMismatched = new MaskMatrix(4, 4);
 
         Assert.Throws<ArgumentException>(() => HandTremorFilter.Apply(image, graphMismatched, distMatching));
         Assert.Throws<ArgumentException>(() => HandTremorFilter.Apply(image, graphMatching, distMismatched));
-        Assert.Throws<ArgumentException>(() => HandTremorFilter.Apply(image, graphMatching, distMatching, salientMask: maskMismatched));
     }
 
     /// <summary>

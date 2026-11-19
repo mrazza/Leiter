@@ -360,7 +360,7 @@ public class RegionGraphTests
         var validSeg = EgbiSegmentation.Segment(new SequentialMatrix<Rgb8>(2, 2));
 
         Assert.Throws<ArgumentNullException>(() => RegionGraph.FromDisjointSet(null!));
-        Assert.Throws<ArgumentNullException>(() => RegionGraph.FromLabels(null!));
+        Assert.Throws<ArgumentNullException>(() => RegionGraph.FromLabels<int>(null!));
 
         Assert.Throws<ArgumentOutOfRangeException>(() => RegionGraph.FromDisjointSet(validSeg, (GridConnectivity)99));
         Assert.Throws<ArgumentOutOfRangeException>(() => RegionGraph.FromLabels(validLabels, (GridConnectivity)99));
@@ -377,5 +377,134 @@ public class RegionGraphTests
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.AreNeighbors(0, -1));
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.AreNeighbors(graph.RegionCount, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.AreNeighbors(0, graph.RegionCount));
+    }
+
+    /// <summary>
+    /// Verifies that generic <see cref="RegionGraph.FromLabels{TLabel}"/> handles non-integer value-type labels.
+    /// </summary>
+    [Fact]
+    public void FromLabels_ByteLabels_ShouldRemapInRowMajorOrder()
+    {
+        var byteLabels = new SequentialMatrix<byte>(3, 2);
+        byteLabels[0, 0] = 200;
+        byteLabels[1, 0] = 200;
+        byteLabels[2, 0] = 50;
+        byteLabels[0, 1] = 200;
+        byteLabels[1, 1] = 50;
+        byteLabels[2, 1] = 50;
+
+        var graph = RegionGraph.FromLabels(byteLabels);
+
+        Assert.Equal(2, graph.RegionCount);
+        Assert.Equal(0, graph.Labels[0, 0]);
+        Assert.Equal(1, graph.Labels[2, 0]);
+        Assert.Single(graph.Boundaries);
+        Assert.Equal(0, graph.Regions[0].Id);
+        Assert.Equal(1, graph.Regions[1].Id);
+    }
+
+    /// <summary>
+    /// Verifies <see cref="RegionGraph.ComputeRegionFractions"/> overlap ratios and argument validation.
+    /// </summary>
+    [Fact]
+    public void ComputeRegionFractions_ShouldComputePerRegionOverlapAndValidate()
+    {
+        var labels = new SequentialMatrix<int>(2, 2);
+        labels[0, 0] = 0;
+        labels[1, 0] = 0;
+        labels[0, 1] = 1;
+        labels[1, 1] = 1;
+
+        var graph = RegionGraph.FromLabels(labels);
+        var mask = new MaskMatrix(2, 2);
+        mask[0, 0] = true;
+        mask[0, 1] = true;
+        mask[1, 1] = true;
+
+        double[] fractions = graph.ComputeRegionFractions(mask);
+        Assert.Equal(2, fractions.Length);
+        Assert.Equal(0.5, fractions[0], 6);
+        Assert.Equal(1.0, fractions[1], 6);
+
+        Assert.Throws<ArgumentNullException>(() => graph.ComputeRegionFractions(null!));
+        Assert.Throws<ArgumentException>(() => graph.ComputeRegionFractions(new MaskMatrix(3, 2)));
+    }
+
+    /// <summary>
+    /// Verifies <see cref="RegionGraph.ComputeBoundaryNormal"/> directionality and validation.
+    /// </summary>
+    [Fact]
+    public void ComputeBoundaryNormal_ShouldPointTowardTargetRegionAndValidate()
+    {
+        var labels = new SequentialMatrix<int>(4, 3);
+        for (int y = 0; y < 3; y++)
+        {
+            for (int x = 0; x < 4; x++)
+            {
+                labels[x, y] = x < 2 ? 0 : 1;
+            }
+        }
+
+        var graph = RegionGraph.FromLabels(labels);
+
+        // Border pixel in region 0 at x=1; neighbors in region 1 are at x=2 -> normal points toward x<2 (negative X) when towards=0, from=1
+        Vector2D towardZero = graph.ComputeBoundaryNormal(new Coord(1, 1), towardsRegionId: 0, fromRegionId: 1);
+        Assert.True(towardZero.X < -0.99);
+        Assert.Equal(0.0, towardZero.Y, 6);
+
+        Vector2D towardOne = graph.ComputeBoundaryNormal(new Coord(1, 1), towardsRegionId: 1, fromRegionId: 0);
+        Assert.True(towardOne.X > 0.99);
+        Assert.Equal(0.0, towardOne.Y, 6);
+
+        // Interior pixel and equal region IDs produce Vector2D.Zero
+        Assert.Equal(Vector2D.Zero, graph.ComputeBoundaryNormal(new Coord(0, 1), 0, 1));
+        Assert.Equal(Vector2D.Zero, graph.ComputeBoundaryNormal(new Coord(1, 1), 0, 0));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeBoundaryNormal(new Coord(-1, 0), 0, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeBoundaryNormal(new Coord(1, 1), -1, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeBoundaryNormal(new Coord(1, 1), 0, 2));
+    }
+
+    /// <summary>
+    /// Verifies <see cref="RegionGraph.ComputeBoundaryBand"/> distance propagation, boundary predicate filtering,
+    /// incident-region restriction, empty graphs, and argument validation.
+    /// </summary>
+    [Fact]
+    public void ComputeBoundaryBand_ShouldSupportPredicateRestrictionAndValidation()
+    {
+        // Three vertical strips: region 0 (x=0..1), region 1 (x=2..4), region 2 (x=5..6)
+        var labels = new SequentialMatrix<int>(7, 1);
+        labels[0, 0] = 0;
+        labels[1, 0] = 0;
+        labels[2, 0] = 1;
+        labels[3, 0] = 1;
+        labels[4, 0] = 1;
+        labels[5, 0] = 2;
+        labels[6, 0] = 2;
+
+        var graph = RegionGraph.FromLabels(labels);
+        Assert.Equal(2, graph.Boundaries.Count); // boundary 0: (0,1), boundary 1: (1,2)
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeBoundaryBand(-1));
+
+        // Select only boundary 0 (between regions 0 and 1, seeds at x=1 and x=2)
+        RegionBoundaryBand unrestricted = graph.ComputeBoundaryBand(maxRadius: 4, boundaryPredicate: bi => bi == 0, restrictToIncidentRegions: false);
+        Assert.Equal(0, unrestricted.Distances[1, 0]);
+        Assert.Equal(0, unrestricted.Distances[2, 0]);
+        Assert.Equal(3, unrestricted.Distances[5, 0]); // crosses into region 2
+        Assert.Equal(0, unrestricted.NearestBoundaryIndices[5, 0]);
+        Assert.Equal(2, unrestricted.NearestSeedIndices[5, 0]);
+        Assert.Equal(2, unrestricted.SeedPixels.Length);
+
+        RegionBoundaryBand restricted = graph.ComputeBoundaryBand(maxRadius: 4, boundaryPredicate: bi => bi == 0, restrictToIncidentRegions: true);
+        Assert.Equal(2, restricted.Distances[4, 0]);
+        Assert.Equal(int.MaxValue, restricted.Distances[5, 0]); // stopped before entering region 2
+        Assert.Equal(-1, restricted.NearestBoundaryIndices[5, 0]);
+        Assert.Equal(-1, restricted.NearestSeedIndices[5, 0]);
+
+        RegionGraph emptyGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(0, 0));
+        RegionBoundaryBand emptyBand = emptyGraph.ComputeBoundaryBand(2);
+        Assert.Equal(0, emptyBand.SeedPixels.Length);
+        Assert.Equal(0, emptyBand.Distances.Count);
     }
 }
