@@ -16,7 +16,7 @@ internal static class OptionTuning
     /// <summary>
     /// The mean 3D CIELAB color dispersion across <see cref="Stylization.Watercolor.WatercolorPalettes.Defaults"/> used to normalize color spread adaptation.
     /// </summary>
-    public const double ReferenceLabDispersion = 23.72;
+    public const double ReferenceLabDispersion = 25.14;
 
     /// <summary>
     /// The canonical normalized Frobenius gradient magnitude baseline used to normalize scene clutter adaptation.

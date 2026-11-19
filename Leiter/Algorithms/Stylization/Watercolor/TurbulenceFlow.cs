@@ -31,9 +31,20 @@ public static class TurbulenceFlow
             return image.Clone();
         }
 
-        PerlinNoiseOptions noiseOpts = opts.NoiseOptions ?? TurbulenceFlowOptions.DefaultNoise;
-        Matrix<DoublePixel> noiseField = PerlinNoise.GenerateFractalField(image.Size, noiseOpts);
+        Matrix<DoublePixel> densityField = ComputeDensityField(image.Size, opts);
+        return PigmentBlend.ApplyDensityField(image, densityField);
+    }
 
-        return PigmentBlend.ApplyDensityField(image, noiseField, opts.Intensity);
+    internal static Matrix<DoublePixel> ComputeDensityField(Size size, TurbulenceFlowOptions opts)
+    {
+        PerlinNoiseOptions noiseOpts = opts.NoiseOptions ?? TurbulenceFlowOptions.DefaultNoise;
+        Matrix<DoublePixel> noiseField = PerlinNoise.GenerateFractalField(size, noiseOpts);
+        double intensity = opts.Intensity;
+        for (int i = 0; i < noiseField.Count; i++)
+        {
+            noiseField[i] = new DoublePixel(intensity * noiseField[i].Value);
+        }
+
+        return noiseField;
     }
 }

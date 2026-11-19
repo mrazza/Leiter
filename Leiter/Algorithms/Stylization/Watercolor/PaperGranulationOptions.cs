@@ -29,13 +29,13 @@ public sealed record PaperGranulationOptions(
 
     internal static readonly PerlinNoiseOptions DefaultGrainNoise = new(
         Seed: 707,
-        Frequency: 0.35,
-        Octaves: 3,
-        Lacunarity: 2.1,
+        Frequency: 0.18,
+        Octaves: 4,
+        Lacunarity: 2.0,
         Persistence: 0.55);
 
     /// <summary>
-    /// Creates <see cref="PaperGranulationOptions"/> with <see cref="WarpAmplitude"/> scaled by area ratio and <see cref="GrainNoiseOptions"/> frequency scaled inversely to linear dimension for <paramref name="size"/>.
+    /// Creates <see cref="PaperGranulationOptions"/> with <see cref="WarpAmplitude"/> scaled linearly and <see cref="GrainNoiseOptions"/> frequency scaled inversely to linear dimension for <paramref name="size"/>.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
@@ -43,7 +43,7 @@ public sealed record PaperGranulationOptions(
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static PaperGranulationOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
-        var (_, a, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
+        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
         PaperGranulationOptions defaults = Default;
         if (totalPixels == 0)
         {
@@ -55,7 +55,7 @@ public sealed record PaperGranulationOptions(
 
         return defaults with
         {
-            WarpAmplitude = defaults.WarpAmplitude * a,
+            WarpAmplitude = defaults.WarpAmplitude * s,
             GrainNoiseOptions = PerlinNoiseOptions.ForSize(size, DefaultGrainNoise, referenceDimension)
         };
     }

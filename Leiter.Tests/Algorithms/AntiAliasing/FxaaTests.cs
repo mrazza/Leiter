@@ -205,4 +205,27 @@ public class FxaaTests
         var invalidOptions = new FxaaOptions(RelativeContrastThreshold: 0.0);
         Assert.Throws<ArgumentOutOfRangeException>(() => Fxaa.Apply(image, invalidOptions));
     }
+
+    /// <summary>
+    /// Verifies that a 1-pixel thin vertical high-contrast line is classified vertically via second-derivative Laplacian test
+    /// and softened horizontally rather than falling back to horizontal orientation with zero perpendicular gradient.
+    /// </summary>
+    [Fact]
+    public void Apply_ThinVerticalLine_ShouldDetectVerticalOrientationAndBlendHorizontally()
+    {
+        const int size = 16;
+        var image = new SequentialMatrix<Rgb8>(size, size);
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                image[x, y] = x == 8 ? new Rgb8(255, 255, 255) : new Rgb8(0, 0, 0);
+            }
+        }
+
+        Matrix<Rgb8> result = Fxaa.Apply(image);
+
+        // Along the thin vertical line (x=8), FXAA must soften horizontally toward neighbors (< 255).
+        Assert.True(result[8, 8].R < 255, $"Expected thin vertical line pixel (8,8) to blend below 255, got {result[8, 8].R}");
+    }
 }

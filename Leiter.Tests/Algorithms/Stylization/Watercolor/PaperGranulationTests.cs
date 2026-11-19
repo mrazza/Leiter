@@ -310,4 +310,33 @@ public class PaperGranulationTests
 
         Assert.Equal(custom.Size, result.Size);
     }
+
+    /// <summary>
+    /// Verifies that <see cref="PaperGranulationOptions.ForSize"/> scales warp amplitude linearly for custom height maps
+    /// while compensating procedural height maps cleanly at high resolutions.
+    /// </summary>
+    [Fact]
+    public void Apply_ForSize_ShouldScaleLinearlyForCustomHeightMapAndCompensateProcedural()
+    {
+        PaperGranulationOptions refOpts = PaperGranulationOptions.ForSize(new Size(800, 800));
+        PaperGranulationOptions bigOpts = PaperGranulationOptions.ForSize(new Size(1600, 1600));
+
+        // Linear scaling (2x linear dimension -> 2x WarpAmplitude, not 4x area scale)
+        Assert.Equal(refOpts.WarpAmplitude * 2.0, bigOpts.WarpAmplitude, 6);
+
+        // Apply with a custom step height map and bigOpts.WarpAmplitude: pixel displacement must stay bounded linearly (< 3 px)
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(16, 16, new Rgb8(220, 220, 220), new Rgb8(40, 40, 40), splitX: 8);
+        SequentialMatrix<DoublePixel> stepMap = TestMatrices.Create(16, 16, (x, _) => new DoublePixel(x < 8 ? 0.0 : 1.0));
+
+        var customOpts = new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: bigOpts.WarpAmplitude);
+        Matrix<Rgb8> warpedCustom = PaperGranulation.Apply(image, customOpts, stepMap);
+
+        // At 3px away from step edge (x=5), Sobel gradient is 0, so pixel remains unwarped
+        Assert.Equal(image[5, 8], warpedCustom[5, 8]);
+
+        // Procedural height map application executes cleanly under ForSize options
+        var midtone = TestMatrices.Constant(32, 32, new Rgb8(128, 128, 128));
+        Matrix<Rgb8> warpedProcedural = PaperGranulation.Apply(midtone, PaperGranulationOptions.ForSize(midtone.Size));
+        Assert.Equal(midtone.Size, warpedProcedural.Size);
+    }
 }

@@ -336,18 +336,19 @@ public class WetInWetOptionsTests
     {
         WetInWetOptions refOpts = WetInWetOptions.ForSize(new Size(800, 800));
         Assert.Equal(4, refOpts.ScatterRadius);
-        Assert.Equal(OrientedEllipticalFilterOptions.ForSize(new Size(800, 800)), refOpts.EllipticalFilter);
+        Assert.NotNull(refOpts.EllipticalFilter);
         Assert.Equal(6.0, refOpts.EllipticalFilter!.MajorRadius, 6);
-        Assert.Equal(1.5, refOpts.EllipticalFilter!.MinorRadius, 6);
+        Assert.Equal(2.5, refOpts.EllipticalFilter!.MinorRadius, 6);
+        Assert.Equal(0.55, refOpts.EllipticalFilter!.SigmaScale, 6);
         Assert.Equal(0.1, refOpts.ColorGradientThreshold, 6);
         Assert.Equal(refOpts, WetInWetOptions.ForSize(new Size(1000, 640)));
 
         Size largeSize = new(3200, 2400);
         WetInWetOptions large = WetInWetOptions.ForSize(largeSize);
-        OrientedEllipticalFilterOptions expectedEllipse = OrientedEllipticalFilterOptions.ForSize(largeSize);
-        Assert.Equal(expectedEllipse, large.EllipticalFilter);
-        Assert.Equal(expectedEllipse.MajorRadius, large.EllipticalFilter!.MajorRadius, 6);
-        Assert.Equal(expectedEllipse.MinorRadius, large.EllipticalFilter!.MinorRadius, 6);
+        double expectedScale = Math.Sqrt((3200.0 * 2400.0) / (800.0 * 800.0));
+        Assert.Equal(6.0 * expectedScale, large.EllipticalFilter!.MajorRadius, 6);
+        Assert.Equal(2.5 * expectedScale, large.EllipticalFilter!.MinorRadius, 6);
+        Assert.Equal(0.55, large.EllipticalFilter!.SigmaScale, 6);
         Assert.True(large.ScatterRadius > refOpts.ScatterRadius);
         Assert.True(large.ColorGradientThreshold < refOpts.ColorGradientThreshold);
 

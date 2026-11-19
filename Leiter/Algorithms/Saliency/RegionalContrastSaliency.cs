@@ -126,6 +126,7 @@ public static class RegionalContrastSaliency
         var rawSaliency = new double[regionCount];
         int colorCount = rgbToIndexLookupTable.Count;
         const double sigmaSquared = 0.4;
+        double centerPriorWeight = resolvedOptions.CenterPriorWeight;
 
         Parallel.For(0, regionCount, r =>
         {
@@ -157,8 +158,15 @@ public static class RegionalContrastSaliency
                 currSaliency += Math.Exp(spatialDistance / -sigmaSquared) * otherTotal * distance;
             }
 
-            double currAverageRegionDistance = avgRegionDistances[r];
-            rawSaliency[r] = Math.Exp(-9.0 * currAverageRegionDistance * currAverageRegionDistance) * currSaliency;
+            if (centerPriorWeight > 0.0)
+            {
+                double currAverageRegionDistance = avgRegionDistances[r];
+                rawSaliency[r] = Math.Exp(-centerPriorWeight * currAverageRegionDistance * currAverageRegionDistance) * currSaliency;
+            }
+            else
+            {
+                rawSaliency[r] = currSaliency;
+            }
         });
 
         var isBorderRegion = new bool[regionCount];

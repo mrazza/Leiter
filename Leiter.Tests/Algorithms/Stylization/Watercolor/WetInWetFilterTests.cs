@@ -168,9 +168,10 @@ public class WetInWetFilterTests
     [Fact]
     public void ApplyDetailed_ModeBehaviors_ShouldFilterCorrectBoundaries()
     {
-        // 3 horizontal bands: Region 0 (y=0..1), Region 1 (y=2..3), Region 2 (y=4..5)
+        // 4 horizontal bands:
+        // Region 0 (y=0..1, Salient), Region 1 (y=2..3, Salient), Region 2 (y=4..5, Non-salient), Region 3 (y=6..7, Non-salient)
         int width = 6;
-        int height = 6;
+        int height = 8;
         var image = new SequentialMatrix<Rgb8>(width, height);
         var labels = new SequentialMatrix<int>(width, height);
         var salientMask = new MaskMatrix(width, height);
@@ -182,64 +183,70 @@ public class WetInWetFilterTests
                 if (y < 2)
                 {
                     labels[x, y] = 0;
-                    image[x, y] = new Rgb8(20, 20, 20); // Darker
-                    salientMask[x, y] = true;           // Region 0 is Salient
+                    image[x, y] = new Rgb8(20, 20, 20);
+                    salientMask[x, y] = true;
                 }
                 else if (y < 4)
                 {
                     labels[x, y] = 1;
-                    image[x, y] = new Rgb8(150, 150, 150); // Mid
-                    salientMask[x, y] = false;             // Region 1 is Non-salient
+                    image[x, y] = new Rgb8(90, 90, 90);
+                    salientMask[x, y] = true;
+                }
+                else if (y < 6)
+                {
+                    labels[x, y] = 2;
+                    image[x, y] = new Rgb8(165, 165, 165);
+                    salientMask[x, y] = false;
                 }
                 else
                 {
-                    labels[x, y] = 2;
-                    image[x, y] = new Rgb8(240, 240, 240); // Brighter
-                    salientMask[x, y] = false;             // Region 2 is Non-salient
+                    labels[x, y] = 3;
+                    image[x, y] = new Rgb8(240, 240, 240);
+                    salientMask[x, y] = false;
                 }
             }
         }
 
         var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
 
-        // Find boundary indices
-        int boundary01 = -1;
-        int boundary12 = -1;
+        int boundary01 = -1; // salient interior
+        int boundary12 = -1; // salient to non-salient boundary
+        int boundary23 = -1; // non-salient interior
         for (int i = 0; i < graph.Boundaries.Count; i++)
         {
             var b = graph.Boundaries[i];
             if ((b.First == 0 && b.Second == 1) || (b.First == 1 && b.Second == 0))
-            {
                 boundary01 = i;
-            }
-
             if ((b.First == 1 && b.Second == 2) || (b.First == 2 && b.Second == 1))
-            {
                 boundary12 = i;
-            }
+            if ((b.First == 2 && b.Second == 3) || (b.First == 3 && b.Second == 2))
+                boundary23 = i;
         }
 
         Assert.True(boundary01 >= 0);
         Assert.True(boundary12 >= 0);
+        Assert.True(boundary23 >= 0);
 
-        // 1. Default mode: both qualify
+        // 1. Default mode: all three qualify
         var optDefault = new WetInWetOptions(Mode: WetInWetMode.Default, MinIntensityDifference: 0.01);
         WetInWetResult resDefault = WetInWetFilter.ApplyDetailed(image, graph, salientMask, optDefault);
         Assert.True(resDefault.QualifyingBoundaries[boundary01]);
         Assert.True(resDefault.QualifyingBoundaries[boundary12]);
+        Assert.True(resDefault.QualifyingBoundaries[boundary23]);
 
-        // 2. ExcludeSalientBoundaries: boundary01 (salient vs non-salient) excluded; boundary12 included
+        // 2. ExcludeSalientBoundaries: boundary12 (salient vs non-salient) excluded; boundary01 and boundary23 included
         var optExcludeBoundaries = new WetInWetOptions(Mode: WetInWetMode.ExcludeSalientBoundaries, MinIntensityDifference: 0.01);
         WetInWetResult resExcludeBoundaries = WetInWetFilter.ApplyDetailed(image, graph, salientMask, optExcludeBoundaries);
-        Assert.False(resExcludeBoundaries.QualifyingBoundaries[boundary01]);
-        Assert.True(resExcludeBoundaries.QualifyingBoundaries[boundary12]);
+        Assert.True(resExcludeBoundaries.QualifyingBoundaries[boundary01]);
+        Assert.False(resExcludeBoundaries.QualifyingBoundaries[boundary12]);
+        Assert.True(resExcludeBoundaries.QualifyingBoundaries[boundary23]);
 
-        // 3. ExcludeSalientRegions: boundary01 (touches salient) excluded; boundary12 included
+        // 3. ExcludeSalientRegions: boundary01 (interior of salient regions) excluded; outer boundary12 and background boundary23 included
         var optExcludeRegions = new WetInWetOptions(Mode: WetInWetMode.ExcludeSalientRegions, MinIntensityDifference: 0.01);
         WetInWetResult resExcludeRegions = WetInWetFilter.ApplyDetailed(image, graph, salientMask, optExcludeRegions);
         Assert.False(resExcludeRegions.QualifyingBoundaries[boundary01]);
         Assert.True(resExcludeRegions.QualifyingBoundaries[boundary12]);
+        Assert.True(resExcludeRegions.QualifyingBoundaries[boundary23]);
     }
 
     /// <summary>
@@ -447,5 +454,97 @@ public class WetInWetFilterTests
         WetInWetResult detailed = WetInWetFilter.ApplyDetailed(image, graph, dist, options: options);
 
         MatrixAssert.Equal(detailed.Image, imgOnly);
+    }
+
+    /// <summary>
+    /// Verifies that a thin 1-pixel flat sliver region along a high-contrast hue step does not falsely trigger the gradient rule.
+    /// </summary>
+    [Fact]
+    public void ApplyDetailed_FlatThinSliverBetweenContrastingHues_ShouldNotTriggerGradientRule()
+    {
+        const int width = 10;
+        const int height = 10;
+        var image = new SequentialMatrix<Rgb8>(width, height);
+        var labels = new SequentialMatrix<int>(width, height);
+
+        // Flat Red (0), 1px flat Cyan sliver (1) with 180° hue diff, flat Blue (2)
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (x < 4)
+                {
+                    labels[x, y] = 0;
+                    image[x, y] = new Rgb8(220, 20, 20);
+                }
+                else if (x == 4)
+                {
+                    labels[x, y] = 1;
+                    image[x, y] = new Rgb8(20, 220, 220);
+                }
+                else
+                {
+                    labels[x, y] = 2;
+                    image[x, y] = new Rgb8(40, 40, 230);
+                }
+            }
+        }
+
+        var graph = RegionGraph.FromLabels(labels);
+        var salientMask = new MaskMatrix(width, height);
+        // Threshold 0.05 would pass on un-clamped Sobel, and hue threshold 0 disables hue rule.
+        var options = new WetInWetOptions(
+            ColorGradientThreshold: 0.05,
+            SalientHueThresholdDegrees: 0.0,
+            NonSalientHueThresholdDegrees: 0.0,
+            MinIntensityDifference: 0.01);
+
+        WetInWetResult result = WetInWetFilter.ApplyDetailed(image, graph, salientMask, options);
+        Assert.All(result.QualifyingBoundaries, q => Assert.False(q));
+    }
+
+    /// <summary>
+    /// Verifies that pigment seeds deposited on the brighter side reflect local boundary colors rather than distant region averages.
+    /// </summary>
+    [Fact]
+    public void ApplyDetailed_LocalOppositeSideSeeding_ShouldSampleLocalGradientColorRatherThanGlobalMean()
+    {
+        const int width = 10;
+        const int height = 12;
+        var image = new SequentialMatrix<Rgb8>(width, height);
+        var labels = new SequentialMatrix<int>(width, height);
+
+        // Left darker region varies vertically: top (y<6) is dark Red, bottom (y>=6) is dark Blue
+        // Right brighter region is light neutral gray (220, 220, 220)
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (x < 5)
+                {
+                    labels[x, y] = 0;
+                    image[x, y] = y < 6 ? new Rgb8(110, 10, 10) : new Rgb8(10, 10, 110);
+                }
+                else
+                {
+                    labels[x, y] = 1;
+                    image[x, y] = new Rgb8(220, 220, 220);
+                }
+            }
+        }
+
+        var graph = RegionGraph.FromLabels(labels);
+        var options = new WetInWetOptions(
+            ScatterRadius: 1,
+            SeedProbability: 1.0,
+            NonSalientHueThresholdDegrees: 180.0,
+            MinIntensityDifference: 0.01,
+            EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: 1.0, MinorRadius: 1.0));
+
+        WetInWetResult result = WetInWetFilter.ApplyDetailed(image, graph, options: options);
+
+        // Top brighter boundary pixel (x=5, y=1) picks up red dominance; bottom (x=5, y=10) picks up blue dominance
+        Assert.True(result.Image[5, 1].R > result.Image[5, 1].B);
+        Assert.True(result.Image[5, 10].B > result.Image[5, 10].R);
     }
 }

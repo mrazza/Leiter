@@ -21,8 +21,8 @@ public class EdgeDarkeningOptionsTests
     {
         var options = new EdgeDarkeningOptions();
 
-        Assert.Equal(0.65, options.Intensity);
-        Assert.Equal(1.0, options.BlurSigma);
+        Assert.Equal(1.8, options.Intensity);
+        Assert.Equal(0.8, options.BlurSigma);
         Assert.Equal(GradientOperator.Sobel, options.GradientOperator);
 
         options.Validate();
@@ -87,13 +87,13 @@ public class EdgeDarkeningOptionsTests
     public void ForSize_And_ForImage_ShouldCompensateIntensityAndAdaptToSpread()
     {
         EdgeDarkeningOptions refOpts = EdgeDarkeningOptions.ForSize(new Size(800, 800));
-        Assert.Equal(0.65, refOpts.Intensity, 6);
-        Assert.Equal(1.0, refOpts.BlurSigma, 6);
+        Assert.Equal(1.8, refOpts.Intensity, 6);
+        Assert.Equal(0.8, refOpts.BlurSigma, 6);
         Assert.Equal(refOpts, EdgeDarkeningOptions.ForSize(new Size(1000, 640)));
 
         EdgeDarkeningOptions small = EdgeDarkeningOptions.ForSize(new Size(200, 200));
         EdgeDarkeningOptions large = EdgeDarkeningOptions.ForSize(new Size(3200, 2400));
-        Assert.Equal(0.25, small.BlurSigma, 6);
+        Assert.Equal(0.2, small.BlurSigma, 6);
         Assert.True(small.Intensity < refOpts.Intensity);
         Assert.True(large.BlurSigma > refOpts.BlurSigma);
         Assert.True(large.Intensity > refOpts.Intensity);

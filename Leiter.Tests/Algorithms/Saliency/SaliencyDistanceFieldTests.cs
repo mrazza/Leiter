@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms.Saliency;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -140,5 +141,38 @@ public class SaliencyDistanceFieldTests
         Assert.Throws<ArgumentNullException>(() => SaliencyDistanceField.ExtractSalientMask(null!));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.ExtractSalientMask(field, threshold: -0.1));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.ExtractSalientMask(field, threshold: double.NaN));
+    }
+
+    [Fact]
+    public void Compute_LargeSmoothingSigma_ShouldPreserveExactZeroInSalientMaskAndRecoverViaExtractSalientMask()
+    {
+        var mask = new MaskMatrix(64, 64);
+        for (int y = 20; y <= 43; y++)
+        {
+            for (int x = 20; x <= 43; x++)
+            {
+                mask[x, y] = true;
+            }
+        }
+
+        Matrix<DoublePixel> smoothed = SaliencyDistanceField.Compute(mask, new SaliencyDistanceFieldOptions(SmoothingSigma: 18.0));
+
+        for (int y = 0; y < mask.Height; y++)
+        {
+            for (int x = 0; x < mask.Width; x++)
+            {
+                if (mask[x, y])
+                {
+                    Assert.Equal(0.0, smoothed[x, y].Value, 12);
+                }
+                else
+                {
+                    Assert.True(smoothed[x, y].Value > 1e-6);
+                }
+            }
+        }
+
+        MaskMatrix recovered = SaliencyDistanceField.ExtractSalientMask(smoothed);
+        MatrixAssert.Equal(mask, recovered);
     }
 }

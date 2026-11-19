@@ -12,7 +12,7 @@ using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
-/// Implements hand tremor edge perturbation for watercolor stylization (Bousseau et al. 2006).
+/// Implements hand tremor edge perturbation for watercolor stylization (Wang et al. 2014, Sec. 3.5).
 /// Perturbs segment boundaries with Perlin noise displacement fields, producing authentic paper gaps
 /// and darkened pigment glaze overlaps along contrasting boundaries while preserving smooth blending across wet-in-wet and similar-hue edges.
 /// </summary>
@@ -96,9 +96,10 @@ public static class HandTremorFilter
 
         int width = image.Width;
         int height = image.Height;
-        int bandRadius = (int)Math.Ceiling(opts.Amplitude) + 2;
+        int innerRadius = (int)Math.Ceiling(opts.Amplitude);
+        int bandRadius = innerRadius + 3;
 
-        RegionBoundaryBand band = regionGraph.ComputeBoundaryBand(bandRadius);
+        RegionBoundaryBand band = regionGraph.ComputeBoundaryBand(bandRadius, restrictToIncidentRegions: true);
 
         Matrix<Vector2D> t1 = PerlinNoise.GenerateDisplacementField(image.Size, opts.Amplitude, primaryNoise);
         Matrix<Vector2D> t2 = PerlinNoise.GenerateDisplacementField(image.Size, opts.Amplitude, secondaryNoise);
@@ -118,23 +119,41 @@ public static class HandTremorFilter
                     continue;
                 }
 
+                int dist = band.Distances[x, y];
+                double bandWeight = 1.0;
+                if (dist > innerRadius)
+                {
+                    double t = (double)(dist - innerRadius) / (bandRadius - innerRadius + 1);
+                    bandWeight = 1.0 - (t * t * (3.0 - (2.0 * t)));
+                }
+
                 double d = distanceField[x, y].Value;
                 double clampedD = double.IsFinite(d) ? Math.Clamp(d, 0.0, 1.0) : 0.0;
-                double s = opts.SalientAmplitudeScale + ((1.0 - opts.SalientAmplitudeScale) * clampedD);
+                double s = (opts.SalientAmplitudeScale + ((1.0 - opts.SalientAmplitudeScale) * clampedD)) * bandWeight;
+
+                RegionBoundary b = regionGraph.Boundaries[nearestBoundaryIndex];
+                int a = b.First;
+                int bId = b.Second;
+
+                double px1 = x + (s * t1[x, y].X);
+                double py1 = y + (s * t1[x, y].Y);
 
                 byte group = boundaryGroup[nearestBoundaryIndex];
                 if (group == 1)
                 {
-                    result[x, y] = image.SampleBilinear(x + (s * t1[x, y].X), y + (s * t1[x, y].Y), EdgeHandling.Extend);
+                    result[x, y] = image.SampleBilinearWhere(
+                        px1,
+                        py1,
+                        (Labels: regionGraph.Labels, First: a, Second: bId),
+                        static (cx, cy, state) =>
+                        {
+                            int lbl = state.Labels[cx, cy];
+                            return lbl == state.First || lbl == state.Second;
+                        },
+                        fallback: image[x, y]);
                 }
                 else
                 {
-                    RegionBoundary b = regionGraph.Boundaries[nearestBoundaryIndex];
-                    int a = b.First;
-                    int bId = b.Second;
-
-                    double px1 = x + (s * t1[x, y].X);
-                    double py1 = y + (s * t1[x, y].Y);
                     double px2 = x + (s * t2[x, y].X);
                     double py2 = y + (s * t2[x, y].Y);
 
@@ -158,7 +177,7 @@ public static class HandTremorFilter
                     {
                         result[x, y] = image.SampleBilinearWhere(px2, py2, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
                     }
-                    else if (label1 == bId || label2 == a)
+                    else if (label1 == bId && label2 == a)
                     {
                         result[x, y] = paperColor;
                     }

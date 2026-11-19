@@ -9,16 +9,16 @@ using Leiter.Pixels;
 /// <summary>
 /// Configures parameters for the hand tremor perturbation filter in watercolor stylization.
 /// </summary>
-/// <param name="Amplitude">The maximum displacement amplitude in pixels (default 2.5; must be finite and non-negative).</param>
-/// <param name="SalientAmplitudeScale">The minimum displacement amplitude scale applied inside salient regions (default 0.35; must be finite and within [0.0, 1.0]).</param>
+/// <param name="Amplitude">The maximum displacement amplitude in pixels (default 3.0; must be finite and non-negative).</param>
+/// <param name="SalientAmplitudeScale">The minimum displacement amplitude scale applied inside salient regions (default 0.65; must be finite and within [0.0, 1.0]).</param>
 /// <param name="SimilarHueThresholdDegrees">The maximum hue difference in degrees for boundaries to be classified as similar hue (Group 2) rather than contrasting (Group 3) (default 30.0; must be finite and within [0.0, 180.0]).</param>
 /// <param name="OverlapDarkening">The blend factor for pigment darkening in stroke overlap regions (default 0.5; must be finite and within [0.0, 1.0]).</param>
 /// <param name="PaperColor">The paper background color revealed in gap regions between contrasting strokes (default null; resolves to (250, 248, 242) if null).</param>
 /// <param name="PrimaryNoise">Optional configuration for the primary Perlin noise displacement field.</param>
 /// <param name="SecondaryNoise">Optional configuration for the secondary Perlin noise displacement field.</param>
 public sealed record HandTremorOptions(
-    double Amplitude = 2.5,
-    double SalientAmplitudeScale = 0.35,
+    double Amplitude = 3.0,
+    double SalientAmplitudeScale = 0.65,
     double SimilarHueThresholdDegrees = 30.0,
     double OverlapDarkening = 0.5,
     Rgb8? PaperColor = null,

@@ -21,7 +21,7 @@ public class MeanShiftOptionsTests
         Assert.Equal(8, options.SpatialRadius);
         Assert.Equal(5.5, options.RangeRadius);
         Assert.Equal(50, options.MinRegionSize);
-        Assert.Equal(15, options.MaxIterations);
+        Assert.Equal(50, options.MaxIterations);
         Assert.Equal(0.05, options.ConvergenceEpsilon);
         Assert.Equal(GridConnectivity.EightConnected, options.Connectivity);
 

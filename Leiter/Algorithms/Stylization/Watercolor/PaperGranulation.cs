@@ -87,10 +87,16 @@ public static class PaperGranulation
             return image.Clone();
         }
 
-        IReadOnlyMatrix<DoublePixel> heightMap = paperHeightMap ?? GeneratePaperHeightMap(image.Size, opts.GrainNoiseOptions);
+        PerlinNoiseOptions grainOpts = opts.GrainNoiseOptions ?? PaperGranulationOptions.DefaultGrainNoise;
+        bool isProcedural = paperHeightMap is null;
+        IReadOnlyMatrix<DoublePixel> heightMap = paperHeightMap ?? GeneratePaperHeightMap(image.Size, grainOpts);
 
-        Matrix<Rgb8>? warped = opts.WarpAmplitude > 0.0
-            ? image.WarpBilinear(SpatialGradients.Compute(heightMap), opts.WarpAmplitude, EdgeHandling.Extend)
+        double effectiveWarpAmplitude = isProcedural
+            ? opts.WarpAmplitude * Math.Clamp(PaperGranulationOptions.DefaultGrainNoise.Frequency / grainOpts.Frequency, 0.25, 16.0)
+            : opts.WarpAmplitude;
+
+        Matrix<Rgb8>? warped = effectiveWarpAmplitude > 0.0
+            ? image.WarpBilinear(SpatialGradients.Compute(heightMap), effectiveWarpAmplitude, EdgeHandling.Extend)
             : null;
 
         if (opts.DensityStrength == 0.0)
