@@ -198,41 +198,301 @@ public static class MeanShiftSegmentation
         double convergenceEpsSq = options.ConvergenceEpsilon * options.ConvergenceEpsilon;
         int maxIterations = options.MaxIterations;
 
+        int sampleStride = (hs >= 20) ? Math.Clamp(hs / 10, 2, 4) : 1;
         MeanShiftSpatialLattice? lattice = null;
         if (hs > LatticeRadiusThreshold)
         {
-            lattice = new MeanShiftSpatialLattice(sourceLab, width, height, hs, hr);
+            lattice = MeanShiftSpatialLattice.Create(sourceLab, width, height, hs, hr, sampleStride);
         }
+
+        int coarseStride = (hs >= 12 && width >= 8 && height >= 8)
+            ? Math.Clamp(hs / 6, 2, 4)
+            : 1;
+
+        if (coarseStride == 1)
+        {
+            Parallel.For(0, height, y =>
+            {
+                int rowStart = y * width;
+                for (int x = 0; x < width; x++)
+                {
+                    modes[rowStart + x] = SeekSingleMode(
+                        sourceLab,
+                        width,
+                        height,
+                        x,
+                        y,
+                        hs,
+                        hsSq,
+                        hrSq,
+                        convergenceEpsSq,
+                        maxIterations,
+                        lattice);
+                }
+            });
+
+            return (modes, sourceLab);
+        }
+
+        int[] coarseXs = BuildCoarseCoordinates(width, coarseStride);
+        int[] coarseYs = BuildCoarseCoordinates(height, coarseStride);
+
+        Parallel.For(0, coarseYs.Length, yi =>
+        {
+            int cy = coarseYs[yi];
+            int rowStart = cy * width;
+            for (int xi = 0; xi < coarseXs.Length; xi++)
+            {
+                int cx = coarseXs[xi];
+                modes[rowStart + cx] = SeekSingleMode(
+                    sourceLab,
+                    width,
+                    height,
+                    cx,
+                    cy,
+                    hs,
+                    hsSq,
+                    hrSq,
+                    convergenceEpsSq,
+                    maxIterations,
+                    lattice);
+            }
+        });
+
+        double modeColorTolSq = 0.25 * hrSq;
+        double sourceColorTolSq = 0.25 * hrSq;
+        double cornerMatchTolSq = 0.1225 * hrSq;
 
         Parallel.For(0, height, y =>
         {
+            int y0;
+            int y1;
+            double ty;
+            bool isCoarseY;
+            if (y == height - 1)
+            {
+                y0 = y1 = y;
+                ty = 0.0;
+                isCoarseY = true;
+            }
+            else
+            {
+                y0 = (y / coarseStride) * coarseStride;
+                y1 = Math.Min(y0 + coarseStride, height - 1);
+                ty = (y1 > y0) ? (double)(y - y0) / (y1 - y0) : 0.0;
+                isCoarseY = (y == y0);
+            }
+
+            int row0 = y0 * width;
+            int row1 = y1 * width;
             int rowStart = y * width;
+
             for (int x = 0; x < width; x++)
             {
-                int p = rowStart + x;
-                var current = new MeanShiftMode(x, y, sourceLab[p]);
-
-                for (int iter = 0; iter < maxIterations; iter++)
+                int x0;
+                int x1;
+                double tx;
+                bool isCoarseX;
+                if (x == width - 1)
                 {
-                    MeanShiftMode next = (hs <= LatticeRadiusThreshold)
-                        ? ComputeDirectMeanStep(sourceLab, width, height, current, hsSq, hrSq, hs)
-                        : lattice!.ComputeMeanStep(sourceLab, current, hsSq, hrSq);
-
-                    double shiftDistSq = current.SpatialDistanceSquared(next) + next.Color.EuclideanDistanceSquared(current.Color);
-                    if (shiftDistSq <= convergenceEpsSq)
-                    {
-                        current = next;
-                        break;
-                    }
-
-                    current = next;
+                    x0 = x1 = x;
+                    tx = 0.0;
+                    isCoarseX = true;
+                }
+                else
+                {
+                    x0 = (x / coarseStride) * coarseStride;
+                    x1 = Math.Min(x0 + coarseStride, width - 1);
+                    tx = (x1 > x0) ? (double)(x - x0) / (x1 - x0) : 0.0;
+                    isCoarseX = (x == x0);
                 }
 
-                modes[p] = current;
+                if (isCoarseX && isCoarseY)
+                    continue;
+
+                MeanShiftMode m00 = modes[row0 + x0];
+                MeanShiftMode m10 = modes[row0 + x1];
+                MeanShiftMode m01 = modes[row1 + x0];
+                MeanShiftMode m11 = modes[row1 + x1];
+
+                double w00 = (1.0 - tx) * (1.0 - ty);
+                double w10 = tx * (1.0 - ty);
+                double w01 = (1.0 - tx) * ty;
+                double w11 = tx * ty;
+
+                Lab32 c00 = sourceLab[row0 + x0];
+                Lab32 c10 = sourceLab[row0 + x1];
+                Lab32 c01 = sourceLab[row1 + x0];
+                Lab32 c11 = sourceLab[row1 + x1];
+                Lab32 pixelColor = sourceLab[rowStart + x];
+
+                if (m00.Color.EuclideanDistanceSquared(m10.Color) <= modeColorTolSq &&
+                    m00.Color.EuclideanDistanceSquared(m01.Color) <= modeColorTolSq &&
+                    m00.Color.EuclideanDistanceSquared(m11.Color) <= modeColorTolSq &&
+                    m00.SpatialDistanceSquared(m10) <= hsSq &&
+                    m00.SpatialDistanceSquared(m01) <= hsSq &&
+                    m00.SpatialDistanceSquared(m11) <= hsSq)
+                {
+                    var interpSrc = new Lab32(
+                        (float)((w00 * c00.L) + (w10 * c10.L) + (w01 * c01.L) + (w11 * c11.L)),
+                        (float)((w00 * c00.A) + (w10 * c10.A) + (w01 * c01.A) + (w11 * c11.A)),
+                        (float)((w00 * c00.B) + (w10 * c10.B) + (w01 * c01.B) + (w11 * c11.B)));
+
+                    if (pixelColor.EuclideanDistanceSquared(interpSrc) <= sourceColorTolSq &&
+                        pixelColor.EuclideanDistanceSquared(m00.Color) <= hrSq)
+                    {
+                        modes[rowStart + x] = new MeanShiftMode(
+                            (w00 * m00.X) + (w10 * m10.X) + (w01 * m01.X) + (w11 * m11.X),
+                            (w00 * m00.Y) + (w10 * m10.Y) + (w01 * m01.Y) + (w11 * m11.Y),
+                            new Lab32(
+                                (float)((w00 * m00.Color.L) + (w10 * m10.Color.L) + (w01 * m01.Color.L) + (w11 * m11.Color.L)),
+                                (float)((w00 * m00.Color.A) + (w10 * m10.Color.A) + (w01 * m01.Color.A) + (w11 * m11.Color.A)),
+                                (float)((w00 * m00.Color.B) + (w10 * m10.Color.B) + (w01 * m01.Color.B) + (w11 * m11.Color.B))));
+                        continue;
+                    }
+                }
+                else if (!isCoarseX && !isCoarseY)
+                {
+                    int matchCount = 0;
+                    MeanShiftMode refMode = default;
+                    bool allMatchingAgree = true;
+                    double sumW = 0.0;
+                    double sumX = 0.0;
+                    double sumY = 0.0;
+                    double sumL = 0.0;
+                    double sumA = 0.0;
+                    double sumB = 0.0;
+
+                    AccumulateMatchingCorner(pixelColor, c00, m00, w00, cornerMatchTolSq, hrSq, modeColorTolSq, hsSq, ref matchCount, ref refMode, ref allMatchingAgree, ref sumW, ref sumX, ref sumY, ref sumL, ref sumA, ref sumB);
+                    AccumulateMatchingCorner(pixelColor, c10, m10, w10, cornerMatchTolSq, hrSq, modeColorTolSq, hsSq, ref matchCount, ref refMode, ref allMatchingAgree, ref sumW, ref sumX, ref sumY, ref sumL, ref sumA, ref sumB);
+                    AccumulateMatchingCorner(pixelColor, c01, m01, w01, cornerMatchTolSq, hrSq, modeColorTolSq, hsSq, ref matchCount, ref refMode, ref allMatchingAgree, ref sumW, ref sumX, ref sumY, ref sumL, ref sumA, ref sumB);
+                    AccumulateMatchingCorner(pixelColor, c11, m11, w11, cornerMatchTolSq, hrSq, modeColorTolSq, hsSq, ref matchCount, ref refMode, ref allMatchingAgree, ref sumW, ref sumX, ref sumY, ref sumL, ref sumA, ref sumB);
+
+                    if (matchCount >= 2 && allMatchingAgree && sumW > 0.0)
+                    {
+                        double invW = 1.0 / sumW;
+                        modes[rowStart + x] = new MeanShiftMode(
+                            sumX * invW,
+                            sumY * invW,
+                            new Lab32((float)(sumL * invW), (float)(sumA * invW), (float)(sumB * invW)));
+                        continue;
+                    }
+                }
+
+                modes[rowStart + x] = SeekSingleMode(
+                    sourceLab,
+                    width,
+                    height,
+                    x,
+                    y,
+                    hs,
+                    hsSq,
+                    hrSq,
+                    convergenceEpsSq,
+                    maxIterations,
+                    lattice);
             }
         });
 
         return (modes, sourceLab);
+    }
+
+    private static void AccumulateMatchingCorner(
+        Lab32 pixelColor,
+        Lab32 cornerSrc,
+        MeanShiftMode cornerMode,
+        double weight,
+        double cornerMatchTolSq,
+        double hrSq,
+        double modeColorTolSq,
+        double hsSq,
+        ref int matchCount,
+        ref MeanShiftMode refMode,
+        ref bool allMatchingAgree,
+        ref double sumW,
+        ref double sumX,
+        ref double sumY,
+        ref double sumL,
+        ref double sumA,
+        ref double sumB)
+    {
+        if (!allMatchingAgree)
+            return;
+
+        if (pixelColor.EuclideanDistanceSquared(cornerSrc) <= cornerMatchTolSq &&
+            pixelColor.EuclideanDistanceSquared(cornerMode.Color) <= hrSq)
+        {
+            if (matchCount == 0)
+            {
+                refMode = cornerMode;
+            }
+            else if (cornerMode.Color.EuclideanDistanceSquared(refMode.Color) > modeColorTolSq ||
+                     cornerMode.SpatialDistanceSquared(refMode) > hsSq)
+            {
+                allMatchingAgree = false;
+                return;
+            }
+
+            matchCount++;
+            sumW += weight;
+            sumX += weight * cornerMode.X;
+            sumY += weight * cornerMode.Y;
+            sumL += weight * cornerMode.Color.L;
+            sumA += weight * cornerMode.Color.A;
+            sumB += weight * cornerMode.Color.B;
+        }
+    }
+
+    private static int[] BuildCoarseCoordinates(int length, int stride)
+    {
+        int gridCount = ((length - 1) / stride) + 1;
+        bool appendLast = ((length - 1) % stride) != 0;
+        var coords = new int[gridCount + (appendLast ? 1 : 0)];
+        for (int i = 0; i < gridCount; i++)
+        {
+            coords[i] = i * stride;
+        }
+
+        if (appendLast)
+        {
+            coords[^1] = length - 1;
+        }
+
+        return coords;
+    }
+
+    private static MeanShiftMode SeekSingleMode(
+        Lab32[] sourceLab,
+        int width,
+        int height,
+        int x,
+        int y,
+        int hs,
+        double hsSq,
+        double hrSq,
+        double convergenceEpsSq,
+        int maxIterations,
+        MeanShiftSpatialLattice? lattice)
+    {
+        var current = new MeanShiftMode(x, y, sourceLab[(y * width) + x]);
+
+        for (int iter = 0; iter < maxIterations; iter++)
+        {
+            MeanShiftMode next = (lattice is null)
+                ? ComputeDirectMeanStep(sourceLab, width, height, current, hsSq, hrSq, hs)
+                : lattice.ComputeMeanStep(sourceLab, current, hsSq, hrSq);
+
+            double shiftDistSq = current.SpatialDistanceSquared(next) + next.Color.EuclideanDistanceSquared(current.Color);
+            if (shiftDistSq <= convergenceEpsSq)
+            {
+                current = next;
+                break;
+            }
+
+            current = next;
+        }
+
+        return current;
     }
 
     private static MeanShiftMode ComputeDirectMeanStep(
@@ -244,8 +504,6 @@ public static class MeanShiftSegmentation
         double rangeRadiusSq,
         int spatialRadius)
     {
-        int minX = Math.Max(0, (int)Math.Floor(current.X - spatialRadius));
-        int maxX = Math.Min(width - 1, (int)Math.Ceiling(current.X + spatialRadius));
         int minY = Math.Max(0, (int)Math.Floor(current.Y - spatialRadius));
         int maxY = Math.Min(height - 1, (int)Math.Ceiling(current.Y + spatialRadius));
 
@@ -260,8 +518,14 @@ public static class MeanShiftSegmentation
         {
             double dy = y - current.Y;
             double dySq = dy * dy;
+            if (dySq > spatialRadiusSq)
+                continue;
+
+            double dxSpan = Math.Sqrt(spatialRadiusSq - dySq);
+            int rowMinX = Math.Max(0, (int)Math.Floor(current.X - dxSpan));
+            int rowMaxX = Math.Min(width - 1, (int)Math.Ceiling(current.X + dxSpan));
             int rowOffset = y * width;
-            for (int x = minX; x <= maxX; x++)
+            for (int x = rowMinX; x <= rowMaxX; x++)
             {
                 double dx = x - current.X;
                 double distSqSpatial = (dx * dx) + dySq;

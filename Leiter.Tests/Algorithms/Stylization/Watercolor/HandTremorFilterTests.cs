@@ -405,4 +405,182 @@ public class HandTremorFilterTests
             }
         }
     }
+
+    /// <summary>
+    /// Verifies that boundaries involving an achromatic or near-neutral region do not produce stark white paper gaps.
+    /// </summary>
+    [Fact]
+    public void Apply_AchromaticRegionBoundary_ShouldNotProduceWhitePaperGaps()
+    {
+        const int width = 24;
+        const int height = 24;
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(20, 22, 26),
+            new Rgb8(215, 165, 140));
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
+        var paperColor = new Rgb8(250, 248, 242);
+
+        var options = new HandTremorOptions(
+            Amplitude: 6.0,
+            SimilarHueThresholdDegrees: 30.0,
+            OverlapDarkening: 0.8,
+            PaperColor: paperColor,
+            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
+            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3));
+
+        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                Assert.NotEqual(paperColor, result[x, y]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies that setting <see cref="HandTremorOptions.MinContrastingChroma"/> to 0.0 allows paper gaps on neutral boundaries.
+    /// </summary>
+    [Fact]
+    public void Apply_ZeroMinContrastingChroma_ShouldAllowPaperGapsOnAchromaticBoundary()
+    {
+        const int width = 24;
+        const int height = 24;
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(20, 22, 26),
+            new Rgb8(215, 165, 140));
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
+        var paperColor = new Rgb8(250, 248, 242);
+
+        var options = new HandTremorOptions(
+            Amplitude: 6.0,
+            SimilarHueThresholdDegrees: 30.0,
+            OverlapDarkening: 0.8,
+            PaperColor: paperColor,
+            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
+            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3),
+            MinContrastingChroma: 0.0);
+
+        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+
+        bool foundPaperGap = false;
+        for (int y = 0; y < height && !foundPaperGap; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (result[x, y] == paperColor)
+                {
+                    foundPaperGap = true;
+                    break;
+                }
+            }
+        }
+
+        Assert.True(foundPaperGap);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="HandTremorOptions.PaperGapBias"/> increases or decreases white paper-gap coverage monotonically.
+    /// </summary>
+    [Fact]
+    public void Apply_PaperGapBias_ShouldModulatePaperGapCoverage()
+    {
+        const int width = 32;
+        const int height = 32;
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(220, 20, 20),
+            new Rgb8(20, 220, 220));
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
+        var paperColor = new Rgb8(250, 248, 242);
+
+        HandTremorOptions baseOptions = new(
+            Amplitude: 6.0,
+            SimilarHueThresholdDegrees: 30.0,
+            OverlapDarkening: 0.8,
+            PaperColor: paperColor,
+            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
+            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3));
+
+        int CountPaperGaps(double bias)
+        {
+            Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: baseOptions with { PaperGapBias = bias });
+            int count = 0;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (result[x, y] == paperColor)
+                    {
+                        count++;
+                    }
+                }
+            }
+
+            return count;
+        }
+
+        int negativeCount = CountPaperGaps(-0.6);
+        int neutralCount = CountPaperGaps(0.0);
+        int positiveCount = CountPaperGaps(0.6);
+
+        Assert.True(negativeCount < neutralCount && neutralCount < positiveCount);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="HandTremorOptions.PaperGapOpacity"/> controls how strongly <see cref="HandTremorOptions.PaperColor"/> is blended into gaps.
+    /// </summary>
+    [Fact]
+    public void Apply_PaperGapOpacity_ShouldControlPaperColorBlending()
+    {
+        const int width = 32;
+        const int height = 32;
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(220, 20, 20),
+            new Rgb8(20, 220, 220));
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
+        var paperColor = new Rgb8(250, 248, 242);
+
+        HandTremorOptions baseOptions = new(
+            Amplitude: 6.0,
+            SimilarHueThresholdDegrees: 30.0,
+            OverlapDarkening: 0.8,
+            PaperColor: paperColor,
+            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
+            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3));
+
+        Matrix<Rgb8> full = HandTremorFilter.Apply(image, graph, dist, options: baseOptions with { PaperGapOpacity = 1.0 });
+        Matrix<Rgb8> half = HandTremorFilter.Apply(image, graph, dist, options: baseOptions with { PaperGapOpacity = 0.5 });
+        Matrix<Rgb8> zero = HandTremorFilter.Apply(image, graph, dist, options: baseOptions with { PaperGapOpacity = 0.0 });
+
+        bool checkedGapLocation = false;
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                Assert.NotEqual(paperColor, zero[x, y]);
+                Assert.NotEqual(paperColor, half[x, y]);
+
+                if (full[x, y] == paperColor)
+                {
+                    checkedGapLocation = true;
+                    Assert.Equal(image[x, y], zero[x, y]);
+
+                    int halfSum = half[x, y].R + half[x, y].G + half[x, y].B;
+                    int zeroSum = zero[x, y].R + zero[x, y].G + zero[x, y].B;
+                    Assert.True(halfSum > zeroSum);
+                }
+            }
+        }
+
+        Assert.True(checkedGapLocation);
+    }
 }

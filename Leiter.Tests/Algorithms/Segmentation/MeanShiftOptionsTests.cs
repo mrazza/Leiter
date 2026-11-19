@@ -21,7 +21,7 @@ public class MeanShiftOptionsTests
         Assert.Equal(8, options.SpatialRadius);
         Assert.Equal(5.5, options.RangeRadius);
         Assert.Equal(50, options.MinRegionSize);
-        Assert.Equal(50, options.MaxIterations);
+        Assert.Equal(20, options.MaxIterations);
         Assert.Equal(0.05, options.ConvergenceEpsilon);
         Assert.Equal(GridConnectivity.EightConnected, options.Connectivity);
 
@@ -97,14 +97,17 @@ public class MeanShiftOptionsTests
         Assert.Equal(8, refOpts.SpatialRadius);
         Assert.Equal(5.5, refOpts.RangeRadius, 6);
         Assert.Equal(50, refOpts.MinRegionSize);
+        Assert.Equal(0.05, refOpts.ConvergenceEpsilon, 6);
         Assert.Equal(refOpts, MeanShiftOptions.ForSize(new Size(1000, 640)));
 
         MeanShiftOptions small = MeanShiftOptions.ForSize(new Size(200, 200));
         MeanShiftOptions large = MeanShiftOptions.ForSize(new Size(3200, 2400));
         Assert.Equal(2, small.SpatialRadius);
+        Assert.Equal(0.05, small.ConvergenceEpsilon, 6);
         Assert.True(large.SpatialRadius > refOpts.SpatialRadius);
         Assert.True(small.MinRegionSize < refOpts.MinRegionSize);
         Assert.True(large.MinRegionSize > refOpts.MinRegionSize);
+        Assert.True(large.ConvergenceEpsilon > refOpts.ConvergenceEpsilon && large.ConvergenceEpsilon <= 0.5);
 
         foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
         {

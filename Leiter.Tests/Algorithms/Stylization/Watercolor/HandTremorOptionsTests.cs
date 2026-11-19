@@ -28,6 +28,9 @@ public class HandTremorOptionsTests
         Assert.Null(options.PaperColor);
         Assert.Null(options.PrimaryNoise);
         Assert.Null(options.SecondaryNoise);
+        Assert.Equal(0.08, options.MinContrastingChroma, 6);
+        Assert.Equal(0.0, options.PaperGapBias, 6);
+        Assert.Equal(1.0, options.PaperGapOpacity, 6);
 
         options.Validate();
     }
@@ -163,6 +166,89 @@ public class HandTremorOptionsTests
     }
 
     /// <summary>
+    /// Verifies that MinContrastingChroma outside [0, 1] or non-finite throw <see cref="ArgumentOutOfRangeException"/>.
+    /// </summary>
+    /// <param name="chroma">The invalid minimum contrasting chroma.</param>
+    [Theory]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
+    public void Validate_InvalidMinContrastingChroma_ShouldThrowArgumentOutOfRangeException(double chroma)
+    {
+        var options = new HandTremorOptions(MinContrastingChroma: chroma);
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.Validate());
+    }
+
+    /// <summary>
+    /// Verifies that valid MinContrastingChroma values pass validation.
+    /// </summary>
+    /// <param name="chroma">The valid minimum contrasting chroma.</param>
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(0.08)]
+    [InlineData(1.0)]
+    public void Validate_ValidMinContrastingChroma_ShouldNotThrow(double chroma)
+    {
+        var options = new HandTremorOptions(MinContrastingChroma: chroma);
+        options.Validate();
+    }
+
+    /// <summary>
+    /// Verifies that PaperGapBias outside [-1, 1] or non-finite throw <see cref="ArgumentOutOfRangeException"/>.
+    /// </summary>
+    /// <param name="bias">The invalid paper gap bias.</param>
+    [Theory]
+    [InlineData(-1.01)]
+    [InlineData(1.01)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Validate_InvalidPaperGapBias_ShouldThrowArgumentOutOfRangeException(double bias)
+    {
+        var options = new HandTremorOptions(PaperGapBias: bias);
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.Validate());
+    }
+
+    /// <summary>
+    /// Verifies that valid PaperGapBias values pass validation.
+    /// </summary>
+    /// <param name="bias">The valid paper gap bias.</param>
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(0.0)]
+    [InlineData(0.5)]
+    [InlineData(1.0)]
+    public void Validate_ValidPaperGapBias_ShouldNotThrow(double bias)
+    {
+        var options = new HandTremorOptions(PaperGapBias: bias);
+        options.Validate();
+    }
+
+    /// <summary>
+    /// Verifies that PaperGapOpacity outside [0, 1] or non-finite throw <see cref="ArgumentOutOfRangeException"/>.
+    /// </summary>
+    /// <param name="opacity">The invalid paper gap opacity.</param>
+    [Theory]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
+    public void Validate_InvalidPaperGapOpacity_ShouldThrowArgumentOutOfRangeException(double opacity)
+    {
+        var options = new HandTremorOptions(PaperGapOpacity: opacity);
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.Validate());
+    }
+
+    /// <summary>
+    /// Verifies that valid PaperGapOpacity values pass validation.
+    /// </summary>
+    /// <param name="opacity">The valid paper gap opacity.</param>
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(0.5)]
+    [InlineData(1.0)]
+    public void Validate_ValidPaperGapOpacity_ShouldNotThrow(double opacity)
+    {
+        var options = new HandTremorOptions(PaperGapOpacity: opacity);
+        options.Validate();
+    }
+
+    /// <summary>
     /// Verifies that custom valid options pass validation without throwing.
     /// </summary>
     [Fact]
@@ -175,7 +261,10 @@ public class HandTremorOptionsTests
             OverlapDarkening: 0.7,
             PaperColor: new Rgb8(240, 240, 235),
             PrimaryNoise: new PerlinNoiseOptions(Seed: 55, Frequency: 0.02, Octaves: 2),
-            SecondaryNoise: new PerlinNoiseOptions(Seed: 66, Frequency: 0.03, Octaves: 2));
+            SecondaryNoise: new PerlinNoiseOptions(Seed: 66, Frequency: 0.03, Octaves: 2),
+            MinContrastingChroma: 0.04,
+            PaperGapBias: 0.35,
+            PaperGapOpacity: 0.65);
 
         options.Validate();
     }
