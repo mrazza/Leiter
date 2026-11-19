@@ -80,7 +80,7 @@ public class PaperGranulationOptionsTests
     }
 
     /// <summary>
-    /// Verifies that <see cref="PaperGranulationOptions.ForSize"/> and <see cref="PaperGranulationOptions.ForImage"/> scale warp amplitude quadratically and grain frequency inversely.
+    /// Verifies that <see cref="PaperGranulationOptions.ForSize"/> and <see cref="PaperGranulationOptions.ForImage"/> scale warp amplitude linearly and grain frequency inversely.
     /// </summary>
     [Fact]
     public void ForSize_And_ForImage_ShouldScaleWarpAndGrainFrequency()
@@ -88,13 +88,13 @@ public class PaperGranulationOptionsTests
         PaperGranulationOptions refOpts = PaperGranulationOptions.ForSize(new Size(800, 800));
         Assert.Equal(0.6, refOpts.WarpAmplitude, 6);
         Assert.NotNull(refOpts.GrainNoiseOptions);
-        Assert.Equal(0.35, refOpts.GrainNoiseOptions!.Frequency, 6);
+        Assert.Equal(0.18, refOpts.GrainNoiseOptions!.Frequency, 6);
         Assert.Equal(707, refOpts.GrainNoiseOptions.Seed);
         Assert.Equal(refOpts, PaperGranulationOptions.ForSize(new Size(1000, 640)));
 
         PaperGranulationOptions small = PaperGranulationOptions.ForSize(new Size(200, 200));
         PaperGranulationOptions large = PaperGranulationOptions.ForSize(new Size(3200, 2400));
-        Assert.Equal(0.0375, small.WarpAmplitude, 6);
+        Assert.Equal(0.15, small.WarpAmplitude, 6);
         Assert.Equal(0.5, small.GrainNoiseOptions!.Frequency, 6); // Clamped to Nyquist limit
         Assert.True(large.WarpAmplitude > refOpts.WarpAmplitude);
         Assert.True(large.GrainNoiseOptions!.Frequency < refOpts.GrainNoiseOptions.Frequency);

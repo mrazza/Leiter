@@ -405,4 +405,33 @@ public class LodAbstractionTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() => LodAbstraction.Apply(image, regionGraph, distanceField, options: invalidOptions));
     }
+
+    /// <summary>
+    /// Verifies that a non-salient segment adjacent to a similar-color salient segment does not pull color across the salient boundary.
+    /// </summary>
+    [Fact]
+    public void Apply_NonSalientAdjacentToSimilarColorSalient_ShouldNotPullFromSalientSegment()
+    {
+        (SequentialMatrix<Rgb8> image, RegionGraph regionGraph) = TestMatrices.VerticalSplitWithGraph(
+            8,
+            8,
+            new Rgb8(100, 100, 100),
+            new Rgb8(110, 110, 110));
+
+        var salientMask = new MaskMatrix(8, 8);
+        for (int y = 0; y < 8; y++)
+        {
+            for (int x = 0; x < 4; x++)
+            {
+                salientMask[x, y] = true; // Region 0 is salient, Region 1 is non-salient
+            }
+        }
+
+        SequentialMatrix<DoublePixel> distanceField = TestMatrices.Create(8, 8, (x, _) => new DoublePixel(x < 4 ? 0.0 : 0.8));
+
+        Matrix<Rgb8> result = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask);
+
+        Assert.Equal((byte)100, result[3, 3].R);
+        Assert.Equal((byte)110, result[4, 3].R);
+    }
 }

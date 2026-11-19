@@ -31,12 +31,24 @@ public static class EdgeDarkening
             return image.Clone();
         }
 
+        Matrix<DoublePixel> densityField = ComputeDensityField(image, opts);
+        return PigmentBlend.ApplyDensityField(image, densityField);
+    }
+
+    internal static Matrix<DoublePixel> ComputeDensityField(IReadOnlyMatrix<Rgb8> image, EdgeDarkeningOptions opts)
+    {
         var (_, _, edgeStrength) = SpatialGradients.ComputeColorGradients(image, opts.GradientOperator);
 
         Matrix<DoublePixel> smoothedEdges = opts.BlurSigma > 0.0
             ? Blur.GaussianBlurRecursive(edgeStrength, opts.BlurSigma)
             : edgeStrength;
 
-        return PigmentBlend.ApplyDensityField(image, smoothedEdges, value => opts.Intensity * Math.Clamp(value, 0.0, 1.0));
+        double intensity = opts.Intensity;
+        for (int i = 0; i < smoothedEdges.Count; i++)
+        {
+            smoothedEdges[i] = new DoublePixel(intensity * Math.Clamp(smoothedEdges[i].Value, 0.0, 1.0));
+        }
+
+        return smoothedEdges;
     }
 }

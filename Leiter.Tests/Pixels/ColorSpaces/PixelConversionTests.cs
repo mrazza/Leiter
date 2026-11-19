@@ -171,4 +171,21 @@ public class PixelConversionTests
         Assert.Throws<ArgumentOutOfRangeException>(() => sampleXyz.ToLab32((Illuminant)999));
         Assert.Throws<ArgumentOutOfRangeException>(() => labD65.ToXyz32((Illuminant)999));
     }
+
+    [Fact]
+    public void NeutralGrays_ShouldMapToAchromaticLab_UnderBothD65AndIlluminantE()
+    {
+        foreach (Illuminant illuminant in new[] { Illuminant.D65, Illuminant.E })
+        {
+            foreach (byte v in new byte[] { 0, 128, 255 })
+            {
+                Lab32 lab = new Rgb8(v, v, v).ToLab32(RgbColorSpace.SRgb, illuminant);
+                Assert.True(Math.Abs(lab.A) < 1e-3f, $"Expected |a*| < 1e-3 for ({v},{v},{v}) under {illuminant}, got {lab.A}");
+                Assert.True(Math.Abs(lab.B) < 1e-3f, $"Expected |b*| < 1e-3 for ({v},{v},{v}) under {illuminant}, got {lab.B}");
+            }
+
+            Lab32 whiteLab = new Rgb8(255, 255, 255).ToLab32(RgbColorSpace.SRgb, illuminant);
+            Assert.Equal(100.0f, whiteLab.L, 3);
+        }
+    }
 }

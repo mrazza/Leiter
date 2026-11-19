@@ -138,13 +138,16 @@ public static class PixelConversion
     /// <summary>
     /// Converts an 8-bit per channel <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/> to a <see cref="Lab32"/> pixel under <paramref name="illuminant"/>.
     /// </summary>
+    /// <remarks>
+    /// When <paramref name="illuminant"/> is <see cref="Illuminant.E"/>, applies Bradford chromatic adaptation from D65 to Illuminant E before CIELAB normalization.
+    /// </remarks>
     /// <param name="self">The 8-bit RGB pixel to convert.</param>
     /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
     /// <param name="illuminant">The reference white illuminant to normalize against.</param>
     /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> or <paramref name="illuminant"/> is not a defined enum value.</exception>
     public static Lab32 ToLab32(this Rgb8 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
-        self.ToXyz32(colorSpace).ToLab32(illuminant);
+        self.ToRgb64().ToLab32(colorSpace, illuminant);
 
     /// <summary>
     /// Converts an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/> to a <see cref="Lab32"/> pixel.
@@ -162,16 +165,43 @@ public static class PixelConversion
     /// <summary>
     /// Converts an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/> to a <see cref="Lab32"/> pixel under <paramref name="illuminant"/>.
     /// </summary>
+    /// <remarks>
+    /// When <paramref name="illuminant"/> is <see cref="Illuminant.E"/>, applies Bradford chromatic adaptation from D65 to Illuminant E before CIELAB normalization.
+    /// </remarks>
     /// <param name="self">The 64-bit RGB pixel to convert.</param>
     /// <param name="colorSpace">The RGB color space the input pixel is in.</param>
     /// <param name="illuminant">The reference white illuminant to normalize against.</param>
     /// <returns>A <see cref="Lab32"/> pixel representing the same color.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> or <paramref name="illuminant"/> is not a defined enum value.</exception>
-    public static Lab32 ToLab32(this Rgb64 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
-        self.ToXyz32(colorSpace).ToLab32(illuminant);
+    public static Lab32 ToLab32(this Rgb64 self, RgbColorSpace colorSpace, Illuminant illuminant)
+    {
+        Xyz32 xyz = self.ToXyz32(colorSpace);
+        if (illuminant == Illuminant.E)
+        {
+            xyz = AdaptD65ToE(xyz);
+        }
 
-    private static readonly Xyz32 XyzReferenceWhiteD65 = new(0.9504f, 1.0000f, 1.0888f);
+        return xyz.ToLab32(illuminant);
+    }
+
+    private static readonly Xyz32 XyzReferenceWhiteD65 = new(0.95047f, 1.00000f, 1.08883f);
     private static readonly Xyz32 XyzReferenceWhiteE = new(1.0000f, 1.0000f, 1.0000f);
+
+    private static Xyz32 AdaptD65ToE(Xyz32 xyz)
+    {
+        double x = (1.0502615720 * xyz.X) + (0.0270756823 * xyz.Y) - (0.0232522996 * xyz.Z);
+        double y = (0.0390650056 * xyz.X) + (0.9729500478 * xyz.Y) - (0.0092578832 * xyz.Z);
+        double z = (-0.0024046624 * xyz.X) + (0.0026445615 * xyz.Y) + (0.9180873026 * xyz.Z);
+        return new((float)x, (float)y, (float)z);
+    }
+
+    private static Xyz32 AdaptEToD65(Xyz32 xyz)
+    {
+        double x = (0.9531874685 * xyz.X) - (0.0265906098 * xyz.Y) + (0.0238731412 * xyz.Z);
+        double y = (-0.0382467124 * xyz.X) + (1.0288407748 * xyz.Y) + (0.0094060376 * xyz.Z);
+        double z = (0.0026067672 * xyz.X) - (0.0030332346 * xyz.Y) + (1.0892564674 * xyz.Z);
+        return new((float)x, (float)y, (float)z);
+    }
 
     private static Xyz32 GetReferenceWhite(Illuminant illuminant) => illuminant switch
     {
@@ -247,13 +277,24 @@ public static class PixelConversion
     /// <summary>
     /// Converts a <see cref="Lab32"/> pixel under <paramref name="illuminant"/> to an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/>.
     /// </summary>
+    /// <remarks>
+    /// When <paramref name="illuminant"/> is <see cref="Illuminant.E"/>, applies inverse Bradford chromatic adaptation from Illuminant E back to D65.
+    /// </remarks>
     /// <param name="self">The CIELAB pixel to convert.</param>
     /// <param name="colorSpace">The target RGB color space.</param>
     /// <param name="illuminant">The reference white illuminant used by the input CIELAB coordinates.</param>
     /// <returns>An <see cref="Rgb64"/> pixel representing the same color.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="colorSpace"/> or <paramref name="illuminant"/> is not a defined enum value.</exception>
-    public static Rgb64 ToRgb64(this Lab32 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
-        self.ToXyz32(illuminant).ToRgb64(colorSpace);
+    public static Rgb64 ToRgb64(this Lab32 self, RgbColorSpace colorSpace, Illuminant illuminant)
+    {
+        Xyz32 xyz = self.ToXyz32(illuminant);
+        if (illuminant == Illuminant.E)
+        {
+            xyz = AdaptEToD65(xyz);
+        }
+
+        return xyz.ToRgb64(colorSpace);
+    }
 
     /// <summary>
     /// Converts a <see cref="Lab32"/> pixel (D65 white point) to a rounded, byte-clamped <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/>.
@@ -268,6 +309,9 @@ public static class PixelConversion
     /// <summary>
     /// Converts a <see cref="Lab32"/> pixel under <paramref name="illuminant"/> to a rounded, byte-clamped <see cref="Rgb8"/> pixel in the specified <see cref="RgbColorSpace"/>.
     /// </summary>
+    /// <remarks>
+    /// When <paramref name="illuminant"/> is <see cref="Illuminant.E"/>, applies inverse Bradford chromatic adaptation from Illuminant E back to D65.
+    /// </remarks>
     /// <param name="self">The CIELAB pixel to convert.</param>
     /// <param name="colorSpace">The target RGB color space.</param>
     /// <param name="illuminant">The reference white illuminant used by the input CIELAB coordinates.</param>

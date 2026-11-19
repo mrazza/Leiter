@@ -342,4 +342,43 @@ public class RegionalContrastSaliencyTests
         Matrix<DoublePixel> viewSaliency = RegionalContrastSaliency.ComputeSaliency(view, seg);
         Assert.Equal(img.Size, viewSaliency.Size);
     }
+
+    [Fact]
+    public void ComputeSaliency_ZeroCenterPriorWeight_ShouldRemoveCenterPriorSuppression()
+    {
+        // Place two identical contrasting red squares on black: one centered (13..17) and one near the left edge (2..6).
+        var img = new SequentialMatrix<Rgb8>(31, 31);
+        img.SetAll(new Rgb8(0, 0, 0));
+        for (int y = 13; y <= 17; y++)
+        {
+            for (int x = 13; x <= 17; x++)
+            {
+                img[x, y] = new Rgb8(255, 0, 0);
+            }
+
+            for (int x = 2; x <= 6; x++)
+            {
+                img[x, y] = new Rgb8(255, 0, 0);
+            }
+        }
+
+        var seg = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
+
+        Matrix<DoublePixel> biased = RegionalContrastSaliency.ComputeSaliency(
+            img,
+            seg,
+            new RegionalContrastSaliencyOptions(EnableSmoothing: false, ComputeBorderRegions: false, CenterPriorWeight: 9.0));
+        Matrix<DoublePixel> unbiased = RegionalContrastSaliency.ComputeSaliency(
+            img,
+            seg,
+            new RegionalContrastSaliencyOptions(EnableSmoothing: false, ComputeBorderRegions: false, CenterPriorWeight: 0.0));
+
+        // Center patch normalizes to 1.0 in both; under CenterPriorWeight=9.0 the edge patch suffers additional
+        // exp(-9 * d^2) suppression (~0.12 normalized vs ~0.39 from pairwise spatial distance alone).
+        Assert.Equal(1.0, biased[15, 15].Value, 4);
+        Assert.Equal(1.0, unbiased[15, 15].Value, 4);
+        Assert.True(biased[4, 15].Value < 0.20, $"Expected heavy center-prior suppression on edge patch, got {biased[4, 15].Value}");
+        Assert.True(unbiased[4, 15].Value > 0.35, $"Expected higher unbiased saliency on edge patch, got {unbiased[4, 15].Value}");
+        Assert.True(unbiased[4, 15].Value > biased[4, 15].Value * 2.5);
+    }
 }

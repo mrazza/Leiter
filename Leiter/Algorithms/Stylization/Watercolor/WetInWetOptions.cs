@@ -17,7 +17,7 @@ using Leiter.Pixels;
 /// <param name="SalientOverlapThreshold">The minimum fraction of salient pixels required for a region to be classified as salient (default 0.5; must be finite and within [0.0, 1.0]).</param>
 /// <param name="ScatterRadius">The maximum pixel distance from qualifying boundaries for pigment seed scattering (default 4; must be at least 1).</param>
 /// <param name="SeedProbability">The probability in [0.0, 1.0] of depositing a pigment seed at a candidate pixel (default 0.45; must be finite and within [0.0, 1.0]).</param>
-/// <param name="EllipticalFilter">Optional oriented elliptical Gaussian smoothing configuration; when <see langword="null"/>, defaults to <see cref="OrientedEllipticalFilterOptions.Default"/>.</param>
+/// <param name="EllipticalFilter">Optional oriented elliptical Gaussian smoothing configuration; when <see langword="null"/>, defaults to wet-in-wet soft feathering radii (<c>MajorRadius = 6.0, MinorRadius = 2.5, SigmaScale = 0.55</c>).</param>
 /// <param name="Seed">The pseudo-random seed used for deterministic pigment seed scattering (default 1337).</param>
 public sealed record WetInWetOptions(
     WetInWetMode Mode = WetInWetMode.Default,
@@ -31,6 +31,9 @@ public sealed record WetInWetOptions(
     OrientedEllipticalFilterOptions? EllipticalFilter = null,
     int Seed = 1337)
 {
+    internal static readonly OrientedEllipticalFilterOptions DefaultEllipticalFilter =
+        new(MajorRadius: 6.0, MinorRadius: 2.5, SigmaScale: 0.55);
+
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default bleed radii and gradient thresholds apply unscaled.
     /// </summary>
@@ -56,14 +59,18 @@ public sealed record WetInWetOptions(
         {
             return defaults with
             {
-                EllipticalFilter = OrientedEllipticalFilterOptions.Default
+                EllipticalFilter = DefaultEllipticalFilter
             };
         }
 
         return defaults with
         {
             ScatterRadius = OptionTuning.RoundPositiveInt(defaults.ScatterRadius * s),
-            EllipticalFilter = OrientedEllipticalFilterOptions.ForSize(size, referenceDimension),
+            EllipticalFilter = DefaultEllipticalFilter with
+            {
+                MajorRadius = Math.Max(0.25, DefaultEllipticalFilter.MajorRadius * s),
+                MinorRadius = Math.Max(0.25, DefaultEllipticalFilter.MinorRadius * s)
+            },
             ColorGradientThreshold = Math.Clamp(defaults.ColorGradientThreshold / s, 0.005, 0.5)
         };
     }

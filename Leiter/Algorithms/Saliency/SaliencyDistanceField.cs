@@ -97,11 +97,12 @@ public static class SaliencyDistanceField
 
     /// <summary>
     /// Computes the saliency distance field from a boolean salient mask and smooths medial-axis / concavity
-    /// discontinuities continuously across the boundary via <see cref="Blur.GaussianBlurRecursive"/>.
+    /// discontinuities continuously across non-salient regions via <see cref="Blur.GaussianBlurRecursive"/>,
+    /// clamping salient mask pixels back to <c>0</c>.
     /// </summary>
     /// <param name="salientMask">The boolean salient mask (<see langword="false"/> = non-salient, <see langword="true"/> = salient).</param>
     /// <param name="options">Optional smoothing parameters controlling <see cref="SaliencyDistanceFieldOptions.SmoothingSigma"/> and <see cref="SaliencyDistanceFieldOptions.DefaultSigmaScale"/>.</param>
-    /// <returns>The smoothed [0, 1] saliency distance field.</returns>
+    /// <returns>The smoothed [0, 1] saliency distance field with salient pixels fixed at <c>0</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="salientMask"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are negative or non-finite.</exception>
     public static Matrix<DoublePixel> Compute(
@@ -121,8 +122,15 @@ public static class SaliencyDistanceField
             return normalizedField;
 
         Matrix<DoublePixel> smoothed = Blur.GaussianBlurRecursive(normalizedField, resolvedSigma);
-        for (int i = 0; i < smoothed.Count; i++)
-            smoothed[i] = Math.Clamp(smoothed[i].Value, 0.0, 1.0);
+        for (int y = 0; y < salientMask.Height; y++)
+        {
+            for (int x = 0; x < salientMask.Width; x++)
+            {
+                smoothed[x, y] = salientMask[x, y]
+                    ? 0.0
+                    : Math.Clamp(smoothed[x, y].Value, 0.0, 1.0);
+            }
+        }
 
         return smoothed;
     }

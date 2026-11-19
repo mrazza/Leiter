@@ -201,8 +201,33 @@ public class ColorTransferTests
         Matrix<Rgb8> viewTransferred = ColorTransfer.Transfer(rgbView, d65Palette);
         Assert.Equal(rgbView.Size, viewTransferred.Size);
 
-        var (viewClosest, viewPalette) = ColorTransfer.TransferToClosestProfile(rgbView, [d65Palette], strength: 0.0);
-        Assert.Equal(d65Palette, viewPalette);
-        Assert.Equal(sampleRgb[1, 0], viewClosest[1, 0]);
+        var viewClosestAndPalette = ColorTransfer.TransferToClosestProfile(rgbView, [d65Palette], strength: 0.0);
+        Assert.Equal(d65Palette, viewClosestAndPalette.SelectedProfile);
+        Assert.Equal(sampleRgb[1, 0], viewClosestAndPalette.Result[1, 0]);
+    }
+
+    [Fact]
+    public void TransferToClosestProfile_GrayscaleImageWithDefaultWeights_ShouldSelectMistyMonochromeAndStayNearAchromatic()
+    {
+        var gray = new SequentialMatrix<Rgb8>(8, 8);
+        for (int y = 0; y < gray.Height; y++)
+        {
+            for (int x = 0; x < gray.Width; x++)
+            {
+                byte v = (byte)(60 + (x * 20));
+                gray[x, y] = new Rgb8(v, v, v);
+            }
+        }
+
+        var (result, selected) = ColorTransfer.TransferToClosestProfile(
+            gray,
+            WatercolorPalettes.Defaults,
+            featureWeights: WatercolorPalettes.DefaultFeatureWeights);
+
+        Assert.Same(WatercolorPalettes.MistyMonochrome, selected);
+
+        LabColorStatistics resultStats = ColorTransfer.ComputeStatistics(result);
+        Assert.True(Math.Abs(resultStats.MeanA) < 2.0, $"Expected near-achromatic MeanA, got {resultStats.MeanA}");
+        Assert.True(Math.Abs(resultStats.MeanB) < 4.0, $"Expected near-achromatic MeanB, got {resultStats.MeanB}");
     }
 }

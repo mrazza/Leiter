@@ -21,8 +21,8 @@ public class HandTremorOptionsTests
     {
         var options = new HandTremorOptions();
 
-        Assert.Equal(2.5, options.Amplitude, 6);
-        Assert.Equal(0.35, options.SalientAmplitudeScale, 6);
+        Assert.Equal(3.0, options.Amplitude, 6);
+        Assert.Equal(0.65, options.SalientAmplitudeScale, 6);
         Assert.Equal(30.0, options.SimilarHueThresholdDegrees, 6);
         Assert.Equal(0.5, options.OverlapDarkening, 6);
         Assert.Null(options.PaperColor);
@@ -203,7 +203,7 @@ public class HandTremorOptionsTests
     public void ForSize_And_ForImage_ShouldScaleAmplitudeAndDelegateNoise()
     {
         HandTremorOptions refOpts = HandTremorOptions.ForSize(new Size(800, 800));
-        Assert.Equal(2.5, refOpts.Amplitude, 6);
+        Assert.Equal(3.0, refOpts.Amplitude, 6);
         Assert.NotNull(refOpts.PrimaryNoise);
         Assert.NotNull(refOpts.SecondaryNoise);
         Assert.Equal(0.04, refOpts.PrimaryNoise!.Frequency, 6);
@@ -212,7 +212,7 @@ public class HandTremorOptionsTests
 
         HandTremorOptions small = HandTremorOptions.ForSize(new Size(200, 200));
         HandTremorOptions large = HandTremorOptions.ForSize(new Size(3200, 2400));
-        Assert.Equal(0.625, small.Amplitude, 6);
+        Assert.Equal(0.75, small.Amplitude, 6);
         Assert.True(large.Amplitude > refOpts.Amplitude);
         Assert.True(small.PrimaryNoise!.Frequency > refOpts.PrimaryNoise.Frequency);
         Assert.True(large.PrimaryNoise!.Frequency < refOpts.PrimaryNoise.Frequency);

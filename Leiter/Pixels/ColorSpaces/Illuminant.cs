@@ -6,7 +6,7 @@ namespace Leiter.Pixels.ColorSpaces;
 public enum Illuminant
 {
     /// <summary>
-    /// CIE Standard Illuminant D65 (X = 0.9504, Y = 1.0000, Z = 1.0888), the standard daylight white point for sRGB.
+    /// CIE Standard Illuminant D65 (X = 0.95047, Y = 1.00000, Z = 1.08883), the standard daylight white point for sRGB.
     /// </summary>
     D65,
 

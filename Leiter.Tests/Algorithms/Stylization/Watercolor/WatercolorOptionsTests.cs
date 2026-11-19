@@ -243,6 +243,10 @@ public class WatercolorOptionsTests
         WatercolorOptions subsetOpts = WatercolorOptions.ForImage(largeScene, candidatePalettes: customSubset);
         Assert.Same(WatercolorPalettes.CoastalCerulean, subsetOpts.TargetPalette);
 
+        IReadOnlyList<ColorTransferProfile> lowChromaSubset = [WatercolorPalettes.MistyMonochrome];
+        WatercolorOptions mutedOpts = WatercolorOptions.ForImage(largeScene, candidatePalettes: lowChromaSubset);
+        Assert.InRange(mutedOpts.ColorTransferStrength, 0.55, 0.999);
+
         Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForImage(null!));
         Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForImage(largeScene, 0.0));
         Assert.Throws<ArgumentException>(() => WatercolorOptions.ForImage(largeScene, candidatePalettes: []));

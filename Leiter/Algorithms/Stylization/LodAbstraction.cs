@@ -117,7 +117,7 @@ public static class LodAbstraction
                         int qLabel = regionGraph.Labels[qx, qy];
 
                         bool contributes = qLabel == centerLabel;
-                        if (!contributes && !isSalient && colorThresholdSq > 0.0 && regionGraph.AreNeighbors(centerLabel, qLabel))
+                        if (!contributes && !isSalient && !isSalientRegion[qLabel] && colorThresholdSq > 0.0 && regionGraph.AreNeighbors(centerLabel, qLabel))
                         {
                             if (centerColor.DistanceSquared(normalizedRgb[qIndex]) < colorThresholdSq)
                             {

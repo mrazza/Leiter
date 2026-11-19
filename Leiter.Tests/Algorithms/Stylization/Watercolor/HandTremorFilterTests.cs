@@ -344,4 +344,65 @@ public class HandTremorFilterTests
 
         MatrixAssert.Equal(res1, res2);
     }
+
+    /// <summary>
+    /// Verifies that pixels in a third region near a contrasting Group 3 boundary never receive spurious paper-gap fills.
+    /// </summary>
+    [Fact]
+    public void Apply_TripleJunction_ThirdRegionNearContrastingBoundary_ShouldNotProduceSpuriousPaperGaps()
+    {
+        const int width = 24;
+        const int height = 24;
+        var image = new SequentialMatrix<Rgb8>(width, height);
+        var labels = new SequentialMatrix<int>(width, height);
+
+        // Top-left Red (0), Top-right Cyan (1), Bottom Dark Red (2) similar hue to 0 and excluded from Group 3 gaps.
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (y < 12)
+                {
+                    labels[x, y] = x < 12 ? 0 : 1;
+                    image[x, y] = x < 12 ? new Rgb8(220, 20, 20) : new Rgb8(20, 220, 220);
+                }
+                else
+                {
+                    labels[x, y] = 2;
+                    image[x, y] = new Rgb8(180, 35, 20);
+                }
+            }
+        }
+
+        var graph = RegionGraph.FromLabels(labels);
+        var dist = new SequentialMatrix<DoublePixel>(width, height);
+        dist.SetAll(1.0);
+
+        // Mark boundaries involving Region 2 ((0,2) and (1,2)) as WetInWet-qualifying (Group 1) so ONLY boundary (0,1) is Group 3.
+        bool[] qualifyingWet = new bool[graph.Boundaries.Count];
+        for (int bi = 0; bi < graph.Boundaries.Count; bi++)
+        {
+            RegionBoundary b = graph.Boundaries[bi];
+            qualifyingWet[bi] = b.First == 2 || b.Second == 2;
+        }
+
+        var wetInWet = new WetInWetResult((SequentialMatrix<Rgb8>)image.Clone(), new MaskMatrix(width, height), qualifyingWet);
+        var paperColor = new Rgb8(250, 248, 242);
+        var options = new HandTremorOptions(
+            Amplitude: 6.0,
+            SimilarHueThresholdDegrees: 30.0,
+            PaperColor: paperColor,
+            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
+            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3));
+
+        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, wetInWet: wetInWet, options: options);
+
+        for (int y = 12; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                Assert.NotEqual(paperColor, result[x, y]);
+            }
+        }
+    }
 }

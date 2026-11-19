@@ -117,7 +117,8 @@ public sealed record WatercolorOptions(
         ImageTuningProfile rawProfile = ImageTuningProfile.Analyze(image);
         ColorTransferProfile selectedPalette = ColorTransfer.SelectClosestProfile(
             rawProfile.LabStats,
-            candidatePalettes ?? WatercolorPalettes.Defaults);
+            candidatePalettes ?? WatercolorPalettes.Defaults,
+            WatercolorPalettes.DefaultFeatureWeights);
 
         if (rawProfile.IsEmpty)
         {
@@ -130,7 +131,11 @@ public sealed record WatercolorOptions(
         double srcChromaStd = Math.Sqrt((rawProfile.LabStats.StdDevA * rawProfile.LabStats.StdDevA) + (rawProfile.LabStats.StdDevB * rawProfile.LabStats.StdDevB));
         double palChromaStd = Math.Sqrt((selectedPalette.Statistics.StdDevA * selectedPalette.Statistics.StdDevA) + (selectedPalette.Statistics.StdDevB * selectedPalette.Statistics.StdDevB));
         double chromaGain = palChromaStd / Math.Max(1.0, srcChromaStd);
-        double transferStrength = chromaGain <= 2.0 ? 1.0 : Math.Clamp(2.0 / chromaGain, 0.55, 1.0);
+        double transferStrength = chromaGain > 2.0
+            ? Math.Clamp(2.0 / chromaGain, 0.55, 1.0)
+            : chromaGain < 0.5
+                ? Math.Clamp(chromaGain * 2.0, 0.55, 1.0)
+                : 1.0;
 
         ImageTuningProfile postTransferProfile = rawProfile.WithTransferredStatistics(selectedPalette.Statistics, transferStrength);
         var (s, _, _) = OptionTuning.ComputeScales(image.Size, referenceDimension);

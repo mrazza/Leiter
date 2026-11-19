@@ -6,6 +6,7 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Pixels.ColorSpaces;
 using Xunit;
 
 /// <summary>
@@ -448,6 +449,8 @@ public class MeanShiftSegmentationTests
         Assert.Throws<ArgumentNullException>(() => MeanShiftSegmentation.Filter((IReadOnlyMatrix<Rgb8>)null!));
         Assert.Throws<ArgumentNullException>(() => MeanShiftSegmentation.Segment((IReadOnlyMatrix<Lab32>)null!));
         Assert.Throws<ArgumentNullException>(() => MeanShiftSegmentation.Segment((IReadOnlyMatrix<Rgb8>)null!));
+        Assert.Throws<ArgumentNullException>(() => MeanShiftSegmentation.FilterAndSegment((IReadOnlyMatrix<Lab32>)null!));
+        Assert.Throws<ArgumentNullException>(() => MeanShiftSegmentation.FilterAndSegment((IReadOnlyMatrix<Rgb8>)null!));
 
         var sample = new SequentialMatrix<Lab32>(4, 4);
 
@@ -463,5 +466,71 @@ public class MeanShiftSegmentationTests
             MeanShiftSegmentation.Segment(sample, new MeanShiftOptions(ConvergenceEpsilon: double.NaN)));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             MeanShiftSegmentation.Segment(sample, new MeanShiftOptions(Connectivity: (GridConnectivity)99)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            MeanShiftSegmentation.FilterAndSegment(sample, new MeanShiftOptions(MaxIterations: 0)));
+    }
+
+    [Fact]
+    public void Segment_SmoothLinearGradient_ShouldNotChainIntoSingleRegion()
+    {
+        const int width = 60;
+        const int height = 10;
+        var ramp = new SequentialMatrix<Lab32>(width, height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float l = 20.0f + ((float)x / (width - 1) * 60.0f);
+                ramp[x, y] = new Lab32(l, 0.0f, 0.0f);
+            }
+        }
+
+        var options = new MeanShiftOptions(SpatialRadius: 8, RangeRadius: 5.5, MinRegionSize: 10);
+        IDisjointSet segmentation = MeanShiftSegmentation.Segment(ramp, options);
+        var regions = segmentation.ToRegions();
+
+        Assert.True(regions.Count > 1, $"Expected gradient ramp to split into multiple regions, got {regions.Count}.");
+        Assert.NotEqual(segmentation[0, 5], segmentation[width - 1, 5]);
+    }
+
+    [Fact]
+    public void FilterAndSegment_ShouldMatchSeparateFilterAndSegmentOutputs()
+    {
+        var emptyLab = new SequentialMatrix<Lab32>(0, 0);
+        var emptyRgb = new SequentialMatrix<Rgb8>(0, 0);
+
+        (Matrix<Lab32> emptyFilteredLab, IDisjointSet emptySegLab) = MeanShiftSegmentation.FilterAndSegment(emptyLab);
+        Assert.Empty(emptyFilteredLab);
+        Assert.Empty(emptySegLab);
+
+        (Matrix<Rgb8> emptyFilteredRgb, IDisjointSet emptySegRgb) = MeanShiftSegmentation.FilterAndSegment(emptyRgb);
+        Assert.Empty(emptyFilteredRgb);
+        Assert.Empty(emptySegRgb);
+
+        var rgb = new SequentialMatrix<Rgb8>(12, 12);
+        for (int y = 0; y < 12; y++)
+        {
+            for (int x = 0; x < 12; x++)
+            {
+                rgb[x, y] = x < 6 ? new Rgb8(210, 40, 40) : new Rgb8(40, 80, 210);
+            }
+        }
+
+        var options = new MeanShiftOptions(SpatialRadius: 4, RangeRadius: 10.0, MinRegionSize: 10);
+
+        Matrix<Rgb8> expectedRgb = MeanShiftSegmentation.Filter(rgb, options);
+        IDisjointSet expectedRgbSeg = MeanShiftSegmentation.Segment(rgb, options);
+        (Matrix<Rgb8> actualRgb, IDisjointSet actualRgbSeg) = MeanShiftSegmentation.FilterAndSegment(rgb, options);
+
+        Assert.True(expectedRgb.ContentEquals(actualRgb));
+        Assert.True(expectedRgbSeg.ToMatrix().ContentEquals(actualRgbSeg.ToMatrix()));
+
+        Matrix<Lab32> lab = rgb.Map(static p => p.ToLab32(Leiter.Pixels.ColorSpaces.RgbColorSpace.SRgb));
+        Matrix<Lab32> expectedLab = MeanShiftSegmentation.Filter(lab, options);
+        IDisjointSet expectedLabSeg = MeanShiftSegmentation.Segment(lab, options);
+        (Matrix<Lab32> actualLab, IDisjointSet actualLabSeg) = MeanShiftSegmentation.FilterAndSegment(lab, options);
+
+        Assert.True(expectedLab.ContentEquals(actualLab));
+        Assert.True(expectedLabSeg.ToMatrix().ContentEquals(actualLabSeg.ToMatrix()));
     }
 }

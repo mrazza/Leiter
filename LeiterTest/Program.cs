@@ -62,7 +62,7 @@ internal static class Program
         Matrix<Rgb8> imageMatrix = RunStep("00. Load image", () => LoadImage(inputPath));
         Console.WriteLine($"  Dimensions: {imageMatrix.Width}x{imageMatrix.Height}");
 
-        Matrix<Rgb8> gaussianBlurred = RunStepAndSave(
+        RunStepAndSave(
             "01. Gaussian Blur (sigma=0.8, radius=2)",
             outputDir,
             $"{stem}_01_gaussian_blur.png",
@@ -86,11 +86,21 @@ internal static class Program
             $"{stem}_04_quantized_3bits.png",
             () => imageMatrix.Map(pixel => UniformQuantizer.QuantizeBitsToMidpoint(pixel, bitsPerChannel: 3)));
 
+        (Matrix<Rgb8> colorTransferred, ColorTransferProfile matchedPalette) = RunStep(
+            "10. Reinhard Color Transfer (Closest Watercolor Palette, Stage 1)",
+            () => ColorTransfer.TransferToClosestProfile(
+                imageMatrix,
+                WatercolorPalettes.Defaults,
+                featureWeights: WatercolorPalettes.DefaultFeatureWeights));
+        Console.WriteLine($"  Matched Palette: {matchedPalette.Name}");
+        SaveOutput(outputDir, $"{stem}_10_color_transfer.png", colorTransferred);
+
         IDisjointSet segmentation = RunStep(
-            "05. CIELAB + EGBI Segmentation (ForImage)",
+            "05. CIELAB + EGBI Segmentation (Stage 2 on ColorTransferred)",
             () =>
             {
-                Matrix<Lab32> labImage = gaussianBlurred.Map(pixel => pixel.ToLab32(RgbColorSpace.SRgb));
+                Matrix<Rgb8> blurredTransferred = Blur.GaussianBlur(colorTransferred, sigma: 0.8, radius: 2);
+                Matrix<Lab32> labImage = blurredTransferred.Map(pixel => pixel.ToLab32(RgbColorSpace.SRgb));
                 EgbiOptions egbiOptions = EgbiOptions.ForImage(labImage);
                 return EgbiSegmentation.Segment(labImage, egbiOptions);
             });
@@ -102,40 +112,34 @@ internal static class Program
             "06a. Color Segments (Average Color)",
             outputDir,
             $"{stem}_05_segmented_average.png",
-            () => SegmentationVisualizer.ColorRegions(imageMatrix, regions, SegmentationVisualizer.AverageColorAssigner()));
+            () => SegmentationVisualizer.ColorRegions(colorTransferred, regions, SegmentationVisualizer.AverageColorAssigner()));
 
         RunStepAndSave(
             "06b. Color Segments (Random Color, seed=42)",
             outputDir,
             $"{stem}_06_segmented_random.png",
-            () => SegmentationVisualizer.ColorRegions(imageMatrix, regions, SegmentationVisualizer.RandomColorAssigner(seed: 42)));
+            () => SegmentationVisualizer.ColorRegions(colorTransferred, regions, SegmentationVisualizer.RandomColorAssigner(seed: 42)));
 
         RunStepAndSave(
             "07. Global Contrast Saliency",
             outputDir,
             $"{stem}_07_saliency_global.png",
-            () => GlobalContrastSaliency.ComputeSaliency(imageMatrix).ToGrayscaleRgb8());
+            () => GlobalContrastSaliency.ComputeSaliency(colorTransferred).ToGrayscaleRgb8());
 
         Matrix<DoublePixel> regionalSaliency = RunStep(
-            "08. Regional Contrast Saliency",
-            () => RegionalContrastSaliency.ComputeSaliency(imageMatrix, segmentation));
+            "08. Regional Contrast Saliency (Stage 2)",
+            () => RegionalContrastSaliency.ComputeSaliency(colorTransferred, segmentation));
         SaveOutput(outputDir, $"{stem}_08_saliency_regional.png", regionalSaliency.ToGrayscaleRgb8());
 
         RunStepAndSave(
             "09. Saliency-Masked Composite (HadamardProduct)",
             outputDir,
             $"{stem}_09_saliency_regional_masked.png",
-            () => imageMatrix.HadamardProduct<Rgb8, DoublePixel>(regionalSaliency));
-
-        (Matrix<Rgb8> colorTransferred, ColorTransferProfile matchedPalette) = RunStep(
-            "10. Reinhard Color Transfer (Closest Watercolor Palette)",
-            () => ColorTransfer.TransferToClosestProfile(imageMatrix, WatercolorPalettes.Defaults));
-        Console.WriteLine($"  Matched Palette: {matchedPalette.Name}");
-        SaveOutput(outputDir, $"{stem}_10_color_transfer.png", colorTransferred);
+            () => colorTransferred.HadamardProduct<Rgb8, DoublePixel>(regionalSaliency));
 
         MaskMatrix salientMask = RunStep(
-            "11. SaliencyCut Binary Mask",
-            () => SaliencyCut.Extract(imageMatrix, regionalSaliency, SaliencyCutOptions.ForImage(imageMatrix)));
+            "11. SaliencyCut Binary Mask (Stage 2)",
+            () => SaliencyCut.Extract(colorTransferred, regionalSaliency, SaliencyCutOptions.ForImage(colorTransferred)));
         SaveOutput(outputDir, $"{stem}_11_saliency_cut_mask.png", salientMask.Map(static isSalient => isSalient ? new Rgb8(255, 255, 255) : Rgb8.Zero));
 
         Matrix<DoublePixel> rawDistanceField = RunStep(
@@ -148,20 +152,17 @@ internal static class Program
             () => SaliencyDistanceField.Compute(salientMask));
         SaveOutput(outputDir, $"{stem}_12b_distance_field_smoothed.png", smoothedDistanceField.ToGrayscaleRgb8());
 
-        RunStepAndSave(
-            "13a. Mean-Shift Mode Filter (ForImage)",
-            outputDir,
-            $"{stem}_13a_meanshift_filtered.png",
-            () => MeanShiftSegmentation.Filter(colorTransferred, MeanShiftOptions.ForImage(colorTransferred)));
-
-        RegionGraph meanShiftGraph = RunStep(
-            "13b. Mean-Shift Segmentation (ForImage) + RegionGraph",
+        (Matrix<Rgb8> meanShiftFiltered, RegionGraph meanShiftGraph) = RunStep(
+            "13. Mean-Shift FilterAndSegment (Stage 3) + RegionGraph",
             () =>
             {
-                IDisjointSet meanShiftSeg = MeanShiftSegmentation.Segment(colorTransferred, MeanShiftOptions.ForImage(colorTransferred));
-                return RegionGraph.FromDisjointSet(meanShiftSeg);
+                (Matrix<Rgb8> filtered, IDisjointSet meanShiftSeg) = MeanShiftSegmentation.FilterAndSegment(
+                    colorTransferred,
+                    MeanShiftOptions.ForImage(colorTransferred));
+                return (filtered, RegionGraph.FromDisjointSet(meanShiftSeg));
             });
         Console.WriteLine($"  Regions: {meanShiftGraph.RegionCount}, Boundaries: {meanShiftGraph.Boundaries.Count}");
+        SaveOutput(outputDir, $"{stem}_13a_meanshift_filtered.png", meanShiftFiltered);
         SaveOutput(
             outputDir,
             $"{stem}_13b_meanshift_average.png",
@@ -175,7 +176,7 @@ internal static class Program
             "14. Saliency-Guided LOD Abstraction (Stage 3)",
             outputDir,
             $"{stem}_14_lod_abstraction.png",
-            () => LodAbstraction.Apply(colorTransferred, meanShiftGraph, smoothedDistanceField, salientMask, LodAbstractionOptions.ForImage(colorTransferred)));
+            () => LodAbstraction.Apply(meanShiftFiltered, meanShiftGraph, smoothedDistanceField, salientMask, LodAbstractionOptions.ForImage(meanShiftFiltered)));
 
         WetInWetResult wetInWetResult = RunStep(
             "15. Wet-in-Wet Filter (Stage 4)",

@@ -16,7 +16,8 @@ public enum WetInWetMode
     ExcludeSalientBoundaries = 1,
 
     /// <summary>
-    /// Excludes any boundary incident to at least one salient region, confining wet-in-wet bleeding entirely to non-salient background areas.
+    /// Excludes boundaries between two salient regions (the interior of salient objects), preventing wet-in-wet bleeding
+    /// inside salient regions while still allowing bleeding near outer salient boundaries and across background regions.
     /// </summary>
     ExcludeSalientRegions = 2,
 

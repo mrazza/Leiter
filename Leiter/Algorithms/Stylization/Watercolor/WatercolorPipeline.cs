@@ -50,7 +50,11 @@ public static class WatercolorPipeline
         // Stage 1: Reinhard Color Transfer
         (Matrix<Rgb8> colorTransferred, ColorTransferProfile selectedPalette) = opts.TargetPalette is not null
             ? (ColorTransfer.Transfer(image, opts.TargetPalette, strength: opts.ColorTransferStrength), opts.TargetPalette)
-            : ColorTransfer.TransferToClosestProfile(image, WatercolorPalettes.Defaults, strength: opts.ColorTransferStrength);
+            : ColorTransfer.TransferToClosestProfile(
+                image,
+                WatercolorPalettes.Defaults,
+                featureWeights: WatercolorPalettes.DefaultFeatureWeights,
+                strength: opts.ColorTransferStrength);
 
         // Stage 2: Regional Contrast Saliency & Saliency Distance Field
         Matrix<Rgb8> blurred = opts.EgbiBlurSigma <= 0.0
@@ -75,10 +79,10 @@ public static class WatercolorPipeline
         // Stage 3: Mean-Shift Segmentation & Saliency-Guided LOD Abstraction
         MeanShiftOptions resolvedMeanShift = opts.MeanShift ??
             new MeanShiftOptions(MinRegionSize: Math.Min(50, Math.Max(1, image.Count / 32)));
-        IDisjointSet meanShiftSeg = MeanShiftSegmentation.Segment(colorTransferred, resolvedMeanShift);
+        (Matrix<Rgb8> meanShiftFiltered, IDisjointSet meanShiftSeg) = MeanShiftSegmentation.FilterAndSegment(colorTransferred, resolvedMeanShift);
         RegionGraph regionGraph = RegionGraph.FromDisjointSet(meanShiftSeg);
         Matrix<Rgb8> lodAbstracted = LodAbstraction.Apply(
-            colorTransferred,
+            meanShiftFiltered,
             regionGraph,
             distanceField,
             salientMask,
@@ -100,9 +104,35 @@ public static class WatercolorPipeline
             opts.HandTremor);
 
         // Stage 6: Secondary Watercolor Effects & FXAA
-        Matrix<Rgb8> edgeDarkened = EdgeDarkening.Apply(handTremor, opts.EdgeDarkening);
-        Matrix<Rgb8> turbulent = TurbulenceFlow.Apply(edgeDarkened, opts.TurbulenceFlow);
-        Matrix<Rgb8> toneAdjusted = PiecewiseToneCurve.Apply(turbulent, opts.ToneCurve);
+        EdgeDarkeningOptions edgeOpts = opts.EdgeDarkening ?? EdgeDarkeningOptions.Default;
+        TurbulenceFlowOptions turbOpts = opts.TurbulenceFlow ?? TurbulenceFlowOptions.Default;
+
+        Matrix<Rgb8> preTone;
+        if (edgeOpts.Intensity == 0.0 && turbOpts.Intensity == 0.0)
+        {
+            preTone = handTremor;
+        }
+        else if (edgeOpts.Intensity == 0.0)
+        {
+            preTone = TurbulenceFlow.Apply(handTremor, turbOpts);
+        }
+        else if (turbOpts.Intensity == 0.0)
+        {
+            preTone = EdgeDarkening.Apply(handTremor, edgeOpts);
+        }
+        else
+        {
+            Matrix<DoublePixel> combinedDensity = EdgeDarkening.ComputeDensityField(handTremor, edgeOpts);
+            Matrix<DoublePixel> turbulenceDensity = TurbulenceFlow.ComputeDensityField(handTremor.Size, turbOpts);
+            for (int i = 0; i < combinedDensity.Count; i++)
+            {
+                combinedDensity[i] = new DoublePixel(combinedDensity[i].Value + turbulenceDensity[i].Value);
+            }
+
+            preTone = PigmentBlend.ApplyDensityField(handTremor, combinedDensity);
+        }
+
+        Matrix<Rgb8> toneAdjusted = PiecewiseToneCurve.Apply(preTone, opts.ToneCurve);
         Matrix<Rgb8> granulated = PaperGranulation.Apply(toneAdjusted, opts.PaperGranulation, paperHeightMap);
         Matrix<Rgb8> output = opts.EnableFxaa
             ? Fxaa.Apply(granulated, opts.Fxaa)

@@ -63,10 +63,16 @@ public static class Fxaa
                 double lumaSW = GetLumaClamped(luma, x - 1, y + 1, width, height);
                 double lumaSE = GetLumaClamped(luma, x + 1, y + 1, width, height);
 
-                // Compute horizontal vs vertical gradient magnitude using 3x3 Sobel-like weights
-                double gradY = Math.Abs((lumaNW + (2.0 * lumaN) + lumaNE) - (lumaSW + (2.0 * lumaS) + lumaSE));
-                double gradX = Math.Abs((lumaNW + (2.0 * lumaW) + lumaSW) - (lumaNE + (2.0 * lumaE) + lumaSE));
-                bool isHorizontal = gradY >= gradX;
+                // Edge orientation using FXAA 3.11 second-derivative contrast across 3x3 neighborhood
+                double edgeHorz =
+                    Math.Abs((-2.0 * lumaW) + lumaNW + lumaSW)
+                    + (2.0 * Math.Abs((-2.0 * lumaM) + lumaN + lumaS))
+                    + Math.Abs((-2.0 * lumaE) + lumaNE + lumaSE);
+                double edgeVert =
+                    Math.Abs((-2.0 * lumaN) + lumaNW + lumaNE)
+                    + (2.0 * Math.Abs((-2.0 * lumaM) + lumaW + lumaE))
+                    + Math.Abs((-2.0 * lumaS) + lumaSW + lumaSE);
+                bool isHorizontal = edgeHorz >= edgeVert;
 
                 // Step direction perpendicular to the edge
                 double lumaPos = isHorizontal ? lumaS : lumaE;
@@ -101,24 +107,30 @@ public static class Fxaa
                 double subpixelOffset = s * s * opts.SubpixelBlendStrength;
 
                 // Bilateral span search along the edge tangent
-                int stepOffset = (int)stepSign;
-                var (distPos, lumaEndPos) = SearchSpanEndpoint(
-                    luma, x, y, width, height, isHorizontal, 1, stepOffset,
-                    lumaLocalAvg, gradientThreshold, opts.MaxSpanSearchSteps);
-                var (distNeg, lumaEndNeg) = SearchSpanEndpoint(
-                    luma, x, y, width, height, isHorizontal, -1, stepOffset,
-                    lumaLocalAvg, gradientThreshold, opts.MaxSpanSearchSteps);
+                double edgeBlend = 0.0;
+                if (maxGrad > 0.0)
+                {
+                    int stepOffset = (int)stepSign;
+                    var (distPos, lumaEndPos, foundPos) = SearchSpanEndpoint(
+                        luma, x, y, width, height, isHorizontal, 1, stepOffset,
+                        lumaLocalAvg, gradientThreshold, opts.MaxSpanSearchSteps);
+                    var (distNeg, lumaEndNeg, foundNeg) = SearchSpanEndpoint(
+                        luma, x, y, width, height, isHorizontal, -1, stepOffset,
+                        lumaLocalAvg, gradientThreshold, opts.MaxSpanSearchSteps);
 
-                double spanLength = distPos + distNeg;
-                bool isPosCloser = distPos < distNeg;
-                double nearDist = isPosCloser ? distPos : distNeg;
-                double lumaEndNear = isPosCloser ? lumaEndPos : lumaEndNeg;
+                    double spanLength = distPos + distNeg;
+                    bool isPosCloser = distPos < distNeg;
+                    double nearDist = isPosCloser ? distPos : distNeg;
+                    double lumaEndNear = isPosCloser ? lumaEndPos : lumaEndNeg;
+                    bool nearFound = isPosCloser ? foundPos : foundNeg;
 
-                // Check if closer endpoint has opposite sign relative to lumaLocalAvg - lumaM
-                bool goodSpan = (lumaM < lumaLocalAvg) != (lumaEndNear < lumaLocalAvg);
-                double edgeBlend = goodSpan
-                    ? Math.Max(0.0, 0.5 - (nearDist / spanLength))
-                    : 0.0;
+                    // Check if closer endpoint was reached and has opposite sign relative to lumaLocalAvg - lumaM
+                    bool goodSpan = nearFound && ((lumaM < lumaLocalAvg) != (lumaEndNear < lumaLocalAvg));
+                    if (goodSpan)
+                    {
+                        edgeBlend = Math.Max(0.0, 0.5 - (nearDist / spanLength));
+                    }
+                }
 
                 double finalOffset = Math.Max(subpixelOffset, edgeBlend);
 
@@ -138,7 +150,7 @@ public static class Fxaa
         return result;
     }
 
-    private static (double Dist, double EndLuma) SearchSpanEndpoint(
+    private static (double Dist, double EndLuma, bool Found) SearchSpanEndpoint(
         double[] luma,
         int x,
         int y,
@@ -161,10 +173,10 @@ public static class Fxaa
 
             double sampleLuma = 0.5 * (GetLumaClamped(luma, tx, ty, width, height) + GetLumaClamped(luma, ox, oy, width, height));
             if (Math.Abs(sampleLuma - lumaLocalAvg) >= gradientThreshold)
-                return (step, sampleLuma);
+                return (step, sampleLuma, true);
         }
 
-        return (maxSteps, lumaLocalAvg);
+        return (maxSteps, lumaLocalAvg, false);
     }
 
     private static double GetLumaClamped(double[] luma, int x, int y, int width, int height)
