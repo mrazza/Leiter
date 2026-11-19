@@ -28,9 +28,9 @@ public class WetInWetOptionsTests
         Assert.Equal(0.5, options.SalientOverlapThreshold, 6);
         Assert.Equal(4, options.ScatterRadius);
         Assert.Equal(0.45, options.SeedProbability, 6);
-        Assert.Equal(6.0, options.MajorRadius, 6);
-        Assert.Equal(1.5, options.MinorRadius, 6);
-        Assert.Equal(1337, options.RandomSeed);
+        Assert.Null(options.EllipticalFilter);
+        Assert.Equal(1337, options.Seed);
+        Assert.Equal(WetInWetOptions.Default, options);
 
         options.Validate();
     }
@@ -268,7 +268,7 @@ public class WetInWetOptionsTests
     [InlineData(double.NegativeInfinity)]
     public void Validate_InvalidMajorRadius_ShouldThrowArgumentOutOfRangeException(double radius)
     {
-        var options = new WetInWetOptions(MajorRadius: radius);
+        var options = new WetInWetOptions(EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: radius));
         Assert.Throws<ArgumentOutOfRangeException>(() => options.Validate());
     }
 
@@ -282,7 +282,7 @@ public class WetInWetOptionsTests
     [InlineData(20.0)]
     public void Validate_ValidMajorRadius_ShouldNotThrow(double radius)
     {
-        var options = new WetInWetOptions(MajorRadius: radius);
+        var options = new WetInWetOptions(EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: radius));
         options.Validate();
     }
 
@@ -298,7 +298,7 @@ public class WetInWetOptionsTests
     [InlineData(double.NegativeInfinity)]
     public void Validate_InvalidMinorRadius_ShouldThrowArgumentOutOfRangeException(double radius)
     {
-        var options = new WetInWetOptions(MinorRadius: radius);
+        var options = new WetInWetOptions(EllipticalFilter: new OrientedEllipticalFilterOptions(MinorRadius: radius));
         Assert.Throws<ArgumentOutOfRangeException>(() => options.Validate());
     }
 
@@ -312,7 +312,7 @@ public class WetInWetOptionsTests
     [InlineData(10.0)]
     public void Validate_ValidMinorRadius_ShouldNotThrow(double radius)
     {
-        var options = new WetInWetOptions(MinorRadius: radius);
+        var options = new WetInWetOptions(EllipticalFilter: new OrientedEllipticalFilterOptions(MinorRadius: radius));
         options.Validate();
     }
 
@@ -331,9 +331,8 @@ public class WetInWetOptionsTests
             SalientOverlapThreshold: 0.6,
             ScatterRadius: 3,
             SeedProbability: 0.3,
-            MajorRadius: 5.0,
-            MinorRadius: 2.0,
-            RandomSeed: 42);
+            EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: 5.0, MinorRadius: 2.0),
+            Seed: 42);
 
         options.Validate();
     }
@@ -344,9 +343,9 @@ public class WetInWetOptionsTests
     [Fact]
     public void RecordEquality_IdenticalValues_ShouldBeEqual()
     {
-        var opt1 = new WetInWetOptions(Mode: WetInWetMode.ExcludeSalientRegions, RandomSeed: 999);
-        var opt2 = new WetInWetOptions(Mode: WetInWetMode.ExcludeSalientRegions, RandomSeed: 999);
-        var opt3 = new WetInWetOptions(Mode: WetInWetMode.Disabled, RandomSeed: 999);
+        var opt1 = new WetInWetOptions(Mode: WetInWetMode.ExcludeSalientRegions, Seed: 999);
+        var opt2 = new WetInWetOptions(Mode: WetInWetMode.ExcludeSalientRegions, Seed: 999);
+        var opt3 = new WetInWetOptions(Mode: WetInWetMode.Disabled, Seed: 999);
 
         Assert.Equal(opt1, opt2);
         Assert.True(opt1 == opt2);
@@ -362,16 +361,18 @@ public class WetInWetOptionsTests
     {
         WetInWetOptions refOpts = WetInWetOptions.ForSize(new Size(800, 800));
         Assert.Equal(4, refOpts.ScatterRadius);
-        Assert.Equal(6.0, refOpts.MajorRadius, 6);
-        Assert.Equal(1.5, refOpts.MinorRadius, 6);
+        Assert.Equal(OrientedEllipticalFilterOptions.ForSize(new Size(800, 800)), refOpts.EllipticalFilter);
+        Assert.Equal(6.0, refOpts.EllipticalFilter!.MajorRadius, 6);
+        Assert.Equal(1.5, refOpts.EllipticalFilter!.MinorRadius, 6);
         Assert.Equal(0.1, refOpts.ColorGradientThreshold, 6);
         Assert.Equal(refOpts, WetInWetOptions.ForSize(new Size(1000, 640)));
 
         Size largeSize = new(3200, 2400);
         WetInWetOptions large = WetInWetOptions.ForSize(largeSize);
         OrientedEllipticalFilterOptions expectedEllipse = OrientedEllipticalFilterOptions.ForSize(largeSize);
-        Assert.Equal(expectedEllipse.MajorRadius, large.MajorRadius, 6);
-        Assert.Equal(expectedEllipse.MinorRadius, large.MinorRadius, 6);
+        Assert.Equal(expectedEllipse, large.EllipticalFilter);
+        Assert.Equal(expectedEllipse.MajorRadius, large.EllipticalFilter!.MajorRadius, 6);
+        Assert.Equal(expectedEllipse.MinorRadius, large.EllipticalFilter!.MinorRadius, 6);
         Assert.True(large.ScatterRadius > refOpts.ScatterRadius);
         Assert.True(large.ColorGradientThreshold < refOpts.ColorGradientThreshold);
 

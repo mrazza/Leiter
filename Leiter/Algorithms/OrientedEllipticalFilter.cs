@@ -37,7 +37,7 @@ public static class OrientedEllipticalFilter
         if (activeMask is not null && activeMask.Size != image.Size)
             throw new ArgumentException("The active mask size must match the image size.", nameof(activeMask));
 
-        OrientedEllipticalFilterOptions opts = options ?? new OrientedEllipticalFilterOptions();
+        OrientedEllipticalFilterOptions opts = options ?? OrientedEllipticalFilterOptions.Default;
         opts.Validate();
 
         if (image.Count == 0)

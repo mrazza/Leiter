@@ -23,6 +23,11 @@ public sealed record EdgeDarkeningOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default <see cref="EdgeDarkeningOptions"/> instance.
+    /// </summary>
+    public static EdgeDarkeningOptions Default { get; } = new();
+
+    /// <summary>
     /// Creates <see cref="EdgeDarkeningOptions"/> with <see cref="BlurSigma"/> scaled linearly and <see cref="Intensity"/> compensated for Sobel impulse attenuation at <paramref name="size"/>.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
@@ -32,7 +37,7 @@ public sealed record EdgeDarkeningOptions(
     public static EdgeDarkeningOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        var defaults = new EdgeDarkeningOptions();
+        EdgeDarkeningOptions defaults = Default;
         if (totalPixels == 0)
         {
             return defaults;
@@ -81,21 +86,10 @@ public sealed record EdgeDarkeningOptions(
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is non-finite, negative, or not a defined enum value.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!double.IsFinite(Intensity) || Intensity < 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(Intensity), Intensity, "Intensity must be finite and non-negative.");
-        }
-
-        if (!double.IsFinite(BlurSigma) || BlurSigma < 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(BlurSigma), BlurSigma, "BlurSigma must be finite and non-negative.");
-        }
-
-        if (!Enum.IsDefined(GradientOperator))
-        {
-            throw new ArgumentOutOfRangeException(nameof(GradientOperator), GradientOperator, "GradientOperator must be a defined enum value.");
-        }
+        Guard.ThrowIfNotFiniteNonNegative(Intensity);
+        Guard.ThrowIfNotFiniteNonNegative(BlurSigma);
+        Guard.ThrowIfUndefinedEnum(GradientOperator);
     }
 }

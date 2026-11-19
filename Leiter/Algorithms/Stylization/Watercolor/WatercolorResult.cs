@@ -14,7 +14,7 @@ public sealed record WatercolorResult
     /// <summary>
     /// Initializes a new instance of the <see cref="WatercolorResult"/> record.
     /// </summary>
-    /// <param name="output">The final rendered watercolor painting matrix.</param>
+    /// <param name="image">The final rendered watercolor painting matrix.</param>
     /// <param name="colorTransferred">The Stage 1 Reinhard color-transferred image.</param>
     /// <param name="selectedPalette">The watercolor palette applied during Stage 1.</param>
     /// <param name="saliencyMap">The Stage 2 continuous regional contrast saliency map.</param>
@@ -25,8 +25,9 @@ public sealed record WatercolorResult
     /// <param name="wetInWet">The Stage 4 wet-in-wet detailed output.</param>
     /// <param name="handTremor">The Stage 5 hand-tremor perturbed image.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required output artifact is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when matrix or region graph dimensions or boundary counts are inconsistent with <paramref name="image"/>.</exception>
     public WatercolorResult(
-        Matrix<Rgb8> output,
+        Matrix<Rgb8> image,
         Matrix<Rgb8> colorTransferred,
         ColorTransferProfile selectedPalette,
         Matrix<DoublePixel> saliencyMap,
@@ -37,7 +38,7 @@ public sealed record WatercolorResult
         WetInWetResult wetInWet,
         Matrix<Rgb8> handTremor)
     {
-        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(colorTransferred);
         ArgumentNullException.ThrowIfNull(selectedPalette);
         ArgumentNullException.ThrowIfNull(saliencyMap);
@@ -48,7 +49,29 @@ public sealed record WatercolorResult
         ArgumentNullException.ThrowIfNull(wetInWet);
         ArgumentNullException.ThrowIfNull(handTremor);
 
-        Output = output;
+        Guard.ThrowIfSizeMismatch(image, colorTransferred);
+        Guard.ThrowIfSizeMismatch(image, saliencyMap);
+        Guard.ThrowIfSizeMismatch(image, salientMask);
+        Guard.ThrowIfSizeMismatch(image, saliencyDistanceField);
+        Guard.ThrowIfSizeMismatch(image, lodAbstracted);
+        Guard.ThrowIfSizeMismatch(image, wetInWet.Image, nameof(wetInWet));
+        Guard.ThrowIfSizeMismatch(image, handTremor);
+
+        if (segmentationGraph.Size != image.Size)
+        {
+            throw new ArgumentException(
+                $"RegionGraph dimensions {segmentationGraph.Size} must match expected dimensions {image.Size}.",
+                nameof(segmentationGraph));
+        }
+
+        if (wetInWet.QualifyingBoundaries.Count != segmentationGraph.Boundaries.Count)
+        {
+            throw new ArgumentException(
+                $"Qualifying boundary count ({wetInWet.QualifyingBoundaries.Count}) must match segmentation graph boundary count ({segmentationGraph.Boundaries.Count}).",
+                nameof(wetInWet));
+        }
+
+        Image = image;
         ColorTransferred = colorTransferred;
         SelectedPalette = selectedPalette;
         SaliencyMap = saliencyMap;
@@ -63,7 +86,7 @@ public sealed record WatercolorResult
     /// <summary>
     /// Gets the final rendered watercolor painting matrix.
     /// </summary>
-    public Matrix<Rgb8> Output { get; init; }
+    public Matrix<Rgb8> Image { get; init; }
 
     /// <summary>
     /// Gets the Stage 1 Reinhard color-transferred image.

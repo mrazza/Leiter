@@ -22,6 +22,11 @@ public sealed record GrabCutOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default <see cref="GrabCutOptions"/> instance.
+    /// </summary>
+    public static GrabCutOptions Default { get; } = new();
+
+    /// <summary>
     /// Creates <see cref="GrabCutOptions"/> with <see cref="SmoothnessWeight"/> scaled linearly to <paramref name="size"/>.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
@@ -31,7 +36,7 @@ public sealed record GrabCutOptions(
     public static GrabCutOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        var defaults = new GrabCutOptions();
+        GrabCutOptions defaults = Default;
         if (totalPixels == 0)
         {
             return defaults;
@@ -78,11 +83,14 @@ public sealed record GrabCutOptions(
         };
     }
 
-    internal void Validate()
+    /// <summary>
+    /// Validates that all configuration parameters are within their required domains.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is outside its valid range.</exception>
+    public void Validate()
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(Iterations, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(MixtureComponentCount, 1);
-        if (double.IsNaN(SmoothnessWeight) || double.IsInfinity(SmoothnessWeight) || SmoothnessWeight < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(SmoothnessWeight), SmoothnessWeight, "SmoothnessWeight must be a finite non-negative number.");
+        Guard.ThrowIfNotFiniteNonNegative(SmoothnessWeight);
     }
 }

@@ -46,7 +46,7 @@ public static class LodAbstraction
         if (salientMask is not null && salientMask.Size != image.Size)
             throw new ArgumentException("The salient mask size must match the image size.", nameof(salientMask));
 
-        LodAbstractionOptions resolvedOptions = options ?? new LodAbstractionOptions();
+        LodAbstractionOptions resolvedOptions = options ?? LodAbstractionOptions.Default;
         resolvedOptions.Validate();
 
         if (image.Count == 0)

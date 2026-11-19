@@ -45,7 +45,7 @@ public class RegionColorStatisticsTests
         Assert.Equal(1.0 / 3.0, stats[1].MeanIntensity, 5);
         Assert.Equal(240.0, stats[1].MeanHueDegrees, 5);
 
-        Lab32 expectedBlueLab = new Rgb64(0.0, 0.0, 1.0).ToLab32(RgbColorSpace.sRGB, Illuminant.D65);
+        Lab32 expectedBlueLab = new Rgb64(0.0, 0.0, 1.0).ToLab32(RgbColorSpace.SRgb, Illuminant.D65);
         Assert.Equal(expectedBlueLab.L, labStats[1].MeanColor.L, 5);
         Assert.Equal(expectedBlueLab.A, labStats[1].MeanColor.A, 5);
         Assert.Equal(expectedBlueLab.B, labStats[1].MeanColor.B, 5);
@@ -57,8 +57,8 @@ public class RegionColorStatisticsTests
         Assert.Equal(1.0 / 3.0, stats[0].MeanIntensity, 5);
         Assert.Equal(60.0, stats[0].MeanHueDegrees, 5);
 
-        Lab32 redLab = new Rgb64(1.0, 0.0, 0.0).ToLab32(RgbColorSpace.sRGB, Illuminant.D65);
-        Lab32 greenLab = new Rgb64(0.0, 1.0, 0.0).ToLab32(RgbColorSpace.sRGB, Illuminant.D65);
+        Lab32 redLab = new Rgb64(1.0, 0.0, 0.0).ToLab32(RgbColorSpace.SRgb, Illuminant.D65);
+        Lab32 greenLab = new Rgb64(0.0, 1.0, 0.0).ToLab32(RgbColorSpace.SRgb, Illuminant.D65);
         Lab32 expectedMixedLab = new(
             (redLab.L + greenLab.L) * 0.5f,
             (redLab.A + greenLab.A) * 0.5f,
@@ -136,8 +136,8 @@ public class RegionColorStatisticsTests
 
         var graph = RegionGraph.FromLabels(labels);
 
-        RegionColorStatistics<Lab32>[] statsSrgb = RegionColorStatistics.ComputeLab(graph, img, colorSpace: RgbColorSpace.sRGB);
-        RegionColorStatistics<Lab32>[] statsLinear = RegionColorStatistics.ComputeLab(graph, img, colorSpace: RgbColorSpace.LinearRGB);
+        RegionColorStatistics<Lab32>[] statsSrgb = RegionColorStatistics.ComputeLab(graph, img, colorSpace: RgbColorSpace.SRgb);
+        RegionColorStatistics<Lab32>[] statsLinear = RegionColorStatistics.ComputeLab(graph, img, colorSpace: RgbColorSpace.LinearRgb);
         Assert.NotEqual(statsSrgb[0].MeanColor.L, statsLinear[0].MeanColor.L);
 
         RegionColorStatistics<Lab32>[] statsD65 = RegionColorStatistics.ComputeLab(graph, img, illuminant: Illuminant.D65);

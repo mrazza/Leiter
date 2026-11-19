@@ -45,9 +45,10 @@ public class SaliencyMaskTests
 
         MaskMatrix multiObjectMask = SaliencyMask.Binarize(
             map,
-            SaliencyThresholdMethod.Otsu,
-            retentionPolicy: ComponentRetentionPolicy.MinimumAreaFraction,
-            minAreaFraction: 0.02);
+            new SaliencyMaskOptions(
+                Method: SaliencyThresholdMethod.Otsu,
+                RetentionPolicy: ComponentRetentionPolicy.MinimumAreaFraction,
+                MinAreaFraction: 0.02));
         Assert.True(multiObjectMask[2, 2]);
         Assert.True(multiObjectMask[7, 7]);
         Assert.False(multiObjectMask[0, 9]);
@@ -55,18 +56,20 @@ public class SaliencyMaskTests
 
         MaskMatrix largestOnly = SaliencyMask.Binarize(
             map,
-            SaliencyThresholdMethod.Fixed,
-            fixedThreshold: 0.5,
-            retentionPolicy: ComponentRetentionPolicy.LargestComponentOnly);
+            new SaliencyMaskOptions(
+                Method: SaliencyThresholdMethod.Fixed,
+                FixedThreshold: 0.5,
+                RetentionPolicy: ComponentRetentionPolicy.LargestComponentOnly));
         Assert.True(largestOnly[2, 2]);
         Assert.False(largestOnly[7, 7]);
         Assert.False(largestOnly[0, 9]);
 
         MaskMatrix keepAll = SaliencyMask.Binarize(
             map,
-            SaliencyThresholdMethod.Fixed,
-            fixedThreshold: 0.5,
-            retentionPolicy: ComponentRetentionPolicy.KeepAll);
+            new SaliencyMaskOptions(
+                Method: SaliencyThresholdMethod.Fixed,
+                FixedThreshold: 0.5,
+                RetentionPolicy: ComponentRetentionPolicy.KeepAll));
         Assert.True(keepAll[0, 9]);
         Assert.True(keepAll[7, 7]);
     }
@@ -76,7 +79,7 @@ public class SaliencyMaskTests
     {
         var allZero = new SequentialMatrix<DoublePixel>(4, 4);
         Assert.Equal(1.0, SaliencyMask.ComputeThreshold(allZero, SaliencyThresholdMethod.Otsu), 6);
-        MaskMatrix zeroMask = SaliencyMask.Binarize(allZero, SaliencyThresholdMethod.Otsu);
+        MaskMatrix zeroMask = SaliencyMask.Binarize(allZero, new SaliencyMaskOptions(Method: SaliencyThresholdMethod.Otsu));
         for (int i = 0; i < zeroMask.Count; i++)
         {
             Assert.False(zeroMask[i]);
@@ -84,7 +87,7 @@ public class SaliencyMaskTests
 
         var allHigh = new SequentialMatrix<DoublePixel>(4, 4);
         allHigh.SetAll(0.8);
-        MaskMatrix highMask = SaliencyMask.Binarize(allHigh, SaliencyThresholdMethod.Otsu);
+        MaskMatrix highMask = SaliencyMask.Binarize(allHigh, new SaliencyMaskOptions(Method: SaliencyThresholdMethod.Otsu));
         for (int i = 0; i < highMask.Count; i++)
         {
             Assert.True(highMask[i]);
@@ -105,7 +108,7 @@ public class SaliencyMaskTests
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.ComputeThreshold(allZero, SaliencyThresholdMethod.Fixed, -0.1));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.ComputeThreshold(allZero, SaliencyThresholdMethod.Fixed, 1.1));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.ComputeThreshold(allZero, SaliencyThresholdMethod.Fixed, double.NaN));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.Binarize(allZero, retentionPolicy: (ComponentRetentionPolicy)99));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.Binarize(allZero, minAreaFraction: -0.05));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.Binarize(allZero, new SaliencyMaskOptions(RetentionPolicy: (ComponentRetentionPolicy)99)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.Binarize(allZero, new SaliencyMaskOptions(MinAreaFraction: -0.05)));
     }
 }

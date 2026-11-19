@@ -100,30 +100,23 @@ public static class SaliencyDistanceField
     /// discontinuities continuously across the boundary via <see cref="Blur.GaussianBlurRecursive"/>.
     /// </summary>
     /// <param name="salientMask">The boolean salient mask (<see langword="false"/> = non-salient, <see langword="true"/> = salient).</param>
-    /// <param name="smoothingSigma">
-    /// Optional explicit Gaussian smoothing σ; when <see langword="null"/>, defaults to
-    /// <c>defaultSigmaScale * min(Width, Height)</c>. Passing <c>0</c> disables smoothing.
-    /// </param>
-    /// <param name="defaultSigmaScale">The fraction of <c>min(Width, Height)</c> used when <paramref name="smoothingSigma"/> is <see langword="null"/> (default <c>0.03</c>).</param>
+    /// <param name="options">Optional smoothing parameters controlling <see cref="SaliencyDistanceFieldOptions.SmoothingSigma"/> and <see cref="SaliencyDistanceFieldOptions.DefaultSigmaScale"/>.</param>
     /// <returns>The smoothed [0, 1] saliency distance field.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="salientMask"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="smoothingSigma"/> or <paramref name="defaultSigmaScale"/> is negative or non-finite.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are negative or non-finite.</exception>
     public static Matrix<DoublePixel> Compute(
         IReadOnlyMatrix<bool> salientMask,
-        double? smoothingSigma = null,
-        double defaultSigmaScale = 0.03)
+        SaliencyDistanceFieldOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(salientMask);
-        if (!double.IsFinite(defaultSigmaScale) || defaultSigmaScale < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(defaultSigmaScale), defaultSigmaScale, "Default sigma scale must be finite and non-negative.");
-        if (smoothingSigma is double explicitSigma && (!double.IsFinite(explicitSigma) || explicitSigma < 0.0))
-            throw new ArgumentOutOfRangeException(nameof(smoothingSigma), smoothingSigma, "Smoothing sigma must be finite and non-negative.");
+        SaliencyDistanceFieldOptions resolvedOptions = options ?? SaliencyDistanceFieldOptions.Default;
+        resolvedOptions.Validate();
 
         Matrix<DoublePixel> normalizedField = ComputeNormalizedField(salientMask);
         if (normalizedField.Count == 0)
             return normalizedField;
 
-        double resolvedSigma = smoothingSigma ?? (defaultSigmaScale * Math.Min(salientMask.Width, salientMask.Height));
+        double resolvedSigma = resolvedOptions.SmoothingSigma ?? (resolvedOptions.DefaultSigmaScale * Math.Min(salientMask.Width, salientMask.Height));
         if (resolvedSigma <= 0.0)
             return normalizedField;
 
@@ -141,16 +134,23 @@ public static class SaliencyDistanceField
     /// <param name="image">The input RGB image.</param>
     /// <param name="saliencyMap">The continuous [0, 1] saliency map matching <paramref name="image"/> dimensions.</param>
     /// <param name="saliencyCutOptions">Optional <see cref="SaliencyCut"/> configuration parameters.</param>
-    /// <param name="smoothingSigma">Optional explicit Gaussian smoothing σ (defaults to <c>3%</c> of the smaller image dimension).</param>
+    /// <param name="distanceFieldOptions">Optional <see cref="SaliencyDistanceField"/> smoothing parameters.</param>
     /// <returns>The extracted <c>SalientMask</c> and its smoothed [0, 1] <c>DistanceField</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="saliencyMap"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="saliencyMap"/> dimensions do not match <paramref name="image"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="saliencyCutOptions"/> or <paramref name="distanceFieldOptions"/> parameters are invalid.</exception>
     public static (MaskMatrix SalientMask, Matrix<DoublePixel> DistanceField) Compute(
         IReadOnlyMatrix<Rgb8> image,
         IReadOnlyMatrix<DoublePixel> saliencyMap,
         SaliencyCutOptions? saliencyCutOptions = null,
-        double? smoothingSigma = null)
+        SaliencyDistanceFieldOptions? distanceFieldOptions = null)
     {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(saliencyMap);
+        (distanceFieldOptions ?? SaliencyDistanceFieldOptions.Default).Validate();
+
         MaskMatrix salientMask = SaliencyCut.Extract(image, saliencyMap, saliencyCutOptions);
-        Matrix<DoublePixel> distanceField = Compute(salientMask, smoothingSigma);
+        Matrix<DoublePixel> distanceField = Compute(salientMask, distanceFieldOptions);
         return (salientMask, distanceField);
     }
 }

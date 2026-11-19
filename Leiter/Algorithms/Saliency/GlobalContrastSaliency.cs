@@ -44,7 +44,7 @@ public static class GlobalContrastSaliency
         var (paletteImage, truncatedHistogram, rgbToLabLookupTable) = PaletteQuantizer.QuantizeAndTruncate(
             image,
             static color => UniformQuantizer.QuantizeToMidpoint(color, 12),
-            static color => color.ToLab32(RgbColorSpace.sRGB));
+            static color => color.ToLab32(RgbColorSpace.SRgb));
 
         // Compute the saliency for each bucket based on the distance to all other buckets.
         Dictionary<Rgb8, double> saliencyMap = [];

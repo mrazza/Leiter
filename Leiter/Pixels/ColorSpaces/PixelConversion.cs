@@ -73,7 +73,7 @@ public static class PixelConversion
         double b = 0.0556434 * self.X - 0.2040259 * self.Y + 1.0572252 * self.Z;
         var rgb64 = new Rgb64(r, g, b);
 
-        return colorSpace == RgbColorSpace.sRGB
+        return colorSpace == RgbColorSpace.SRgb
             ? RgbColorSpaceConversions.LinearRgbToSRgb(rgb64)
             : rgb64;
     }
@@ -112,7 +112,7 @@ public static class PixelConversion
     {
         Guard.ThrowIfUndefinedEnum(colorSpace);
 
-        var rgb64 = colorSpace == RgbColorSpace.sRGB
+        var rgb64 = colorSpace == RgbColorSpace.SRgb
             ? RgbColorSpaceConversions.SRgbToLinearRgb(self)
             : self;
 

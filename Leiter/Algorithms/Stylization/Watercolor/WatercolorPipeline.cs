@@ -34,7 +34,7 @@ public static class WatercolorPipeline
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        WatercolorOptions opts = options ?? new WatercolorOptions();
+        WatercolorOptions opts = options ?? WatercolorOptions.Default;
         opts.Validate();
 
         if (paperHeightMap is not null && paperHeightMap.Size != image.Size)
@@ -58,18 +58,19 @@ public static class WatercolorPipeline
             : opts.EgbiBlurSigma <= 2.0
                 ? Blur.GaussianBlur(colorTransferred, opts.EgbiBlurSigma, Math.Max(1, (int)Math.Ceiling(2.5 * opts.EgbiBlurSigma)))
                 : Blur.GaussianBlurRecursive(colorTransferred, opts.EgbiBlurSigma);
-        Matrix<Lab32> labBlurred = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.sRGB));
+        Matrix<Lab32> labBlurred = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
         EgbiOptions resolvedEgbi = opts.Egbi ??
             new EgbiOptions(
                 KFactor: 50.0,
                 Epsilon: 1.0,
                 MinRegionSize: Math.Min(200, Math.Max(1, image.Count / 16)));
         IDisjointSet egbiSeg = EgbiSegmentation.Segment(labBlurred, resolvedEgbi);
-        Matrix<DoublePixel> saliencyMap = RegionalContrastSaliency.ComputeSaliency(colorTransferred, egbiSeg);
+        Matrix<DoublePixel> saliencyMap = RegionalContrastSaliency.ComputeSaliency(colorTransferred, egbiSeg, opts.RegionalContrastSaliency);
         (MaskMatrix salientMask, Matrix<DoublePixel> distanceField) = SaliencyDistanceField.Compute(
             colorTransferred,
             saliencyMap,
-            opts.SaliencyCut);
+            opts.SaliencyCut,
+            opts.SaliencyDistanceField);
 
         // Stage 3: Mean-Shift Segmentation & Saliency-Guided LOD Abstraction
         MeanShiftOptions resolvedMeanShift = opts.MeanShift ??
@@ -134,7 +135,7 @@ public static class WatercolorPipeline
         IReadOnlyMatrix<Rgb8> image,
         WatercolorOptions? options = null,
         IReadOnlyMatrix<DoublePixel>? paperHeightMap = null) =>
-        RenderDetailed(image, options, paperHeightMap).Output;
+        RenderDetailed(image, options, paperHeightMap).Image;
 
     private static WatercolorResult CreateEmptyResult(Size size, WatercolorOptions options)
     {

@@ -17,9 +17,8 @@ using Leiter.Pixels;
 /// <param name="SalientOverlapThreshold">The minimum fraction of salient pixels required for a region to be classified as salient (default 0.5; must be finite and within [0.0, 1.0]).</param>
 /// <param name="ScatterRadius">The maximum pixel distance from qualifying boundaries for pigment seed scattering (default 4; must be at least 1).</param>
 /// <param name="SeedProbability">The probability in [0.0, 1.0] of depositing a pigment seed at a candidate pixel (default 0.45; must be finite and within [0.0, 1.0]).</param>
-/// <param name="MajorRadius">The semi-major radius along the local tangent orientation for oriented elliptical Gaussian smoothing (default 6.0; must be finite and greater than 0.0).</param>
-/// <param name="MinorRadius">The semi-minor radius perpendicular to the local tangent orientation for oriented elliptical Gaussian smoothing (default 1.5; must be finite and greater than 0.0).</param>
-/// <param name="RandomSeed">The pseudo-random seed used for deterministic pigment seed scattering (default 1337).</param>
+/// <param name="EllipticalFilter">Optional oriented elliptical Gaussian smoothing configuration; when <see langword="null"/>, defaults to <see cref="OrientedEllipticalFilterOptions.Default"/>.</param>
+/// <param name="Seed">The pseudo-random seed used for deterministic pigment seed scattering (default 1337).</param>
 public sealed record WetInWetOptions(
     WetInWetMode Mode = WetInWetMode.Default,
     double ColorGradientThreshold = 0.1,
@@ -29,14 +28,18 @@ public sealed record WetInWetOptions(
     double SalientOverlapThreshold = 0.5,
     int ScatterRadius = 4,
     double SeedProbability = 0.45,
-    double MajorRadius = 6.0,
-    double MinorRadius = 1.5,
-    int RandomSeed = 1337)
+    OrientedEllipticalFilterOptions? EllipticalFilter = null,
+    int Seed = 1337)
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default bleed radii and gradient thresholds apply unscaled.
     /// </summary>
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
+
+    /// <summary>
+    /// Gets the default <see cref="WetInWetOptions"/> instance.
+    /// </summary>
+    public static WetInWetOptions Default { get; } = new();
 
     /// <summary>
     /// Creates <see cref="WetInWetOptions"/> with scatter radius, elliptical filter radii, and color gradient threshold scaled for <paramref name="size"/>.
@@ -48,18 +51,19 @@ public sealed record WetInWetOptions(
     public static WetInWetOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        var defaults = new WetInWetOptions();
+        WetInWetOptions defaults = Default;
         if (totalPixels == 0)
         {
-            return defaults;
+            return defaults with
+            {
+                EllipticalFilter = OrientedEllipticalFilterOptions.Default
+            };
         }
 
-        OrientedEllipticalFilterOptions ellipse = OrientedEllipticalFilterOptions.ForSize(size, referenceDimension);
         return defaults with
         {
             ScatterRadius = OptionTuning.RoundPositiveInt(defaults.ScatterRadius * s),
-            MajorRadius = ellipse.MajorRadius,
-            MinorRadius = ellipse.MinorRadius,
+            EllipticalFilter = OrientedEllipticalFilterOptions.ForSize(size, referenceDimension),
             ColorGradientThreshold = Math.Clamp(defaults.ColorGradientThreshold / s, 0.005, 0.5)
         };
     }
@@ -99,56 +103,16 @@ public sealed record WetInWetOptions(
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is non-finite or outside its valid range.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!Enum.IsDefined(Mode))
-        {
-            throw new ArgumentOutOfRangeException(nameof(Mode), Mode, "Unsupported wet-in-wet mode.");
-        }
-
-        if (!double.IsFinite(ColorGradientThreshold) || ColorGradientThreshold < 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(ColorGradientThreshold), ColorGradientThreshold, "ColorGradientThreshold must be finite and non-negative.");
-        }
-
-        if (!double.IsFinite(SalientHueThresholdDegrees) || SalientHueThresholdDegrees < 0.0 || SalientHueThresholdDegrees > 180.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(SalientHueThresholdDegrees), SalientHueThresholdDegrees, "SalientHueThresholdDegrees must be finite and within [0, 180].");
-        }
-
-        if (!double.IsFinite(NonSalientHueThresholdDegrees) || NonSalientHueThresholdDegrees < 0.0 || NonSalientHueThresholdDegrees > 180.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(NonSalientHueThresholdDegrees), NonSalientHueThresholdDegrees, "NonSalientHueThresholdDegrees must be finite and within [0, 180].");
-        }
-
-        if (!double.IsFinite(MinIntensityDifference) || MinIntensityDifference < 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(MinIntensityDifference), MinIntensityDifference, "MinIntensityDifference must be finite and non-negative.");
-        }
-
-        if (!double.IsFinite(SalientOverlapThreshold) || SalientOverlapThreshold < 0.0 || SalientOverlapThreshold > 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(SalientOverlapThreshold), SalientOverlapThreshold, "SalientOverlapThreshold must be finite and within [0, 1].");
-        }
-
-        if (ScatterRadius < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(ScatterRadius), ScatterRadius, "ScatterRadius must be at least 1.");
-        }
-
-        if (!double.IsFinite(SeedProbability) || SeedProbability < 0.0 || SeedProbability > 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(SeedProbability), SeedProbability, "SeedProbability must be finite and within [0, 1].");
-        }
-
-        if (!double.IsFinite(MajorRadius) || MajorRadius <= 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(MajorRadius), MajorRadius, "MajorRadius must be finite and greater than 0.0.");
-        }
-
-        if (!double.IsFinite(MinorRadius) || MinorRadius <= 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(MinorRadius), MinorRadius, "MinorRadius must be finite and greater than 0.0.");
-        }
+        Guard.ThrowIfUndefinedEnum(Mode);
+        Guard.ThrowIfNotFiniteNonNegative(ColorGradientThreshold);
+        Guard.ThrowIfNotFiniteInRange(SalientHueThresholdDegrees, 0.0, 180.0);
+        Guard.ThrowIfNotFiniteInRange(NonSalientHueThresholdDegrees, 0.0, 180.0);
+        Guard.ThrowIfNotFiniteNonNegative(MinIntensityDifference);
+        Guard.ThrowIfNotFiniteInRange(SalientOverlapThreshold, 0.0, 1.0);
+        ArgumentOutOfRangeException.ThrowIfLessThan(ScatterRadius, 1);
+        Guard.ThrowIfNotFiniteInRange(SeedProbability, 0.0, 1.0);
+        EllipticalFilter?.Validate();
     }
 }

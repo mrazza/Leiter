@@ -30,6 +30,11 @@ public sealed record LodAbstractionOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default <see cref="LodAbstractionOptions"/> instance.
+    /// </summary>
+    public static LodAbstractionOptions Default { get; } = new();
+
+    /// <summary>
     /// Creates <see cref="LodAbstractionOptions"/> with kernel sizes and <see cref="DistanceKernelScale"/> scaled linearly to <paramref name="size"/>.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
@@ -39,7 +44,7 @@ public sealed record LodAbstractionOptions(
     public static LodAbstractionOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        var defaults = new LodAbstractionOptions();
+        LodAbstractionOptions defaults = Default;
         if (totalPixels == 0)
         {
             return defaults;
@@ -93,18 +98,14 @@ public sealed record LodAbstractionOptions(
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is negative, non-finite, or outside its valid range.</exception>
-    internal void Validate()
+    public void Validate()
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(SalientKernelSize, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(MinNonSalientKernelSize, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxNonSalientKernelSize, MinNonSalientKernelSize);
-        if (!double.IsFinite(DistanceKernelScale) || DistanceKernelScale < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(DistanceKernelScale), DistanceKernelScale, "DistanceKernelScale must be finite and non-negative.");
-        if (!double.IsFinite(DistanceKernelBias))
-            throw new ArgumentOutOfRangeException(nameof(DistanceKernelBias), DistanceKernelBias, "DistanceKernelBias must be finite.");
-        if (!double.IsFinite(CrossSegmentColorScale) || CrossSegmentColorScale < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(CrossSegmentColorScale), CrossSegmentColorScale, "CrossSegmentColorScale must be finite and non-negative.");
-        if (!double.IsFinite(SalientOverlapThreshold) || SalientOverlapThreshold < 0.0 || SalientOverlapThreshold > 1.0)
-            throw new ArgumentOutOfRangeException(nameof(SalientOverlapThreshold), SalientOverlapThreshold, "SalientOverlapThreshold must be finite and within [0, 1].");
+        Guard.ThrowIfNotFiniteNonNegative(DistanceKernelScale);
+        Guard.ThrowIfNotFinite(DistanceKernelBias);
+        Guard.ThrowIfNotFiniteNonNegative(CrossSegmentColorScale);
+        Guard.ThrowIfNotFiniteInRange(SalientOverlapThreshold, 0.0, 1.0);
     }
 }

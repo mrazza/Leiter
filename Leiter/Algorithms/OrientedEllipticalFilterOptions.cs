@@ -21,6 +21,11 @@ public sealed record OrientedEllipticalFilterOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default <see cref="OrientedEllipticalFilterOptions"/> instance.
+    /// </summary>
+    public static OrientedEllipticalFilterOptions Default { get; } = new();
+
+    /// <summary>
     /// Creates <see cref="OrientedEllipticalFilterOptions"/> with semi-axes scaled linearly to <paramref name="size"/>.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
@@ -32,7 +37,7 @@ public sealed record OrientedEllipticalFilterOptions(
         double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        var defaults = new OrientedEllipticalFilterOptions();
+        OrientedEllipticalFilterOptions defaults = Default;
         if (totalPixels == 0)
         {
             return defaults;
@@ -67,15 +72,10 @@ public sealed record OrientedEllipticalFilterOptions(
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is non-finite or less than or equal to 0.0.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!double.IsFinite(MajorRadius) || MajorRadius <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(MajorRadius), MajorRadius, "MajorRadius must be finite and greater than 0.0.");
-
-        if (!double.IsFinite(MinorRadius) || MinorRadius <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(MinorRadius), MinorRadius, "MinorRadius must be finite and greater than 0.0.");
-
-        if (!double.IsFinite(SigmaScale) || SigmaScale <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(SigmaScale), SigmaScale, "SigmaScale must be finite and greater than 0.0.");
+        Guard.ThrowIfNotFinitePositive(MajorRadius);
+        Guard.ThrowIfNotFinitePositive(MinorRadius);
+        Guard.ThrowIfNotFinitePositive(SigmaScale);
     }
 }

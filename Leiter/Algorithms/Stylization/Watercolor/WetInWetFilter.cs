@@ -48,8 +48,9 @@ public static class WetInWetFilter
             throw new ArgumentException("SalientMask dimensions must match image dimensions.", nameof(salientMask));
         }
 
-        WetInWetOptions opts = options ?? new WetInWetOptions();
+        WetInWetOptions opts = options ?? WetInWetOptions.Default;
         opts.Validate();
+        OrientedEllipticalFilterOptions filterOpts = opts.EllipticalFilter ?? OrientedEllipticalFilterOptions.Default;
 
         int boundaryCount = regionGraph.Boundaries.Count;
         if (image.Count == 0 || opts.Mode == WetInWetMode.Disabled || boundaryCount == 0)
@@ -120,7 +121,7 @@ public static class WetInWetFilter
 
         int width = image.Width;
         int height = image.Height;
-        int maxBand = Math.Max(opts.ScatterRadius, (int)Math.Ceiling(Math.Max(opts.MajorRadius, opts.MinorRadius)));
+        int maxBand = Math.Max(opts.ScatterRadius, (int)Math.Ceiling(Math.Max(filterOpts.MajorRadius, filterOpts.MinorRadius)));
 
         RegionBoundaryBand band = regionGraph.ComputeBoundaryBand(
             maxBand,
@@ -166,7 +167,7 @@ public static class WetInWetFilter
 
                         if (regionGraph.Labels[x, y] == brighterId)
                         {
-                            double hash = SplitMix64.HashToUnitDouble(opts.RandomSeed, x, y);
+                            double hash = SplitMix64.HashToUnitDouble(opts.Seed, x, y);
                             if (hash < opts.SeedProbability)
                             {
                                 seeded[x, y] = stats[darkerId].MeanColor.ToRgb8();
@@ -180,7 +181,7 @@ public static class WetInWetFilter
         Matrix<Rgb8> filtered = OrientedEllipticalFilter.Apply(
             seeded,
             orientations,
-            new OrientedEllipticalFilterOptions(opts.MajorRadius, opts.MinorRadius),
+            filterOpts,
             wetAreaMask);
 
         return new WetInWetResult(filtered, wetAreaMask, qualifying);

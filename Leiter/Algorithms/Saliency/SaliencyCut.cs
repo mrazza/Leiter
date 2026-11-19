@@ -33,7 +33,7 @@ public static class SaliencyCut
         if (image.Size != saliencyMap.Size)
             throw new ArgumentException("Image and saliency map dimensions must match.", nameof(saliencyMap));
 
-        SaliencyCutOptions resolvedOptions = options ?? new SaliencyCutOptions();
+        SaliencyCutOptions resolvedOptions = options ?? SaliencyCutOptions.Default;
         resolvedOptions.Validate();
 
         if (image.Count == 0)
@@ -72,22 +72,13 @@ public static class SaliencyCut
         SaliencyCutOptions options,
         out int foregroundCount)
     {
-        MaskMatrix candidate = SaliencyMask.Binarize(
-            saliencyMap,
-            SaliencyThresholdMethod.Fixed,
-            options.InitialThreshold,
-            options.RetentionPolicy,
-            options.MinAreaFraction);
+        SaliencyMaskOptions maskOptions = options.Mask ?? SaliencyCutOptions.DefaultMask;
+        MaskMatrix candidate = SaliencyMask.Binarize(saliencyMap, maskOptions);
 
         foregroundCount = candidate.CountTrue();
-        if (foregroundCount == 0 || foregroundCount == saliencyMap.Count)
+        if ((foregroundCount == 0 || foregroundCount == saliencyMap.Count) && maskOptions.Method != SaliencyThresholdMethod.Otsu)
         {
-            candidate = SaliencyMask.Binarize(
-                saliencyMap,
-                SaliencyThresholdMethod.Otsu,
-                options.InitialThreshold,
-                options.RetentionPolicy,
-                options.MinAreaFraction);
+            candidate = SaliencyMask.Binarize(saliencyMap, maskOptions with { Method = SaliencyThresholdMethod.Otsu });
             foregroundCount = candidate.CountTrue();
         }
 
@@ -104,17 +95,20 @@ public static class SaliencyCut
         if (seedFgCount == 0 || seedFgCount == image.Count)
             return candidateMask;
 
+        GrabCutOptions grabCutOptions = options.GrabCut ?? SaliencyCutOptions.DefaultGrabCut;
+        SaliencyMaskOptions maskOptions = options.Mask ?? SaliencyCutOptions.DefaultMask;
+
         TrimapMatrix trimap = TrimapMatrix.FromCandidateMask(candidateMask);
-        var session = new GrabCutSession(image, options.MixtureComponentCount, options.SmoothnessWeight);
+        var session = new GrabCutSession(image, grabCutOptions.MixtureComponentCount, grabCutOptions.SmoothnessWeight);
         MaskMatrix? previousMask = null;
 
         for (int outer = 0; outer < options.MaxOuterIterations; outer++)
         {
-            MaskMatrix rawMask = session.Run(trimap, options.InnerGrabCutIterations);
+            MaskMatrix rawMask = session.Run(trimap, grabCutOptions.Iterations);
             MaskMatrix currentMask = BinaryMorphology.FilterConnectedComponents(
                 rawMask,
-                options.RetentionPolicy,
-                options.MinAreaFraction);
+                maskOptions.RetentionPolicy,
+                maskOptions.MinAreaFraction);
 
             int currentFgCount = currentMask.CountTrue();
             if (currentFgCount == 0 && previousMask is null)

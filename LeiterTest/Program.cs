@@ -90,7 +90,7 @@ internal static class Program
             "05. CIELAB + EGBI Segmentation (ForImage)",
             () =>
             {
-                Matrix<Lab32> labImage = gaussianBlurred.Map(pixel => pixel.ToLab32(RgbColorSpace.sRGB));
+                Matrix<Lab32> labImage = gaussianBlurred.Map(pixel => pixel.ToLab32(RgbColorSpace.SRgb));
                 EgbiOptions egbiOptions = EgbiOptions.ForImage(labImage);
                 return EgbiSegmentation.Segment(labImage, egbiOptions);
             });
@@ -108,7 +108,7 @@ internal static class Program
             "06b. Color Segments (Random Color, seed=42)",
             outputDir,
             $"{stem}_06_segmented_random.png",
-            () => SegmentationVisualizer.ColorRegions(imageMatrix, regions, SegmentationVisualizer.RandomColorAssigner(randomSeed: 42)));
+            () => SegmentationVisualizer.ColorRegions(imageMatrix, regions, SegmentationVisualizer.RandomColorAssigner(seed: 42)));
 
         RunStepAndSave(
             "07. Global Contrast Saliency",
@@ -169,7 +169,7 @@ internal static class Program
         SaveOutput(
             outputDir,
             $"{stem}_13c_meanshift_random.png",
-            SegmentationVisualizer.ColorRegions(colorTransferred, meanShiftGraph.Regions, SegmentationVisualizer.RandomColorAssigner(randomSeed: 42)));
+            SegmentationVisualizer.ColorRegions(colorTransferred, meanShiftGraph.Regions, SegmentationVisualizer.RandomColorAssigner(seed: 42)));
 
         Matrix<Rgb8> lodAbstracted = RunStepAndSave(
             "14. Saliency-Guided LOD Abstraction (Stage 3)",

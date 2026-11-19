@@ -118,7 +118,7 @@ public static class MatrixResampler
         this IReadOnlyMatrix<T> source,
         double x,
         double y,
-        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        EdgeHandling edgeHandling = EdgeHandling.Extend)
         where T : struct, IPixel<T>
     {
         ValidateSampleInputs(source, x, y, edgeHandling);
@@ -177,7 +177,7 @@ public static class MatrixResampler
         TState state,
         Func<int, int, TState, bool> predicate,
         T fallback = default,
-        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        EdgeHandling edgeHandling = EdgeHandling.Extend)
         where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(predicate);
@@ -252,7 +252,7 @@ public static class MatrixResampler
         double y,
         Func<int, int, bool> predicate,
         T fallback = default,
-        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        EdgeHandling edgeHandling = EdgeHandling.Extend)
         where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(predicate);
@@ -276,7 +276,7 @@ public static class MatrixResampler
         this IReadOnlyMatrix<T> source,
         IReadOnlyMatrix<Vector2D> displacementField,
         double scale = 1.0,
-        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        EdgeHandling edgeHandling = EdgeHandling.Extend)
         where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -322,7 +322,7 @@ public static class MatrixResampler
     public static T SampleBilinear<T>(
         this IReadOnlyMatrix<T> source,
         Vector2D position,
-        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        EdgeHandling edgeHandling = EdgeHandling.Extend)
         where T : struct, IPixel<T> =>
         source.SampleBilinear(position.X, position.Y, edgeHandling);
 
@@ -342,7 +342,7 @@ public static class MatrixResampler
         this IReadOnlyMatrix<T> source,
         double x,
         double y,
-        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        EdgeHandling edgeHandling = EdgeHandling.Extend)
         where T : struct
     {
         ValidateSampleInputs(source, x, y, edgeHandling);
@@ -367,7 +367,7 @@ public static class MatrixResampler
     public static T SampleNearest<T>(
         this IReadOnlyMatrix<T> source,
         Vector2D position,
-        EdgeHandling edgeHandling = EdgeHandling.EXTEND)
+        EdgeHandling edgeHandling = EdgeHandling.Extend)
         where T : struct =>
         source.SampleNearest(position.X, position.Y, edgeHandling);
 

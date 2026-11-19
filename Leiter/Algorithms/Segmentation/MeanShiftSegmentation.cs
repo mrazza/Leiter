@@ -31,7 +31,7 @@ public static class MeanShiftSegmentation
     public static Matrix<Lab32> Filter(IReadOnlyMatrix<Lab32> labImage, MeanShiftOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(labImage);
-        var resolvedOptions = options ?? new MeanShiftOptions();
+        var resolvedOptions = options ?? MeanShiftOptions.Default;
         resolvedOptions.Validate();
 
         if (labImage.Count == 0)
@@ -59,15 +59,15 @@ public static class MeanShiftSegmentation
     public static Matrix<Rgb8> Filter(IReadOnlyMatrix<Rgb8> image, MeanShiftOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
-        var resolvedOptions = options ?? new MeanShiftOptions();
+        var resolvedOptions = options ?? MeanShiftOptions.Default;
         resolvedOptions.Validate();
 
         if (image.Count == 0)
             return new SequentialMatrix<Rgb8>(image.Width, image.Height);
 
-        Matrix<Lab32> labMatrix = image.Map(static pixel => pixel.ToLab32(RgbColorSpace.sRGB));
+        Matrix<Lab32> labMatrix = image.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
         Matrix<Lab32> filteredLab = Filter(labMatrix, resolvedOptions);
-        return filteredLab.Map(static pixel => pixel.ToRgb8(RgbColorSpace.sRGB));
+        return filteredLab.Map(static pixel => pixel.ToRgb8(RgbColorSpace.SRgb));
     }
 
     /// <summary>
@@ -81,7 +81,7 @@ public static class MeanShiftSegmentation
     public static IDisjointSet Segment(IReadOnlyMatrix<Lab32> labImage, MeanShiftOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(labImage);
-        var resolvedOptions = options ?? new MeanShiftOptions();
+        var resolvedOptions = options ?? MeanShiftOptions.Default;
         resolvedOptions.Validate();
 
         if (labImage.Count == 0)
@@ -102,13 +102,13 @@ public static class MeanShiftSegmentation
     public static IDisjointSet Segment(IReadOnlyMatrix<Rgb8> image, MeanShiftOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
-        var resolvedOptions = options ?? new MeanShiftOptions();
+        var resolvedOptions = options ?? MeanShiftOptions.Default;
         resolvedOptions.Validate();
 
         if (image.Count == 0)
             return new DisjointSet<byte>(image, static _ => 0);
 
-        Matrix<Lab32> labMatrix = image.Map(static pixel => pixel.ToLab32(RgbColorSpace.sRGB));
+        Matrix<Lab32> labMatrix = image.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
         (MeanShiftMode[] modes, Lab32[] sourceLab) = SeekModes(labMatrix, resolvedOptions);
         return SegmentFromModes(image, sourceLab, modes, resolvedOptions);
     }

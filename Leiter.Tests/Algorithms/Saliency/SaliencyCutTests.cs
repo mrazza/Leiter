@@ -3,6 +3,7 @@ namespace Leiter.Tests.Algorithms.Saliency;
 using System;
 using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Saliency;
+using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
 using Xunit;
@@ -183,14 +184,14 @@ public class SaliencyCutTests
         Assert.Throws<ArgumentNullException>(() => SaliencyCut.Extract(null!, allZero));
         Assert.Throws<ArgumentNullException>(() => SaliencyCut.Extract(image, null!));
         Assert.Throws<ArgumentException>(() => SaliencyCut.Extract(image, new SequentialMatrix<DoublePixel>(2, 2)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(InitialThreshold: -0.1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(Mask: new SaliencyMaskOptions(FixedThreshold: -0.1))));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(MaxOuterIterations: 0)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(InnerGrabCutIterations: 0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(GrabCut: new GrabCutOptions(Iterations: 0))));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(TrimapBandRadius: 0)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(MixtureComponentCount: 0)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(SmoothnessWeight: -1.0)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(RetentionPolicy: (ComponentRetentionPolicy)99)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(MinAreaFraction: 1.5)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(GrabCut: new GrabCutOptions(MixtureComponentCount: 0))));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(GrabCut: new GrabCutOptions(SmoothnessWeight: -1.0))));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(Mask: new SaliencyMaskOptions(RetentionPolicy: (ComponentRetentionPolicy)99))));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(Mask: new SaliencyMaskOptions(MinAreaFraction: 1.5))));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(MaxWorkingDimension: 1)));
     }
 }

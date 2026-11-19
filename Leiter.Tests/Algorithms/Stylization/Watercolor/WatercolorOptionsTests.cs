@@ -28,7 +28,9 @@ public class WatercolorOptionsTests
         Assert.Null(options.TargetPalette);
         Assert.Equal(1.0, options.ColorTransferStrength);
         Assert.Null(options.Egbi);
+        Assert.Null(options.RegionalContrastSaliency);
         Assert.Null(options.SaliencyCut);
+        Assert.Null(options.SaliencyDistanceField);
         Assert.Null(options.MeanShift);
         Assert.Null(options.LodAbstraction);
         Assert.Null(options.WetInWet);
@@ -40,6 +42,7 @@ public class WatercolorOptionsTests
         Assert.Null(options.Fxaa);
         Assert.True(options.EnableFxaa);
         Assert.Equal(0.8, options.EgbiBlurSigma, 6);
+        Assert.Equal(WatercolorOptions.Default, options);
 
         options.Validate();
     }
@@ -85,7 +88,7 @@ public class WatercolorOptionsTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new WatercolorOptions(Egbi: new EgbiOptions(KFactor: -1.0)).Validate());
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            new WatercolorOptions(SaliencyCut: new SaliencyCutOptions(InitialThreshold: 1.5)).Validate());
+            new WatercolorOptions(SaliencyCut: new SaliencyCutOptions(Mask: new SaliencyMaskOptions(FixedThreshold: 1.5))).Validate());
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new WatercolorOptions(MeanShift: new MeanShiftOptions(SpatialRadius: 0)).Validate());
         Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -226,6 +229,14 @@ public class WatercolorOptionsTests
         WatercolorOptions largeOpts = WatercolorOptions.ForImage(largeScene);
         smallOpts.Validate();
         largeOpts.Validate();
+
+        WatercolorOptions sizeOpts = WatercolorOptions.ForSize(smallScene.Size);
+        Assert.Equal(RegionalContrastSaliencyOptions.Default, sizeOpts.RegionalContrastSaliency);
+        Assert.Equal(SaliencyDistanceFieldOptions.Default, sizeOpts.SaliencyDistanceField);
+        Assert.Equal(RegionalContrastSaliencyOptions.Default, smallOpts.RegionalContrastSaliency);
+        Assert.Equal(SaliencyDistanceFieldOptions.Default, smallOpts.SaliencyDistanceField);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(SaliencyDistanceField: new SaliencyDistanceFieldOptions(SmoothingSigma: -1.0)).Validate());
 
         Assert.Equal(smallOpts.TargetPalette, largeOpts.TargetPalette);
         Assert.Equal(1.0, largeOpts.ColorTransferStrength, 6);

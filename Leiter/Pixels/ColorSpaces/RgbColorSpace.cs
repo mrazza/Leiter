@@ -8,10 +8,10 @@ public enum RgbColorSpace
     /// <summary>
     /// The standard sRGB color space with non-linear gamma encoding.
     /// </summary>
-    sRGB,
+    SRgb,
 
     /// <summary>
     /// The linear RGB color space with linear light intensity.
     /// </summary>
-    LinearRGB
+    LinearRgb
 }

@@ -34,14 +34,16 @@ public static class PiecewiseToneCurve
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="value"/> is non-finite or <paramref name="options"/> are invalid.</exception>
     public static double Evaluate(double value, PiecewiseToneCurveOptions? options = null)
     {
-        if (!double.IsFinite(value))
-        {
-            throw new ArgumentOutOfRangeException(nameof(value), value, "Input value must be finite.");
-        }
+        Guard.ThrowIfNotFinite(value);
 
-        PiecewiseToneCurveOptions resolvedOptions = options ?? new PiecewiseToneCurveOptions();
+        PiecewiseToneCurveOptions resolvedOptions = options ?? PiecewiseToneCurveOptions.Default;
         resolvedOptions.Validate();
 
+        return EvaluateCore(value, resolvedOptions);
+    }
+
+    private static double EvaluateCore(double value, PiecewiseToneCurveOptions resolvedOptions)
+    {
         double clampedInput = Math.Clamp(value, 0.0, 1.0);
         double minTone = resolvedOptions.MinTone;
         double maxTone = resolvedOptions.MaxTone;
@@ -97,7 +99,7 @@ public static class PiecewiseToneCurve
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        PiecewiseToneCurveOptions resolvedOptions = options ?? new PiecewiseToneCurveOptions();
+        PiecewiseToneCurveOptions resolvedOptions = options ?? PiecewiseToneCurveOptions.Default;
         resolvedOptions.Validate();
 
         if (image.Count == 0)
@@ -105,7 +107,7 @@ public static class PiecewiseToneCurve
             return new SequentialMatrix<Rgb8>(image.Size);
         }
 
-        byte[] toneLookupTable = ChannelLut.Build(normalized => Evaluate(normalized, resolvedOptions));
+        byte[] toneLookupTable = ChannelLut.Build(normalized => EvaluateCore(normalized, resolvedOptions));
         return ChannelLut.Apply(image, toneLookupTable);
     }
 

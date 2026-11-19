@@ -20,6 +20,11 @@ public sealed record TurbulenceFlowOptions(
     /// </summary>
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
+    /// <summary>
+    /// Gets the default <see cref="TurbulenceFlowOptions"/> instance.
+    /// </summary>
+    public static TurbulenceFlowOptions Default { get; } = new();
+
     internal static readonly PerlinNoiseOptions DefaultNoise = new(
         Seed: 404,
         Frequency: 0.015,
@@ -37,8 +42,7 @@ public sealed record TurbulenceFlowOptions(
     public static TurbulenceFlowOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         OptionTuning.ValidateSizeAndReference(size, referenceDimension);
-        var defaults = new TurbulenceFlowOptions();
-        return defaults with
+        return Default with
         {
             NoiseOptions = PerlinNoiseOptions.ForSize(size, DefaultNoise, referenceDimension)
         };
@@ -67,12 +71,9 @@ public sealed record TurbulenceFlowOptions(
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is non-finite, negative, or contains invalid noise options.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!double.IsFinite(Intensity) || Intensity < 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(Intensity), Intensity, "Intensity must be finite and non-negative.");
-        }
+        Guard.ThrowIfNotFiniteNonNegative(Intensity);
 
         NoiseOptions?.Validate();
     }

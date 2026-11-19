@@ -8,5 +8,5 @@ public enum EdgeHandling
     /// <summary>
     /// Clamps out-of-bounds coordinates to the nearest valid edge pixel.
     /// </summary>
-    EXTEND
+    Extend
 }

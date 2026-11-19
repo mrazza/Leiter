@@ -24,11 +24,11 @@ public static class SegmentationVisualizer
     /// <summary>
     /// Returns a <see cref="ColorAssigner{T}"/> that assigns a random 8-bit RGB color to each segment.
     /// </summary>
-    /// <param name="randomSeed">An optional seed for the pseudo-random number generator.</param>
+    /// <param name="seed">An optional seed for the pseudo-random number generator.</param>
     /// <returns>A <see cref="ColorAssigner{Rgb8}"/> for use with <see cref="ColorRegions{T}(IReadOnlyMatrix{T}, IEnumerable{Region{Coord}}, ColorAssigner{T})"/>.</returns>
-    public static ColorAssigner<Rgb8> RandomColorAssigner(int? randomSeed = null)
+    public static ColorAssigner<Rgb8> RandomColorAssigner(int? seed = null)
     {
-        Random r = randomSeed is int seed ? new Random(seed) : new Random();
+        Random r = seed is int s ? new Random(s) : new Random();
         return (_, _) => new Rgb8((byte)r.Next(256), (byte)r.Next(256), (byte)r.Next(256));
     }
 
@@ -80,14 +80,14 @@ public static class SegmentationVisualizer
     /// </summary>
     /// <param name="image">The source image providing output dimensions and fallback values for uncovered pixels.</param>
     /// <param name="regions">The segmentation regions to color.</param>
-    /// <param name="randomSeed">An optional seed for deterministic random colors.</param>
+    /// <param name="seed">An optional seed for deterministic random colors.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> with colored regions.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="regions"/>, or any region element is <see langword="null"/>.</exception>
     public static Matrix<Rgb8> ColorRegions(
         IReadOnlyMatrix<Rgb8> image,
         IEnumerable<Region<Coord>> regions,
-        int? randomSeed = null) =>
-        ColorRegions(image, regions, RandomColorAssigner(randomSeed));
+        int? seed = null) =>
+        ColorRegions(image, regions, RandomColorAssigner(seed));
 
     /// <summary>
     /// Renders a new <see cref="Matrix{T}"/> where every region in <paramref name="regions"/> is filled

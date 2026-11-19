@@ -25,6 +25,11 @@ public sealed record EgbiOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default <see cref="EgbiOptions"/> instance.
+    /// </summary>
+    public static EgbiOptions Default { get; } = new();
+
+    /// <summary>
     /// Creates <see cref="EgbiOptions"/> scaled geometrically for <paramref name="size"/> from default EGBI parameters.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
@@ -32,7 +37,7 @@ public sealed record EgbiOptions(
     /// <returns>A validated <see cref="EgbiOptions"/> instance tuned for <paramref name="size"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static EgbiOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
-        ForSize(size, new EgbiOptions(), referenceDimension);
+        ForSize(size, Default, referenceDimension);
 
     /// <summary>
     /// Creates <see cref="EgbiOptions"/> scaled geometrically for <paramref name="size"/> from <paramref name="baseline"/>.
@@ -83,7 +88,7 @@ public sealed record EgbiOptions(
     public static EgbiOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
         double referenceDimension = DefaultReferenceDimension) =>
-        ForImage(image, new EgbiOptions(), referenceDimension);
+        ForImage(image, Default, referenceDimension);
 
     /// <summary>
     /// Creates <see cref="EgbiOptions"/> tuned from <paramref name="baseline"/> for the dimensions and statistics of <paramref name="image"/>.
@@ -118,7 +123,7 @@ public sealed record EgbiOptions(
     public static EgbiOptions ForImage(
         IReadOnlyMatrix<Lab32> labImage,
         double referenceDimension = DefaultReferenceDimension) =>
-        ForImage(labImage, new EgbiOptions(), referenceDimension);
+        ForImage(labImage, Default, referenceDimension);
 
     /// <summary>
     /// Creates <see cref="EgbiOptions"/> tuned from <paramref name="baseline"/> for the dimensions and CIELAB statistics of <paramref name="labImage"/>.
@@ -169,17 +174,11 @@ public sealed record EgbiOptions(
     /// Validates the options, throwing <see cref="ArgumentOutOfRangeException"/> if any parameter is outside its valid range.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any configuration property is invalid.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!double.IsFinite(KFactor) || KFactor < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(KFactor), KFactor, "KFactor must be a finite non-negative number.");
-
-        if (!double.IsFinite(Epsilon) || Epsilon < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(Epsilon), Epsilon, "Epsilon must be a finite non-negative number.");
-
+        Guard.ThrowIfNotFiniteNonNegative(KFactor);
+        Guard.ThrowIfNotFiniteNonNegative(Epsilon);
         ArgumentOutOfRangeException.ThrowIfNegative(MinRegionSize);
-
-        if (!Enum.IsDefined(Connectivity))
-            throw new ArgumentOutOfRangeException(nameof(Connectivity), Connectivity, "Connectivity must be a defined GridConnectivity value.");
+        Guard.ThrowIfUndefinedEnum(Connectivity);
     }
 }

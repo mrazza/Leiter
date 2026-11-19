@@ -31,20 +31,20 @@ public class PixelConversionTests
     public void PixelConversion_ToXyz32_AndRgb8Rgb64()
     {
         var rgb8 = new Rgb8(255, 0, 0); // Red
-        var xyzFromRgb8 = rgb8.ToXyz32(RgbColorSpace.sRGB);
-        var xyzFromRgb64 = rgb8.ToRgb64().ToXyz32(RgbColorSpace.sRGB);
+        var xyzFromRgb8 = rgb8.ToXyz32(RgbColorSpace.SRgb);
+        var xyzFromRgb64 = rgb8.ToRgb64().ToXyz32(RgbColorSpace.SRgb);
 
         Assert.Equal(xyzFromRgb8.X, xyzFromRgb64.X, 4);
         Assert.Equal(xyzFromRgb8.Y, xyzFromRgb64.Y, 4);
         Assert.Equal(xyzFromRgb8.Z, xyzFromRgb64.Z, 4);
 
         // Convert back to Rgb64/8
-        var rgb64Back = xyzFromRgb8.ToRgb64(RgbColorSpace.sRGB);
+        var rgb64Back = xyzFromRgb8.ToRgb64(RgbColorSpace.SRgb);
         Assert.Equal(1.0, rgb64Back.R, 4);
         Assert.Equal(0.0, rgb64Back.G, 4);
         Assert.Equal(0.0, rgb64Back.B, 4);
 
-        var rgb8Back = xyzFromRgb8.ToRgb8(RgbColorSpace.sRGB);
+        var rgb8Back = xyzFromRgb8.ToRgb8(RgbColorSpace.SRgb);
         // Allow tiny delta due to precision rounding (e.g. 254 instead of 255)
         Assert.True(Math.Abs(255 - rgb8Back.R) <= 1);
         Assert.True(rgb8Back.G <= 1);
@@ -55,8 +55,8 @@ public class PixelConversionTests
     public void PixelConversion_ToLab32_ShouldWork()
     {
         var rgb8 = new Rgb8(128, 128, 128); // Grey
-        var labFromRgb8 = rgb8.ToLab32(RgbColorSpace.sRGB);
-        var labFromRgb64 = rgb8.ToRgb64().ToLab32(RgbColorSpace.sRGB);
+        var labFromRgb8 = rgb8.ToLab32(RgbColorSpace.SRgb);
+        var labFromRgb64 = rgb8.ToRgb64().ToLab32(RgbColorSpace.SRgb);
 
         Assert.Equal(labFromRgb8.L, labFromRgb64.L, 4);
         Assert.Equal(labFromRgb8.A, labFromRgb64.A, 4);
@@ -67,8 +67,8 @@ public class PixelConversionTests
     public void PixelConversion_LinearRgbXyz_ShouldWork()
     {
         var rgb64 = new Rgb64(0.5, 0.5, 0.5);
-        var xyz = rgb64.ToXyz32(RgbColorSpace.LinearRGB);
-        var rgb64Back = xyz.ToRgb64(RgbColorSpace.LinearRGB);
+        var xyz = rgb64.ToXyz32(RgbColorSpace.LinearRgb);
+        var rgb64Back = xyz.ToRgb64(RgbColorSpace.LinearRgb);
 
         Assert.Equal(0.5, rgb64Back.R, 4);
         Assert.Equal(0.5, rgb64Back.G, 4);
@@ -108,7 +108,7 @@ public class PixelConversionTests
         Assert.Equal(new Rgb8(0, 0, 0), new DoublePixel(double.NaN).ToGrayscaleRgb8());
 
         var source = new SequentialMatrix<DoublePixel>(new Size(2, 2), [0.0, 0.5, 1.0, -0.25]);
-        var view = new MatrixView<DoublePixel>(source, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(source, 0, 0, 2, 2, EdgeHandling.Extend);
         Matrix<Rgb8> grayscale = view.ToGrayscaleRgb8();
 
         Assert.Equal(new Rgb8(0, 0, 0), grayscale[0, 0]);
@@ -125,16 +125,16 @@ public class PixelConversionTests
         foreach (Illuminant illuminant in new[] { Illuminant.D65, Illuminant.E })
         {
             var bright = new Rgb8(210, 120, 65);
-            Lab32 brightLab = bright.ToLab32(RgbColorSpace.sRGB, illuminant);
-            Rgb8 brightBack = brightLab.ToRgb8(RgbColorSpace.sRGB, illuminant);
+            Lab32 brightLab = bright.ToLab32(RgbColorSpace.SRgb, illuminant);
+            Rgb8 brightBack = brightLab.ToRgb8(RgbColorSpace.SRgb, illuminant);
             Assert.True(Math.Abs(bright.R - brightBack.R) <= 1);
             Assert.True(Math.Abs(bright.G - brightBack.G) <= 1);
             Assert.True(Math.Abs(bright.B - brightBack.B) <= 1);
 
             // Very dark RGB exercises the linear segment below epsilon in LabTransfer/InverseLabTransfer.
             var dark = new Rgb64(0.001, 0.002, 0.003);
-            Lab32 darkLab = dark.ToLab32(RgbColorSpace.LinearRGB, illuminant);
-            Rgb64 darkBack = darkLab.ToRgb64(RgbColorSpace.LinearRGB, illuminant);
+            Lab32 darkLab = dark.ToLab32(RgbColorSpace.LinearRgb, illuminant);
+            Rgb64 darkBack = darkLab.ToRgb64(RgbColorSpace.LinearRgb, illuminant);
             Assert.Equal(dark.R, darkBack.R, 4);
             Assert.Equal(dark.G, darkBack.G, 4);
             Assert.Equal(dark.B, darkBack.B, 4);
@@ -160,12 +160,12 @@ public class PixelConversionTests
 
         // Default D65 convenience overloads round-trip cleanly.
         var mid = new Rgb64(0.4, 0.7, 0.25);
-        Rgb64 midBack = mid.ToLab32(RgbColorSpace.sRGB).ToRgb64(RgbColorSpace.sRGB);
+        Rgb64 midBack = mid.ToLab32(RgbColorSpace.SRgb).ToRgb64(RgbColorSpace.SRgb);
         Assert.Equal(mid.R, midBack.R, 4);
         Assert.Equal(mid.G, midBack.G, 4);
         Assert.Equal(mid.B, midBack.B, 4);
 
-        Rgb8 defaultRgb8Back = labD65.ToRgb8(RgbColorSpace.sRGB);
+        Rgb8 defaultRgb8Back = labD65.ToRgb8(RgbColorSpace.SRgb);
         Assert.InRange(defaultRgb8Back.R, (byte)0, (byte)255);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => sampleXyz.ToLab32((Illuminant)999));

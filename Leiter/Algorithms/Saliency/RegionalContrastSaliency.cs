@@ -36,19 +36,22 @@ public static class RegionalContrastSaliency
     /// </remarks>
     /// <param name="image">The input image.</param>
     /// <param name="segmentation">The segmentation to use.</param>
-    /// <param name="enableSmoothing">Whether to enable region-based saliency smoothing.</param>
-    /// <param name="computeBorderRegions">Whether to compute border regions.</param>
+    /// <param name="options">Optional regional contrast post-processing parameters.</param>
     /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="segmentation"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> and <paramref name="segmentation"/> dimensions do not match.</exception>
     public static Matrix<DoublePixel> ComputeSaliency(
         IReadOnlyMatrix<Rgb8> image,
         IDisjointSet segmentation,
-        bool enableSmoothing = true,
-        bool computeBorderRegions = true)
+        RegionalContrastSaliencyOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(segmentation);
+
+        RegionalContrastSaliencyOptions resolvedOptions = options ?? RegionalContrastSaliencyOptions.Default;
+        resolvedOptions.Validate();
+        bool enableSmoothing = resolvedOptions.EnableSmoothing;
+        bool computeBorderRegions = resolvedOptions.ComputeBorderRegions;
 
         if (image.Count == 0)
         {
@@ -65,7 +68,7 @@ public static class RegionalContrastSaliency
         var (colorQuantizedImage, _, rgbToLabLookupTable) = PaletteQuantizer.QuantizeAndTruncate(
             image,
             static color => UniformQuantizer.QuantizeToMidpoint(color, 12),
-            static color => color.ToLab32(RgbColorSpace.sRGB));
+            static color => color.ToLab32(RgbColorSpace.SRgb));
 
         var regionCentroids = new NormalizedCoord[regionCount];
         var avgRegionDistances = new double[regionCount];

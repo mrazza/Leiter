@@ -22,6 +22,11 @@ public sealed record PaperGranulationOptions(
     /// </summary>
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
+    /// <summary>
+    /// Gets the default <see cref="PaperGranulationOptions"/> instance.
+    /// </summary>
+    public static PaperGranulationOptions Default { get; } = new();
+
     internal static readonly PerlinNoiseOptions DefaultGrainNoise = new(
         Seed: 707,
         Frequency: 0.35,
@@ -39,7 +44,7 @@ public sealed record PaperGranulationOptions(
     public static PaperGranulationOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         var (_, a, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        var defaults = new PaperGranulationOptions();
+        PaperGranulationOptions defaults = Default;
         if (totalPixels == 0)
         {
             return defaults with
@@ -78,17 +83,10 @@ public sealed record PaperGranulationOptions(
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is non-finite, negative, or contains invalid noise options.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!double.IsFinite(DensityStrength) || DensityStrength < 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(DensityStrength), DensityStrength, "DensityStrength must be finite and non-negative.");
-        }
-
-        if (!double.IsFinite(WarpAmplitude) || WarpAmplitude < 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(WarpAmplitude), WarpAmplitude, "WarpAmplitude must be finite and non-negative.");
-        }
+        Guard.ThrowIfNotFiniteNonNegative(DensityStrength);
+        Guard.ThrowIfNotFiniteNonNegative(WarpAmplitude);
 
         GrainNoiseOptions?.Validate();
     }

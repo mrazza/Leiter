@@ -74,7 +74,7 @@ public static class PaperGranulation
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        PaperGranulationOptions opts = options ?? new PaperGranulationOptions();
+        PaperGranulationOptions opts = options ?? PaperGranulationOptions.Default;
         opts.Validate();
 
         if (paperHeightMap is not null && paperHeightMap.Size != image.Size)
@@ -90,7 +90,7 @@ public static class PaperGranulation
         IReadOnlyMatrix<DoublePixel> heightMap = paperHeightMap ?? GeneratePaperHeightMap(image.Size, opts.GrainNoiseOptions);
 
         Matrix<Rgb8>? warped = opts.WarpAmplitude > 0.0
-            ? image.WarpBilinear(SpatialGradients.Compute(heightMap), opts.WarpAmplitude, EdgeHandling.EXTEND)
+            ? image.WarpBilinear(SpatialGradients.Compute(heightMap), opts.WarpAmplitude, EdgeHandling.Extend)
             : null;
 
         if (opts.DensityStrength == 0.0)

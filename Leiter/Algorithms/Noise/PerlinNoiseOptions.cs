@@ -25,6 +25,11 @@ public sealed record PerlinNoiseOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default <see cref="PerlinNoiseOptions"/> instance.
+    /// </summary>
+    public static PerlinNoiseOptions Default { get; } = new();
+
+    /// <summary>
     /// Creates <see cref="PerlinNoiseOptions"/> with the base frequency scaled inversely to the linear dimension of <paramref name="size"/>.
     /// </summary>
     /// <param name="size">The target matrix dimensions.</param>
@@ -32,7 +37,7 @@ public sealed record PerlinNoiseOptions(
     /// <returns>A validated <see cref="PerlinNoiseOptions"/> instance tuned for <paramref name="size"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static PerlinNoiseOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
-        ForSize(size, new PerlinNoiseOptions(), referenceDimension);
+        ForSize(size, Default, referenceDimension);
 
     /// <summary>
     /// Creates <see cref="PerlinNoiseOptions"/> by scaling <paramref name="baseline"/>'s frequency inversely to the linear dimension of <paramref name="size"/>.
@@ -105,18 +110,12 @@ public sealed record PerlinNoiseOptions(
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is non-finite or outside its valid range.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!double.IsFinite(Frequency) || Frequency <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(Frequency), Frequency, "Frequency must be finite and greater than 0.0.");
-
-        if (Octaves is < 1 or > 16)
-            throw new ArgumentOutOfRangeException(nameof(Octaves), Octaves, "Octaves must be between 1 and 16 inclusive.");
-
-        if (!double.IsFinite(Lacunarity) || Lacunarity <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(Lacunarity), Lacunarity, "Lacunarity must be finite and greater than 0.0.");
-
-        if (!double.IsFinite(Persistence) || Persistence < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(Persistence), Persistence, "Persistence must be finite and non-negative.");
+        Guard.ThrowIfNotFinitePositive(Frequency);
+        ArgumentOutOfRangeException.ThrowIfLessThan(Octaves, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(Octaves, 16);
+        Guard.ThrowIfNotFinitePositive(Lacunarity);
+        Guard.ThrowIfNotFiniteNonNegative(Persistence);
     }
 }

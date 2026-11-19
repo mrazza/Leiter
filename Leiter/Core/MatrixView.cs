@@ -120,7 +120,7 @@ public readonly struct MatrixView<T> : IReadOnlyMatrix<T>
 
         return EdgeHandling switch
         {
-            EdgeHandling.EXTEND => Matrix.GetClamped(underLyingX, underlyingY),
+            EdgeHandling.Extend => Matrix.GetClamped(underLyingX, underlyingY),
             _ => throw new UnreachableException("Code should be unreachable, switch statement exhaustive."),
         };
     }

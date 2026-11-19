@@ -48,7 +48,7 @@ public class SaliencyDistanceFieldTests
             }
         }
 
-        Matrix<DoublePixel> unblurred = SaliencyDistanceField.Compute(mask, smoothingSigma: 0.0);
+        Matrix<DoublePixel> unblurred = SaliencyDistanceField.Compute(mask, new SaliencyDistanceFieldOptions(SmoothingSigma: 0.0));
         Assert.Equal(0.5, unblurred[25, 15].Value, 9);
 
         Matrix<DoublePixel> smoothed = SaliencyDistanceField.Compute(mask);
@@ -110,10 +110,10 @@ public class SaliencyDistanceFieldTests
         var allBg = new MaskMatrix(4, 4);
 
         Assert.Throws<ArgumentNullException>(() => SaliencyDistanceField.ComputeNormalizedField(null!));
-        Assert.Throws<ArgumentNullException>(() => SaliencyDistanceField.Compute(null!, smoothingSigma: 1.0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, defaultSigmaScale: -0.1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, smoothingSigma: -1.0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, smoothingSigma: double.NaN));
+        Assert.Throws<ArgumentNullException>(() => SaliencyDistanceField.Compute(null!, new SaliencyDistanceFieldOptions(SmoothingSigma: 1.0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, new SaliencyDistanceFieldOptions(DefaultSigmaScale: -0.1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, new SaliencyDistanceFieldOptions(SmoothingSigma: -1.0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, new SaliencyDistanceFieldOptions(SmoothingSigma: double.NaN)));
     }
 
     [Fact]

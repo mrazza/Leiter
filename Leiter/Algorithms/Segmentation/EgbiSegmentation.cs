@@ -53,7 +53,7 @@ public static class EgbiSegmentation
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        EgbiOptions resolvedOptions = options ?? new EgbiOptions();
+        EgbiOptions resolvedOptions = options ?? EgbiOptions.Default;
         resolvedOptions.Validate();
 
         double kFactor = resolvedOptions.KFactor;

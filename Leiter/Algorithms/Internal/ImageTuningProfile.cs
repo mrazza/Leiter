@@ -44,7 +44,7 @@ internal readonly record struct ImageTuningProfile(
             ? DownsampleBox<Rgb8, Rgb8BoxAccumulator>(image, geomMean)
             : image;
 
-        LabColorStatistics labStats = ColorTransfer.ComputeStatistics(thumb, RgbColorSpace.sRGB, Illuminant.E);
+        LabColorStatistics labStats = ColorTransfer.ComputeStatistics(thumb, RgbColorSpace.SRgb, Illuminant.E);
         double clutterFactor = ComputeClutterFactor(thumb, image.Size);
         return FromStatistics(image.Size, labStats, clutterFactor);
     }
@@ -67,7 +67,7 @@ internal readonly record struct ImageTuningProfile(
             : labImage;
 
         LabColorStatistics labStats = ColorTransfer.ComputeStatistics(labThumb);
-        Matrix<Rgb8> rgbThumb = labThumb.Map(static p => p.ToRgb8(RgbColorSpace.sRGB));
+        Matrix<Rgb8> rgbThumb = labThumb.Map(static p => p.ToRgb8(RgbColorSpace.SRgb));
         double clutterFactor = ComputeClutterFactor(rgbThumb, labImage.Size);
         return FromStatistics(labImage.Size, labStats, clutterFactor);
     }

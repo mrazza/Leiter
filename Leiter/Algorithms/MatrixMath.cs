@@ -192,7 +192,7 @@ public static class MatrixMath
         {
             for (int x = 0; x < width; x++)
             {
-                var view = new MatrixView<T>(self, x - halfX, y - halfY, kernel.Width, kernel.Height, EdgeHandling.EXTEND);
+                var view = new MatrixView<T>(self, x - halfX, y - halfY, kernel.Width, kernel.Height, EdgeHandling.Extend);
                 result[x, y] = view.FrobeniusProduct(kernel);
             }
         });
