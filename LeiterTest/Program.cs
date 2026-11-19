@@ -282,7 +282,6 @@ internal static class Program
     /// </summary>
     /// <param name="path">The file path of the image to load.</param>
     /// <returns>The loaded image as an <see cref="Rgb8"/> matrix.</returns>
-    /// <exception cref="PlatformNotSupportedException">The current operating system is neither Windows nor Linux.</exception>
     private static Matrix<Rgb8> LoadImage(string path)
     {
         if (OperatingSystem.IsWindows())
@@ -290,12 +289,7 @@ internal static class Program
             return LoadWindows(path);
         }
 
-        if (OperatingSystem.IsLinux())
-        {
-            return LoadLinux(path);
-        }
-
-        throw new PlatformNotSupportedException("LeiterTest supports Linux and Windows image loaders only.");
+        return LoadImageSharp(path);
     }
 
     /// <summary>
@@ -303,7 +297,6 @@ internal static class Program
     /// </summary>
     /// <param name="matrix">The image matrix to save.</param>
     /// <param name="path">The destination file path.</param>
-    /// <exception cref="PlatformNotSupportedException">The current operating system is neither Windows nor Linux.</exception>
     private static void SaveImage(IReadOnlyMatrix<Rgb8> matrix, string path)
     {
         if (OperatingSystem.IsWindows())
@@ -312,26 +305,18 @@ internal static class Program
             return;
         }
 
-        if (OperatingSystem.IsLinux())
-        {
-            SaveLinux(matrix, path);
-            return;
-        }
-
-        throw new PlatformNotSupportedException("LeiterTest supports Linux and Windows image writers only.");
+        SaveImageSharp(matrix, path);
     }
 
-    [SupportedOSPlatform("linux")]
-    private static Matrix<Rgb8> LoadLinux(string path)
+    private static Matrix<Rgb8> LoadImageSharp(string path)
     {
         using Image<Rgb24> image = Image.Load<Rgb24>(path);
-        return Leiter.Platform.Linux.ImageExtensions.ToSequentialMatrix(image);
+        return Leiter.Platform.ImageSharp.ImageExtensions.ToSequentialMatrix(image);
     }
 
-    [SupportedOSPlatform("linux")]
-    private static void SaveLinux(IReadOnlyMatrix<Rgb8> matrix, string path)
+    private static void SaveImageSharp(IReadOnlyMatrix<Rgb8> matrix, string path)
     {
-        using Image<Rgb24> image = Leiter.Platform.Linux.ImageExtensions.ToImage(matrix);
+        using Image<Rgb24> image = Leiter.Platform.ImageSharp.ImageExtensions.ToImage(matrix);
         image.Save(path);
     }
 

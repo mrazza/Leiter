@@ -6,6 +6,7 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -105,21 +106,12 @@ public class WetInWetFilterTests
     [Fact]
     public void ApplyDetailed_DisabledMode_ShouldReturnUnmodifiedImage()
     {
-        int width = 6;
-        int height = 6;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 3 ? 0 : 1;
-                image[x, y] = x < 3 ? new Rgb8(20, 20, 20) : new Rgb8(200, 200, 200);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            6,
+            6,
+            new Rgb8(20, 20, 20),
+            new Rgb8(200, 200, 200));
+        var dist = new SequentialMatrix<DoublePixel>(6, 6);
         var options = new WetInWetOptions(Mode: WetInWetMode.Disabled);
 
         WetInWetResult result = WetInWetFilter.ApplyDetailed(image, graph, dist, options: options);
@@ -155,21 +147,12 @@ public class WetInWetFilterTests
     [Fact]
     public void ApplyDetailed_IntensityDifferenceBelowThreshold_ShouldNotQualify()
     {
-        int width = 6;
-        int height = 6;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 3 ? 0 : 1;
-                image[x, y] = x < 3 ? new Rgb8(100, 100, 100) : new Rgb8(101, 101, 101);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            6,
+            6,
+            new Rgb8(100, 100, 100),
+            new Rgb8(101, 101, 101));
+        var dist = new SequentialMatrix<DoublePixel>(6, 6);
         var options = new WetInWetOptions(MinIntensityDifference: 0.05);
 
         WetInWetResult result = WetInWetFilter.ApplyDetailed(image, graph, dist, options: options);
@@ -311,22 +294,14 @@ public class WetInWetFilterTests
     [Fact]
     public void ApplyDetailed_HueThreshold_ShouldDistinguishSalientAndNonSalient()
     {
-        int width = 6;
-        int height = 6;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-
+        const int width = 6;
+        const int height = 6;
         // Red vs Orange (hue diff ~ 30 degrees, intensity diff ~ 0.1)
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 3 ? 0 : 1;
-                image[x, y] = x < 3 ? new Rgb8(220, 20, 20) : new Rgb8(240, 140, 20);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(220, 20, 20),
+            new Rgb8(240, 140, 20));
         var dist = new SequentialMatrix<DoublePixel>(width, height);
 
         // Gradient threshold high so only hue rule can qualify
@@ -342,12 +317,13 @@ public class WetInWetFilterTests
         Assert.True(resNonSalient.QualifyingBoundaries[0]);
 
         // When Region 0 is salient, hue diff (~30) >= 20 -> does not qualify!
+        SequentialMatrix<bool> salientBool = TestMatrices.CenteredBox(width, height, 0, 0, 2, height - 1, true, false);
         var salientMask = new MaskMatrix(width, height);
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < 3; x++)
             {
-                salientMask[x, y] = true;
+                salientMask[x, y] = salientBool[x, y];
             }
         }
 
@@ -405,21 +381,12 @@ public class WetInWetFilterTests
     [Fact]
     public void ApplyDetailed_Determinism_SameSeedShouldProduceIdenticalOutput()
     {
-        int width = 8;
-        int height = 8;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 4 ? 0 : 1;
-                image[x, y] = x < 4 ? new Rgb8(30, 30, 30) : new Rgb8(200, 200, 200);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            8,
+            8,
+            new Rgb8(30, 30, 30),
+            new Rgb8(200, 200, 200));
+        var dist = new SequentialMatrix<DoublePixel>(8, 8);
 
         var opt1 = new WetInWetOptions(Seed: 777, SeedProbability: 0.5);
         var opt2 = new WetInWetOptions(Seed: 777, SeedProbability: 0.5);
@@ -427,14 +394,8 @@ public class WetInWetFilterTests
         WetInWetResult res1 = WetInWetFilter.ApplyDetailed(image, graph, dist, options: opt1);
         WetInWetResult res2 = WetInWetFilter.ApplyDetailed(image, graph, dist, options: opt2);
 
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                Assert.Equal(res1.Image[x, y], res2.Image[x, y]);
-                Assert.Equal(res1.WetAreaMask[x, y], res2.WetAreaMask[x, y]);
-            }
-        }
+        MatrixAssert.Equal(res1.Image, res2.Image);
+        MatrixAssert.Equal(res1.WetAreaMask, res2.WetAreaMask);
     }
 
     /// <summary>
@@ -443,27 +404,16 @@ public class WetInWetFilterTests
     [Fact]
     public void ApplyDetailed_ImplicitSalientMaskFromDistanceField_ShouldCorrectlyClassifySaliency()
     {
-        int width = 6;
-        int height = 6;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 3 ? 0 : 1;
-                image[x, y] = x < 3 ? new Rgb8(20, 20, 20) : new Rgb8(200, 200, 200);
-                // Region 0 has distance <= 1e-6 (salient), Region 1 has distance 0.5 (non-salient)
-                dist[x, y] = x < 3 ? new DoublePixel(0.0) : new DoublePixel(0.5);
-            }
-        }
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            6,
+            6,
+            new Rgb8(20, 20, 20),
+            new Rgb8(200, 200, 200));
+        // Region 0 has distance <= 1e-6 (salient), Region 1 has distance 0.5 (non-salient)
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Create(6, 6, (x, _) => new DoublePixel(x < 3 ? 0.0 : 0.5));
 
         // Put a non-finite distance at (5, 5) to test !double.IsFinite(d) branch
         dist[5, 5] = new DoublePixel(double.NaN);
-
-        var graph = RegionGraph.FromLabels(labels);
         var options = new WetInWetOptions(
             Mode: WetInWetMode.ExcludeSalientBoundaries,
             MinIntensityDifference: 0.01);
@@ -485,32 +435,17 @@ public class WetInWetFilterTests
     [Fact]
     public void Apply_ConvenienceMethod_ShouldMatchDetailedImageOutput()
     {
-        int width = 6;
-        int height = 6;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 3 ? 0 : 1;
-                image[x, y] = x < 3 ? new Rgb8(20, 20, 20) : new Rgb8(200, 200, 200);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            6,
+            6,
+            new Rgb8(20, 20, 20),
+            new Rgb8(200, 200, 200));
+        var dist = new SequentialMatrix<DoublePixel>(6, 6);
         var options = new WetInWetOptions();
 
         Matrix<Rgb8> imgOnly = WetInWetFilter.Apply(image, graph, dist, options: options);
         WetInWetResult detailed = WetInWetFilter.ApplyDetailed(image, graph, dist, options: options);
 
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                Assert.Equal(detailed.Image[x, y], imgOnly[x, y]);
-            }
-        }
+        MatrixAssert.Equal(detailed.Image, imgOnly);
     }
 }

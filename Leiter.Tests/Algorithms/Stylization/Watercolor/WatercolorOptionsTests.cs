@@ -10,6 +10,7 @@ using Leiter.Algorithms.Stylization;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -52,11 +53,7 @@ public class WatercolorOptionsTests
     /// </summary>
     /// <param name="sigma">The invalid blur sigma.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-2.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidEgbiBlurSigma_ShouldThrow(double sigma)
     {
         var options = new WatercolorOptions(EgbiBlurSigma: sigma);
@@ -68,11 +65,7 @@ public class WatercolorOptionsTests
     /// </summary>
     /// <param name="strength">The invalid color transfer strength.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidColorTransferStrength_ShouldThrow(double strength)
     {
         var options = new WatercolorOptions(ColorTransferStrength: strength);

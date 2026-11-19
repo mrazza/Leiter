@@ -1,15 +1,15 @@
-using Leiter.Tests.TestUtils;
-using Xunit;
-using Leiter.Core;
-using Leiter.Algorithms.DataStructures;
-using Leiter.Pixels;
+namespace Leiter.Tests.Algorithms.DataStructures;
+
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Threading.Tasks;
-
-namespace Leiter.Tests.Algorithms.DataStructures;
+using Leiter.Algorithms.DataStructures;
+using Leiter.Core;
+using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
+using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="DisjointSet{T}" />.

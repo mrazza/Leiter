@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
 using Leiter.Algorithms.Saliency;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -32,11 +33,7 @@ public class SaliencyDistanceFieldOptionsTests
     }
 
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-2.5)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSmoothingSigma_ShouldThrowArgumentOutOfRangeException(double smoothingSigma)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -44,11 +41,7 @@ public class SaliencyDistanceFieldOptionsTests
     }
 
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-1.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidDefaultSigmaScale_ShouldThrowArgumentOutOfRangeException(double defaultSigmaScale)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>

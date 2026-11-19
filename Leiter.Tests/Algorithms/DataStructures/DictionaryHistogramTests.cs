@@ -1,9 +1,9 @@
-using Xunit;
-using Leiter.Algorithms.DataStructures;
+namespace Leiter.Tests.Algorithms.DataStructures;
+
 using System;
 using System.Collections.Generic;
-
-namespace Leiter.Tests.Algorithms.DataStructures;
+using Leiter.Algorithms.DataStructures;
+using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="DictionaryHistogram{T}" />.

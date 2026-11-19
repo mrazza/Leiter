@@ -5,6 +5,7 @@ using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -48,11 +49,7 @@ public class PaperGranulationOptionsTests
     /// </summary>
     /// <param name="densityStrength">The invalid density strength value.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-5.0)]
-    [InlineData(double.NegativeInfinity)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NaN)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidDensityStrength_ShouldThrowArgumentOutOfRangeException(double densityStrength)
     {
         var options = new PaperGranulationOptions(DensityStrength: densityStrength);
@@ -64,11 +61,7 @@ public class PaperGranulationOptionsTests
     /// </summary>
     /// <param name="warpAmplitude">The invalid warp amplitude value.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-2.0)]
-    [InlineData(double.NegativeInfinity)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NaN)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidWarpAmplitude_ShouldThrowArgumentOutOfRangeException(double warpAmplitude)
     {
         var options = new PaperGranulationOptions(WarpAmplitude: warpAmplitude);

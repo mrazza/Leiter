@@ -5,6 +5,7 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -27,45 +28,39 @@ public class MeanShiftOptionsTests
         options.Validate();
     }
 
-    [Fact]
-    public void Validate_InvalidSpatialRadius_ShouldThrowArgumentOutOfRangeException()
+    [Theory]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
+    public void Validate_InvalidSpatialRadius_ShouldThrowArgumentOutOfRangeException(int spatialRadius)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(SpatialRadius: 0).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(SpatialRadius: -1).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(SpatialRadius: spatialRadius).Validate());
     }
 
-    [Fact]
-    public void Validate_InvalidRangeRadius_ShouldThrowArgumentOutOfRangeException()
+    [Theory]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveDoubles), MemberType = typeof(OptionValidationData))]
+    public void Validate_InvalidRangeRadius_ShouldThrowArgumentOutOfRangeException(double rangeRadius)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(RangeRadius: 0.0).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(RangeRadius: -1.0).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(RangeRadius: double.NaN).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(RangeRadius: double.PositiveInfinity).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(RangeRadius: double.NegativeInfinity).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(RangeRadius: rangeRadius).Validate());
     }
 
-    [Fact]
-    public void Validate_InvalidMinRegionSize_ShouldThrowArgumentOutOfRangeException()
+    [Theory]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
+    public void Validate_InvalidMinRegionSize_ShouldThrowArgumentOutOfRangeException(int minRegionSize)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(MinRegionSize: 0).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(MinRegionSize: -1).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(MinRegionSize: minRegionSize).Validate());
     }
 
-    [Fact]
-    public void Validate_InvalidMaxIterations_ShouldThrowArgumentOutOfRangeException()
+    [Theory]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
+    public void Validate_InvalidMaxIterations_ShouldThrowArgumentOutOfRangeException(int maxIterations)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(MaxIterations: 0).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(MaxIterations: -1).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(MaxIterations: maxIterations).Validate());
     }
 
-    [Fact]
-    public void Validate_InvalidConvergenceEpsilon_ShouldThrowArgumentOutOfRangeException()
+    [Theory]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveDoubles), MemberType = typeof(OptionValidationData))]
+    public void Validate_InvalidConvergenceEpsilon_ShouldThrowArgumentOutOfRangeException(double epsilon)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(ConvergenceEpsilon: 0.0).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(ConvergenceEpsilon: -0.1).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(ConvergenceEpsilon: double.NaN).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(ConvergenceEpsilon: double.PositiveInfinity).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(ConvergenceEpsilon: double.NegativeInfinity).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(ConvergenceEpsilon: epsilon).Validate());
     }
 
     [Fact]
@@ -116,16 +111,8 @@ public class MeanShiftOptionsTests
             MeanShiftOptions.ForSize(size).Validate();
         }
 
-        var flat = new SequentialMatrix<Rgb8>(256, 256);
-        flat.SetAll(new Rgb8(128, 128, 128));
-        var cluttered = new SequentialMatrix<Rgb8>(256, 256);
-        for (int y = 0; y < 256; y++)
-        {
-            for (int x = 0; x < 256; x++)
-            {
-                cluttered[x, y] = (((x / 4) + (y / 4)) & 1) == 0 ? new Rgb8(245, 220, 30) : new Rgb8(20, 30, 235);
-            }
-        }
+        SequentialMatrix<Rgb8> flat = TestMatrices.Constant(256, 256, new Rgb8(128, 128, 128));
+        SequentialMatrix<Rgb8> cluttered = TestMatrices.Checkerboard(256, 256, new Rgb8(245, 220, 30), new Rgb8(20, 30, 235), cellSize: 4);
 
         MeanShiftOptions flatOpts = MeanShiftOptions.ForImage(flat);
         MeanShiftOptions clutteredOpts = MeanShiftOptions.ForImage(cluttered);

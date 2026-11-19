@@ -1,3 +1,5 @@
+namespace Leiter.Tests.Algorithms.Quantization;
+
 using System;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Quantization;
@@ -5,8 +7,6 @@ using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 using Xunit;
-
-namespace Leiter.Tests.Algorithms.Quantization;
 
 /// <summary>
 /// Provides unit tests for <see cref="PaletteQuantizer" />.

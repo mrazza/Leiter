@@ -14,7 +14,7 @@ public class IReadOnlyMatrixTests
     [Fact]
     public void TestExplicitInterfaceCounts()
     {
-        var m = new DummyReadOnlyMatrix();
+        var m = new DummyReadOnlyMatrix<DoublePixel>(2, 2, (x, y) => new DoublePixel(x + y));
         IReadOnlyMatrix<DoublePixel> rom = m;
         IUntypedMatrix utm = rom;
         IReadOnlyCollection<DoublePixel> roc = rom;
@@ -41,9 +41,9 @@ public class IReadOnlyMatrixTests
     [Fact]
     public void ToString_ShouldFormatMatrixContents()
     {
-        var dummy = new DummyReadOnlyMatrix();
+        var dummy = new DummyReadOnlyMatrix<DoublePixel>(2, 2, (x, y) => new DoublePixel(x + y));
         string dummyString = IReadOnlyMatrix<DoublePixel>.ToString(dummy);
-        Assert.Contains(nameof(DummyReadOnlyMatrix), dummyString);
+        Assert.Contains(nameof(DummyReadOnlyMatrix<>), dummyString);
         Assert.Contains("{", dummyString);
         Assert.Contains("}", dummyString);
 

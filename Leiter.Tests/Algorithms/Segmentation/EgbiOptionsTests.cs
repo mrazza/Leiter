@@ -5,6 +5,7 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -33,11 +34,7 @@ public class EgbiOptionsTests
     /// </summary>
     /// <param name="kFactor">The invalid k-factor value.</param>
     [Theory]
-    [InlineData(-0.1)]
-    [InlineData(-100.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidKFactor_ShouldThrowArgumentOutOfRangeException(double kFactor)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new EgbiOptions(KFactor: kFactor).Validate());
@@ -48,11 +45,7 @@ public class EgbiOptionsTests
     /// </summary>
     /// <param name="epsilon">The invalid epsilon value.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-5.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidEpsilon_ShouldThrowArgumentOutOfRangeException(double epsilon)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new EgbiOptions(Epsilon: epsilon).Validate());
@@ -63,8 +56,7 @@ public class EgbiOptionsTests
     /// </summary>
     /// <param name="minRegionSize">The invalid minimum region size.</param>
     [Theory]
-    [InlineData(-1)]
-    [InlineData(-50)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeInts), MemberType = typeof(OptionValidationData))]
     public void Validate_NegativeMinRegionSize_ShouldThrowArgumentOutOfRangeException(int minRegionSize)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new EgbiOptions(MinRegionSize: minRegionSize).Validate());
@@ -143,17 +135,8 @@ public class EgbiOptionsTests
     [Fact]
     public void ForImage_RgbAndLabOverloads_ShouldAdaptToContentAndValidate()
     {
-        var flatImage = new SequentialMatrix<Rgb8>(256, 256);
-        flatImage.SetAll(new Rgb8(120, 125, 130));
-
-        var busyImage = new SequentialMatrix<Rgb8>(256, 256);
-        for (int y = 0; y < busyImage.Height; y++)
-        {
-            for (int x = 0; x < busyImage.Width; x++)
-            {
-                busyImage[x, y] = (((x / 4) + (y / 4)) & 1) == 0 ? new Rgb8(245, 40, 30) : new Rgb8(20, 60, 230);
-            }
-        }
+        SequentialMatrix<Rgb8> flatImage = TestMatrices.Constant(256, 256, new Rgb8(120, 125, 130));
+        SequentialMatrix<Rgb8> busyImage = TestMatrices.Checkerboard(256, 256, new Rgb8(245, 40, 30), new Rgb8(20, 60, 230), cellSize: 4);
 
         EgbiOptions flatOpts = EgbiOptions.ForImage(flatImage);
         EgbiOptions busyOpts = EgbiOptions.ForImage(busyImage);

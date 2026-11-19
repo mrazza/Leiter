@@ -1,18 +1,46 @@
-using Leiter.Tests.TestUtils;
-using Xunit;
-using Leiter.Pixels;
-using Leiter.Core;
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-
 namespace Leiter.Tests.Pixels;
+
+using System;
+using Leiter.Pixels;
+using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="Lab32" />.
 /// </summary>
-public class Lab32Tests
+public class Lab32Tests : PixelContractTestsBase<Lab32, float>
 {
+    protected override Lab32 ArithmeticLeft => new(10.0f, 20.0f, 30.0f);
+
+    protected override Lab32 ArithmeticRight => new(2.0f, 2.0f, 2.0f);
+
+    protected override (Lab32 Add, Lab32 Subtract, Lab32 Multiply, Lab32 Divide) ExpectedSelfResults =>
+        (new(12.0f, 22.0f, 32.0f), new(8.0f, 18.0f, 28.0f), new(20.0f, 40.0f, 60.0f), new(5.0f, 10.0f, 15.0f));
+
+    protected override (Lab32 Add, Lab32 Subtract, Lab32 Multiply, Lab32 Divide) ExpectedScaledByTwoResults =>
+        ExpectedSelfResults;
+
+    protected override int RequiredVectorWidth => 3;
+
+    protected override Lab32 VectorSample => new(1.0f, 2.0f, 3.0f);
+
+    protected override double ExpectedVectorFirstComponent => 1.0;
+
+    protected override Lab32 EnumeratorSample => new(1.0f, 2.0f, 3.0f);
+
+    protected override float[] ExpectedComponents => [1.0f, 2.0f, 3.0f];
+
+    protected override Func<float, float> ComponentDoubleFunc => static b => b * 2.0f;
+
+    protected override Lab32 ExpectedComponentMapped => new(20.0f, 40.0f, 60.0f);
+
+    protected override Lab32 ExpectedColorComponentMapped => new(10.0f, 40.0f, 60.0f);
+
+    protected override Lab32 DistanceFirst => new(1.0f, 2.0f, 3.0f);
+
+    protected override Lab32 DistanceSecond => new(4.0f, 2.0f, 3.0f);
+
+    protected override double ExpectedDistance => 1.7550397986383963;
+
     [Fact]
     public void Properties_ShouldWork()
     {
@@ -21,95 +49,6 @@ public class Lab32Tests
         Assert.Equal(2.0f, p.A);
         Assert.Equal(3.0f, p.B);
         Assert.Equal(0.0f, Lab32.Zero.L);
-    }
-
-    [Fact]
-    public void SelfOperations_ShouldWork()
-    {
-        var p1 = new Lab32(10.0f, 20.0f, 30.0f);
-        var p2 = new Lab32(2.0f, 2.0f, 2.0f);
-
-        Assert.Equal(new Lab32(12.0f, 22.0f, 32.0f), p1.Add(p2));
-        Assert.Equal(new Lab32(8.0f, 18.0f, 28.0f), p1.Subtract(p2));
-        Assert.Equal(new Lab32(20.0f, 40.0f, 60.0f), p1.Multiply(p2));
-        Assert.Equal(new Lab32(5.0f, 10.0f, 15.0f), p1.Divide(p2));
-    }
-
-    [Fact]
-    public void NumericOperations_Decimal_ShouldWork()
-    {
-        var p = new Lab32(10.0f, 20.0f, 30.0f);
-
-        Assert.Equal(new Lab32(12.0f, 22.0f, 32.0f), p.Add(2.0m));
-        Assert.Equal(new Lab32(8.0f, 18.0f, 28.0f), p.Subtract(2.0m));
-        Assert.Equal(new Lab32(20.0f, 40.0f, 60.0f), p.Multiply(2.0m));
-        Assert.Equal(new Lab32(5.0f, 10.0f, 15.0f), p.Divide(2.0m));
-    }
-
-    [Fact]
-    public void NumericOperations_Double_ShouldWork()
-    {
-        var p = new Lab32(10.0f, 20.0f, 30.0f);
-
-        Assert.Equal(new Lab32(12.0f, 22.0f, 32.0f), p.Add(2.0));
-        Assert.Equal(new Lab32(8.0f, 18.0f, 28.0f), p.Subtract(2.0));
-        Assert.Equal(new Lab32(20.0f, 40.0f, 60.0f), p.Multiply(2.0));
-        Assert.Equal(new Lab32(5.0f, 10.0f, 15.0f), p.Divide(2.0));
-    }
-
-    [Fact]
-    public void ScalarOperations_ShouldWork()
-    {
-        var p = new Lab32(10.0f, 20.0f, 30.0f);
-        var scalar = new DummyScalar(2.0);
-
-        Assert.Equal(new Lab32(12.0f, 22.0f, 32.0f), p.Add(scalar));
-        Assert.Equal(new Lab32(8.0f, 18.0f, 28.0f), p.Subtract(scalar));
-        Assert.Equal(new Lab32(20.0f, 40.0f, 60.0f), p.Multiply(scalar));
-        Assert.Equal(new Lab32(5.0f, 10.0f, 15.0f), p.Divide(scalar));
-    }
-
-    [Fact]
-    public void VectorOperations_ShouldWork()
-    {
-        var p = new Lab32(1.0f, 2.0f, 3.0f);
-        if (Vector<double>.Count >= 3)
-        {
-            var vec = p.ToDoubleVector();
-            Assert.Equal(1.0, vec[0]);
-
-            var pFromVec = Lab32.FromDoubleVector(vec);
-            Assert.Equal(p, pFromVec);
-        }
-    }
-
-    [Fact]
-    public void Enumerator_ShouldYieldValues()
-    {
-        var p = new Lab32(1.0f, 2.0f, 3.0f);
-        var list = new List<float>(p);
-        Assert.Equal(new float[] { 1.0f, 2.0f, 3.0f }, list);
-
-        var seq = (System.Collections.IEnumerable)p;
-        var seqEnum = seq.GetEnumerator();
-        Assert.True(seqEnum.MoveNext());
-        Assert.Equal(1.0f, seqEnum.Current);
-    }
-
-    [Fact]
-    public void ComponentMaps_ShouldWork()
-    {
-        var p = new Lab32(10.0f, 20.0f, 30.0f);
-        Assert.Equal(new Lab32(10.0f, 40.0f, 60.0f), p.ColorComponentMap(b => b * 2)); // ColorComponentMap maps A and B only!
-        Assert.Equal(new Lab32(20.0f, 40.0f, 60.0f), p.ComponentMap(b => b * 2));
-    }
-
-    [Fact]
-    public void Distance_ShouldWork()
-    {
-        var p1 = new Lab32(1.0f, 2.0f, 3.0f);
-        var p2 = new Lab32(4.0f, 2.0f, 3.0f);
-        Assert.Equal(1.7550397986383963, p1.Distance(p2));
     }
 
     [Fact]

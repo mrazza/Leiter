@@ -60,15 +60,17 @@ public static class BitmapExtensions
     /// <param name="matrix">The Leiter matrix to convert to a <see cref="Bitmap"/>.</param>
     /// <returns>The bitmap based on the specified matrix.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="matrix"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="matrix"/> has a width or height less than or equal to zero.</exception>
     public static unsafe Bitmap ToBitmap(this IReadOnlyMatrix<Rgb8> matrix)
     {
         ArgumentNullException.ThrowIfNull(matrix);
 
         int width = matrix.Width;
         int height = matrix.Height;
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(width, 0, nameof(matrix));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(height, 0, nameof(matrix));
+
         var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
-        if (width == 0 || height == 0)
-            return bitmap;
 
         var rect = new Rectangle(0, 0, width, height);
         BitmapData bitmapData = bitmap.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);

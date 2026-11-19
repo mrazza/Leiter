@@ -5,6 +5,7 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -18,37 +19,18 @@ public class LodAbstractionTests
     [Fact]
     public void Apply_SalientSegments_ShouldSmoothInternalNoiseWhilePreservingCrispBoundaries()
     {
-        int width = 8;
-        int height = 8;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        var salientMask = new MaskMatrix(width, height);
-        var distanceField = new SequentialMatrix<DoublePixel>(width, height);
-
+        (SequentialMatrix<Rgb8> image, RegionGraph regionGraph) = TestMatrices.VerticalSplitWithGraph(
+            8,
+            8,
+            new Rgb8(100, 100, 100),
+            new Rgb8(102, 102, 102));
+        var salientMask = new MaskMatrix(8, 8);
         salientMask.SetAll(true);
-        distanceField.SetAll(0.0);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                if (x < 4)
-                {
-                    labels[x, y] = 0;
-                    image[x, y] = new Rgb8(100, 100, 100);
-                }
-                else
-                {
-                    labels[x, y] = 1;
-                    image[x, y] = new Rgb8(102, 102, 102);
-                }
-            }
-        }
+        var distanceField = new SequentialMatrix<DoublePixel>(8, 8);
 
         // Add internal noise inside Region 0 at (0, 0) (outside the 5x5 window of the (3, 3) boundary pixel)
         image[0, 0] = new Rgb8(150, 150, 150);
 
-        var regionGraph = RegionGraph.FromLabels(labels);
         Matrix<Rgb8> result = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask);
 
         // Internal noise smoothed towards surrounding color
@@ -66,34 +48,14 @@ public class LodAbstractionTests
     [Fact]
     public void Apply_NonSalientSegments_ShouldSmoothAcrossNeighborsWhenColorDifferenceBelowThreshold()
     {
-        int width = 8;
-        int height = 8;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        var salientMask = new MaskMatrix(width, height);
-        var distanceField = new SequentialMatrix<DoublePixel>(width, height);
+        (SequentialMatrix<Rgb8> image, RegionGraph regionGraph) = TestMatrices.VerticalSplitWithGraph(
+            8,
+            8,
+            new Rgb8(100, 100, 100),
+            new Rgb8(110, 110, 110));
+        var salientMask = new MaskMatrix(8, 8);
+        SequentialMatrix<DoublePixel> distanceField = TestMatrices.Constant(8, 8, new DoublePixel(0.6));
 
-        salientMask.SetAll(false);
-        distanceField.SetAll(0.6);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                if (x < 4)
-                {
-                    labels[x, y] = 0;
-                    image[x, y] = new Rgb8(100, 100, 100);
-                }
-                else
-                {
-                    labels[x, y] = 1;
-                    image[x, y] = new Rgb8(110, 110, 110);
-                }
-            }
-        }
-
-        var regionGraph = RegionGraph.FromLabels(labels);
         Matrix<Rgb8> result = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask);
 
         // Boundary pixel in Region 0 at (3, 3) should blend with neighboring Region 1 pixels
@@ -107,34 +69,14 @@ public class LodAbstractionTests
     [Fact]
     public void Apply_NonSalientSegments_ShouldNotBleedAcrossNeighborsWhenColorDifferenceAtOrAboveThreshold()
     {
-        int width = 8;
-        int height = 8;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        var salientMask = new MaskMatrix(width, height);
-        var distanceField = new SequentialMatrix<DoublePixel>(width, height);
+        (SequentialMatrix<Rgb8> image, RegionGraph regionGraph) = TestMatrices.VerticalSplitWithGraph(
+            8,
+            8,
+            new Rgb8(100, 100, 100),
+            new Rgb8(180, 180, 180));
+        var salientMask = new MaskMatrix(8, 8);
+        SequentialMatrix<DoublePixel> distanceField = TestMatrices.Constant(8, 8, new DoublePixel(0.6));
 
-        salientMask.SetAll(false);
-        distanceField.SetAll(0.6);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                if (x < 4)
-                {
-                    labels[x, y] = 0;
-                    image[x, y] = new Rgb8(100, 100, 100);
-                }
-                else
-                {
-                    labels[x, y] = 1;
-                    image[x, y] = new Rgb8(180, 180, 180);
-                }
-            }
-        }
-
-        var regionGraph = RegionGraph.FromLabels(labels);
         Matrix<Rgb8> result = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask);
 
         // Region 0 boundary pixel at (3, 3) must NOT blend with Region 1
@@ -334,13 +276,7 @@ public class LodAbstractionTests
         var regionGraph = RegionGraph.FromDisjointSet(disjointSet);
         Matrix<Rgb8> resultDirect = LodAbstraction.Apply(image, regionGraph, distanceField);
 
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                Assert.Equal(resultDirect[x, y], resultOverload[x, y]);
-            }
-        }
+        MatrixAssert.Equal(resultDirect, resultOverload);
     }
 
     /// <summary>
@@ -349,35 +285,20 @@ public class LodAbstractionTests
     [Fact]
     public void Apply_SalientKernelSizeOne_ShouldLeaveSalientRegionUnchanged()
     {
-        int width = 4;
-        int height = 4;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        var salientMask = new MaskMatrix(width, height);
-        var distanceField = new SequentialMatrix<DoublePixel>(width, height);
-
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            4,
+            4,
+            (x, y) => new Rgb8((byte)(x * 40), (byte)(y * 40), (byte)((x + y) * 20)));
+        var labels = new SequentialMatrix<int>(4, 4);
+        var salientMask = new MaskMatrix(4, 4);
         salientMask.SetAll(true);
-        distanceField.SetAll(0.0);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = new Rgb8((byte)(x * 40), (byte)(y * 40), (byte)((x + y) * 20));
-            }
-        }
+        var distanceField = new SequentialMatrix<DoublePixel>(4, 4);
 
         var regionGraph = RegionGraph.FromLabels(labels);
         var options = new LodAbstractionOptions(SalientKernelSize: 1);
         Matrix<Rgb8> result = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask, options);
 
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                Assert.Equal(image[x, y], result[x, y]);
-            }
-        }
+        MatrixAssert.Equal(image, result);
     }
 
     /// <summary>

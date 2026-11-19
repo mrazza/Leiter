@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -32,42 +33,31 @@ public class BlurTests
     [Fact]
     public void BoxBlur_Separable_ShouldMatchExplicit2DConvolution()
     {
-        var img = new SequentialMatrix<DoublePixel>(7, 5);
-        for (int y = 0; y < img.Height; y++)
-            for (int x = 0; x < img.Width; x++)
-                img[x, y] = (x + 1) * 3.0 + (y * 5.0);
+        SequentialMatrix<DoublePixel> img = TestMatrices.Create(7, 5, (x, y) => new DoublePixel(((x + 1) * 3.0) + (y * 5.0)));
 
         const int radius = 2;
         int dim = radius * 2 + 1;
-        var kernel2D = new SequentialMatrix<DoublePixel>(dim, dim);
-        kernel2D.SetAll(1.0 / (dim * dim));
+        SequentialMatrix<DoublePixel> kernel2D = TestMatrices.Constant(dim, dim, new DoublePixel(1.0 / (dim * dim)));
 
-        var expected = img.Convolve(kernel2D);
-        var actual = Blur.BoxBlur(img, radius);
+        Matrix<DoublePixel> expected = img.Convolve(kernel2D);
+        Matrix<DoublePixel> actual = Blur.BoxBlur(img, radius);
 
-        for (int y = 0; y < img.Height; y++)
-            for (int x = 0; x < img.Width; x++)
-                Assert.Equal(expected[x, y].Value, actual[x, y].Value, 10);
+        MatrixAssert.ApproxEqual(expected, actual, 1e-10);
 
         // Verify small dimensions smaller than kernel width
         var small = new SequentialMatrix<DoublePixel>(3, 2);
         small[0, 0] = 1.0; small[1, 0] = 4.0; small[2, 0] = 9.0;
         small[0, 1] = 2.0; small[1, 1] = 5.0; small[2, 1] = 8.0;
-        var expectedSmall = small.Convolve(kernel2D);
-        var actualSmall = Blur.BoxBlur(small, radius);
+        Matrix<DoublePixel> expectedSmall = small.Convolve(kernel2D);
+        Matrix<DoublePixel> actualSmall = Blur.BoxBlur(small, radius);
 
-        for (int y = 0; y < small.Height; y++)
-            for (int x = 0; x < small.Width; x++)
-                Assert.Equal(expectedSmall[x, y].Value, actualSmall[x, y].Value, 10);
+        MatrixAssert.ApproxEqual(expectedSmall, actualSmall, 1e-10);
     }
 
     [Fact]
     public void GaussianBlur_Separable_ShouldMatchExplicit2DGaussian()
     {
-        var img = new SequentialMatrix<DoublePixel>(9, 7);
-        for (int y = 0; y < img.Height; y++)
-            for (int x = 0; x < img.Width; x++)
-                img[x, y] = Math.Sin(x * 0.7 + y * 0.4) * 50.0 + 100.0;
+        SequentialMatrix<DoublePixel> img = TestMatrices.Create(9, 7, (x, y) => new DoublePixel((Math.Sin((x * 0.7) + (y * 0.4)) * 50.0) + 100.0));
 
         const double sigma = 1.4;
         const int radius = 2;
@@ -87,23 +77,18 @@ public class BlurTests
             for (int x = 0; x < dim; x++)
                 kernel2D[x, y] /= sum;
 
-        var expected = img.Convolve(kernel2D);
-        var actual = Blur.GaussianBlur(img, sigma, radius);
+        Matrix<DoublePixel> expected = img.Convolve(kernel2D);
+        Matrix<DoublePixel> actual = Blur.GaussianBlur(img, sigma, radius);
 
-        for (int y = 0; y < img.Height; y++)
-            for (int x = 0; x < img.Width; x++)
-                Assert.Equal(expected[x, y].Value, actual[x, y].Value, 10);
+        MatrixAssert.ApproxEqual(expected, actual, 1e-10);
     }
 
     [Fact]
     public void GaussianBlurRecursive_ShouldPreserveConstantsSymmetryAndApproximateGaussian()
     {
-        var constantImg = new SequentialMatrix<DoublePixel>(16, 14);
-        constantImg.SetAll(42.5);
-        var blurredConst = Blur.GaussianBlurRecursive(constantImg, 4.0);
-        for (int y = 0; y < blurredConst.Height; y++)
-            for (int x = 0; x < blurredConst.Width; x++)
-                Assert.Equal(42.5, blurredConst[x, y].Value, 10);
+        SequentialMatrix<DoublePixel> constantImg = TestMatrices.Constant(16, 14, new DoublePixel(42.5));
+        Matrix<DoublePixel> blurredConst = Blur.GaussianBlurRecursive(constantImg, 4.0);
+        MatrixAssert.ApproxEqual(constantImg, blurredConst, 1e-10);
 
         var symImg = new SequentialMatrix<DoublePixel>(21, 15);
         for (int y = 0; y < symImg.Height; y++)

@@ -5,6 +5,7 @@ using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -36,11 +37,7 @@ public class HandTremorOptionsTests
     /// </summary>
     /// <param name="amplitude">The invalid amplitude value.</param>
     [Theory]
-    [InlineData(-0.001)]
-    [InlineData(-5.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidAmplitude_ShouldThrowArgumentOutOfRangeException(double amplitude)
     {
         var options = new HandTremorOptions(Amplitude: amplitude);
@@ -66,11 +63,7 @@ public class HandTremorOptionsTests
     /// </summary>
     /// <param name="scale">The invalid amplitude scale.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSalientAmplitudeScale_ShouldThrowArgumentOutOfRangeException(double scale)
     {
         var options = new HandTremorOptions(SalientAmplitudeScale: scale);
@@ -126,11 +119,7 @@ public class HandTremorOptionsTests
     /// </summary>
     /// <param name="darkening">The invalid overlap darkening factor.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidOverlapDarkening_ShouldThrowArgumentOutOfRangeException(double darkening)
     {
         var options = new HandTremorOptions(OverlapDarkening: darkening);

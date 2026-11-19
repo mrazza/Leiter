@@ -6,6 +6,7 @@ using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -51,17 +52,11 @@ public class HandTremorFilterTests
     [Fact]
     public void Apply_MismatchedWetInWetResult_ShouldThrowArgumentException()
     {
-        var image = new SequentialMatrix<Rgb8>(6, 6);
-        var labels = new SequentialMatrix<int>(6, 6);
-        for (int y = 0; y < 6; y++)
-        {
-            for (int x = 0; x < 6; x++)
-            {
-                labels[x, y] = x < 3 ? 0 : 1;
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            6,
+            6,
+            new Rgb8(20, 20, 200),
+            new Rgb8(200, 20, 20));
         var dist = new SequentialMatrix<DoublePixel>(6, 6);
 
         // Mismatched mask size
@@ -117,21 +112,12 @@ public class HandTremorFilterTests
     [Fact]
     public void Apply_ZeroAmplitude_ShouldReturnUnmodifiedImage()
     {
-        int width = 6;
-        int height = 6;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 3 ? 0 : 1;
-                image[x, y] = x < 3 ? new Rgb8(20, 20, 200) : new Rgb8(200, 20, 20);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            6,
+            6,
+            new Rgb8(20, 20, 200),
+            new Rgb8(200, 20, 20));
+        var dist = new SequentialMatrix<DoublePixel>(6, 6);
         var options = new HandTremorOptions(Amplitude: 0.0);
 
         Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
@@ -164,24 +150,15 @@ public class HandTremorFilterTests
     [Fact]
     public void Apply_WetInWetBoundaries_ShouldRemainUndistorted()
     {
-        int width = 8;
-        int height = 8;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 4 ? 0 : 1;
-                image[x, y] = x < 4 ? new Rgb8(20, 20, 200) : new Rgb8(200, 20, 20);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            8,
+            8,
+            new Rgb8(20, 20, 200),
+            new Rgb8(200, 20, 20));
+        var dist = new SequentialMatrix<DoublePixel>(8, 8);
 
         // Mark boundary as qualifying in wetInWet result
-        var wetMask = new MaskMatrix(width, height);
+        var wetMask = new MaskMatrix(8, 8);
         var wetInWet = new WetInWetResult(
             (SequentialMatrix<Rgb8>)image.Clone(),
             wetMask,
@@ -190,13 +167,7 @@ public class HandTremorFilterTests
         Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, wetInWet: wetInWet);
 
         // Entire image must match original since boundary is Group 1 (wet-in-wet)
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                Assert.Equal(image[x, y], result[x, y]);
-            }
-        }
+        MatrixAssert.Equal(image, result);
     }
 
     /// <summary>
@@ -205,23 +176,13 @@ public class HandTremorFilterTests
     [Fact]
     public void Apply_SimilarHueBoundaries_ShouldDistortSmoothlyWithoutGapsOrDarkenedGlazes()
     {
-        int width = 12;
-        int height = 12;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-
         // Similar hues: Dark Red (200, 20, 20) vs Bright Red/Orange (240, 60, 20) -> hue diff ~ 11 degrees (< 30)
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 6 ? 0 : 1;
-                image[x, y] = x < 6 ? new Rgb8(200, 20, 20) : new Rgb8(240, 60, 20);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            12,
+            12,
+            new Rgb8(200, 20, 20),
+            new Rgb8(240, 60, 20));
+        var dist = new SequentialMatrix<DoublePixel>(12, 12);
         var paperColor = new Rgb8(250, 248, 242);
         var options = new HandTremorOptions(
             Amplitude: 2.0,
@@ -231,9 +192,9 @@ public class HandTremorFilterTests
         Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
 
         // No pixel should equal paper color because Group 2 samples bilinearly without creating gaps
-        for (int y = 0; y < height; y++)
+        for (int y = 0; y < 12; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (int x = 0; x < 12; x++)
             {
                 Assert.NotEqual(paperColor, result[x, y]);
             }
@@ -246,24 +207,15 @@ public class HandTremorFilterTests
     [Fact]
     public void Apply_ContrastingHueBoundaries_ShouldProduceBothPaperGapsAndDarkenedOverlaps()
     {
-        int width = 32;
-        int height = 32;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-
+        const int width = 32;
+        const int height = 32;
         // Contrasting hues: Pure Red (220, 20, 20) vs Pure Cyan (20, 220, 220), hue diff 180 deg
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 16 ? 0 : 1;
-                image[x, y] = x < 16 ? new Rgb8(220, 20, 20) : new Rgb8(20, 220, 220);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
-        dist.SetAll(1.0);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(220, 20, 20),
+            new Rgb8(20, 220, 220));
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
         var customPaperColor = new Rgb8(250, 248, 242);
 
         var options = new HandTremorOptions(
@@ -353,34 +305,24 @@ public class HandTremorFilterTests
     [Fact]
     public void Apply_SaliencyAmplitudeScaling_ShouldModulateTremorMagnitude()
     {
-        int width = 12;
-        int height = 12;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 6 ? 0 : 1;
-                image[x, y] = x < 6 ? new Rgb8(200, 20, 20) : new Rgb8(20, 200, 200);
-                // Top half salient (d=0.0), bottom half non-salient (d=1.0)
-                dist[x, y] = y < 6 ? new DoublePixel(0.0) : new DoublePixel(1.0);
-            }
-        }
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            12,
+            12,
+            new Rgb8(200, 20, 20),
+            new Rgb8(20, 200, 200));
+        // Top half salient (d=0.0), bottom half non-salient (d=1.0)
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Create(12, 12, (_, y) => y < 6 ? new DoublePixel(0.0) : new DoublePixel(1.0));
 
         // Add non-finite distance to verify double.IsFinite branch
         dist[11, 11] = new DoublePixel(double.NaN);
 
-        var graph = RegionGraph.FromLabels(labels);
         var options = new HandTremorOptions(
             Amplitude: 3.0,
             SalientAmplitudeScale: 0.1);
 
         Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
 
-        Assert.Equal(width, result.Width);
+        Assert.Equal(12, result.Width);
     }
 
     /// <summary>
@@ -389,32 +331,17 @@ public class HandTremorFilterTests
     [Fact]
     public void Apply_Determinism_IdenticalOptionsShouldProduceIdenticalOutput()
     {
-        int width = 10;
-        int height = 10;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 5 ? 0 : 1;
-                image[x, y] = x < 5 ? new Rgb8(20, 200, 50) : new Rgb8(200, 30, 180);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            10,
+            10,
+            new Rgb8(20, 200, 50),
+            new Rgb8(200, 30, 180));
+        var dist = new SequentialMatrix<DoublePixel>(10, 10);
         var options = new HandTremorOptions(Amplitude: 2.0);
 
         Matrix<Rgb8> res1 = HandTremorFilter.Apply(image, graph, dist, options: options);
         Matrix<Rgb8> res2 = HandTremorFilter.Apply(image, graph, dist, options: options);
 
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                Assert.Equal(res1[x, y], res2[x, y]);
-            }
-        }
+        MatrixAssert.Equal(res1, res2);
     }
 }

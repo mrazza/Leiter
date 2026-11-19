@@ -5,6 +5,7 @@ using Leiter.Algorithms;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -50,11 +51,7 @@ public class EdgeDarkeningOptionsTests
     /// </summary>
     /// <param name="intensity">The invalid intensity value.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-1.0)]
-    [InlineData(double.NegativeInfinity)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NaN)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidIntensity_ShouldThrowArgumentOutOfRangeException(double intensity)
     {
         var options = new EdgeDarkeningOptions(Intensity: intensity);
@@ -66,11 +63,7 @@ public class EdgeDarkeningOptionsTests
     /// </summary>
     /// <param name="blurSigma">The invalid blur sigma value.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-2.5)]
-    [InlineData(double.NegativeInfinity)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NaN)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidBlurSigma_ShouldThrowArgumentOutOfRangeException(double blurSigma)
     {
         var options = new EdgeDarkeningOptions(BlurSigma: blurSigma);
@@ -110,16 +103,8 @@ public class EdgeDarkeningOptionsTests
             EdgeDarkeningOptions.ForSize(size).Validate();
         }
 
-        var flat = new SequentialMatrix<Rgb8>(64, 64);
-        flat.SetAll(new Rgb8(120, 120, 120));
-        var vibrant = new SequentialMatrix<Rgb8>(64, 64);
-        for (int y = 0; y < 64; y++)
-        {
-            for (int x = 0; x < 64; x++)
-            {
-                vibrant[x, y] = (x + y) % 2 == 0 ? new Rgb8(255, 240, 20) : new Rgb8(10, 20, 235);
-            }
-        }
+        SequentialMatrix<Rgb8> flat = TestMatrices.Constant(64, 64, new Rgb8(120, 120, 120));
+        SequentialMatrix<Rgb8> vibrant = TestMatrices.Checkerboard(64, 64, new Rgb8(255, 240, 20), new Rgb8(10, 20, 235));
 
         Assert.True(EdgeDarkeningOptions.ForImage(flat).Intensity > EdgeDarkeningOptions.ForImage(vibrant).Intensity);
 

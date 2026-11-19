@@ -5,6 +5,7 @@ using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -46,11 +47,7 @@ public class TurbulenceFlowOptionsTests
     /// </summary>
     /// <param name="intensity">The invalid intensity value.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-10.0)]
-    [InlineData(double.NegativeInfinity)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NaN)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidIntensity_ShouldThrowArgumentOutOfRangeException(double intensity)
     {
         var options = new TurbulenceFlowOptions(Intensity: intensity);
