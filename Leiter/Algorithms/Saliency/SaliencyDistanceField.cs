@@ -11,6 +11,24 @@ using Leiter.Pixels;
 public static class SaliencyDistanceField
 {
     /// <summary>
+    /// Extracts a binary <see cref="MaskMatrix"/> identifying pixels whose saliency distance does not exceed <paramref name="threshold"/>.
+    /// </summary>
+    /// <param name="distanceField">The normalized saliency distance field to threshold.</param>
+    /// <param name="threshold">The inclusive maximum distance considered salient (default <c>1e-6</c>).</param>
+    /// <returns>A <see cref="MaskMatrix"/> where finite entries with value &lt;= <paramref name="threshold"/> are <see langword="true"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="distanceField"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="threshold"/> is negative or non-finite.</exception>
+    public static MaskMatrix ExtractSalientMask(
+        IReadOnlyMatrix<DoublePixel> distanceField,
+        double threshold = 1e-6)
+    {
+        ArgumentNullException.ThrowIfNull(distanceField);
+        Guard.ThrowIfNotFiniteNonNegative(threshold);
+
+        return distanceField.ToMaskMatrix(d => double.IsFinite(d.Value) && d.Value <= threshold);
+    }
+
+    /// <summary>
     /// Computes the unsmoothed [0, 1] saliency distance field from a boolean salient mask using
     /// Jump Flooding boundary seeds and collinear ray–border normalization (<c>dx / dy</c>).
     /// </summary>

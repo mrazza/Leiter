@@ -179,7 +179,7 @@ internal static class Program
 
         WetInWetResult wetInWetResult = RunStep(
             "15. Wet-in-Wet Filter (Stage 4)",
-            () => WetInWetFilter.ApplyDetailed(lodAbstracted, meanShiftGraph, smoothedDistanceField, salientMask, WetInWetOptions.ForImage(lodAbstracted)));
+            () => WetInWetFilter.ApplyDetailed(lodAbstracted, meanShiftGraph, salientMask, WetInWetOptions.ForImage(lodAbstracted)));
         int qualifyingWetCount = wetInWetResult.QualifyingBoundaries.Count(static qualified => qualified);
         Console.WriteLine($"  Qualifying Wet Boundaries: {qualifyingWetCount} / {wetInWetResult.QualifyingBoundaries.Count}");
         SaveOutput(outputDir, $"{stem}_15_wet_in_wet.png", wetInWetResult.Image);
@@ -188,7 +188,7 @@ internal static class Program
             "16. Hand Tremor Filter (Stage 5)",
             outputDir,
             $"{stem}_16_hand_tremor.png",
-            () => HandTremorFilter.Apply(wetInWetResult.Image, meanShiftGraph, smoothedDistanceField, wetInWetResult, salientMask, HandTremorOptions.ForImage(wetInWetResult.Image)));
+            () => HandTremorFilter.Apply(wetInWetResult.Image, meanShiftGraph, smoothedDistanceField, wetInWetResult, HandTremorOptions.ForImage(wetInWetResult.Image)));
 
         Matrix<Rgb8> edgeDarkened = RunStepAndSave(
             "17a. Edge Darkening (Stage 6)",

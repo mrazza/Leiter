@@ -160,7 +160,7 @@ internal sealed class GridMinCutSolver
     private static int DirectedEdgeIndex(int fromPixel, int direction) => (fromPixel << 3) | direction;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int OppositeDirection(int direction) => direction ^ 4;
+    private static int OppositeDirection(int direction) => (int)((GridDirection)direction).Opposite();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private float GetTreeGrowthCapacity(SearchTree tree, int fromPixel, int toPixel, int dirFromTo) =>

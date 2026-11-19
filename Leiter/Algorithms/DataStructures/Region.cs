@@ -11,7 +11,7 @@ public class Region<T>
     /// <summary>
     /// Gets the unique identifier of the region.
     /// </summary>
-    public long Id { get; init; } = -1;
+    public int Id { get; init; } = -1;
 
     /// <summary>
     /// Gets the set of pixels contained within this region.

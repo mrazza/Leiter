@@ -23,9 +23,11 @@ public class WetInWetFilterTests
         var graph = RegionGraph.FromLabels(labels);
         var dist = new SequentialMatrix<DoublePixel>(4, 4);
 
+        Assert.Throws<ArgumentNullException>(() => WetInWetFilter.ApplyDetailed(null!, graph));
+        Assert.Throws<ArgumentNullException>(() => WetInWetFilter.ApplyDetailed(image, null!));
         Assert.Throws<ArgumentNullException>(() => WetInWetFilter.ApplyDetailed(null!, graph, dist));
         Assert.Throws<ArgumentNullException>(() => WetInWetFilter.ApplyDetailed(image, null!, dist));
-        Assert.Throws<ArgumentNullException>(() => WetInWetFilter.ApplyDetailed(image, graph, null!));
+        Assert.Throws<ArgumentNullException>(() => WetInWetFilter.ApplyDetailed(image, graph, (IReadOnlyMatrix<DoublePixel>)null!));
     }
 
     /// <summary>
@@ -39,9 +41,11 @@ public class WetInWetFilterTests
         var graph = RegionGraph.FromLabels(labels);
         var dist = new SequentialMatrix<DoublePixel>(4, 4);
 
+        Assert.Throws<ArgumentNullException>(() => WetInWetFilter.Apply(null!, graph));
+        Assert.Throws<ArgumentNullException>(() => WetInWetFilter.Apply(image, null!));
         Assert.Throws<ArgumentNullException>(() => WetInWetFilter.Apply(null!, graph, dist));
         Assert.Throws<ArgumentNullException>(() => WetInWetFilter.Apply(image, null!, dist));
-        Assert.Throws<ArgumentNullException>(() => WetInWetFilter.Apply(image, graph, null!));
+        Assert.Throws<ArgumentNullException>(() => WetInWetFilter.Apply(image, graph, (IReadOnlyMatrix<DoublePixel>)null!));
     }
 
     /// <summary>
@@ -57,9 +61,10 @@ public class WetInWetFilterTests
         var distMatching = new SequentialMatrix<DoublePixel>(6, 6);
         var maskMismatched = new MaskMatrix(4, 4);
 
+        Assert.Throws<ArgumentException>(() => WetInWetFilter.ApplyDetailed(image, graphMismatched));
+        Assert.Throws<ArgumentException>(() => WetInWetFilter.ApplyDetailed(image, graphMatching, maskMismatched));
         Assert.Throws<ArgumentException>(() => WetInWetFilter.ApplyDetailed(image, graphMismatched, distMatching));
         Assert.Throws<ArgumentException>(() => WetInWetFilter.ApplyDetailed(image, graphMatching, distMismatched));
-        Assert.Throws<ArgumentException>(() => WetInWetFilter.ApplyDetailed(image, graphMatching, distMatching, maskMismatched));
     }
 
     /// <summary>
@@ -236,19 +241,19 @@ public class WetInWetFilterTests
 
         // 1. Default mode: both qualify
         var optDefault = new WetInWetOptions(Mode: WetInWetMode.Default, MinIntensityDifference: 0.01);
-        WetInWetResult resDefault = WetInWetFilter.ApplyDetailed(image, graph, dist, salientMask, optDefault);
+        WetInWetResult resDefault = WetInWetFilter.ApplyDetailed(image, graph, salientMask, optDefault);
         Assert.True(resDefault.QualifyingBoundaries[boundary01]);
         Assert.True(resDefault.QualifyingBoundaries[boundary12]);
 
         // 2. ExcludeSalientBoundaries: boundary01 (salient vs non-salient) excluded; boundary12 included
         var optExcludeBoundaries = new WetInWetOptions(Mode: WetInWetMode.ExcludeSalientBoundaries, MinIntensityDifference: 0.01);
-        WetInWetResult resExcludeBoundaries = WetInWetFilter.ApplyDetailed(image, graph, dist, salientMask, optExcludeBoundaries);
+        WetInWetResult resExcludeBoundaries = WetInWetFilter.ApplyDetailed(image, graph, salientMask, optExcludeBoundaries);
         Assert.False(resExcludeBoundaries.QualifyingBoundaries[boundary01]);
         Assert.True(resExcludeBoundaries.QualifyingBoundaries[boundary12]);
 
         // 3. ExcludeSalientRegions: boundary01 (touches salient) excluded; boundary12 included
         var optExcludeRegions = new WetInWetOptions(Mode: WetInWetMode.ExcludeSalientRegions, MinIntensityDifference: 0.01);
-        WetInWetResult resExcludeRegions = WetInWetFilter.ApplyDetailed(image, graph, dist, salientMask, optExcludeRegions);
+        WetInWetResult resExcludeRegions = WetInWetFilter.ApplyDetailed(image, graph, salientMask, optExcludeRegions);
         Assert.False(resExcludeRegions.QualifyingBoundaries[boundary01]);
         Assert.True(resExcludeRegions.QualifyingBoundaries[boundary12]);
     }
@@ -332,7 +337,7 @@ public class WetInWetFilterTests
 
         // When regions are non-salient, hue diff (~30) < 90 -> qualifies!
         var nonSalientMask = new MaskMatrix(width, height);
-        WetInWetResult resNonSalient = WetInWetFilter.ApplyDetailed(image, graph, dist, nonSalientMask, options);
+        WetInWetResult resNonSalient = WetInWetFilter.ApplyDetailed(image, graph, nonSalientMask, options);
         Assert.True(resNonSalient.QualifyingBoundaries[0]);
 
         // When Region 0 is salient, hue diff (~30) >= 20 -> does not qualify!
@@ -345,7 +350,7 @@ public class WetInWetFilterTests
             }
         }
 
-        WetInWetResult resSalient = WetInWetFilter.ApplyDetailed(image, graph, dist, salientMask, options);
+        WetInWetResult resSalient = WetInWetFilter.ApplyDetailed(image, graph, salientMask, options);
         Assert.False(resSalient.QualifyingBoundaries[0]);
     }
 
@@ -463,11 +468,15 @@ public class WetInWetFilterTests
             Mode: WetInWetMode.ExcludeSalientBoundaries,
             MinIntensityDifference: 0.01);
 
-        // salientMask is null -> derived from distanceField
-        WetInWetResult result = WetInWetFilter.ApplyDetailed(image, graph, dist, salientMask: null, options: options);
+        // Distance field overload -> derives salient mask by thresholding <= 1e-6
+        WetInWetResult result = WetInWetFilter.ApplyDetailed(image, graph, dist, options);
 
         // Region 0 is salient, Region 1 is non-salient; ExcludeSalientBoundaries excludes it
         Assert.False(result.QualifyingBoundaries[0]);
+
+        // Primary overload without salient mask treats all regions as non-salient
+        WetInWetResult withoutMask = WetInWetFilter.ApplyDetailed(image, graph, options: options);
+        Assert.True(withoutMask.QualifyingBoundaries[0]);
     }
 
     /// <summary>

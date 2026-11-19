@@ -87,7 +87,6 @@ public static class WatercolorPipeline
         WetInWetResult wetInWet = WetInWetFilter.ApplyDetailed(
             lodAbstracted,
             regionGraph,
-            distanceField,
             salientMask,
             opts.WetInWet);
 
@@ -97,7 +96,6 @@ public static class WatercolorPipeline
             regionGraph,
             distanceField,
             wetInWet,
-            salientMask,
             opts.HandTremor);
 
         // Stage 6: Secondary Watercolor Effects & FXAA

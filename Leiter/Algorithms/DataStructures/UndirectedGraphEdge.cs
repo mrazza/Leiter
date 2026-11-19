@@ -16,20 +16,10 @@ public readonly record struct UndirectedGraphEdge<T>(
     double Weight = 0.0) : IUndirectedEdge<T>, IComparable<UndirectedGraphEdge<T>>
 {
     /// <inheritdoc/>
-    public bool IsIncidentTo(T vertex) =>
-        EqualityComparer<T>.Default.Equals(vertex, First) ||
-        EqualityComparer<T>.Default.Equals(vertex, Second);
+    public bool IsIncidentTo(T vertex) => IUndirectedEdge<T>.IsIncidentTo(First, Second, vertex);
 
     /// <inheritdoc/>
-    public T GetOther(T vertex)
-    {
-        if (EqualityComparer<T>.Default.Equals(vertex, First))
-            return Second;
-        if (EqualityComparer<T>.Default.Equals(vertex, Second))
-            return First;
-
-        throw new ArgumentOutOfRangeException(nameof(vertex), vertex, $"Vertex '{vertex}' is not incident to edge ({First}, {Second}).");
-    }
+    public T GetOther(T vertex) => IUndirectedEdge<T>.GetOther(First, Second, vertex, nameof(vertex));
 
     /// <summary>
     /// Compares this edge with another edge based on their weights.

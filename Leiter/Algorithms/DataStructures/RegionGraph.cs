@@ -8,6 +8,7 @@ using Leiter.Core;
 /// </summary>
 public sealed class RegionGraph
 {
+    private readonly SequentialMatrix<int> labels;
     private readonly int[] neighborIds;
     private readonly int[] boundaryIndices;
     private readonly int[] neighborOffsets;
@@ -23,6 +24,7 @@ public sealed class RegionGraph
     {
         Size = labels.Size;
         Connectivity = connectivity;
+        this.labels = labels;
         Labels = labels;
         Regions = regions;
         Boundaries = boundaries;
@@ -85,44 +87,23 @@ public sealed class RegionGraph
         GridConnectivity connectivity = GridConnectivity.EightConnected)
     {
         ArgumentNullException.ThrowIfNull(segmentation);
-        ValidateConnectivity(connectivity);
-
-        if (segmentation.Count == 0)
-            return CreateEmpty(segmentation.Size, connectivity);
-
-        var denseLabels = new SequentialMatrix<int>(segmentation.Size);
-        var idMap = new Dictionary<long, int>();
-
-        for (int y = 0; y < segmentation.Height; y++)
-        {
-            for (int x = 0; x < segmentation.Width; x++)
-            {
-                long rawId = segmentation[x, y].Value;
-                if (!idMap.TryGetValue(rawId, out int denseId))
-                {
-                    denseId = idMap.Count;
-                    idMap.Add(rawId, denseId);
-                }
-
-                denseLabels[x, y] = denseId;
-            }
-        }
-
-        return BuildFromDenseLabels(denseLabels, idMap.Count, connectivity);
+        return FromLabels(segmentation, connectivity);
     }
 
     /// <summary>
-    /// Constructs a <see cref="RegionGraph"/> from an integer label matrix,
-    /// re-indexing arbitrary integer labels into dense <c>[0, RegionCount)</c> identifiers in row-major first-seen order.
+    /// Constructs a <see cref="RegionGraph"/> from any label matrix,
+    /// re-indexing arbitrary equatable labels into dense <c>[0, RegionCount)</c> identifiers in row-major first-seen order.
     /// </summary>
-    /// <param name="labels">The integer label matrix.</param>
+    /// <typeparam name="TLabel">The value type storing pixel region labels.</typeparam>
+    /// <param name="labels">The label matrix.</param>
     /// <param name="connectivity">The grid connectivity used to detect neighboring regions.</param>
     /// <returns>A populated <see cref="RegionGraph"/> instance.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="labels"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="connectivity"/> is invalid.</exception>
-    public static RegionGraph FromLabels(
-        IReadOnlyMatrix<int> labels,
+    public static RegionGraph FromLabels<TLabel>(
+        IReadOnlyMatrix<TLabel> labels,
         GridConnectivity connectivity = GridConnectivity.EightConnected)
+        where TLabel : struct, IEquatable<TLabel>
     {
         ArgumentNullException.ThrowIfNull(labels);
         ValidateConnectivity(connectivity);
@@ -131,13 +112,13 @@ public sealed class RegionGraph
             return CreateEmpty(labels.Size, connectivity);
 
         var denseLabels = new SequentialMatrix<int>(labels.Size);
-        var idMap = new Dictionary<int, int>();
+        var idMap = new Dictionary<TLabel, int>();
 
         for (int y = 0; y < labels.Height; y++)
         {
             for (int x = 0; x < labels.Width; x++)
             {
-                int rawId = labels[x, y];
+                TLabel rawId = labels[x, y];
                 if (!idMap.TryGetValue(rawId, out int denseId))
                 {
                     denseId = idMap.Count;
@@ -239,6 +220,217 @@ public sealed class RegionGraph
 
         Parallel.For(0, RegionCount, regionId => results[regionId] = selector(Regions[regionId]));
         return results;
+    }
+
+    /// <summary>
+    /// Computes the fraction of pixels in each region for which <paramref name="mask"/> is <see langword="true"/>.
+    /// </summary>
+    /// <param name="mask">A boolean mask matrix whose dimensions match this graph.</param>
+    /// <returns>An array indexed by dense region identifier containing fractions in <c>[0, 1]</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="mask"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="mask"/> dimensions do not match this graph.</exception>
+    public double[] ComputeRegionFractions(IReadOnlyMatrix<bool> mask)
+    {
+        ArgumentNullException.ThrowIfNull(mask);
+        if (mask.Size != Size)
+            throw new ArgumentException($"Mask dimensions {mask.Size} must match RegionGraph dimensions {Size}.", nameof(mask));
+
+        return ComputeRegionStatistics(region =>
+        {
+            HashSet<Coord> pixels = region.Pixels;
+            if (pixels.Count == 0)
+                return 0.0;
+
+            int trueCount = 0;
+            foreach (Coord coord in pixels)
+            {
+                if (mask[coord])
+                    trueCount++;
+            }
+
+            return (double)trueCount / pixels.Count;
+        });
+    }
+
+    /// <summary>
+    /// Computes the unit normal vector at boundary pixel <paramref name="coord"/> pointing from
+    /// <paramref name="fromRegionId"/> toward <paramref name="towardsRegionId"/> over its 8-connected neighborhood.
+    /// </summary>
+    /// <param name="coord">The pixel coordinate at which to evaluate the boundary normal.</param>
+    /// <param name="towardsRegionId">The region identifier toward which the returned normal points.</param>
+    /// <param name="fromRegionId">The opposing region identifier.</param>
+    /// <returns>
+    /// A unit-length <see cref="Vector2D"/> pointing toward <paramref name="towardsRegionId"/>,
+    /// or <see cref="Vector2D.Zero"/> if no opposing neighborhood gradient exists at <paramref name="coord"/>.
+    /// </returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="coord"/> is outside image bounds or either region ID is outside <c>[0, RegionCount)</c>.
+    /// </exception>
+    public Vector2D ComputeBoundaryNormal(Coord coord, int towardsRegionId, int fromRegionId)
+    {
+        if (!labels.Contains(coord))
+            throw new ArgumentOutOfRangeException(nameof(coord), coord, $"Coordinate {coord} is outside graph dimensions {Size}.");
+
+        ValidateRegionId(towardsRegionId, nameof(towardsRegionId));
+        ValidateRegionId(fromRegionId, nameof(fromRegionId));
+
+        if (towardsRegionId == fromRegionId)
+            return Vector2D.Zero;
+
+        int pLabel = labels[coord];
+        if (pLabel != towardsRegionId && pLabel != fromRegionId)
+            return Vector2D.Zero;
+
+        double sumX = 0.0;
+        double sumY = 0.0;
+        ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.All8Connected;
+
+        for (int s = 0; s < neighbors.Length; s++)
+        {
+            Coord q = coord + neighbors[s].Offset;
+            if (!labels.Contains(q))
+                continue;
+
+            int qLabel = labels[q];
+            if (pLabel == towardsRegionId && qLabel == fromRegionId)
+            {
+                sumX += coord.X - q.X;
+                sumY += coord.Y - q.Y;
+            }
+            else if (pLabel == fromRegionId && qLabel == towardsRegionId)
+            {
+                sumX += q.X - coord.X;
+                sumY += q.Y - coord.Y;
+            }
+        }
+
+        return new Vector2D(sumX, sumY).Normalize();
+    }
+
+    /// <summary>
+    /// Computes a multi-source 8-connected geodesic distance band around selected inter-region boundaries.
+    /// </summary>
+    /// <param name="maxRadius">The maximum Chebyshev grid step radius to expand from boundary seed pixels.</param>
+    /// <param name="boundaryPredicate">
+    /// Optional filter predicate receiving a boundary index in <c>[0, Boundaries.Count)</c>;
+    /// when <see langword="null"/>, all boundaries seed the band.
+    /// </param>
+    /// <param name="restrictToIncidentRegions">
+    /// When <see langword="true"/>, expansion from a boundary pixel only enters pixels belonging to that boundary's
+    /// <see cref="RegionBoundary.First"/> or <see cref="RegionBoundary.Second"/> regions.
+    /// </param>
+    /// <returns>A <see cref="RegionBoundaryBand"/> storing per-pixel distances, nearest boundaries, and nearest seeds.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="maxRadius"/> is negative.</exception>
+    public RegionBoundaryBand ComputeBoundaryBand(
+        int maxRadius,
+        Func<int, bool>? boundaryPredicate = null,
+        bool restrictToIncidentRegions = false)
+    {
+        if (maxRadius < 0)
+            throw new ArgumentOutOfRangeException(nameof(maxRadius), maxRadius, "Maximum band radius must be non-negative.");
+
+        int width = Width;
+        int height = Height;
+        int totalPixels = labels.Count;
+
+        var distData = new int[totalPixels];
+        var boundaryData = new int[totalPixels];
+        var seedData = new int[totalPixels];
+        Array.Fill(distData, int.MaxValue);
+        Array.Fill(boundaryData, -1);
+        Array.Fill(seedData, -1);
+
+        if (totalPixels == 0 || Boundaries.Count == 0)
+        {
+            return new RegionBoundaryBand(
+                Size,
+                maxRadius,
+                new SequentialMatrix<int>(width, height, distData),
+                new SequentialMatrix<int>(width, height, boundaryData),
+                new SequentialMatrix<int>(width, height, seedData),
+                []);
+        }
+
+        var seedPixels = new List<Coord>();
+        var queue = new Queue<int>();
+
+        void EnqueueBorderPixels(ReadOnlySpan<Coord> borderPixels, int boundaryIndex)
+        {
+            for (int i = 0; i < borderPixels.Length; i++)
+            {
+                Coord p = borderPixels[i];
+                int idx = (p.Y * width) + p.X;
+                if (distData[idx] > 0)
+                {
+                    distData[idx] = 0;
+                    boundaryData[idx] = boundaryIndex;
+                    seedData[idx] = idx;
+                    seedPixels.Add(p);
+                    queue.Enqueue(idx);
+                }
+            }
+        }
+
+        for (int bi = 0; bi < Boundaries.Count; bi++)
+        {
+            if (boundaryPredicate is not null && !boundaryPredicate(bi))
+                continue;
+
+            RegionBoundary b = Boundaries[bi];
+            EnqueueBorderPixels(b.FirstBorderPixels.Span, bi);
+            EnqueueBorderPixels(b.SecondBorderPixels.Span, bi);
+        }
+
+        ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.All8Connected;
+        ReadOnlySpan<int> labelSpan = labels.AsReadOnlySpan();
+
+        while (queue.Count > 0)
+        {
+            int curIdx = queue.Dequeue();
+            int curDist = distData[curIdx];
+            if (curDist >= maxRadius)
+                continue;
+
+            int curBoundary = boundaryData[curIdx];
+            int curSeed = seedData[curIdx];
+            RegionBoundary b = Boundaries[curBoundary];
+            int curX = curIdx % width;
+            int curY = curIdx / width;
+
+            for (int s = 0; s < neighbors.Length; s++)
+            {
+                Coord offset = neighbors[s].Offset;
+                int nx = curX + offset.X;
+                int ny = curY + offset.Y;
+                if ((uint)nx >= (uint)width || (uint)ny >= (uint)height)
+                    continue;
+
+                int nIdx = (ny * width) + nx;
+                if (restrictToIncidentRegions)
+                {
+                    int nLabel = labelSpan[nIdx];
+                    if (nLabel != b.First && nLabel != b.Second)
+                        continue;
+                }
+
+                int nDist = curDist + 1;
+                if (nDist < distData[nIdx])
+                {
+                    distData[nIdx] = nDist;
+                    boundaryData[nIdx] = curBoundary;
+                    seedData[nIdx] = curSeed;
+                    queue.Enqueue(nIdx);
+                }
+            }
+        }
+
+        return new RegionBoundaryBand(
+            Size,
+            maxRadius,
+            new SequentialMatrix<int>(width, height, distData),
+            new SequentialMatrix<int>(width, height, boundaryData),
+            new SequentialMatrix<int>(width, height, seedData),
+            seedPixels.ToArray());
     }
 
     private static RegionGraph CreateEmpty(Size size, GridConnectivity connectivity) =>

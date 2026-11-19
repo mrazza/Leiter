@@ -1,7 +1,6 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Color;
@@ -26,18 +25,16 @@ public static class HandTremorFilter
     /// <param name="regionGraph">The region adjacency graph representing the image segmentation.</param>
     /// <param name="distanceField">The normalized saliency distance field.</param>
     /// <param name="wetInWet">Optional wet-in-wet filtering result; boundaries and wet areas qualifying in wet-in-wet are preserved without tremor perturbation.</param>
-    /// <param name="salientMask">Optional boolean salient mask; used when computing region color statistics.</param>
     /// <param name="options">Optional hand tremor configuration options.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the tremor-perturbed watercolor image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="regionGraph"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="regionGraph"/>, <paramref name="distanceField"/>, <paramref name="salientMask"/>, or <paramref name="wetInWet"/> do not match <paramref name="image"/>, or boundary counts do not match.</exception>
+    /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="regionGraph"/>, <paramref name="distanceField"/>, or <paramref name="wetInWet"/> do not match <paramref name="image"/>, or boundary counts do not match.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
     public static Matrix<Rgb8> Apply(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph regionGraph,
         IReadOnlyMatrix<DoublePixel> distanceField,
         WetInWetResult? wetInWet = null,
-        IReadOnlyMatrix<bool>? salientMask = null,
         HandTremorOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
@@ -52,11 +49,6 @@ public static class HandTremorFilter
         if (distanceField.Size != image.Size)
         {
             throw new ArgumentException("DistanceField dimensions must match image dimensions.", nameof(distanceField));
-        }
-
-        if (salientMask is not null && salientMask.Size != image.Size)
-        {
-            throw new ArgumentException("SalientMask dimensions must match image dimensions.", nameof(salientMask));
         }
 
         if (wetInWet is not null)
@@ -85,7 +77,7 @@ public static class HandTremorFilter
         PerlinNoiseOptions secondaryNoise = opts.SecondaryNoise ?? HandTremorOptions.DefaultSecondaryNoise;
         Rgb8 paperColor = opts.PaperColor ?? new Rgb8(250, 248, 242);
 
-        RegionColorStatistics[] stats = RegionColorStatistics.Compute(regionGraph, image, salientMask);
+        RegionColorStatistics<Rgb64>[] stats = RegionColorStatistics.Compute(regionGraph, image);
 
         byte[] boundaryGroup = new byte[boundaryCount];
         for (int bi = 0; bi < boundaryCount; bi++)
@@ -104,70 +96,9 @@ public static class HandTremorFilter
 
         int width = image.Width;
         int height = image.Height;
-        int totalPixels = width * height;
         int bandRadius = (int)Math.Ceiling(opts.Amplitude) + 2;
 
-        int[] nearestDist = new int[totalPixels];
-        Array.Fill(nearestDist, int.MaxValue);
-
-        int[] nearestBoundary = new int[totalPixels];
-        Array.Fill(nearestBoundary, -1);
-
-        var queue = new Queue<int>();
-
-        for (int bi = 0; bi < boundaryCount; bi++)
-        {
-            RegionBoundary b = regionGraph.Boundaries[bi];
-            EnqueueBoundaryPixels(b.FirstBorderPixels.Span, bi, width, nearestDist, nearestBoundary, queue);
-            EnqueueBoundaryPixels(b.SecondBorderPixels.Span, bi, width, nearestDist, nearestBoundary, queue);
-        }
-
-        while (queue.Count > 0)
-        {
-            int curIdx = queue.Dequeue();
-            int curDist = nearestDist[curIdx];
-            if (curDist >= bandRadius)
-            {
-                continue;
-            }
-
-            int curBoundary = nearestBoundary[curIdx];
-            int curX = curIdx % width;
-            int curY = curIdx / width;
-
-            for (int dy = -1; dy <= 1; dy++)
-            {
-                int ny = curY + dy;
-                if (ny < 0 || ny >= height)
-                {
-                    continue;
-                }
-
-                for (int dx = -1; dx <= 1; dx++)
-                {
-                    if (dx == 0 && dy == 0)
-                    {
-                        continue;
-                    }
-
-                    int nx = curX + dx;
-                    if (nx < 0 || nx >= width)
-                    {
-                        continue;
-                    }
-
-                    int nIdx = (ny * width) + nx;
-                    int nDist = curDist + 1;
-
-                    if (nDist < nearestDist[nIdx])
-                    {
-                        nearestDist[nIdx] = nDist;
-                        nearestBoundary[nIdx] = curBoundary;
-                        queue.Enqueue(nIdx);
-                    }
-                }
-            }
-        }
+        RegionBoundaryBand band = regionGraph.ComputeBoundaryBand(bandRadius);
 
         Matrix<Vector2D> t1 = PerlinNoise.GenerateDisplacementField(image.Size, opts.Amplitude, primaryNoise);
         Matrix<Vector2D> t2 = PerlinNoise.GenerateDisplacementField(image.Size, opts.Amplitude, secondaryNoise);
@@ -178,10 +109,10 @@ public static class HandTremorFilter
         {
             for (int x = 0; x < width; x++)
             {
-                int idx = (y * width) + x;
+                int nearestBoundaryIndex = band.NearestBoundaryIndices[x, y];
                 if ((wetInWet is not null && wetInWet.WetAreaMask[x, y]) ||
-                    nearestBoundary[idx] < 0 ||
-                    boundaryGroup[nearestBoundary[idx]] == 0)
+                    nearestBoundaryIndex < 0 ||
+                    boundaryGroup[nearestBoundaryIndex] == 0)
                 {
                     result[x, y] = image[x, y];
                     continue;
@@ -191,14 +122,14 @@ public static class HandTremorFilter
                 double clampedD = double.IsFinite(d) ? Math.Clamp(d, 0.0, 1.0) : 0.0;
                 double s = opts.SalientAmplitudeScale + ((1.0 - opts.SalientAmplitudeScale) * clampedD);
 
-                byte group = boundaryGroup[nearestBoundary[idx]];
+                byte group = boundaryGroup[nearestBoundaryIndex];
                 if (group == 1)
                 {
                     result[x, y] = image.SampleBilinear(x + (s * t1[x, y].X), y + (s * t1[x, y].Y), EdgeHandling.EXTEND);
                 }
                 else
                 {
-                    RegionBoundary b = regionGraph.Boundaries[nearestBoundary[idx]];
+                    RegionBoundary b = regionGraph.Boundaries[nearestBoundaryIndex];
                     int a = b.First;
                     int bId = b.Second;
 
@@ -311,26 +242,5 @@ public static class HandTremorFilter
             Rgb8.ClampRoundedByte(sumR * invWeight),
             Rgb8.ClampRoundedByte(sumG * invWeight),
             Rgb8.ClampRoundedByte(sumB * invWeight));
-    }
-
-    private static void EnqueueBoundaryPixels(
-        ReadOnlySpan<Coord> borderPixels,
-        int boundaryIndex,
-        int width,
-        int[] nearestDist,
-        int[] nearestBoundary,
-        Queue<int> queue)
-    {
-        for (int i = 0; i < borderPixels.Length; i++)
-        {
-            Coord p = borderPixels[i];
-            int idx = (p.Y * width) + p.X;
-            if (nearestDist[idx] > 0)
-            {
-                nearestDist[idx] = 0;
-                nearestBoundary[idx] = boundaryIndex;
-                queue.Enqueue(idx);
-            }
-        }
     }
 }

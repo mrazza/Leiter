@@ -21,7 +21,7 @@ public readonly record struct RegionBoundary(
     /// </summary>
     /// <param name="regionId">The dense region identifier to test.</param>
     /// <returns><see langword="true"/> if <paramref name="regionId"/> equals <see cref="First"/> or <see cref="Second"/>; otherwise <see langword="false"/>.</returns>
-    public bool IsIncidentTo(int regionId) => regionId == First || regionId == Second;
+    public bool IsIncidentTo(int regionId) => IUndirectedEdge<int>.IsIncidentTo(First, Second, regionId);
 
     /// <summary>
     /// Returns the identifier of the region on the opposite side of this boundary from <paramref name="regionId"/>.
@@ -29,15 +29,7 @@ public readonly record struct RegionBoundary(
     /// <param name="regionId">One of <see cref="First"/> or <see cref="Second"/>.</param>
     /// <returns>The opposite region identifier.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="regionId"/> does not belong to this boundary.</exception>
-    public int GetOther(int regionId)
-    {
-        if (regionId == First)
-            return Second;
-        if (regionId == Second)
-            return First;
-
-        throw new ArgumentOutOfRangeException(nameof(regionId), regionId, $"Region {regionId} is not incident to boundary ({First}, {Second}).");
-    }
+    public int GetOther(int regionId) => IUndirectedEdge<int>.GetOther(First, Second, regionId, nameof(regionId));
 
     /// <summary>
     /// Returns the deduplicated border pixel coordinates belonging to <paramref name="regionId"/> along this boundary.
