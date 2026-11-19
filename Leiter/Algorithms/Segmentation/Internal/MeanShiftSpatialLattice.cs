@@ -2,6 +2,7 @@ namespace Leiter.Algorithms.Segmentation.Internal;
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Leiter.Pixels;
@@ -15,15 +16,15 @@ internal sealed class MeanShiftSpatialLattice
     {
         public int CompareTo(ColorKey3D other)
         {
-            int cmp = L.CompareTo(other.L);
-            if (cmp != 0)
-                return cmp;
-            cmp = A.CompareTo(other.A);
-            if (cmp != 0)
-                return cmp;
-            return B.CompareTo(other.B);
+            int comparison = L.CompareTo(other.L);
+            if (comparison != 0)
+                return comparison;
+            comparison = A.CompareTo(other.A);
+            return comparison != 0 ? comparison : B.CompareTo(other.B);
         }
     }
+
+    private readonly record struct AxisCellSpan(int FirstSample, int ExclusiveEnd, int SampleCount);
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct ColorBucket(int CellL, int CellA, int CellB, int PointOffset, int PointCount);
@@ -38,19 +39,61 @@ internal sealed class MeanShiftSpatialLattice
         public readonly float B = b;
     }
 
+    private readonly record struct ColorCellWindow(int MinL, int MaxL, int MinA, int MaxA, int MinB, int MaxB)
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ContainsChroma(int cellA, int cellB) =>
+            cellA >= MinA && cellA <= MaxA && cellB >= MinB && cellB <= MaxB;
+    }
+
+    private struct MeanStepAccumulator
+    {
+        public double SumX;
+        public double SumY;
+        public double SumL;
+        public double SumA;
+        public double SumB;
+        public int Count;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Add(in PackedPoint point)
+        {
+            SumX += point.X;
+            SumY += point.Y;
+            SumL += point.L;
+            SumA += point.A;
+            SumB += point.B;
+            Count++;
+        }
+
+        public readonly MeanShiftMode ToModeOrFallback(MeanShiftMode fallback)
+        {
+            if (Count == 0)
+                return fallback;
+
+            double invCount = 1.0 / Count;
+            return new MeanShiftMode(
+                SumX * invCount,
+                SumY * invCount,
+                new Lab32((float)(SumL * invCount), (float)(SumA * invCount), (float)(SumB * invCount)));
+        }
+    }
+
     private sealed class CellBuildScratch
     {
-        public readonly Dictionary<ColorKey3D, int> Counts = new();
-        public readonly List<ColorKey3D> Keys = [];
+        public readonly Dictionary<ColorKey3D, int> ColorCounts = new();
+        public readonly List<ColorKey3D> SortedKeys = [];
         public readonly Dictionary<ColorKey3D, int> WriteOffsets = new();
 
         public void Clear()
         {
-            Counts.Clear();
-            Keys.Clear();
+            ColorCounts.Clear();
+            SortedKeys.Clear();
             WriteOffsets.Clear();
         }
     }
+
+    private const int ParallelBuildPixelThreshold = 65536;
 
     private readonly double spatialCellWidth;
     private readonly double rangeCellWidth;
@@ -81,7 +124,7 @@ internal sealed class MeanShiftSpatialLattice
             height,
             spatialCellWidth,
             rangeCellWidth,
-            buildInParallel: pixels.Length >= 65536)
+            buildInParallel: pixels.Length >= ParallelBuildPixelThreshold)
     {
     }
 
@@ -100,7 +143,7 @@ internal sealed class MeanShiftSpatialLattice
             height,
             spatialCellWidth,
             rangeCellWidth,
-            buildInParallel: pixels.Length >= 65536,
+            buildInParallel: pixels.Length >= ParallelBuildPixelThreshold,
             sampleStride: sampleStride);
     }
 
@@ -113,13 +156,7 @@ internal sealed class MeanShiftSpatialLattice
         bool buildInParallel,
         int sampleStride = 1)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(width, 0);
-        ArgumentOutOfRangeException.ThrowIfLessThan(height, 0);
-        if (!double.IsFinite(spatialCellWidth) || spatialCellWidth <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(spatialCellWidth), spatialCellWidth, "Spatial cell width must be a finite positive number.");
-        if (!double.IsFinite(rangeCellWidth) || rangeCellWidth <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(rangeCellWidth), rangeCellWidth, "Range cell width must be a finite positive number.");
-        ArgumentOutOfRangeException.ThrowIfLessThan(sampleStride, 1);
+        ValidateArguments(width, height, spatialCellWidth, rangeCellWidth, sampleStride);
 
         this.spatialCellWidth = spatialCellWidth;
         this.rangeCellWidth = rangeCellWidth;
@@ -134,251 +171,26 @@ internal sealed class MeanShiftSpatialLattice
             return;
         }
 
-        gridWidth = (int)Math.Floor((width - 1) / spatialCellWidth) + 1;
-        gridHeight = (int)Math.Floor((height - 1) / spatialCellWidth) + 1;
+        AxisCellSpan[] xSpans = ComputeAxisCellSpans(width, spatialCellWidth, sampleStride);
+        AxisCellSpan[] ySpans = ComputeAxisCellSpans(height, spatialCellWidth, sampleStride);
+        gridWidth = xSpans.Length;
+        gridHeight = ySpans.Length;
 
-        var xStart = new int[gridWidth];
-        var xEnd = new int[gridWidth];
-        Array.Fill(xStart, -1);
-        for (int x = 0; x < width; x++)
-        {
-            int cx = (int)Math.Floor(x / spatialCellWidth);
-            if (xStart[cx] < 0)
-                xStart[cx] = x;
-            xEnd[cx] = x + 1;
-        }
-
-        var yStart = new int[gridHeight];
-        var yEnd = new int[gridHeight];
-        Array.Fill(yStart, -1);
-        for (int y = 0; y < height; y++)
-        {
-            int cy = (int)Math.Floor(y / spatialCellWidth);
-            if (yStart[cy] < 0)
-                yStart[cy] = y;
-            yEnd[cy] = y + 1;
-        }
-
-        var xFirst = new int[gridWidth];
-        var xCount = new int[gridWidth];
-        for (int cx = 0; cx < gridWidth; cx++)
-        {
-            if (xStart[cx] >= 0)
-            {
-                int firstX = ((xStart[cx] + sampleStride - 1) / sampleStride) * sampleStride;
-                xFirst[cx] = firstX;
-                if (firstX < xEnd[cx])
-                    xCount[cx] = ((xEnd[cx] - 1 - firstX) / sampleStride) + 1;
-            }
-        }
-
-        var yFirst = new int[gridHeight];
-        var yCount = new int[gridHeight];
-        for (int cy = 0; cy < gridHeight; cy++)
-        {
-            if (yStart[cy] >= 0)
-            {
-                int firstY = ((yStart[cy] + sampleStride - 1) / sampleStride) * sampleStride;
-                yFirst[cy] = firstY;
-                if (firstY < yEnd[cy])
-                    yCount[cy] = ((yEnd[cy] - 1 - firstY) / sampleStride) + 1;
-            }
-        }
-
-        int spatialCellCount = gridWidth * gridHeight;
-        var cellPointStartOffsets = new int[spatialCellCount];
-        int totalPointCount = 0;
-        for (int cy = 0; cy < gridHeight; cy++)
-        {
-            int rowSamples = yCount[cy];
-            int rowBase = cy * gridWidth;
-            for (int cx = 0; cx < gridWidth; cx++)
-            {
-                int cellIdx = rowBase + cx;
-                cellPointStartOffsets[cellIdx] = totalPointCount;
-                totalPointCount += rowSamples * xCount[cx];
-            }
-        }
-
+        int[] cellPointStartOffsets = ComputeCellPointOffsets(xSpans, ySpans, out int totalPointCount);
         points = new PackedPoint[totalPointCount];
-        var perCellBuckets = new ColorBucket[spatialCellCount][];
 
-        if (buildInParallel)
-        {
-            Parallel.For(
-                0,
-                spatialCellCount,
-                static () => new CellBuildScratch(),
-                (cellIdx, _, scratch) =>
-                {
-                    int cx = cellIdx % gridWidth;
-                    int cy = cellIdx / gridWidth;
-                    if (xCount[cx] == 0 || yCount[cy] == 0)
-                    {
-                        perCellBuckets[cellIdx] = [];
-                        return scratch;
-                    }
+        ColorBucket[][] perCellBuckets = BuildAllSpatialCells(
+            sourcePixels,
+            width,
+            rangeCellWidth,
+            sampleStride,
+            xSpans,
+            ySpans,
+            cellPointStartOffsets,
+            points,
+            buildInParallel);
 
-                    perCellBuckets[cellIdx] = BuildSpatialCell(
-                        sourcePixels,
-                        width,
-                        rangeCellWidth,
-                        xFirst[cx],
-                        xEnd[cx],
-                        yFirst[cy],
-                        yEnd[cy],
-                        sampleStride,
-                        cellPointStartOffsets[cellIdx],
-                        points,
-                        scratch);
-                    return scratch;
-                },
-                static _ => { });
-        }
-        else
-        {
-            var scratch = new CellBuildScratch();
-            for (int cy = 0; cy < gridHeight; cy++)
-            {
-                int rowBase = cy * gridWidth;
-                if (yCount[cy] == 0)
-                {
-                    for (int cx = 0; cx < gridWidth; cx++)
-                    {
-                        perCellBuckets[rowBase + cx] = [];
-                    }
-
-                    continue;
-                }
-
-                for (int cx = 0; cx < gridWidth; cx++)
-                {
-                    int cellIdx = rowBase + cx;
-                    if (xCount[cx] == 0)
-                    {
-                        perCellBuckets[cellIdx] = [];
-                        continue;
-                    }
-
-                    perCellBuckets[cellIdx] = BuildSpatialCell(
-                        sourcePixels,
-                        width,
-                        rangeCellWidth,
-                        xFirst[cx],
-                        xEnd[cx],
-                        yFirst[cy],
-                        yEnd[cy],
-                        sampleStride,
-                        cellPointStartOffsets[cellIdx],
-                        points,
-                        scratch);
-                }
-            }
-        }
-
-        spatialCellOffsets = new int[spatialCellCount + 1];
-        int totalBuckets = 0;
-        for (int i = 0; i < spatialCellCount; i++)
-        {
-            spatialCellOffsets[i] = totalBuckets;
-            totalBuckets += perCellBuckets[i].Length;
-        }
-
-        spatialCellOffsets[spatialCellCount] = totalBuckets;
-        colorBuckets = new ColorBucket[totalBuckets];
-        for (int i = 0; i < spatialCellCount; i++)
-        {
-            ColorBucket[] cell = perCellBuckets[i];
-            if (cell.Length > 0)
-            {
-                cell.CopyTo(colorBuckets, spatialCellOffsets[i]);
-            }
-        }
-    }
-
-    private static ColorBucket[] BuildSpatialCell(
-        Lab32[] sourcePixels,
-        int width,
-        double rangeCellWidth,
-        int xStart,
-        int xEnd,
-        int yStart,
-        int yEnd,
-        int sampleStride,
-        int cellPointOffset,
-        PackedPoint[] points,
-        CellBuildScratch scratch)
-    {
-        scratch.Clear();
-        Dictionary<ColorKey3D, int> counts = scratch.Counts;
-        List<ColorKey3D> keys = scratch.Keys;
-
-        for (int y = yStart; y < yEnd; y += sampleStride)
-        {
-            int rowStart = y * width;
-            for (int x = xStart; x < xEnd; x += sampleStride)
-            {
-                int p = rowStart + x;
-                if ((uint)p >= (uint)sourcePixels.Length)
-                    continue;
-
-                Lab32 c = sourcePixels[p];
-                var key = new ColorKey3D(
-                    (int)Math.Floor(c.L / rangeCellWidth),
-                    (int)Math.Floor(c.A / rangeCellWidth),
-                    (int)Math.Floor(c.B / rangeCellWidth));
-
-                if (!counts.TryGetValue(key, out int count))
-                {
-                    counts[key] = 1;
-                    keys.Add(key);
-                }
-                else
-                {
-                    counts[key] = count + 1;
-                }
-            }
-        }
-
-        if (keys.Count == 0)
-            return [];
-
-        keys.Sort();
-
-        var cellBuckets = new ColorBucket[keys.Count];
-        Dictionary<ColorKey3D, int> writeOffsets = scratch.WriteOffsets;
-        int offset = cellPointOffset;
-        for (int i = 0; i < keys.Count; i++)
-        {
-            ColorKey3D key = keys[i];
-            int count = counts[key];
-            cellBuckets[i] = new ColorBucket(key.L, key.A, key.B, offset, count);
-            writeOffsets[key] = offset;
-            offset += count;
-        }
-
-        for (int y = yStart; y < yEnd; y += sampleStride)
-        {
-            int rowStart = y * width;
-            for (int x = xStart; x < xEnd; x += sampleStride)
-            {
-                int p = rowStart + x;
-                if ((uint)p >= (uint)sourcePixels.Length)
-                    continue;
-
-                Lab32 c = sourcePixels[p];
-                var key = new ColorKey3D(
-                    (int)Math.Floor(c.L / rangeCellWidth),
-                    (int)Math.Floor(c.A / rangeCellWidth),
-                    (int)Math.Floor(c.B / rangeCellWidth));
-
-                int dest = writeOffsets[key];
-                writeOffsets[key] = dest + 1;
-                points[dest] = new PackedPoint(x, y, c.L, c.A, c.B);
-            }
-        }
-
-        return cellBuckets;
+        colorBuckets = FlattenColorBuckets(perCellBuckets, out spatialCellOffsets);
     }
 
     /// <summary>
@@ -399,107 +211,423 @@ internal sealed class MeanShiftSpatialLattice
         if (points.Length == 0)
             return current;
 
-        double curPosX = current.X;
-        double curPosY = current.Y;
-        float ql = current.Color.L;
-        float qa = current.Color.A;
-        float qb = current.Color.B;
+        double queryX = current.X;
+        double queryY = current.Y;
+        Lab32 queryColor = current.Color;
 
-        int curX = (int)Math.Floor(curPosX / spatialCellWidth);
-        int curY = (int)Math.Floor(curPosY / spatialCellWidth);
-        int minCellX = Math.Max(0, curX - 1);
-        int maxCellX = Math.Min(gridWidth - 1, curX + 1);
-        int minCellY = Math.Max(0, curY - 1);
-        int maxCellY = Math.Min(gridHeight - 1, curY + 1);
-        if (minCellX > maxCellX || minCellY > maxCellY)
+        int centerCellX = (int)Math.Floor(queryX / spatialCellWidth);
+        int centerCellY = (int)Math.Floor(queryY / spatialCellWidth);
+        int minSpatialCellX = Math.Max(0, centerCellX - 1);
+        int maxSpatialCellX = Math.Min(gridWidth - 1, centerCellX + 1);
+        int minSpatialCellY = Math.Max(0, centerCellY - 1);
+        int maxSpatialCellY = Math.Min(gridHeight - 1, centerCellY + 1);
+        if (minSpatialCellX > maxSpatialCellX || minSpatialCellY > maxSpatialCellY)
             return current;
 
-        int curL = (int)Math.Floor(ql / rangeCellWidth);
-        int curA = (int)Math.Floor(qa / rangeCellWidth);
-        int curB = (int)Math.Floor(qb / rangeCellWidth);
-        int minL = curL - 1;
-        int maxL = curL + 1;
-        int minA = curA - 1;
-        int maxA = curA + 1;
-        int minB = curB - 1;
-        int maxB = curB + 1;
+        ColorKey3D centerColorCell = QuantizeColor(queryColor, rangeCellWidth);
+        var colorWindow = new ColorCellWindow(
+            centerColorCell.L - 1,
+            centerColorCell.L + 1,
+            centerColorCell.A - 1,
+            centerColorCell.A + 1,
+            centerColorCell.B - 1,
+            centerColorCell.B + 1);
 
-        double sumX = 0;
-        double sumY = 0;
-        double sumL = 0;
-        double sumA = 0;
-        double sumB = 0;
-        int count = 0;
-
-        for (int cellY = minCellY; cellY <= maxCellY; cellY++)
+        var accumulator = default(MeanStepAccumulator);
+        for (int cellY = minSpatialCellY; cellY <= maxSpatialCellY; cellY++)
         {
             int cellRowOffset = cellY * gridWidth;
-            for (int cellX = minCellX; cellX <= maxCellX; cellX++)
+            for (int cellX = minSpatialCellX; cellX <= maxSpatialCellX; cellX++)
             {
-                int cellIdx = cellRowOffset + cellX;
-                int bStart = spatialCellOffsets[cellIdx];
-                int bEnd = spatialCellOffsets[cellIdx + 1];
-                if (bStart >= bEnd)
-                    continue;
-
-                int lo = LowerBoundByL(colorBuckets, bStart, bEnd, minL);
-                for (int b = lo; b < bEnd; b++)
-                {
-                    ColorBucket bucket = colorBuckets[b];
-                    if (bucket.CellL > maxL)
-                        break;
-                    if (bucket.CellA < minA || bucket.CellA > maxA || bucket.CellB < minB || bucket.CellB > maxB)
-                        continue;
-
-                    int pEnd = bucket.PointOffset + bucket.PointCount;
-                    for (int i = bucket.PointOffset; i < pEnd; i++)
-                    {
-                        ref readonly PackedPoint pt = ref points[i];
-                        double dx = pt.X - curPosX;
-                        double dy = pt.Y - curPosY;
-                        if ((dx * dx) + (dy * dy) <= spatialRadiusSq)
-                        {
-                            double dl = pt.L - ql;
-                            double da = pt.A - qa;
-                            double db = pt.B - qb;
-                            if ((dl * dl) + (da * da) + (db * db) <= rangeRadiusSq)
-                            {
-                                sumX += pt.X;
-                                sumY += pt.Y;
-                                sumL += pt.L;
-                                sumA += pt.A;
-                                sumB += pt.B;
-                                count++;
-                            }
-                        }
-                    }
-                }
+                AccumulateSpatialCell(
+                    cellRowOffset + cellX,
+                    queryX,
+                    queryY,
+                    queryColor,
+                    in colorWindow,
+                    spatialRadiusSq,
+                    rangeRadiusSq,
+                    ref accumulator);
             }
         }
 
-        if (count == 0)
-            return current;
-
-        double invCount = 1.0 / count;
-        return new MeanShiftMode(
-            sumX * invCount,
-            sumY * invCount,
-            new Lab32((float)(sumL * invCount), (float)(sumA * invCount), (float)(sumB * invCount)));
+        return accumulator.ToModeOrFallback(current);
     }
 
-    private static int LowerBoundByL(ColorBucket[] buckets, int start, int end, int targetL)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void AccumulateSpatialCell(
+        int cellIndex,
+        double queryX,
+        double queryY,
+        Lab32 queryColor,
+        in ColorCellWindow colorWindow,
+        double spatialRadiusSq,
+        double rangeRadiusSq,
+        ref MeanStepAccumulator accumulator)
     {
-        int lo = start;
-        int hi = end;
-        while (lo < hi)
+        int bucketStart = spatialCellOffsets[cellIndex];
+        int bucketEnd = spatialCellOffsets[cellIndex + 1];
+        if (bucketStart >= bucketEnd)
+            return;
+
+        float queryL = queryColor.L;
+        float queryA = queryColor.A;
+        float queryB = queryColor.B;
+
+        int firstBucket = FindFirstBucketAtOrAboveLightness(colorBuckets, bucketStart, bucketEnd, colorWindow.MinL);
+        for (int bucketIndex = firstBucket; bucketIndex < bucketEnd; bucketIndex++)
         {
-            int mid = lo + ((hi - lo) >> 1);
-            if (buckets[mid].CellL < targetL)
-                lo = mid + 1;
-            else
-                hi = mid;
+            ColorBucket bucket = colorBuckets[bucketIndex];
+            if (bucket.CellL > colorWindow.MaxL)
+                break;
+            if (!colorWindow.ContainsChroma(bucket.CellA, bucket.CellB))
+                continue;
+
+            int pointEnd = bucket.PointOffset + bucket.PointCount;
+            for (int pointIndex = bucket.PointOffset; pointIndex < pointEnd; pointIndex++)
+            {
+                ref readonly PackedPoint point = ref points[pointIndex];
+                double deltaX = point.X - queryX;
+                double deltaY = point.Y - queryY;
+                if ((deltaX * deltaX) + (deltaY * deltaY) > spatialRadiusSq)
+                    continue;
+
+                double deltaL = point.L - queryL;
+                double deltaA = point.A - queryA;
+                double deltaB = point.B - queryB;
+                if ((deltaL * deltaL) + (deltaA * deltaA) + (deltaB * deltaB) <= rangeRadiusSq)
+                {
+                    accumulator.Add(in point);
+                }
+            }
+        }
+    }
+
+    private static void ValidateArguments(
+        int width,
+        int height,
+        double spatialCellWidth,
+        double rangeCellWidth,
+        int sampleStride)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(width, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThan(height, 0);
+        if (!double.IsFinite(spatialCellWidth) || spatialCellWidth <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(spatialCellWidth), spatialCellWidth, "Spatial cell width must be a finite positive number.");
+        if (!double.IsFinite(rangeCellWidth) || rangeCellWidth <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(rangeCellWidth), rangeCellWidth, "Range cell width must be a finite positive number.");
+        ArgumentOutOfRangeException.ThrowIfLessThan(sampleStride, 1);
+    }
+
+    private static AxisCellSpan[] ComputeAxisCellSpans(int axisLength, double cellWidth, int sampleStride)
+    {
+        int cellCount = (int)Math.Floor((axisLength - 1) / cellWidth) + 1;
+        var minCoords = new int[cellCount];
+        var exclusiveEnds = new int[cellCount];
+        Array.Fill(minCoords, -1);
+
+        for (int coord = 0; coord < axisLength; coord++)
+        {
+            int cellCoord = (int)Math.Floor(coord / cellWidth);
+            if (minCoords[cellCoord] < 0)
+                minCoords[cellCoord] = coord;
+            exclusiveEnds[cellCoord] = coord + 1;
         }
 
-        return lo;
+        var spans = new AxisCellSpan[cellCount];
+        for (int cellCoord = 0; cellCoord < cellCount; cellCoord++)
+        {
+            int minCoord = minCoords[cellCoord];
+            if (minCoord < 0)
+                continue;
+
+            int exclusiveEnd = exclusiveEnds[cellCoord];
+            int firstSample = ((minCoord + sampleStride - 1) / sampleStride) * sampleStride;
+            int sampleCount = firstSample < exclusiveEnd
+                ? ((exclusiveEnd - 1 - firstSample) / sampleStride) + 1
+                : 0;
+            spans[cellCoord] = new AxisCellSpan(firstSample, exclusiveEnd, sampleCount);
+        }
+
+        return spans;
+    }
+
+    private static int[] ComputeCellPointOffsets(
+        AxisCellSpan[] xSpans,
+        AxisCellSpan[] ySpans,
+        out int totalPointCount)
+    {
+        int gridWidth = xSpans.Length;
+        int gridHeight = ySpans.Length;
+        var offsets = new int[gridWidth * gridHeight];
+        totalPointCount = 0;
+
+        for (int cellY = 0; cellY < gridHeight; cellY++)
+        {
+            int rowSampleCount = ySpans[cellY].SampleCount;
+            int rowBase = cellY * gridWidth;
+            for (int cellX = 0; cellX < gridWidth; cellX++)
+            {
+                int cellIndex = rowBase + cellX;
+                offsets[cellIndex] = totalPointCount;
+                totalPointCount += rowSampleCount * xSpans[cellX].SampleCount;
+            }
+        }
+
+        return offsets;
+    }
+
+    private static ColorBucket[][] BuildAllSpatialCells(
+        Lab32[] sourcePixels,
+        int width,
+        double rangeCellWidth,
+        int sampleStride,
+        AxisCellSpan[] xSpans,
+        AxisCellSpan[] ySpans,
+        int[] cellPointStartOffsets,
+        PackedPoint[] points,
+        bool buildInParallel)
+    {
+        int gridWidth = xSpans.Length;
+        int spatialCellCount = gridWidth * ySpans.Length;
+        var perCellBuckets = new ColorBucket[spatialCellCount][];
+
+        if (buildInParallel)
+        {
+            Parallel.For(
+                0,
+                spatialCellCount,
+                static () => new CellBuildScratch(),
+                (cellIndex, _, scratch) =>
+                {
+                    perCellBuckets[cellIndex] = BuildCellAtIndex(
+                        sourcePixels,
+                        width,
+                        rangeCellWidth,
+                        sampleStride,
+                        gridWidth,
+                        xSpans,
+                        ySpans,
+                        cellPointStartOffsets,
+                        points,
+                        cellIndex,
+                        scratch);
+                    return scratch;
+                },
+                static _ => { });
+        }
+        else
+        {
+            var scratch = new CellBuildScratch();
+            for (int cellIndex = 0; cellIndex < spatialCellCount; cellIndex++)
+            {
+                perCellBuckets[cellIndex] = BuildCellAtIndex(
+                    sourcePixels,
+                    width,
+                    rangeCellWidth,
+                    sampleStride,
+                    gridWidth,
+                    xSpans,
+                    ySpans,
+                    cellPointStartOffsets,
+                    points,
+                    cellIndex,
+                    scratch);
+            }
+        }
+
+        return perCellBuckets;
+    }
+
+    private static ColorBucket[] BuildCellAtIndex(
+        Lab32[] sourcePixels,
+        int width,
+        double rangeCellWidth,
+        int sampleStride,
+        int gridWidth,
+        AxisCellSpan[] xSpans,
+        AxisCellSpan[] ySpans,
+        int[] cellPointStartOffsets,
+        PackedPoint[] points,
+        int cellIndex,
+        CellBuildScratch scratch)
+    {
+        AxisCellSpan xSpan = xSpans[cellIndex % gridWidth];
+        AxisCellSpan ySpan = ySpans[cellIndex / gridWidth];
+        if (xSpan.SampleCount == 0 || ySpan.SampleCount == 0)
+            return [];
+
+        return BuildSpatialCell(
+            sourcePixels,
+            width,
+            rangeCellWidth,
+            xSpan,
+            ySpan,
+            sampleStride,
+            cellPointStartOffsets[cellIndex],
+            points,
+            scratch);
+    }
+
+    private static ColorBucket[] BuildSpatialCell(
+        Lab32[] sourcePixels,
+        int width,
+        double rangeCellWidth,
+        AxisCellSpan xSpan,
+        AxisCellSpan ySpan,
+        int sampleStride,
+        int cellPointOffset,
+        PackedPoint[] points,
+        CellBuildScratch scratch)
+    {
+        scratch.Clear();
+        Dictionary<ColorKey3D, int> colorCounts = scratch.ColorCounts;
+        List<ColorKey3D> sortedKeys = scratch.SortedKeys;
+
+        CountCellColors(sourcePixels, width, rangeCellWidth, xSpan, ySpan, sampleStride, colorCounts, sortedKeys);
+        if (sortedKeys.Count == 0)
+            return [];
+
+        sortedKeys.Sort();
+
+        Dictionary<ColorKey3D, int> writeOffsets = scratch.WriteOffsets;
+        ColorBucket[] cellBuckets = BuildSortedBucketSpans(sortedKeys, colorCounts, cellPointOffset, writeOffsets);
+        ScatterCellPoints(sourcePixels, width, rangeCellWidth, xSpan, ySpan, sampleStride, writeOffsets, points);
+        return cellBuckets;
+    }
+
+    private static void CountCellColors(
+        Lab32[] sourcePixels,
+        int width,
+        double rangeCellWidth,
+        AxisCellSpan xSpan,
+        AxisCellSpan ySpan,
+        int sampleStride,
+        Dictionary<ColorKey3D, int> colorCounts,
+        List<ColorKey3D> sortedKeys)
+    {
+        for (int y = ySpan.FirstSample; y < ySpan.ExclusiveEnd; y += sampleStride)
+        {
+            int rowStart = y * width;
+            for (int x = xSpan.FirstSample; x < xSpan.ExclusiveEnd; x += sampleStride)
+            {
+                int pixelIndex = rowStart + x;
+                if ((uint)pixelIndex >= (uint)sourcePixels.Length)
+                    continue;
+
+                ColorKey3D colorKey = QuantizeColor(sourcePixels[pixelIndex], rangeCellWidth);
+                if (!colorCounts.TryGetValue(colorKey, out int count))
+                {
+                    colorCounts[colorKey] = 1;
+                    sortedKeys.Add(colorKey);
+                }
+                else
+                {
+                    colorCounts[colorKey] = count + 1;
+                }
+            }
+        }
+    }
+
+    private static ColorBucket[] BuildSortedBucketSpans(
+        List<ColorKey3D> sortedKeys,
+        Dictionary<ColorKey3D, int> colorCounts,
+        int cellPointOffset,
+        Dictionary<ColorKey3D, int> writeOffsets)
+    {
+        var cellBuckets = new ColorBucket[sortedKeys.Count];
+        int runningOffset = cellPointOffset;
+
+        for (int i = 0; i < sortedKeys.Count; i++)
+        {
+            ColorKey3D key = sortedKeys[i];
+            int count = colorCounts[key];
+            cellBuckets[i] = new ColorBucket(key.L, key.A, key.B, runningOffset, count);
+            writeOffsets[key] = runningOffset;
+            runningOffset += count;
+        }
+
+        return cellBuckets;
+    }
+
+    private static void ScatterCellPoints(
+        Lab32[] sourcePixels,
+        int width,
+        double rangeCellWidth,
+        AxisCellSpan xSpan,
+        AxisCellSpan ySpan,
+        int sampleStride,
+        Dictionary<ColorKey3D, int> writeOffsets,
+        PackedPoint[] points)
+    {
+        for (int y = ySpan.FirstSample; y < ySpan.ExclusiveEnd; y += sampleStride)
+        {
+            int rowStart = y * width;
+            for (int x = xSpan.FirstSample; x < xSpan.ExclusiveEnd; x += sampleStride)
+            {
+                int pixelIndex = rowStart + x;
+                if ((uint)pixelIndex >= (uint)sourcePixels.Length)
+                    continue;
+
+                Lab32 color = sourcePixels[pixelIndex];
+                ColorKey3D colorKey = QuantizeColor(color, rangeCellWidth);
+                int destinationIndex = writeOffsets[colorKey];
+                writeOffsets[colorKey] = destinationIndex + 1;
+                points[destinationIndex] = new PackedPoint(x, y, color.L, color.A, color.B);
+            }
+        }
+    }
+
+    private static ColorBucket[] FlattenColorBuckets(ColorBucket[][] perCellBuckets, out int[] spatialCellOffsets)
+    {
+        int cellCount = perCellBuckets.Length;
+        spatialCellOffsets = new int[cellCount + 1];
+
+        int totalBuckets = 0;
+        for (int i = 0; i < cellCount; i++)
+        {
+            spatialCellOffsets[i] = totalBuckets;
+            totalBuckets += perCellBuckets[i].Length;
+        }
+
+        spatialCellOffsets[cellCount] = totalBuckets;
+        var flatBuckets = new ColorBucket[totalBuckets];
+        for (int i = 0; i < cellCount; i++)
+        {
+            ColorBucket[] cell = perCellBuckets[i];
+            if (cell.Length > 0)
+            {
+                cell.CopyTo(flatBuckets, spatialCellOffsets[i]);
+            }
+        }
+
+        return flatBuckets;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ColorKey3D QuantizeColor(Lab32 color, double rangeCellWidth) =>
+        new(
+            (int)Math.Floor(color.L / rangeCellWidth),
+            (int)Math.Floor(color.A / rangeCellWidth),
+            (int)Math.Floor(color.B / rangeCellWidth));
+
+    private static int FindFirstBucketAtOrAboveLightness(
+        ColorBucket[] buckets,
+        int startIndex,
+        int endIndex,
+        int minLightnessCell)
+    {
+        int low = startIndex;
+        int high = endIndex;
+        while (low < high)
+        {
+            int midpoint = low + ((high - low) >> 1);
+            if (buckets[midpoint].CellL < minLightnessCell)
+                low = midpoint + 1;
+            else
+                high = midpoint;
+        }
+
+        return low;
     }
 }
