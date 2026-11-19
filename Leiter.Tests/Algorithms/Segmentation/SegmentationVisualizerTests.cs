@@ -24,8 +24,8 @@ public class SegmentationVisualizerTests
         var region = new Region<Coord>([new Coord(0, 0), new Coord(1, 0)]) { Id = 0 };
 
         // RandomColorAssigner is deterministic per seed and can produce full [0, 255] values
-        var randomA = SegmentationVisualizer.RandomColorAssigner(randomSeed: 42);
-        var randomB = SegmentationVisualizer.RandomColorAssigner(randomSeed: 42);
+        var randomA = SegmentationVisualizer.RandomColorAssigner(seed: 42);
+        var randomB = SegmentationVisualizer.RandomColorAssigner(seed: 42);
         Assert.Equal(randomA(img, region), randomB(img, region));
 
         // AverageColorAssigner computes rounded mean and throws on empty region
@@ -51,7 +51,7 @@ public class SegmentationVisualizerTests
         var region = new Region<Coord>([new Coord(0, 0), new Coord(1, 0)]) { Id = 0 };
         var regions = new[] { region };
 
-        var view = new MatrixView<Rgb8>(img, 0, 0, 3, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<Rgb8>(img, 0, 0, 3, 2, EdgeHandling.Extend);
         Matrix<Rgb8> averaged = SegmentationVisualizer.ColorRegions(view, regions, SegmentationVisualizer.AverageColorAssigner());
 
         // Original image must not be mutated
@@ -63,7 +63,7 @@ public class SegmentationVisualizerTests
         Assert.Equal(new Rgb8(15, 25, 35), averaged[1, 0]);
         Assert.Equal(new Rgb8(200, 100, 50), averaged[2, 1]);
 
-        Matrix<Rgb8> randomized = SegmentationVisualizer.ColorRegions(img, regions, randomSeed: 123);
+        Matrix<Rgb8> randomized = SegmentationVisualizer.ColorRegions(img, regions, seed: 123);
         Assert.Equal(randomized[0, 0], randomized[1, 0]);
         Assert.Equal(new Rgb8(200, 100, 50), randomized[2, 1]);
     }
@@ -75,8 +75,8 @@ public class SegmentationVisualizerTests
         Region<Coord>[] regions = [new Region<Coord>([new Coord(0, 0)])];
         var assigner = SegmentationVisualizer.AverageColorAssigner();
 
-        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(null!, regions, randomSeed: 1));
-        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, null!, randomSeed: 1));
+        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(null!, regions, seed: 1));
+        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, null!, seed: 1));
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(null!, regions, assigner));
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, null!, assigner));
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, regions, (SegmentationVisualizer.ColorAssigner<Rgb8>)null!));
@@ -111,7 +111,7 @@ public class SegmentationVisualizerTests
         Assert.Equal(new Rgb8(0, 255, 0), colored[2, 0]);
         Assert.Equal(new Rgb8(0, 255, 0), colored[3, 3]);
 
-        Matrix<Rgb8> randomColored = SegmentationVisualizer.ColorRegions(img, regions, randomSeed: 7);
+        Matrix<Rgb8> randomColored = SegmentationVisualizer.ColorRegions(img, regions, seed: 7);
         Assert.Equal(randomColored[0, 0], randomColored[1, 3]);
         Assert.Equal(randomColored[2, 0], randomColored[3, 3]);
     }

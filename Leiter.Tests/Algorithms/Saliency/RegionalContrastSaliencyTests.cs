@@ -33,7 +33,7 @@ public class RegionalContrastSaliencyTests
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
 
         // Compute regional saliency
-        var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: true);
+        var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: true, ComputeBorderRegions: true));
 
         Assert.Equal(20, saliency.Width);
         Assert.Equal(20, saliency.Height);
@@ -48,7 +48,7 @@ public class RegionalContrastSaliencyTests
         Assert.Contains(saliency, p => p.Value > 0.0 && p.Value < 1.0);
 
         // Turn off smoothing and border calculation to test the alternate branches
-        var saliencyRaw = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: false, computeBorderRegions: false);
+        var saliencyRaw = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: false, ComputeBorderRegions: false));
         Assert.Equal(20, saliencyRaw.Width);
         Assert.True(saliencyRaw.Min(p => p.Value) >= 0.0);
     }
@@ -74,7 +74,7 @@ public class RegionalContrastSaliencyTests
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
 
         // Compute regional saliency
-        var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: false, computeBorderRegions: false);
+        var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: false, ComputeBorderRegions: false));
 
         // The contrasting center red region should have highest saliency (1.0)
         Assert.Equal(1.0, saliency[5, 5].Value, 4);
@@ -94,8 +94,8 @@ public class RegionalContrastSaliencyTests
 
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
 
-        var withOptions = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: true);
-        var withoutOptions = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: false, computeBorderRegions: false);
+        var withOptions = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: true, ComputeBorderRegions: true));
+        var withoutOptions = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: false, ComputeBorderRegions: false));
 
         Assert.Equal(10, withOptions.Width);
         Assert.Equal(10, withOptions.Height);
@@ -129,8 +129,8 @@ public class RegionalContrastSaliencyTests
 
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
 
-        var withoutBorderSuppression = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: false);
-        var withBorderSuppression = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: true);
+        var withoutBorderSuppression = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: true, ComputeBorderRegions: false));
+        var withBorderSuppression = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: true, ComputeBorderRegions: true));
 
         foreach (var result in new[] { withoutBorderSuppression, withBorderSuppression })
         {
@@ -172,13 +172,13 @@ public class RegionalContrastSaliencyTests
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
 
         // Confirm the white border strip has higher raw saliency than the interior gray region before border suppression.
-        var unsuppressed = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: false, computeBorderRegions: false);
+        var unsuppressed = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: false, ComputeBorderRegions: false));
         Assert.Equal(1.0, unsuppressed[4, 20].Value, 4);
         Assert.True(unsuppressed[32, 20].Value < 1.0);
 
         foreach (bool enableSmoothing in new[] { false, true })
         {
-            var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: enableSmoothing, computeBorderRegions: true);
+            var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: enableSmoothing, ComputeBorderRegions: true));
 
             Assert.All(saliency, p =>
             {
@@ -224,7 +224,7 @@ public class RegionalContrastSaliencyTests
         }
 
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 10));
-        var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: true, computeBorderRegions: true);
+        var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: true, ComputeBorderRegions: true));
 
         Assert.All(saliency, p =>
         {
@@ -297,7 +297,7 @@ public class RegionalContrastSaliencyTests
 
         foreach (bool enableSmoothing in new[] { false, true })
         {
-            var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, enableSmoothing: enableSmoothing, computeBorderRegions: enableSmoothing);
+            var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: enableSmoothing, ComputeBorderRegions: enableSmoothing));
 
             Assert.All(saliency, p =>
             {
@@ -338,7 +338,7 @@ public class RegionalContrastSaliencyTests
         Assert.Throws<ArgumentException>(() => RegionalContrastSaliency.ComputeSaliency(img, mismatchedSeg));
 
         // Non-Matrix IReadOnlyMatrix (MatrixView) input
-        var view = new MatrixView<Rgb8>(img, 0, 0, 10, 10, EdgeHandling.EXTEND);
+        var view = new MatrixView<Rgb8>(img, 0, 0, 10, 10, EdgeHandling.Extend);
         Matrix<DoublePixel> viewSaliency = RegionalContrastSaliency.ComputeSaliency(view, seg);
         Assert.Equal(img.Size, viewSaliency.Size);
     }

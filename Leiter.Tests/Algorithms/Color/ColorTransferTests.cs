@@ -197,7 +197,7 @@ public class ColorTransferTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(sampleRgb, d65Palette, strength: double.PositiveInfinity));
         Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(sampleRgb, sampleRgb, strength: double.NegativeInfinity));
 
-        var rgbView = new MatrixView<Rgb8>(sampleRgb, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var rgbView = new MatrixView<Rgb8>(sampleRgb, 0, 0, 2, 2, EdgeHandling.Extend);
         Matrix<Rgb8> viewTransferred = ColorTransfer.Transfer(rgbView, d65Palette);
         Assert.Equal(rgbView.Size, viewTransferred.Size);
 

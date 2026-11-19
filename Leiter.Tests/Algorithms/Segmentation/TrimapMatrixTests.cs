@@ -60,7 +60,7 @@ public class TrimapMatrixTests
         Assert.Equal(TrimapLabel.ProbableBackground, original[1, 1]);
         Assert.Equal(TrimapLabel.Foreground, copied[1, 1]);
 
-        var view = new MatrixView<TrimapLabel>(original, 0, 0, 2, 1, EdgeHandling.EXTEND);
+        var view = new MatrixView<TrimapLabel>(original, 0, 0, 2, 1, EdgeHandling.Extend);
         TrimapMatrix materialized = TrimapMatrix.From(view);
         Assert.Equal(new Size(2, 1), materialized.Size);
         Assert.Equal(TrimapLabel.Foreground, materialized[0, 0]);

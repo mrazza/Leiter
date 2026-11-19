@@ -30,6 +30,11 @@ public sealed record HandTremorOptions(
     /// </summary>
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
+    /// <summary>
+    /// Gets the default <see cref="HandTremorOptions"/> instance.
+    /// </summary>
+    public static HandTremorOptions Default { get; } = new();
+
     internal static readonly PerlinNoiseOptions DefaultPrimaryNoise = new(Seed: 101, Frequency: 0.04, Octaves: 3);
 
     internal static readonly PerlinNoiseOptions DefaultSecondaryNoise = new(Seed: 202, Frequency: 0.04, Octaves: 3);
@@ -44,7 +49,7 @@ public sealed record HandTremorOptions(
     public static HandTremorOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        var defaults = new HandTremorOptions();
+        HandTremorOptions defaults = Default;
         if (totalPixels == 0)
         {
             return defaults with
@@ -85,27 +90,12 @@ public sealed record HandTremorOptions(
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is non-finite or outside its valid range.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!double.IsFinite(Amplitude) || Amplitude < 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(Amplitude), Amplitude, "Amplitude must be finite and non-negative.");
-        }
-
-        if (!double.IsFinite(SalientAmplitudeScale) || SalientAmplitudeScale < 0.0 || SalientAmplitudeScale > 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(SalientAmplitudeScale), SalientAmplitudeScale, "SalientAmplitudeScale must be finite and within [0, 1].");
-        }
-
-        if (!double.IsFinite(SimilarHueThresholdDegrees) || SimilarHueThresholdDegrees < 0.0 || SimilarHueThresholdDegrees > 180.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(SimilarHueThresholdDegrees), SimilarHueThresholdDegrees, "SimilarHueThresholdDegrees must be finite and within [0, 180].");
-        }
-
-        if (!double.IsFinite(OverlapDarkening) || OverlapDarkening < 0.0 || OverlapDarkening > 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(OverlapDarkening), OverlapDarkening, "OverlapDarkening must be finite and within [0, 1].");
-        }
+        Guard.ThrowIfNotFiniteNonNegative(Amplitude);
+        Guard.ThrowIfNotFiniteInRange(SalientAmplitudeScale, 0.0, 1.0);
+        Guard.ThrowIfNotFiniteInRange(SimilarHueThresholdDegrees, 0.0, 180.0);
+        Guard.ThrowIfNotFiniteInRange(OverlapDarkening, 0.0, 1.0);
 
         PrimaryNoise?.Validate();
         SecondaryNoise?.Validate();

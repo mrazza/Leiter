@@ -81,7 +81,7 @@ public class MaskExtensionsTests
         original[0, 0] = true;
         original[1, 1] = true;
 
-        var view = new MatrixView<bool>(original, 0, 0, 2, 1, EdgeHandling.EXTEND);
+        var view = new MatrixView<bool>(original, 0, 0, 2, 1, EdgeHandling.Extend);
         MaskMatrix viaExtension = view.ToMaskMatrix();
         Assert.Equal(new Size(2, 1), viaExtension.Size);
         Assert.True(viaExtension[0, 0]);

@@ -29,7 +29,7 @@ public static class GrabCut
         GrabCutOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
-        GrabCutOptions resolvedOptions = options ?? new GrabCutOptions();
+        GrabCutOptions resolvedOptions = options ?? GrabCutOptions.Default;
         resolvedOptions.Validate();
 
         TrimapMatrix trimap = TrimapMatrix.FromBoundingBox(image.Size, rectangleTopLeft, rectangleSize);
@@ -60,7 +60,7 @@ public static class GrabCut
         if (image.Size != trimap.Size)
             throw new ArgumentException("Image and trimap dimensions must match.", nameof(trimap));
 
-        GrabCutOptions resolvedOptions = options ?? new GrabCutOptions();
+        GrabCutOptions resolvedOptions = options ?? GrabCutOptions.Default;
         resolvedOptions.Validate();
 
         if (image.Count == 0)

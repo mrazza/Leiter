@@ -29,6 +29,11 @@ public sealed record MeanShiftOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default <see cref="MeanShiftOptions"/> instance.
+    /// </summary>
+    public static MeanShiftOptions Default { get; } = new();
+
+    /// <summary>
     /// Creates <see cref="MeanShiftOptions"/> with <see cref="SpatialRadius"/> and <see cref="MinRegionSize"/> scaled geometrically for <paramref name="size"/>.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
@@ -38,7 +43,7 @@ public sealed record MeanShiftOptions(
     public static MeanShiftOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         var (s, a, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        var defaults = new MeanShiftOptions();
+        MeanShiftOptions defaults = Default;
         if (totalPixels == 0)
         {
             return defaults;
@@ -107,16 +112,13 @@ public sealed record MeanShiftOptions(
     /// Validates the options, throwing <see cref="ArgumentOutOfRangeException"/> if any parameter is outside its valid range.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any configuration property is invalid.</exception>
-    internal void Validate()
+    public void Validate()
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(SpatialRadius, 1);
-        if (!double.IsFinite(RangeRadius) || RangeRadius <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(RangeRadius), RangeRadius, "Range radius must be a finite positive number.");
+        Guard.ThrowIfNotFinitePositive(RangeRadius);
         ArgumentOutOfRangeException.ThrowIfLessThan(MinRegionSize, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxIterations, 1);
-        if (!double.IsFinite(ConvergenceEpsilon) || ConvergenceEpsilon <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(ConvergenceEpsilon), ConvergenceEpsilon, "Convergence epsilon must be a finite positive number.");
-        if (!Enum.IsDefined(Connectivity))
-            throw new ArgumentOutOfRangeException(nameof(Connectivity), Connectivity, "Connectivity must be a defined GridConnectivity value.");
+        Guard.ThrowIfNotFinitePositive(ConvergenceEpsilon);
+        Guard.ThrowIfUndefinedEnum(Connectivity);
     }
 }

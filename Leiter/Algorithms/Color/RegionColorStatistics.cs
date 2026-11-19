@@ -91,7 +91,7 @@ public static class RegionColorStatistics
     public static RegionColorStatistics<Lab32>[] ComputeLab(
         RegionGraph graph,
         IReadOnlyMatrix<Rgb8> image,
-        RgbColorSpace colorSpace = RgbColorSpace.sRGB,
+        RgbColorSpace colorSpace = RgbColorSpace.SRgb,
         Illuminant illuminant = Illuminant.D65)
     {
         Guard.ThrowIfUndefinedEnum(colorSpace);

@@ -63,7 +63,7 @@ public class GuardTests
     [Fact]
     public void ThrowIfUndefinedEnum_ShouldAcceptDefinedAndRejectUndefined()
     {
-        Guard.ThrowIfUndefinedEnum(EdgeHandling.EXTEND);
+        Guard.ThrowIfUndefinedEnum(EdgeHandling.Extend);
         Assert.Throws<ArgumentOutOfRangeException>(() => Guard.ThrowIfUndefinedEnum((EdgeHandling)999));
     }
 

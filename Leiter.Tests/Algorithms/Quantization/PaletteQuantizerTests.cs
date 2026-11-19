@@ -24,7 +24,7 @@ public class PaletteQuantizerTests
         var result = PaletteQuantizer.QuantizeAndTruncate(
             empty,
             static pixel => UniformQuantizer.QuantizeToMidpoint(pixel, 12),
-            static pixel => pixel.ToLab32(RgbColorSpace.sRGB));
+            static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
 
         Assert.Equal(0, result.Image.Width);
         Assert.Equal(5, result.Image.Height);
@@ -69,7 +69,7 @@ public class PaletteQuantizerTests
         var result = PaletteQuantizer.QuantizeAndTruncate(
             img,
             static pixel => pixel,
-            static pixel => pixel.ToLab32(RgbColorSpace.sRGB),
+            static pixel => pixel.ToLab32(RgbColorSpace.SRgb),
             coverageFraction: 0.95);
 
         Assert.Equal(2, result.Histogram.BucketCount);
@@ -136,7 +136,7 @@ public class PaletteQuantizerTests
         var result = PaletteQuantizer.QuantizeAndTruncate(
             img,
             static pixel => pixel,
-            static pixel => pixel.ToLab32(RgbColorSpace.sRGB),
+            static pixel => pixel.ToLab32(RgbColorSpace.SRgb),
             coverageFraction: 1.0);
 
         Assert.Equal(2, result.Histogram.BucketCount);
@@ -154,9 +154,9 @@ public class PaletteQuantizerTests
         var img = new SequentialMatrix<Rgb8>(2, 2);
 
         Assert.Throws<ArgumentNullException>(() =>
-            PaletteQuantizer.QuantizeAndTruncate<Rgb8, Lab32>(null!, static p => p, static p => p.ToLab32(RgbColorSpace.sRGB)));
+            PaletteQuantizer.QuantizeAndTruncate<Rgb8, Lab32>(null!, static p => p, static p => p.ToLab32(RgbColorSpace.SRgb)));
         Assert.Throws<ArgumentNullException>(() =>
-            PaletteQuantizer.QuantizeAndTruncate<Rgb8, Lab32>(img, null!, static p => p.ToLab32(RgbColorSpace.sRGB)));
+            PaletteQuantizer.QuantizeAndTruncate<Rgb8, Lab32>(img, null!, static p => p.ToLab32(RgbColorSpace.SRgb)));
         Assert.Throws<ArgumentNullException>(() =>
             PaletteQuantizer.QuantizeAndTruncate<Rgb8, Lab32>(img, static p => p, null!));
 
@@ -171,7 +171,7 @@ public class PaletteQuantizerTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             PaletteQuantizer.QuantizeAndTruncate(img, static p => p, coverageFraction: double.PositiveInfinity));
 
-        var view = new MatrixView<Rgb8>(img, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<Rgb8>(img, 0, 0, 2, 2, EdgeHandling.Extend);
         var viewResult = PaletteQuantizer.QuantizeAndTruncate(view, static p => p);
         Assert.Equal(view.Size, viewResult.Image.Size);
     }

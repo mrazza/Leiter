@@ -49,7 +49,7 @@ class Program
 
         // 2. Smooth with Gaussian blur and convert to CIELAB for perceptual segmentation
         Matrix<Rgb8> blurred = Blur.GaussianBlur(imageMatrix, sigma: 0.8, radius: 2);
-        Matrix<Lab32> labImage = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.sRGB));
+        Matrix<Lab32> labImage = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
 
         // 3. Segment with EGBI (Felzenszwalb–Huttenlocher)
         var egbiOptions = new EgbiOptions(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200);
@@ -113,7 +113,7 @@ var options = new WatercolorOptions(
 WatercolorResult detailed = WatercolorPipeline.RenderDetailed(source, options);
 // Available artifacts: detailed.ColorTransferred, detailed.SalientMask,
 // detailed.SaliencyDistanceField, detailed.LodAbstracted, detailed.WetInWet,
-// detailed.HandTremor, and detailed.Output.
+// detailed.HandTremor, and detailed.Image.
 ```
 
 ---

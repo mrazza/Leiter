@@ -227,7 +227,7 @@ public sealed class PerlinNoise
         ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
         ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
 
-        PerlinNoiseOptions opts = options ?? new PerlinNoiseOptions();
+        PerlinNoiseOptions opts = options ?? PerlinNoiseOptions.Default;
         opts.Validate();
 
         if (size.Width == 0 || size.Height == 0)
@@ -265,7 +265,7 @@ public sealed class PerlinNoise
         if (!double.IsFinite(amplitude) || amplitude < 0.0)
             throw new ArgumentOutOfRangeException(nameof(amplitude), amplitude, "Amplitude must be finite and non-negative.");
 
-        PerlinNoiseOptions opts = options ?? new PerlinNoiseOptions();
+        PerlinNoiseOptions opts = options ?? PerlinNoiseOptions.Default;
         opts.Validate();
 
         if (size.Width == 0 || size.Height == 0)

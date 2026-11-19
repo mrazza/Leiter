@@ -24,10 +24,8 @@ public static class SaliencyMask
         double fixedThreshold = 70.0 / 255.0)
     {
         ArgumentNullException.ThrowIfNull(saliencyMap);
-        if (!Enum.IsDefined(method))
-            throw new ArgumentOutOfRangeException(nameof(method), method, "Unsupported saliency threshold method.");
-        if (!double.IsFinite(fixedThreshold) || fixedThreshold < 0.0 || fixedThreshold > 1.0)
-            throw new ArgumentOutOfRangeException(nameof(fixedThreshold), fixedThreshold, "Threshold must be finite and within [0, 1].");
+        Guard.ThrowIfUndefinedEnum(method);
+        Guard.ThrowIfNotFiniteInRange(fixedThreshold, 0.0, 1.0);
 
         if (saliencyMap.Count == 0)
             return 0.0;
@@ -44,26 +42,22 @@ public static class SaliencyMask
     /// Thresholds a continuous [0, 1] saliency map and filters connected foreground components into a boolean mask.
     /// </summary>
     /// <param name="saliencyMap">The continuous [0, 1] saliency map.</param>
-    /// <param name="method">The thresholding strategy.</param>
-    /// <param name="fixedThreshold">The threshold in [0, 1] used when <paramref name="method"/> is <see cref="SaliencyThresholdMethod.Fixed"/>.</param>
-    /// <param name="retentionPolicy">The connected-component filtering policy.</param>
-    /// <param name="minAreaFraction">The minimum component area fraction in [0, 1] used by <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/>.</param>
+    /// <param name="options">Optional thresholding and connected-component filtering parameters.</param>
     /// <returns>A <see cref="MaskMatrix"/> with <see langword="true"/> for salient foreground pixels and <see langword="false"/> for background pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="saliencyMap"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is outside its valid range.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter in <paramref name="options"/> is outside its valid range.</exception>
     public static MaskMatrix Binarize(
         IReadOnlyMatrix<DoublePixel> saliencyMap,
-        SaliencyThresholdMethod method = SaliencyThresholdMethod.Otsu,
-        double fixedThreshold = 70.0 / 255.0,
-        ComponentRetentionPolicy retentionPolicy = ComponentRetentionPolicy.MinimumAreaFraction,
-        double minAreaFraction = 0.01)
+        SaliencyMaskOptions? options = null)
     {
-        double threshold = ComputeThreshold(saliencyMap, method, fixedThreshold);
-        Guard.ThrowIfUndefinedEnum(retentionPolicy);
-        Guard.ThrowIfNotFiniteInRange(minAreaFraction, 0.0, 1.0);
+        ArgumentNullException.ThrowIfNull(saliencyMap);
 
+        SaliencyMaskOptions resolvedOptions = options ?? SaliencyMaskOptions.Default;
+        resolvedOptions.Validate();
+
+        double threshold = ComputeThreshold(saliencyMap, resolvedOptions.Method, resolvedOptions.FixedThreshold);
         MaskMatrix rawMask = saliencyMap.ToMaskMatrix(pixel => ClampUnit(pixel.Value) > threshold);
-        return BinaryMorphology.FilterConnectedComponents(rawMask, retentionPolicy, minAreaFraction);
+        return BinaryMorphology.FilterConnectedComponents(rawMask, resolvedOptions.RetentionPolicy, resolvedOptions.MinAreaFraction);
     }
 
     private static double ComputeAdaptiveMeanThreshold(IReadOnlyMatrix<DoublePixel> saliencyMap)

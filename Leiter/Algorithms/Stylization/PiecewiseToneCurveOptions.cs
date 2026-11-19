@@ -24,6 +24,11 @@ public sealed record PiecewiseToneCurveOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default <see cref="PiecewiseToneCurveOptions"/> instance.
+    /// </summary>
+    public static PiecewiseToneCurveOptions Default { get; } = new();
+
+    /// <summary>
     /// Creates <see cref="PiecewiseToneCurveOptions"/> for <paramref name="size"/>. Tone mapping is resolution-invariant and returns validated default parameters.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
@@ -33,7 +38,7 @@ public sealed record PiecewiseToneCurveOptions(
     public static PiecewiseToneCurveOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         OptionTuning.ValidateSizeAndReference(size, referenceDimension);
-        return new PiecewiseToneCurveOptions();
+        return Default;
     }
 
     /// <summary>
@@ -77,26 +82,19 @@ public sealed record PiecewiseToneCurveOptions(
     /// Validates that all tone curve parameters are finite, satisfy output bounds 0.0 &lt;= MinTone &lt; MaxTone &lt;= 1.0, and satisfy input knots 0.0 &lt; ShadowKnee &lt; HighlightKnee &lt; 1.0.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is non-finite or outside its valid domain.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!double.IsFinite(MinTone) || MinTone < 0.0 || MinTone >= 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(MinTone), MinTone, "MinTone must be finite and within [0.0, 1.0).");
-        }
+        Guard.ThrowIfNotFiniteNonNegative(MinTone);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(MinTone, 1.0);
 
-        if (!double.IsFinite(MaxTone) || MaxTone <= MinTone || MaxTone > 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(MaxTone), MaxTone, "MaxTone must be finite, strictly greater than MinTone, and within (MinTone, 1.0].");
-        }
+        Guard.ThrowIfNotFiniteInRange(MaxTone, 0.0, 1.0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(MaxTone, MinTone);
 
-        if (!double.IsFinite(ShadowKnee) || ShadowKnee <= 0.0 || ShadowKnee >= 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(ShadowKnee), ShadowKnee, "ShadowKnee must be finite and within (0.0, 1.0).");
-        }
+        Guard.ThrowIfNotFinitePositive(ShadowKnee);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(ShadowKnee, 1.0);
 
-        if (!double.IsFinite(HighlightKnee) || HighlightKnee <= ShadowKnee || HighlightKnee >= 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(HighlightKnee), HighlightKnee, "HighlightKnee must be finite, strictly greater than ShadowKnee, and within (ShadowKnee, 1.0).");
-        }
+        Guard.ThrowIfNotFinite(HighlightKnee);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(HighlightKnee, ShadowKnee);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(HighlightKnee, 1.0);
     }
 }

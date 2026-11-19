@@ -134,7 +134,7 @@ public class GlobalContrastSaliencyTests
 
         var source = new SequentialMatrix<Rgb8>(4, 4);
         source[1, 1] = new Rgb8(255, 0, 0);
-        var view = new MatrixView<Rgb8>(source, 0, 0, 4, 4, EdgeHandling.EXTEND);
+        var view = new MatrixView<Rgb8>(source, 0, 0, 4, 4, EdgeHandling.Extend);
         Matrix<DoublePixel> viewSaliency = GlobalContrastSaliency.ComputeSaliency(view, enableColorSpaceSmoothing: false);
         Assert.Equal(1.0, viewSaliency[1, 1].Value, 4);
     }

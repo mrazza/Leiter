@@ -24,7 +24,7 @@ public static class Fxaa
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        FxaaOptions opts = options ?? new FxaaOptions();
+        FxaaOptions opts = options ?? FxaaOptions.Default;
         opts.Validate();
 
         if (image.Count == 0)
@@ -130,7 +130,7 @@ public static class Fxaa
                 {
                     double sampleX = x + (isHorizontal ? 0.0 : stepSign * finalOffset);
                     double sampleY = y + (isHorizontal ? stepSign * finalOffset : 0.0);
-                    result[x, y] = image.SampleBilinear(sampleX, sampleY, EdgeHandling.EXTEND);
+                    result[x, y] = image.SampleBilinear(sampleX, sampleY, EdgeHandling.Extend);
                 }
             }
         });

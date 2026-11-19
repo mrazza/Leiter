@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
@@ -76,7 +77,7 @@ public class WetInWetFilterTests
         var image = new SequentialMatrix<Rgb8>(4, 4);
         var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(4, 4));
         var dist = new SequentialMatrix<DoublePixel>(4, 4);
-        var invalidOptions = new WetInWetOptions(MajorRadius: -1.0);
+        var invalidOptions = new WetInWetOptions(EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: -1.0));
 
         Assert.Throws<ArgumentOutOfRangeException>(() => WetInWetFilter.ApplyDetailed(image, graph, dist, options: invalidOptions));
     }
@@ -381,9 +382,8 @@ public class WetInWetFilterTests
         var options = new WetInWetOptions(
             ScatterRadius: 3,
             SeedProbability: 1.0, // Guaranteed seed placement on candidate pixels
-            MajorRadius: 2.0,
-            MinorRadius: 1.0,
-            RandomSeed: 42);
+            EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: 2.0, MinorRadius: 1.0),
+            Seed: 42);
 
         WetInWetResult result = WetInWetFilter.ApplyDetailed(image, graph, dist, options: options);
 
@@ -421,8 +421,8 @@ public class WetInWetFilterTests
         var graph = RegionGraph.FromLabels(labels);
         var dist = new SequentialMatrix<DoublePixel>(width, height);
 
-        var opt1 = new WetInWetOptions(RandomSeed: 777, SeedProbability: 0.5);
-        var opt2 = new WetInWetOptions(RandomSeed: 777, SeedProbability: 0.5);
+        var opt1 = new WetInWetOptions(Seed: 777, SeedProbability: 0.5);
+        var opt2 = new WetInWetOptions(Seed: 777, SeedProbability: 0.5);
 
         WetInWetResult res1 = WetInWetFilter.ApplyDetailed(image, graph, dist, options: opt1);
         WetInWetResult res2 = WetInWetFilter.ApplyDetailed(image, graph, dist, options: opt2);

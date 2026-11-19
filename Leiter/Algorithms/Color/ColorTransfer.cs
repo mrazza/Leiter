@@ -77,7 +77,7 @@ public static class ColorTransfer
     /// <returns>The 6D <see cref="LabColorStatistics"/> feature vector.</returns>
     public static LabColorStatistics ComputeStatistics(
         IReadOnlyMatrix<Rgb8> image,
-        RgbColorSpace colorSpace = RgbColorSpace.sRGB,
+        RgbColorSpace colorSpace = RgbColorSpace.SRgb,
         Illuminant illuminant = Illuminant.E)
     {
         ArgumentNullException.ThrowIfNull(image);
@@ -176,7 +176,7 @@ public static class ColorTransfer
     public static Matrix<Rgb8> Transfer(
         IReadOnlyMatrix<Rgb8> source,
         IReadOnlyMatrix<Rgb8> reference,
-        RgbColorSpace colorSpace = RgbColorSpace.sRGB,
+        RgbColorSpace colorSpace = RgbColorSpace.SRgb,
         Illuminant illuminant = Illuminant.E,
         double strength = 1.0)
     {
@@ -205,7 +205,7 @@ public static class ColorTransfer
     public static Matrix<Rgb8> Transfer(
         IReadOnlyMatrix<Rgb8> source,
         ColorTransferProfile profile,
-        RgbColorSpace colorSpace = RgbColorSpace.sRGB,
+        RgbColorSpace colorSpace = RgbColorSpace.SRgb,
         double strength = 1.0)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -234,7 +234,7 @@ public static class ColorTransfer
     public static (Matrix<Rgb8> Result, ColorTransferProfile SelectedProfile) TransferToClosestProfile(
         IReadOnlyMatrix<Rgb8> source,
         IReadOnlyList<ColorTransferProfile> profiles,
-        RgbColorSpace colorSpace = RgbColorSpace.sRGB,
+        RgbColorSpace colorSpace = RgbColorSpace.SRgb,
         LabColorStatistics? featureWeights = null,
         double strength = 1.0)
     {

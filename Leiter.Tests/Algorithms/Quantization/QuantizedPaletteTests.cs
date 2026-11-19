@@ -62,7 +62,7 @@ public class QuantizedPaletteTests
         QuantizedPalette<Rgb8, Lab32> result = PaletteQuantizer.QuantizeAndTruncate(
             img,
             static p => p,
-            static p => p.ToLab32(RgbColorSpace.sRGB));
+            static p => p.ToLab32(RgbColorSpace.SRgb));
 
         Assert.NotNull(result.Image);
         Assert.NotNull(result.Histogram);

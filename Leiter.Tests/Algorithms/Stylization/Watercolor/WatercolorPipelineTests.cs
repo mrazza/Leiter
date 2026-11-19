@@ -27,7 +27,7 @@ public class WatercolorPipelineTests
         WatercolorResult detailed2 = WatercolorPipeline.RenderDetailed(image);
         Matrix<Rgb8> rendered = WatercolorPipeline.Render(image);
 
-        Assert.Equal(image.Size, detailed1.Output.Size);
+        Assert.Equal(image.Size, detailed1.Image.Size);
         Assert.Equal(image.Size, detailed1.ColorTransferred.Size);
         Assert.Equal(image.Size, detailed1.SaliencyMap.Size);
         Assert.Equal(image.Size, detailed1.SalientMask.Size);
@@ -39,8 +39,8 @@ public class WatercolorPipelineTests
         Assert.NotNull(detailed1.SelectedPalette);
         Assert.True(detailed1.SegmentationGraph.RegionCount >= 1);
 
-        Assert.True(detailed1.Output.ContentEquals(detailed2.Output));
-        Assert.True(detailed1.Output.ContentEquals(rendered));
+        Assert.True(detailed1.Image.ContentEquals(detailed2.Image));
+        Assert.True(detailed1.Image.ContentEquals(rendered));
     }
 
     /// <summary>
@@ -51,7 +51,7 @@ public class WatercolorPipelineTests
     public void RenderDetailed_CustomOptionsAndHeightMap_ShouldRespectConfiguration()
     {
         Matrix<Rgb8> scene = CreateTestScene(16, 16);
-        var readOnlyScene = new MatrixView<Rgb8>(scene, 0, 0, scene.Width, scene.Height, EdgeHandling.EXTEND);
+        var readOnlyScene = new MatrixView<Rgb8>(scene, 0, 0, scene.Width, scene.Height, EdgeHandling.Extend);
 
         var flatHeightMap = new SequentialMatrix<DoublePixel>(16, 16);
         flatHeightMap.SetAll(0.5);
@@ -68,9 +68,9 @@ public class WatercolorPipelineTests
         WatercolorResult result = WatercolorPipeline.RenderDetailed(readOnlyScene, options, flatHeightMap);
 
         Assert.Same(customPalette, result.SelectedPalette);
-        for (int i = 0; i < result.Output.Count; i++)
+        for (int i = 0; i < result.Image.Count; i++)
         {
-            Rgb8 px = result.Output[i];
+            Rgb8 px = result.Image[i];
             Assert.InRange(px.R, 20, 235);
             Assert.InRange(px.G, 20, 235);
             Assert.InRange(px.B, 20, 235);
@@ -86,7 +86,7 @@ public class WatercolorPipelineTests
         var empty = new SequentialMatrix<Rgb8>(0, 0);
 
         WatercolorResult resultDefault = WatercolorPipeline.RenderDetailed(empty);
-        Assert.Empty(resultDefault.Output);
+        Assert.Empty(resultDefault.Image);
         Assert.Empty(resultDefault.ColorTransferred);
         Assert.Empty(resultDefault.SaliencyMap);
         Assert.Empty(resultDefault.SalientMask);
@@ -130,13 +130,13 @@ public class WatercolorPipelineTests
         WatercolorOptions autoOptions = WatercolorOptions.ForImage(scene);
 
         WatercolorResult autoResult = WatercolorPipeline.RenderDetailed(scene, autoOptions);
-        Assert.Equal(scene.Size, autoResult.Output.Size);
+        Assert.Equal(scene.Size, autoResult.Image.Size);
         Assert.Equal(autoOptions.TargetPalette, autoResult.SelectedPalette);
 
         WatercolorResult noBlurResult = WatercolorPipeline.RenderDetailed(scene, new WatercolorOptions(EgbiBlurSigma: 0.0));
         WatercolorResult recursiveBlurResult = WatercolorPipeline.RenderDetailed(scene, new WatercolorOptions(EgbiBlurSigma: 2.5));
-        Assert.Equal(scene.Size, noBlurResult.Output.Size);
-        Assert.Equal(scene.Size, recursiveBlurResult.Output.Size);
+        Assert.Equal(scene.Size, noBlurResult.Image.Size);
+        Assert.Equal(scene.Size, recursiveBlurResult.Image.Size);
     }
 
     private static Matrix<Rgb8> CreateTestScene(int width, int height)

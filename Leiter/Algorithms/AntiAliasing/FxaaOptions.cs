@@ -24,6 +24,11 @@ public sealed record FxaaOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default <see cref="FxaaOptions"/> instance.
+    /// </summary>
+    public static FxaaOptions Default { get; } = new();
+
+    /// <summary>
     /// Creates <see cref="FxaaOptions"/> with <see cref="MaxSpanSearchSteps"/> scaled proportionally to <paramref name="size"/>.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
@@ -33,7 +38,7 @@ public sealed record FxaaOptions(
     public static FxaaOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        var defaults = new FxaaOptions();
+        FxaaOptions defaults = Default;
         if (totalPixels == 0)
         {
             return defaults;
@@ -79,18 +84,12 @@ public sealed record FxaaOptions(
     /// Validates that all configuration parameters are within their required domains.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is non-finite or outside its valid range.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!double.IsFinite(RelativeContrastThreshold) || RelativeContrastThreshold <= 0.0 || RelativeContrastThreshold > 1.0)
-            throw new ArgumentOutOfRangeException(nameof(RelativeContrastThreshold), RelativeContrastThreshold, "RelativeContrastThreshold must be finite and within (0, 1].");
-
-        if (!double.IsFinite(AbsoluteContrastThreshold) || AbsoluteContrastThreshold < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(AbsoluteContrastThreshold), AbsoluteContrastThreshold, "AbsoluteContrastThreshold must be finite and non-negative.");
-
-        if (!double.IsFinite(SubpixelBlendStrength) || SubpixelBlendStrength < 0.0 || SubpixelBlendStrength > 1.0)
-            throw new ArgumentOutOfRangeException(nameof(SubpixelBlendStrength), SubpixelBlendStrength, "SubpixelBlendStrength must be finite and within [0, 1].");
-
-        if (MaxSpanSearchSteps < 1)
-            throw new ArgumentOutOfRangeException(nameof(MaxSpanSearchSteps), MaxSpanSearchSteps, "MaxSpanSearchSteps must be at least 1.");
+        Guard.ThrowIfNotFinitePositive(RelativeContrastThreshold);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(RelativeContrastThreshold, 1.0);
+        Guard.ThrowIfNotFiniteNonNegative(AbsoluteContrastThreshold);
+        Guard.ThrowIfNotFiniteInRange(SubpixelBlendStrength, 0.0, 1.0);
+        ArgumentOutOfRangeException.ThrowIfLessThan(MaxSpanSearchSteps, 1);
     }
 }

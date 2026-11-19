@@ -17,7 +17,9 @@ using Leiter.Pixels;
 /// <param name="TargetPalette">Optional explicit watercolor target palette; when <see langword="null"/>, the closest palette is selected automatically.</param>
 /// <param name="ColorTransferStrength">The Reinhard color transfer blending strength in [0.0, 1.0] (default 1.0).</param>
 /// <param name="Egbi">Optional configuration for EGBI over-segmentation used in Stage 2 regional contrast saliency (when <see langword="null"/>, uses Cheng et al. defaults scaled safely for tiny images).</param>
+/// <param name="RegionalContrastSaliency">Optional configuration for Stage 2 regional contrast saliency smoothing and border attenuation.</param>
 /// <param name="SaliencyCut">Optional configuration for iterative salient region extraction in Stage 2.</param>
+/// <param name="SaliencyDistanceField">Optional smoothing configuration for Stage 2 saliency distance field synthesis.</param>
 /// <param name="MeanShift">Optional configuration for CIELAB Mean-Shift segmentation in Stage 3 (when <see langword="null"/>, uses Wang et al. defaults scaled safely for tiny images).</param>
 /// <param name="LodAbstraction">Optional configuration for saliency-guided level-of-detail abstraction in Stage 3.</param>
 /// <param name="WetInWet">Optional configuration for wet-in-wet edge bleeding in Stage 4.</param>
@@ -33,7 +35,9 @@ public sealed record WatercolorOptions(
     ColorTransferProfile? TargetPalette = null,
     double ColorTransferStrength = 1.0,
     EgbiOptions? Egbi = null,
+    RegionalContrastSaliencyOptions? RegionalContrastSaliency = null,
     SaliencyCutOptions? SaliencyCut = null,
+    SaliencyDistanceFieldOptions? SaliencyDistanceField = null,
     MeanShiftOptions? MeanShift = null,
     LodAbstractionOptions? LodAbstraction = null,
     WetInWetOptions? WetInWet = null,
@@ -50,6 +54,11 @@ public sealed record WatercolorOptions(
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which pipeline stage parameters apply unscaled.
     /// </summary>
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
+
+    /// <summary>
+    /// Gets the default <see cref="WatercolorOptions"/> instance.
+    /// </summary>
+    public static WatercolorOptions Default { get; } = new();
 
     internal static readonly EgbiOptions SaliencyEgbiBaseline = new(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200);
 
@@ -71,7 +80,9 @@ public sealed record WatercolorOptions(
             TargetPalette: null,
             ColorTransferStrength: 1.0,
             Egbi: EgbiOptions.ForSize(size, SaliencyEgbiBaseline, referenceDimension),
+            RegionalContrastSaliency: RegionalContrastSaliencyOptions.Default,
             SaliencyCut: SaliencyCutOptions.ForSize(size, referenceDimension),
+            SaliencyDistanceField: SaliencyDistanceFieldOptions.Default,
             MeanShift: MeanShiftOptions.ForSize(size, referenceDimension),
             LodAbstraction: LodAbstractionOptions.ForSize(size, referenceDimension),
             WetInWet: WetInWetOptions.ForSize(size, referenceDimension),
@@ -128,7 +139,9 @@ public sealed record WatercolorOptions(
             TargetPalette: selectedPalette,
             ColorTransferStrength: transferStrength,
             Egbi: EgbiOptions.ForProfile(in postTransferProfile, SaliencyEgbiBaseline, referenceDimension),
+            RegionalContrastSaliency: RegionalContrastSaliencyOptions.Default,
             SaliencyCut: SaliencyCutOptions.ForProfile(in postTransferProfile, referenceDimension),
+            SaliencyDistanceField: SaliencyDistanceFieldOptions.Default,
             MeanShift: MeanShiftOptions.ForProfile(in postTransferProfile, referenceDimension),
             LodAbstraction: LodAbstractionOptions.ForProfile(in postTransferProfile, referenceDimension),
             WetInWet: WetInWetOptions.ForProfile(in postTransferProfile, referenceDimension),
@@ -146,20 +159,15 @@ public sealed record WatercolorOptions(
     /// Validates that all configured pipeline options are finite and within their required domains.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any numeric or enum option is invalid.</exception>
-    internal void Validate()
+    public void Validate()
     {
-        if (!double.IsFinite(ColorTransferStrength) || ColorTransferStrength < 0.0 || ColorTransferStrength > 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(ColorTransferStrength), ColorTransferStrength, "ColorTransferStrength must be finite and within [0, 1].");
-        }
-
-        if (!double.IsFinite(EgbiBlurSigma) || EgbiBlurSigma < 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(EgbiBlurSigma), EgbiBlurSigma, "EgbiBlurSigma must be finite and non-negative.");
-        }
+        Guard.ThrowIfNotFiniteInRange(ColorTransferStrength, 0.0, 1.0);
+        Guard.ThrowIfNotFiniteNonNegative(EgbiBlurSigma);
 
         Egbi?.Validate();
+        RegionalContrastSaliency?.Validate();
         SaliencyCut?.Validate();
+        SaliencyDistanceField?.Validate();
         MeanShift?.Validate();
         LodAbstraction?.Validate();
         WetInWet?.Validate();

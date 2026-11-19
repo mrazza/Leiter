@@ -234,7 +234,7 @@ public class SequentialMatrixTests
         Assert.Equal(1.0, original[0, 0].Value);
         Assert.Equal(99.0, copied[0, 0].Value);
 
-        var view = new MatrixView<DoublePixel>(original, 1, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(original, 1, 0, 2, 2, EdgeHandling.Extend);
         SequentialMatrix<DoublePixel> fromView = SequentialMatrix<DoublePixel>.From(view);
         Assert.Equal(new Size(2, 2), fromView.Size);
         Assert.Equal(2.0, fromView[0, 0].Value);

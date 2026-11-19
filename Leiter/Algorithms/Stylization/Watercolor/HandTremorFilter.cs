@@ -64,7 +64,7 @@ public static class HandTremorFilter
             }
         }
 
-        HandTremorOptions opts = options ?? new HandTremorOptions();
+        HandTremorOptions opts = options ?? HandTremorOptions.Default;
         opts.Validate();
 
         int boundaryCount = regionGraph.Boundaries.Count;
@@ -125,7 +125,7 @@ public static class HandTremorFilter
                 byte group = boundaryGroup[nearestBoundaryIndex];
                 if (group == 1)
                 {
-                    result[x, y] = image.SampleBilinear(x + (s * t1[x, y].X), y + (s * t1[x, y].Y), EdgeHandling.EXTEND);
+                    result[x, y] = image.SampleBilinear(x + (s * t1[x, y].X), y + (s * t1[x, y].Y), EdgeHandling.Extend);
                 }
                 else
                 {
@@ -164,7 +164,7 @@ public static class HandTremorFilter
                     }
                     else
                     {
-                        result[x, y] = image.SampleBilinear(px1, py1, EdgeHandling.EXTEND);
+                        result[x, y] = image.SampleBilinear(px1, py1, EdgeHandling.Extend);
                     }
                 }
             }

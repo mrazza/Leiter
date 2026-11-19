@@ -3,30 +3,23 @@ namespace Leiter.Algorithms.Saliency;
 using System;
 using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Morphology;
+using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
 
 /// <summary>
 /// Configures parameters for Cheng et al.'s iterative <see cref="SaliencyCut"/> salient object segmentation.
 /// </summary>
-/// <param name="InitialThreshold">Initial fixed threshold in [0, 1] used on the saliency map (default <c>70 / 255</c> per Cheng et al. Sec. 5.1).</param>
 /// <param name="MaxOuterIterations">Maximum number of trimap dilation/erosion refinement iterations (<c>≥ 1</c>).</param>
-/// <param name="InnerGrabCutIterations">Number of GMM/min-cut iterations executed per outer trimap step (<c>≥ 1</c>).</param>
 /// <param name="TrimapBandRadius">Morphological dilation/erosion radius in pixels used to construct the unknown boundary band (<c>≥ 1</c>).</param>
-/// <param name="MixtureComponentCount">Number of Gaussian components per foreground/background GMM (<c>≥ 1</c>).</param>
-/// <param name="SmoothnessWeight">Contrast-sensitive pairwise boundary smoothness weight γ (<c>≥ 0</c>).</param>
-/// <param name="RetentionPolicy">Connected-component cleanup policy applied to initial and refined masks.</param>
-/// <param name="MinAreaFraction">Minimum component area fraction in [0, 1] when <paramref name="RetentionPolicy"/> is <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/>.</param>
+/// <param name="GrabCut">Optional inner GrabCut solver parameters; when <see langword="null"/>, defaults to <c>Iterations = 2</c>, <c>MixtureComponentCount = 5</c>, <c>SmoothnessWeight = 50.0</c>.</param>
+/// <param name="Mask">Optional initial binarization and connected-component retention parameters; when <see langword="null"/>, defaults to fixed threshold <c>70 / 255</c> and <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/> with <c>0.01</c>.</param>
 /// <param name="MaxWorkingDimension">Optional maximum width or height for working resolution; <see langword="null"/> runs at full native resolution.</param>
 public sealed record SaliencyCutOptions(
-    double InitialThreshold = 70.0 / 255.0,
     int MaxOuterIterations = 4,
-    int InnerGrabCutIterations = 2,
     int TrimapBandRadius = 10,
-    int MixtureComponentCount = 5,
-    double SmoothnessWeight = 50.0,
-    ComponentRetentionPolicy RetentionPolicy = ComponentRetentionPolicy.MinimumAreaFraction,
-    double MinAreaFraction = 0.01,
+    GrabCutOptions? GrabCut = null,
+    SaliencyMaskOptions? Mask = null,
     int? MaxWorkingDimension = null)
 {
     /// <summary>
@@ -35,7 +28,20 @@ public sealed record SaliencyCutOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
-    /// Creates <see cref="SaliencyCutOptions"/> with trimap band radius and pairwise smoothness weight scaled linearly for full-resolution execution on <paramref name="size"/>.
+    /// Gets the default <see cref="SaliencyCutOptions"/> instance.
+    /// </summary>
+    public static SaliencyCutOptions Default { get; } = new();
+
+    internal static readonly GrabCutOptions DefaultGrabCut = new(Iterations: 2, MixtureComponentCount: 5, SmoothnessWeight: 50.0);
+
+    internal static readonly SaliencyMaskOptions DefaultMask = new(
+        Method: SaliencyThresholdMethod.Fixed,
+        FixedThreshold: 70.0 / 255.0,
+        RetentionPolicy: ComponentRetentionPolicy.MinimumAreaFraction,
+        MinAreaFraction: 0.01);
+
+    /// <summary>
+    /// Creates <see cref="SaliencyCutOptions"/> with trimap band radius and inner GrabCut smoothness scaled linearly for full-resolution execution on <paramref name="size"/>.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
@@ -44,10 +50,14 @@ public sealed record SaliencyCutOptions(
     public static SaliencyCutOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        var defaults = new SaliencyCutOptions();
+        SaliencyCutOptions defaults = Default;
         if (totalPixels == 0)
         {
-            return defaults;
+            return defaults with
+            {
+                GrabCut = DefaultGrabCut,
+                Mask = DefaultMask
+            };
         }
 
         int maxBand = Math.Max(1, Math.Min(size.Width, size.Height) / 3);
@@ -56,7 +66,8 @@ public sealed record SaliencyCutOptions(
         return defaults with
         {
             TrimapBandRadius = bandRadius,
-            SmoothnessWeight = defaults.SmoothnessWeight * s,
+            GrabCut = GrabCutOptions.ForSize(size, referenceDimension) with { Iterations = DefaultGrabCut.Iterations },
+            Mask = DefaultMask,
             MaxWorkingDimension = null
         };
     }
@@ -86,27 +97,22 @@ public sealed record SaliencyCutOptions(
             return scaled;
         }
 
-        int components = profile.LabDispersion < 14.0 ? 4 : profile.LabDispersion > 30.0 ? 6 : 5;
         return scaled with
         {
-            MixtureComponentCount = components
+            GrabCut = GrabCutOptions.ForProfile(in profile, referenceDimension) with { Iterations = DefaultGrabCut.Iterations }
         };
     }
 
-    internal void Validate()
+    /// <summary>
+    /// Validates that all configuration parameters are within their required domains.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any numeric, enum, or nested option parameter is invalid.</exception>
+    public void Validate()
     {
-        if (!double.IsFinite(InitialThreshold) || InitialThreshold < 0.0 || InitialThreshold > 1.0)
-            throw new ArgumentOutOfRangeException(nameof(InitialThreshold), InitialThreshold, "InitialThreshold must be finite and within [0, 1].");
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxOuterIterations, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(InnerGrabCutIterations, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(TrimapBandRadius, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(MixtureComponentCount, 1);
-        if (!double.IsFinite(SmoothnessWeight) || SmoothnessWeight < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(SmoothnessWeight), SmoothnessWeight, "SmoothnessWeight must be finite and non-negative.");
-        if (!Enum.IsDefined(RetentionPolicy))
-            throw new ArgumentOutOfRangeException(nameof(RetentionPolicy), RetentionPolicy, "Unsupported component retention policy.");
-        if (!double.IsFinite(MinAreaFraction) || MinAreaFraction < 0.0 || MinAreaFraction > 1.0)
-            throw new ArgumentOutOfRangeException(nameof(MinAreaFraction), MinAreaFraction, "MinAreaFraction must be finite and within [0, 1].");
+        GrabCut?.Validate();
+        Mask?.Validate();
         if (MaxWorkingDimension is int maxDim)
             ArgumentOutOfRangeException.ThrowIfLessThan(maxDim, 2, nameof(MaxWorkingDimension));
     }

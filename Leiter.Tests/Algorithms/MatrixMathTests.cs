@@ -121,7 +121,7 @@ public class MatrixMathTests
     {
         var m1 = new SequentialMatrix<DoublePixel>(new Size(2, 2), new DoublePixel[] { 1.0, 2.0, 3.0, 4.0 });
         var m2 = new SequentialMatrix<DoublePixel>(new Size(2, 2), new DoublePixel[] { 2.0, 3.0, 4.0, 5.0 });
-        var view = new MatrixView<DoublePixel>(m1, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(m1, 0, 0, 2, 2, EdgeHandling.Extend);
 
         var sameTypeResult = view.FrobeniusProduct<DoublePixel>(m2);
         Assert.Equal(40.0, sameTypeResult.Value);
@@ -132,7 +132,7 @@ public class MatrixMathTests
         var rgbImg = new SequentialMatrix<Rgb8>(3, 3);
         rgbImg[1, 1] = new Rgb8(255, 0, 0);
         rgbImg[2, 2] = new Rgb8(0, 0, 255);
-        var rgbView = new MatrixView<Rgb8>(rgbImg, 1, 1, 2, 2, EdgeHandling.EXTEND);
+        var rgbView = new MatrixView<Rgb8>(rgbImg, 1, 1, 2, 2, EdgeHandling.Extend);
         var scalarKernel = new SequentialMatrix<DoublePixel>(new Size(2, 2), new DoublePixel[] { 1.0, 0.0, 0.0, 1.0 });
 
         Rgb8 inferredResult = rgbView.FrobeniusProduct(scalarKernel);
@@ -235,7 +235,7 @@ public class MatrixMathTests
     public void MatrixMath_NullArgumentsAndMatrixViewInputs_ShouldWork()
     {
         var img = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
-        var view = new MatrixView<DoublePixel>(img, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(img, 0, 0, 2, 2, EdgeHandling.Extend);
         var identityKernel = new SequentialMatrix<DoublePixel>(new Size(1, 1), [1.0]);
 
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).HadamardProduct<DoublePixel>(img));

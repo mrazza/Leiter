@@ -40,7 +40,7 @@ public class MatrixExtensionsTests
     public void ToSequentialMatrix_ToArray_MapToArray_AndGetClamped_ShouldWork()
     {
         var source = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
-        var view = new MatrixView<DoublePixel>(source, 1, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(source, 1, 0, 2, 2, EdgeHandling.Extend);
 
         SequentialMatrix<DoublePixel> materialized = view.ToSequentialMatrix();
         Assert.Equal(new Size(2, 2), materialized.Size);
@@ -240,7 +240,7 @@ public class MatrixExtensionsTests
         Assert.True(blurredCustom.ContentEquals(custom));
 
         var source = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
-        var view = new MatrixView<DoublePixel>(source, 1, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(source, 1, 0, 2, 2, EdgeHandling.Extend);
         Matrix<DoublePixel> viewClone = view.Clone();
         Assert.IsType<SequentialMatrix<DoublePixel>>(viewClone);
         Assert.Equal(new Size(2, 2), viewClone.Size);

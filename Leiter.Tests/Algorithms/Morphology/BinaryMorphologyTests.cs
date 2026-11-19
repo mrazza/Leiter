@@ -99,7 +99,7 @@ public class BinaryMorphologyTests
         Assert.True(zeroErode[0, 0]);
 
         // Also exercise zero-radius cloning on a MatrixView<bool> (non-Matrix IReadOnlyMatrix).
-        var view = new MatrixView<bool>(mixed, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<bool>(mixed, 0, 0, 2, 2, EdgeHandling.Extend);
         MaskMatrix viewZeroDilate = BinaryMorphology.Dilate(view, 0);
         Assert.True(viewZeroDilate[0, 0]);
         Assert.False(viewZeroDilate[1, 0]);

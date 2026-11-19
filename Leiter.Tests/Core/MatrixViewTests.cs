@@ -16,14 +16,14 @@ public class MatrixViewTests
     public void Constructor_AndProperties_ShouldInitialize()
     {
         var baseMat = new SequentialMatrix<DoublePixel>(4, 4);
-        var view = new MatrixView<DoublePixel>(baseMat, 1, 1, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(baseMat, 1, 1, 2, 2, EdgeHandling.Extend);
 
         Assert.Equal(baseMat, view.Matrix);
         Assert.Equal(1, view.OffsetX);
         Assert.Equal(1, view.OffsetY);
         Assert.Equal(2, view.Width);
         Assert.Equal(2, view.Height);
-        Assert.Equal(EdgeHandling.EXTEND, view.EdgeHandling);
+        Assert.Equal(EdgeHandling.Extend, view.EdgeHandling);
         Assert.Equal(new Size(2, 2), view.Size);
         Assert.Equal(4, view.Count);
     }
@@ -45,7 +45,7 @@ public class MatrixViewTests
         // This corresponds to:
         // [5, 6]
         // [8, 9]
-        var view = new MatrixView<DoublePixel>(baseMat, 1, 1, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(baseMat, 1, 1, 2, 2, EdgeHandling.Extend);
 
         Assert.Equal(5.0, view[0, 0].Value);
         Assert.Equal(6.0, view[1, 0].Value);
@@ -78,7 +78,7 @@ public class MatrixViewTests
         });
 
         // Create a view with an offset that goes out of bounds (-1, -1) and size 4x4
-        var view = new MatrixView<DoublePixel>(baseMat, -1, -1, 4, 4, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(baseMat, -1, -1, 4, 4, EdgeHandling.Extend);
 
         // Coordinates in View and corresponding clamped coords in baseMat:
         // view[0, 0] -> offsets to (-1, -1) -> clamped to (0, 0) in base -> value 1.0
@@ -116,7 +116,7 @@ public class MatrixViewTests
             1.0, 2.0,
             3.0, 4.0
         });
-        var view = new MatrixView<DoublePixel>(baseMat, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(baseMat, 0, 0, 2, 2, EdgeHandling.Extend);
 
         var list = new List<double>();
         foreach (var p in view)
@@ -131,7 +131,7 @@ public class MatrixViewTests
     public void ToString_ShouldWork()
     {
         var baseMat = new SequentialMatrix<DoublePixel>(2, 2);
-        var view = new MatrixView<DoublePixel>(baseMat, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(baseMat, 0, 0, 2, 2, EdgeHandling.Extend);
         var str = view.ToString();
         Assert.Contains("MatrixView", str);
     }
@@ -140,7 +140,7 @@ public class MatrixViewTests
     public void TestMatrixView_UncoveredLines()
     {
         var baseMat = new SequentialMatrix<DoublePixel>(2, 2);
-        var view = new MatrixView<DoublePixel>(baseMat, 0, 0, 2, 2, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(baseMat, 0, 0, 2, 2, EdgeHandling.Extend);
 
         // Call ToString
         Assert.NotNull(view.ToString());

@@ -194,7 +194,7 @@ public class BlurTests
         Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlurRecursive(uniform, double.PositiveInfinity));
         Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlurRecursive(uniform, double.NegativeInfinity));
 
-        var view = new MatrixView<DoublePixel>(uniform, 0, 0, 4, 4, EdgeHandling.EXTEND);
+        var view = new MatrixView<DoublePixel>(uniform, 0, 0, 4, 4, EdgeHandling.Extend);
         Assert.Equal(12.5, Blur.GaussianBlur(view, 1.0, 1)[2, 2].Value, 10);
         Assert.Equal(12.5, Blur.BoxBlur(view, 1)[2, 2].Value, 10);
         Assert.Equal(12.5, Blur.GaussianBlurRecursive(view, 2.0)[2, 2].Value, 10);

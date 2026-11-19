@@ -60,7 +60,7 @@ public class MaskMatrixTests
         Assert.True(original[1, 1]);
         Assert.False(fromMask[1, 1]);
 
-        var view = new MatrixView<bool>(original, 0, 0, 2, 1, EdgeHandling.EXTEND);
+        var view = new MatrixView<bool>(original, 0, 0, 2, 1, EdgeHandling.Extend);
         MaskMatrix materialized = MaskMatrix.From(view);
         Assert.Equal(new Size(2, 1), materialized.Size);
         Assert.True(materialized[0, 0]);
