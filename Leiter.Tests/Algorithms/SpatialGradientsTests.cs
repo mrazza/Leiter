@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -20,14 +21,7 @@ public class SpatialGradientsTests
         const double a = 3.5;
         const double b = -2.0;
 
-        var source = new SequentialMatrix<DoublePixel>(5, 5);
-        for (int y = 0; y < 5; y++)
-        {
-            for (int x = 0; x < 5; x++)
-            {
-                source[x, y] = (a * x) + (b * y);
-            }
-        }
+        SequentialMatrix<DoublePixel> source = TestMatrices.Create(5, 5, (x, y) => new DoublePixel((a * x) + (b * y)));
 
         Matrix<Vector2D> sobel = SpatialGradients.Compute(source, GradientOperator.Sobel);
         Matrix<Vector2D> scharr = SpatialGradients.Compute(source, GradientOperator.Scharr);
@@ -45,8 +39,7 @@ public class SpatialGradientsTests
     [Fact]
     public void Compute_ConstantImage_ShouldProduceZeroGradients()
     {
-        var source = new SequentialMatrix<DoublePixel>(4, 4);
-        source.SetAll(42.0);
+        SequentialMatrix<DoublePixel> source = TestMatrices.Constant(4, 4, new DoublePixel(42.0));
 
         Matrix<Vector2D> sobel = SpatialGradients.Compute(source, GradientOperator.Sobel);
         Matrix<Vector2D> scharr = SpatialGradients.Compute(source, GradientOperator.Scharr);

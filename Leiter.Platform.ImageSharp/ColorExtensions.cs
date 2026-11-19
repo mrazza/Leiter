@@ -1,12 +1,10 @@
-namespace Leiter.Platform.Linux;
+namespace Leiter.Platform.ImageSharp;
 
-using Leiter.Core;
 using Leiter.Pixels;
-using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
 /// <summary>
-/// Contains extension methods for interoperating between the Linux platform (via ImageSharp) <see cref="Rgb24"/>
+/// Contains extension methods for interoperating between <c>SixLabors.ImageSharp</c> <see cref="Rgb24"/>
 /// and Leiter types.
 /// </summary>
 public static class ColorExtensions

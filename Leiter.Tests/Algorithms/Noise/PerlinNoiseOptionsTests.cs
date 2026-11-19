@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms.Noise;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -33,12 +34,7 @@ public class PerlinNoiseOptionsTests
     /// </summary>
     /// <param name="frequency">The invalid frequency value.</param>
     [Theory]
-    [InlineData(0.0)]
-    [InlineData(-0.05)]
-    [InlineData(-1.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidFrequency_ShouldThrowArgumentOutOfRangeException(double frequency)
     {
         var options = new PerlinNoiseOptions(Frequency: frequency);
@@ -78,12 +74,7 @@ public class PerlinNoiseOptionsTests
     /// </summary>
     /// <param name="lacunarity">The invalid lacunarity value.</param>
     [Theory]
-    [InlineData(0.0)]
-    [InlineData(-0.1)]
-    [InlineData(-2.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidLacunarity_ShouldThrowArgumentOutOfRangeException(double lacunarity)
     {
         var options = new PerlinNoiseOptions(Lacunarity: lacunarity);
@@ -95,11 +86,7 @@ public class PerlinNoiseOptionsTests
     /// </summary>
     /// <param name="persistence">The invalid persistence value.</param>
     [Theory]
-    [InlineData(-0.001)]
-    [InlineData(-1.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidPersistence_ShouldThrowArgumentOutOfRangeException(double persistence)
     {
         var options = new PerlinNoiseOptions(Persistence: persistence);

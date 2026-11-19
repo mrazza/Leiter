@@ -2,6 +2,8 @@ namespace Leiter.Tests.Platform.Windows;
 
 using System;
 using System.Runtime.Versioning;
+using Leiter.Core;
+using Leiter.Pixels;
 using Leiter.Platform.Windows;
 using Xunit;
 
@@ -42,5 +44,15 @@ public class BitmapExtensionsTests
         Assert.Equal(bmp.Width, convertedBmp.Width);
         Assert.Equal(bmp.Height, convertedBmp.Height);
         Assert.Equal(System.Drawing.Color.FromArgb(255, 0, 30, 0).ToArgb(), convertedBmp.GetPixel(0, 3).ToArgb());
+    }
+
+    [Fact]
+    public void BitmapExtensions_NullOrEmptyDimensions_ShouldThrowExpectedExceptions()
+    {
+        Assert.Throws<ArgumentNullException>(() => ((System.Drawing.Bitmap)null!).ToSequentialMatrix());
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb8>)null!).ToBitmap());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 5).ToBitmap());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(5, 0).ToBitmap());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 0).ToBitmap());
     }
 }

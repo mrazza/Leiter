@@ -133,7 +133,7 @@ public class MatrixExtensionsTests
     [Fact]
     public void Map_OnNonMatrixReadOnlyMatrix_ShouldTransformElements()
     {
-        IReadOnlyMatrix<DoublePixel> dummy = new DummyReadOnlyMatrix();
+        IReadOnlyMatrix<DoublePixel> dummy = new DummyReadOnlyMatrix<DoublePixel>(2, 2, (x, y) => new DoublePixel(x + y));
         Matrix<bool> mapped = dummy.Map(p => p.Value > 0.5);
 
         Assert.Equal(2, mapped.Width);
@@ -147,7 +147,7 @@ public class MatrixExtensionsTests
     [Fact]
     public void Map_NullArguments_ShouldThrowArgumentNullException()
     {
-        IReadOnlyMatrix<DoublePixel> dummy = new DummyReadOnlyMatrix();
+        IReadOnlyMatrix<DoublePixel> dummy = new DummyReadOnlyMatrix<DoublePixel>(2, 2, (x, y) => new DoublePixel(x + y));
 
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).Map(p => p.Value > 0.0));
         Assert.Throws<ArgumentNullException>(() => dummy.Map<DoublePixel, bool>(null!));
@@ -246,7 +246,7 @@ public class MatrixExtensionsTests
         Assert.Equal(new Size(2, 2), viewClone.Size);
         Assert.Equal([2.0, 2.0, 4.0, 4.0], Array.ConvertAll(viewClone.ToArray(), static p => p.Value));
 
-        IReadOnlyMatrix<DoublePixel> dummy = new DummyReadOnlyMatrix();
+        IReadOnlyMatrix<DoublePixel> dummy = new DummyReadOnlyMatrix<DoublePixel>(2, 2, (x, y) => new DoublePixel(x + y));
         Matrix<DoublePixel> dummyClone = dummy.Clone();
         Assert.IsType<SequentialMatrix<DoublePixel>>(dummyClone);
         Assert.True(dummyClone.ContentEquals(dummy));

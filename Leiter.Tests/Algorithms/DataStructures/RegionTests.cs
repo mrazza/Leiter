@@ -1,8 +1,8 @@
-using Xunit;
+namespace Leiter.Tests.Algorithms.DataStructures;
+
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
-
-namespace Leiter.Tests.Algorithms.DataStructures;
+using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="Region{T}" />.

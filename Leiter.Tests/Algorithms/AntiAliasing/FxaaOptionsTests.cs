@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms.AntiAliasing;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -32,13 +33,7 @@ public class FxaaOptionsTests
     /// </summary>
     /// <param name="threshold">The invalid threshold value.</param>
     [Theory]
-    [InlineData(0.0)]
-    [InlineData(-0.1)]
-    [InlineData(1.001)]
-    [InlineData(2.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidRelativeContrastThreshold_ShouldThrowArgumentOutOfRangeException(double threshold)
     {
         var options = new FxaaOptions(RelativeContrastThreshold: threshold);
@@ -62,11 +57,7 @@ public class FxaaOptionsTests
     /// </summary>
     /// <param name="threshold">The invalid threshold value.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-1.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidAbsoluteContrastThreshold_ShouldThrowArgumentOutOfRangeException(double threshold)
     {
         var options = new FxaaOptions(AbsoluteContrastThreshold: threshold);
@@ -90,11 +81,7 @@ public class FxaaOptionsTests
     /// </summary>
     /// <param name="strength">The invalid subpixel blend strength value.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSubpixelBlendStrength_ShouldThrowArgumentOutOfRangeException(double strength)
     {
         var options = new FxaaOptions(SubpixelBlendStrength: strength);

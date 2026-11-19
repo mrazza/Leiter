@@ -3,6 +3,7 @@ namespace Leiter.Tests.Algorithms.Segmentation;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -22,27 +23,25 @@ public class GrabCutOptionsTests
         options.Validate();
     }
 
-    [Fact]
-    public void Validate_InvalidIterations_ShouldThrowArgumentOutOfRangeException()
+    [Theory]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
+    public void Validate_InvalidIterations_ShouldThrowArgumentOutOfRangeException(int iterations)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(Iterations: 0).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(Iterations: -1).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(Iterations: iterations).Validate());
     }
 
-    [Fact]
-    public void Validate_InvalidMixtureComponentCount_ShouldThrowArgumentOutOfRangeException()
+    [Theory]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
+    public void Validate_InvalidMixtureComponentCount_ShouldThrowArgumentOutOfRangeException(int componentCount)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(MixtureComponentCount: 0).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(MixtureComponentCount: -1).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(MixtureComponentCount: componentCount).Validate());
     }
 
-    [Fact]
-    public void Validate_InvalidSmoothnessWeight_ShouldThrowArgumentOutOfRangeException()
+    [Theory]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
+    public void Validate_InvalidSmoothnessWeight_ShouldThrowArgumentOutOfRangeException(double smoothnessWeight)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(SmoothnessWeight: -1.0).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(SmoothnessWeight: double.NaN).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(SmoothnessWeight: double.PositiveInfinity).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(SmoothnessWeight: double.NegativeInfinity).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutOptions(SmoothnessWeight: smoothnessWeight).Validate());
     }
 
     [Fact]
@@ -57,16 +56,8 @@ public class GrabCutOptionsTests
         Assert.Equal(12.5, small.SmoothnessWeight, 6);
         Assert.True(large.SmoothnessWeight > refOpts.SmoothnessWeight);
 
-        var flat = new SequentialMatrix<Rgb8>(64, 64);
-        flat.SetAll(new Rgb8(100, 120, 140));
-        var rich = new SequentialMatrix<Rgb8>(64, 64);
-        for (int y = 0; y < 64; y++)
-        {
-            for (int x = 0; x < 64; x++)
-            {
-                rich[x, y] = (x + y) % 2 == 0 ? new Rgb8(250, 240, 30) : new Rgb8(15, 20, 220);
-            }
-        }
+        SequentialMatrix<Rgb8> flat = TestMatrices.Constant(64, 64, new Rgb8(100, 120, 140));
+        SequentialMatrix<Rgb8> rich = TestMatrices.Checkerboard(64, 64, new Rgb8(250, 240, 30), new Rgb8(15, 20, 220));
 
         GrabCutOptions flatOpts = GrabCutOptions.ForImage(flat);
         GrabCutOptions richOpts = GrabCutOptions.ForImage(rich);

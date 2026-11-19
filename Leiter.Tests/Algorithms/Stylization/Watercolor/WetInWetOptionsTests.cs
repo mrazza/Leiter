@@ -5,6 +5,7 @@ using Leiter.Algorithms;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -53,11 +54,7 @@ public class WetInWetOptionsTests
     /// </summary>
     /// <param name="threshold">The invalid threshold value.</param>
     [Theory]
-    [InlineData(-0.001)]
-    [InlineData(-10.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidColorGradientThreshold_ShouldThrowArgumentOutOfRangeException(double threshold)
     {
         var options = new WetInWetOptions(ColorGradientThreshold: threshold);
@@ -143,11 +140,7 @@ public class WetInWetOptionsTests
     /// </summary>
     /// <param name="diff">The invalid intensity difference.</param>
     [Theory]
-    [InlineData(-0.001)]
-    [InlineData(-1.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMinIntensityDifference_ShouldThrowArgumentOutOfRangeException(double diff)
     {
         var options = new WetInWetOptions(MinIntensityDifference: diff);
@@ -173,11 +166,7 @@ public class WetInWetOptionsTests
     /// </summary>
     /// <param name="threshold">The invalid salient overlap threshold.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSalientOverlapThreshold_ShouldThrowArgumentOutOfRangeException(double threshold)
     {
         var options = new WetInWetOptions(SalientOverlapThreshold: threshold);
@@ -203,9 +192,7 @@ public class WetInWetOptionsTests
     /// </summary>
     /// <param name="radius">The invalid scatter radius.</param>
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(-10)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidScatterRadius_ShouldThrowArgumentOutOfRangeException(int radius)
     {
         var options = new WetInWetOptions(ScatterRadius: radius);
@@ -231,11 +218,7 @@ public class WetInWetOptionsTests
     /// </summary>
     /// <param name="prob">The invalid seed probability.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSeedProbability_ShouldThrowArgumentOutOfRangeException(double prob)
     {
         var options = new WetInWetOptions(SeedProbability: prob);
@@ -261,11 +244,7 @@ public class WetInWetOptionsTests
     /// </summary>
     /// <param name="radius">The invalid major radius.</param>
     [Theory]
-    [InlineData(0.0)]
-    [InlineData(-0.1)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMajorRadius_ShouldThrowArgumentOutOfRangeException(double radius)
     {
         var options = new WetInWetOptions(EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: radius));
@@ -291,11 +270,7 @@ public class WetInWetOptionsTests
     /// </summary>
     /// <param name="radius">The invalid minor radius.</param>
     [Theory]
-    [InlineData(0.0)]
-    [InlineData(-0.1)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMinorRadius_ShouldThrowArgumentOutOfRangeException(double radius)
     {
         var options = new WetInWetOptions(EllipticalFilter: new OrientedEllipticalFilterOptions(MinorRadius: radius));
@@ -381,16 +356,8 @@ public class WetInWetOptionsTests
             WetInWetOptions.ForSize(size).Validate();
         }
 
-        var flat = new SequentialMatrix<Rgb8>(256, 256);
-        flat.SetAll(new Rgb8(120, 120, 120));
-        var busy = new SequentialMatrix<Rgb8>(256, 256);
-        for (int y = 0; y < 256; y++)
-        {
-            for (int x = 0; x < 256; x++)
-            {
-                busy[x, y] = (((x / 4) + (y / 4)) & 1) == 0 ? new Rgb8(255, 255, 255) : Rgb8.Zero;
-            }
-        }
+        SequentialMatrix<Rgb8> flat = TestMatrices.Constant(256, 256, new Rgb8(120, 120, 120));
+        SequentialMatrix<Rgb8> busy = TestMatrices.Checkerboard(256, 256, new Rgb8(255, 255, 255), Rgb8.Zero, cellSize: 4);
 
         Assert.True(WetInWetOptions.ForImage(busy).ColorGradientThreshold > WetInWetOptions.ForImage(flat).ColorGradientThreshold);
 

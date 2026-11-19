@@ -1,18 +1,46 @@
-using Leiter.Tests.TestUtils;
-using Xunit;
-using Leiter.Pixels;
-using Leiter.Core;
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-
 namespace Leiter.Tests.Pixels;
+
+using System;
+using Leiter.Pixels;
+using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="Xyz32" />.
 /// </summary>
-public class Xyz32Tests
+public class Xyz32Tests : PixelContractTestsBase<Xyz32, float>
 {
+    protected override Xyz32 ArithmeticLeft => new(10.0f, 20.0f, 30.0f);
+
+    protected override Xyz32 ArithmeticRight => new(2.0f, 2.0f, 2.0f);
+
+    protected override (Xyz32 Add, Xyz32 Subtract, Xyz32 Multiply, Xyz32 Divide) ExpectedSelfResults =>
+        (new(12.0f, 22.0f, 32.0f), new(8.0f, 18.0f, 28.0f), new(20.0f, 40.0f, 60.0f), new(5.0f, 10.0f, 15.0f));
+
+    protected override (Xyz32 Add, Xyz32 Subtract, Xyz32 Multiply, Xyz32 Divide) ExpectedScaledByTwoResults =>
+        ExpectedSelfResults;
+
+    protected override int RequiredVectorWidth => 3;
+
+    protected override Xyz32 VectorSample => new(1.0f, 2.0f, 3.0f);
+
+    protected override double ExpectedVectorFirstComponent => 1.0;
+
+    protected override Xyz32 EnumeratorSample => new(1.0f, 2.0f, 3.0f);
+
+    protected override float[] ExpectedComponents => [1.0f, 2.0f, 3.0f];
+
+    protected override Func<float, float> ComponentDoubleFunc => static b => b * 2.0f;
+
+    protected override Xyz32 ExpectedComponentMapped => new(20.0f, 40.0f, 60.0f);
+
+    protected override Xyz32 ExpectedColorComponentMapped => new(20.0f, 20.0f, 60.0f);
+
+    protected override Xyz32 DistanceFirst => new(1.0f, 2.0f, 3.0f);
+
+    protected override Xyz32 DistanceSecond => new(4.0f, 2.0f, 3.0f);
+
+    protected override double ExpectedDistance => 3.0;
+
     [Fact]
     public void Properties_ShouldWork()
     {
@@ -21,96 +49,5 @@ public class Xyz32Tests
         Assert.Equal(2.0f, p.Y);
         Assert.Equal(3.0f, p.Z);
         Assert.Equal(0.0f, Xyz32.Zero.X);
-    }
-
-    [Fact]
-    public void SelfOperations_ShouldWork()
-    {
-        var p1 = new Xyz32(10.0f, 20.0f, 30.0f);
-        var p2 = new Xyz32(2.0f, 2.0f, 2.0f);
-
-        Assert.Equal(new Xyz32(12.0f, 22.0f, 32.0f), p1.Add(p2));
-        Assert.Equal(new Xyz32(8.0f, 18.0f, 28.0f), p1.Subtract(p2));
-        Assert.Equal(new Xyz32(20.0f, 40.0f, 60.0f), p1.Multiply(p2));
-        Assert.Equal(new Xyz32(5.0f, 10.0f, 15.0f), p1.Divide(p2));
-    }
-
-    [Fact]
-    public void NumericOperations_Decimal_ShouldWork()
-    {
-        var p = new Xyz32(10.0f, 20.0f, 30.0f);
-
-        Assert.Equal(new Xyz32(12.0f, 22.0f, 32.0f), p.Add(2.0m));
-        Assert.Equal(new Xyz32(8.0f, 18.0f, 28.0f), p.Subtract(2.0m));
-        Assert.Equal(new Xyz32(20.0f, 40.0f, 60.0f), p.Multiply(2.0m));
-        Assert.Equal(new Xyz32(5.0f, 10.0f, 15.0f), p.Divide(2.0m));
-    }
-
-    [Fact]
-    public void NumericOperations_Double_ShouldWork()
-    {
-        var p = new Xyz32(10.0f, 20.0f, 30.0f);
-
-        Assert.Equal(new Xyz32(12.0f, 22.0f, 32.0f), p.Add(2.0));
-        Assert.Equal(new Xyz32(8.0f, 18.0f, 28.0f), p.Subtract(2.0));
-        Assert.Equal(new Xyz32(20.0f, 40.0f, 60.0f), p.Multiply(2.0));
-        Assert.Equal(new Xyz32(5.0f, 10.0f, 15.0f), p.Divide(2.0));
-    }
-
-    
-
-    [Fact]
-    public void ScalarOperations_ShouldWork()
-    {
-        var p = new Xyz32(10.0f, 20.0f, 30.0f);
-        var scalar = new DummyScalar(2.0);
-
-        Assert.Equal(new Xyz32(12.0f, 22.0f, 32.0f), p.Add(scalar));
-        Assert.Equal(new Xyz32(8.0f, 18.0f, 28.0f), p.Subtract(scalar));
-        Assert.Equal(new Xyz32(20.0f, 40.0f, 60.0f), p.Multiply(scalar));
-        Assert.Equal(new Xyz32(5.0f, 10.0f, 15.0f), p.Divide(scalar));
-    }
-
-    [Fact]
-    public void VectorOperations_ShouldWork()
-    {
-        var p = new Xyz32(1.0f, 2.0f, 3.0f);
-        if (Vector<double>.Count >= 3)
-        {
-            var vec = p.ToDoubleVector();
-            Assert.Equal(1.0, vec[0]);
-
-            var pFromVec = Xyz32.FromDoubleVector(vec);
-            Assert.Equal(p, pFromVec);
-        }
-    }
-
-    [Fact]
-    public void Enumerator_ShouldYieldValues()
-    {
-        var p = new Xyz32(1.0f, 2.0f, 3.0f);
-        var list = new List<float>(p);
-        Assert.Equal(new float[] { 1.0f, 2.0f, 3.0f }, list);
-
-        var seq = (System.Collections.IEnumerable)p;
-        var seqEnum = seq.GetEnumerator();
-        Assert.True(seqEnum.MoveNext());
-        Assert.Equal(1.0f, seqEnum.Current);
-    }
-
-    [Fact]
-    public void ComponentMaps_ShouldWork()
-    {
-        var p = new Xyz32(10.0f, 20.0f, 30.0f);
-        Assert.Equal(new Xyz32(20.0f, 20.0f, 60.0f), p.ColorComponentMap(b => b * 2)); // ColorComponentMap maps X and Z only!
-        Assert.Equal(new Xyz32(20.0f, 40.0f, 60.0f), p.ComponentMap(b => b * 2));
-    }
-
-    [Fact]
-    public void Distance_ShouldWork()
-    {
-        var p1 = new Xyz32(1.0f, 2.0f, 3.0f);
-        var p2 = new Xyz32(4.0f, 2.0f, 3.0f);
-        Assert.Equal(3.0, p1.Distance(p2));
     }
 }

@@ -1,18 +1,46 @@
-using Leiter.Tests.TestUtils;
-using Xunit;
-using Leiter.Pixels;
-using Leiter.Core;
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-
 namespace Leiter.Tests.Pixels;
+
+using System;
+using Leiter.Pixels;
+using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="Rgb64" />.
 /// </summary>
-public class Rgb64Tests
+public class Rgb64Tests : PixelContractTestsBase<Rgb64, double>
 {
+    protected override Rgb64 ArithmeticLeft => new(10.0, 20.0, 30.0);
+
+    protected override Rgb64 ArithmeticRight => new(2.0, 2.0, 2.0);
+
+    protected override (Rgb64 Add, Rgb64 Subtract, Rgb64 Multiply, Rgb64 Divide) ExpectedSelfResults =>
+        (new(12.0, 22.0, 32.0), new(8.0, 18.0, 28.0), new(20.0, 40.0, 60.0), new(5.0, 10.0, 15.0));
+
+    protected override (Rgb64 Add, Rgb64 Subtract, Rgb64 Multiply, Rgb64 Divide) ExpectedScaledByTwoResults =>
+        ExpectedSelfResults;
+
+    protected override int RequiredVectorWidth => 3;
+
+    protected override Rgb64 VectorSample => new(1.0, 2.0, 3.0);
+
+    protected override double ExpectedVectorFirstComponent => 1.0;
+
+    protected override Rgb64 EnumeratorSample => new(1.0, 2.0, 3.0);
+
+    protected override double[] ExpectedComponents => [1.0, 2.0, 3.0];
+
+    protected override Func<double, double> ComponentDoubleFunc => static b => b * 2.0;
+
+    protected override Rgb64 ExpectedComponentMapped => new(20.0, 40.0, 60.0);
+
+    protected override Rgb64 ExpectedColorComponentMapped => new(20.0, 40.0, 60.0);
+
+    protected override Rgb64 DistanceFirst => new(1.0, 2.0, 3.0);
+
+    protected override Rgb64 DistanceSecond => new(4.0, 6.0, 3.0);
+
+    protected override double ExpectedDistance => 5.0;
+
     [Fact]
     public void Properties_ShouldWork()
     {
@@ -24,94 +52,10 @@ public class Rgb64Tests
     }
 
     [Fact]
-    public void SelfOperations_ShouldWork()
-    {
-        var p1 = new Rgb64(10.0, 20.0, 30.0);
-        var p2 = new Rgb64(2.0, 2.0, 2.0);
-
-        Assert.Equal(new Rgb64(12.0, 22.0, 32.0), p1.Add(p2));
-        Assert.Equal(new Rgb64(8.0, 18.0, 28.0), p1.Subtract(p2));
-        Assert.Equal(new Rgb64(20.0, 40.0, 60.0), p1.Multiply(p2));
-        Assert.Equal(new Rgb64(5.0, 10.0, 15.0), p1.Divide(p2));
-    }
-
-    [Fact]
-    public void NumericOperations_Decimal_ShouldWork()
-    {
-        var p = new Rgb64(10.0, 20.0, 30.0);
-
-        Assert.Equal(new Rgb64(12.0, 22.0, 32.0), p.Add(2.0m));
-        Assert.Equal(new Rgb64(8.0, 18.0, 28.0), p.Subtract(2.0m));
-        Assert.Equal(new Rgb64(20.0, 40.0, 60.0), p.Multiply(2.0m));
-        Assert.Equal(new Rgb64(5.0, 10.0, 15.0), p.Divide(2.0m));
-    }
-
-    [Fact]
-    public void NumericOperations_Double_ShouldWork()
-    {
-        var p = new Rgb64(10.0, 20.0, 30.0);
-
-        Assert.Equal(new Rgb64(12.0, 22.0, 32.0), p.Add(2.0));
-        Assert.Equal(new Rgb64(8.0, 18.0, 28.0), p.Subtract(2.0));
-        Assert.Equal(new Rgb64(20.0, 40.0, 60.0), p.Multiply(2.0));
-        Assert.Equal(new Rgb64(5.0, 10.0, 15.0), p.Divide(2.0));
-    }
-
-    
-
-    [Fact]
-    public void ScalarOperations_ShouldWork()
-    {
-        var p = new Rgb64(10.0, 20.0, 30.0);
-        var scalar = new DummyScalar(2.0);
-
-        Assert.Equal(new Rgb64(12.0, 22.0, 32.0), p.Add(scalar));
-        Assert.Equal(new Rgb64(8.0, 18.0, 28.0), p.Subtract(scalar));
-        Assert.Equal(new Rgb64(20.0, 40.0, 60.0), p.Multiply(scalar));
-        Assert.Equal(new Rgb64(5.0, 10.0, 15.0), p.Divide(scalar));
-    }
-
-    [Fact]
-    public void VectorOperations_ShouldWork()
-    {
-        var p = new Rgb64(1.0, 2.0, 3.0);
-        if (Vector<double>.Count >= 3)
-        {
-            var vec = p.ToDoubleVector();
-            Assert.Equal(1.0, vec[0]);
-
-            var pFromVec = Rgb64.FromDoubleVector(vec);
-            Assert.Equal(p, pFromVec);
-        }
-    }
-
-    [Fact]
-    public void Enumerator_ShouldYieldValues()
-    {
-        var p = new Rgb64(1.0, 2.0, 3.0);
-        var list = new List<double>(p);
-        Assert.Equal(new double[] { 1.0, 2.0, 3.0 }, list);
-
-        var seq = (System.Collections.IEnumerable)p;
-        var seqEnum = seq.GetEnumerator();
-        Assert.True(seqEnum.MoveNext());
-        Assert.Equal(1.0, seqEnum.Current);
-    }
-
-    [Fact]
-    public void ComponentMaps_ShouldWork()
-    {
-        var p = new Rgb64(10.0, 20.0, 30.0);
-        Assert.Equal(new Rgb64(20.0, 40.0, 60.0), p.ComponentMap(b => b * 2));
-        Assert.Equal(new Rgb64(20.0, 40.0, 60.0), p.ColorComponentMap(b => b * 2));
-    }
-
-    [Fact]
-    public void Distance_ShouldWork()
+    public void DistanceSquared_ShouldWork()
     {
         var p1 = new Rgb64(1.0, 2.0, 3.0);
         var p2 = new Rgb64(4.0, 6.0, 3.0);
         Assert.Equal(25.0, p1.DistanceSquared(p2));
-        Assert.Equal(5.0, p1.Distance(p2));
     }
 }

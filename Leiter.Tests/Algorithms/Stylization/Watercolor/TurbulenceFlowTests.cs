@@ -1,12 +1,11 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -75,26 +74,12 @@ public class TurbulenceFlowTests
     [Fact]
     public void Apply_ZeroIntensity_ShouldReturnExactClone()
     {
-        var image = new SequentialMatrix<Rgb8>(4, 4);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                image[x, y] = new Rgb8((byte)(x * 50), (byte)(y * 60), 128);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(4, 4, (x, y) => new Rgb8((byte)(x * 50), (byte)(y * 60), 128));
 
         var options = new TurbulenceFlowOptions(Intensity: 0.0);
         Matrix<Rgb8> result = TurbulenceFlow.Apply(image, options);
 
-        Assert.Equal(image.Size, result.Size);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                Assert.Equal(image[x, y], result[x, y]);
-            }
-        }
+        MatrixAssert.Equal(image, result);
     }
 
     /// <summary>
@@ -103,19 +88,12 @@ public class TurbulenceFlowTests
     [Fact]
     public void Apply_ZeroIntensity_CustomReadOnlyMatrix_ShouldReturnExactCopy()
     {
-        var custom = new TestReadOnlyMatrix<Rgb8>(3, 3, new Rgb8(100, 110, 120));
+        var custom = new DummyReadOnlyMatrix<Rgb8>(3, 3, new Rgb8(100, 110, 120));
         var options = new TurbulenceFlowOptions(Intensity: 0.0);
 
         Matrix<Rgb8> result = TurbulenceFlow.Apply(custom, options);
 
-        Assert.Equal(custom.Size, result.Size);
-        for (int y = 0; y < 3; y++)
-        {
-            for (int x = 0; x < 3; x++)
-            {
-                Assert.Equal(custom[x, y], result[x, y]);
-            }
-        }
+        MatrixAssert.Equal(custom, result);
     }
 
     /// <summary>
@@ -124,26 +102,13 @@ public class TurbulenceFlowTests
     [Fact]
     public void Apply_DeterministicPerSeed_ShouldProduceIdenticalOutput()
     {
-        var image = new SequentialMatrix<Rgb8>(16, 16);
-        for (int y = 0; y < 16; y++)
-        {
-            for (int x = 0; x < 16; x++)
-            {
-                image[x, y] = new Rgb8(128, 128, 128);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(16, 16, new Rgb8(128, 128, 128));
 
         var options = new TurbulenceFlowOptions(Intensity: 0.4);
         Matrix<Rgb8> run1 = TurbulenceFlow.Apply(image, options);
         Matrix<Rgb8> run2 = TurbulenceFlow.Apply(image, options);
 
-        for (int y = 0; y < 16; y++)
-        {
-            for (int x = 0; x < 16; x++)
-            {
-                Assert.Equal(run1[x, y], run2[x, y]);
-            }
-        }
+        MatrixAssert.Equal(run1, run2);
     }
 
     /// <summary>
@@ -152,14 +117,7 @@ public class TurbulenceFlowTests
     [Fact]
     public void Apply_DistinctSeeds_ShouldProduceDifferentOutput()
     {
-        var image = new SequentialMatrix<Rgb8>(16, 16);
-        for (int y = 0; y < 16; y++)
-        {
-            for (int x = 0; x < 16; x++)
-            {
-                image[x, y] = new Rgb8(128, 128, 128);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(16, 16, new Rgb8(128, 128, 128));
 
         var optsA = new TurbulenceFlowOptions(
             Intensity: 0.4,
@@ -172,20 +130,7 @@ public class TurbulenceFlowTests
         Matrix<Rgb8> resA = TurbulenceFlow.Apply(image, optsA);
         Matrix<Rgb8> resB = TurbulenceFlow.Apply(image, optsB);
 
-        bool hasDifference = false;
-        for (int y = 0; y < 16; y++)
-        {
-            for (int x = 0; x < 16; x++)
-            {
-                if (resA[x, y] != resB[x, y])
-                {
-                    hasDifference = true;
-                    break;
-                }
-            }
-        }
-
-        Assert.True(hasDifference);
+        MatrixAssert.NotEqual(resA, resB);
     }
 
     /// <summary>
@@ -194,30 +139,12 @@ public class TurbulenceFlowTests
     [Fact]
     public void Apply_PaperWhiteAndPureBlack_RemainInvariant()
     {
-        var image = new SequentialMatrix<Rgb8>(16, 16);
-        for (int y = 0; y < 16; y++)
-        {
-            for (int x = 0; x < 16; x++)
-            {
-                image[x, y] = (x + y) % 2 == 0
-                    ? new Rgb8(255, 255, 255)
-                    : new Rgb8(0, 0, 0);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Checkerboard(16, 16, new Rgb8(255, 255, 255), new Rgb8(0, 0, 0));
 
         var options = new TurbulenceFlowOptions(Intensity: 0.5);
         Matrix<Rgb8> result = TurbulenceFlow.Apply(image, options);
 
-        for (int y = 0; y < 16; y++)
-        {
-            for (int x = 0; x < 16; x++)
-            {
-                Rgb8 original = image[x, y];
-                Rgb8 actual = result[x, y];
-
-                Assert.Equal(original, actual);
-            }
-        }
+        MatrixAssert.Equal(image, result);
     }
 
     /// <summary>
@@ -228,14 +155,7 @@ public class TurbulenceFlowTests
     {
         const int width = 32;
         const int height = 32;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = new Rgb8(128, 128, 128);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(width, height, new Rgb8(128, 128, 128));
 
         var options = new TurbulenceFlowOptions(Intensity: 0.4);
         Matrix<Rgb8> result = TurbulenceFlow.Apply(image, options);
@@ -280,14 +200,7 @@ public class TurbulenceFlowTests
     [Fact]
     public void Apply_CustomNoiseOptions_ShouldBeRespected()
     {
-        var image = new SequentialMatrix<Rgb8>(16, 16);
-        for (int y = 0; y < 16; y++)
-        {
-            for (int x = 0; x < 16; x++)
-            {
-                image[x, y] = new Rgb8(128, 128, 128);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(16, 16, new Rgb8(128, 128, 128));
 
         var defaultOpts = new TurbulenceFlowOptions(Intensity: 0.5);
         var customOpts = new TurbulenceFlowOptions(
@@ -297,20 +210,7 @@ public class TurbulenceFlowTests
         Matrix<Rgb8> resDefault = TurbulenceFlow.Apply(image, defaultOpts);
         Matrix<Rgb8> resCustom = TurbulenceFlow.Apply(image, customOpts);
 
-        bool differs = false;
-        for (int y = 0; y < 16; y++)
-        {
-            for (int x = 0; x < 16; x++)
-            {
-                if (resDefault[x, y] != resCustom[x, y])
-                {
-                    differs = true;
-                    break;
-                }
-            }
-        }
-
-        Assert.True(differs);
+        MatrixAssert.NotEqual(resDefault, resCustom);
     }
 
     /// <summary>
@@ -319,60 +219,9 @@ public class TurbulenceFlowTests
     [Fact]
     public void Apply_CustomReadOnlyMatrix_ShouldWork()
     {
-        var custom = new TestReadOnlyMatrix<Rgb8>(8, 8, new Rgb8(128, 128, 128));
+        var custom = new DummyReadOnlyMatrix<Rgb8>(8, 8, new Rgb8(128, 128, 128));
         Matrix<Rgb8> result = TurbulenceFlow.Apply(custom);
 
         Assert.Equal(custom.Size, result.Size);
-    }
-
-    private sealed class TestReadOnlyMatrix<T> : IReadOnlyMatrix<T>
-        where T : struct
-    {
-        private readonly T[,] _data;
-
-        public TestReadOnlyMatrix(int width, int height, T initial)
-        {
-            Width = width;
-            Height = height;
-            _data = new T[width, height];
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    _data[x, y] = initial;
-                }
-            }
-        }
-
-        public int Width { get; }
-
-        public int Height { get; }
-
-        public Size Size => new(Width, Height);
-
-        public int Count => Width * Height;
-
-        public T this[int x, int y] => _data[x, y];
-
-        public T this[Coord coord] => _data[coord.X, coord.Y];
-
-        public T this[int index] => _data[index % Width, index / Width];
-
-        public T GetElement(int index) => this[index];
-
-        public T GetElement(int width, int height) => _data[width, height];
-
-        public IEnumerator<T> GetEnumerator()
-        {
-            for (int y = 0; y < Height; y++)
-            {
-                for (int x = 0; x < Width; x++)
-                {
-                    yield return _data[x, y];
-                }
-            }
-        }
-
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

@@ -1,12 +1,11 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -68,14 +67,7 @@ public class PaperGranulationTests
     {
         Matrix<DoublePixel> heightMap = PaperGranulation.GeneratePaperHeightMap(new Size(16, 16));
 
-        for (int y = 0; y < 16; y++)
-        {
-            for (int x = 0; x < 16; x++)
-            {
-                double val = heightMap[x, y].Value;
-                Assert.True(val >= 0.0 && val <= 1.0);
-            }
-        }
+        MatrixAssert.AllInRange(heightMap, 0.0, 1.0);
     }
 
     /// <summary>
@@ -106,28 +98,8 @@ public class PaperGranulationTests
             }
         }
 
-        for (int y = 0; y < 12; y++)
-        {
-            for (int x = 0; x < 12; x++)
-            {
-                Assert.Equal(map1[x, y].Value, map2[x, y].Value);
-            }
-        }
-
-        bool hasDifference = false;
-        for (int y = 0; y < 12; y++)
-        {
-            for (int x = 0; x < 12; x++)
-            {
-                if (Math.Abs(map1[x, y].Value - mapOther[x, y].Value) > 1e-6)
-                {
-                    hasDifference = true;
-                    break;
-                }
-            }
-        }
-
-        Assert.True(hasDifference);
+        MatrixAssert.Equal(map1, map2);
+        MatrixAssert.NotEqual(map1, mapOther);
     }
 
     /// <summary>
@@ -188,26 +160,12 @@ public class PaperGranulationTests
     [Fact]
     public void Apply_ZeroStrengths_ShouldReturnExactClone()
     {
-        var image = new SequentialMatrix<Rgb8>(4, 4);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                image[x, y] = new Rgb8((byte)(x * 50), (byte)(y * 60), 128);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(4, 4, (x, y) => new Rgb8((byte)(x * 50), (byte)(y * 60), 128));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: 0.0);
         Matrix<Rgb8> result = PaperGranulation.Apply(image, options);
 
-        Assert.Equal(image.Size, result.Size);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                Assert.Equal(image[x, y], result[x, y]);
-            }
-        }
+        MatrixAssert.Equal(image, result);
     }
 
     /// <summary>
@@ -216,19 +174,12 @@ public class PaperGranulationTests
     [Fact]
     public void Apply_ZeroStrengths_CustomReadOnlyMatrix_ShouldReturnExactCopy()
     {
-        var custom = new TestReadOnlyMatrix<Rgb8>(3, 3, new Rgb8(110, 120, 130));
+        var custom = new DummyReadOnlyMatrix<Rgb8>(3, 3, new Rgb8(110, 120, 130));
         var options = new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: 0.0);
 
         Matrix<Rgb8> result = PaperGranulation.Apply(custom, options);
 
-        Assert.Equal(custom.Size, result.Size);
-        for (int y = 0; y < 3; y++)
-        {
-            for (int x = 0; x < 3; x++)
-            {
-                Assert.Equal(custom[x, y], result[x, y]);
-            }
-        }
+        MatrixAssert.Equal(custom, result);
     }
 
     /// <summary>
@@ -237,20 +188,9 @@ public class PaperGranulationTests
     [Fact]
     public void Apply_CustomHeightMap_ValleysDarkenRelativeToPeaks()
     {
-        const int width = 4;
-        const int height = 4;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var heightMap = new SequentialMatrix<DoublePixel>(width, height);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = new Rgb8(128, 128, 128);
-                // Left half is valley (h = 0.1), right half is peak (h = 0.9)
-                heightMap[x, y] = new DoublePixel(x < 2 ? 0.1 : 0.9);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(4, 4, new Rgb8(128, 128, 128));
+        // Left half is valley (h = 0.1), right half is peak (h = 0.9)
+        SequentialMatrix<DoublePixel> heightMap = TestMatrices.Create(4, 4, (x, _) => new DoublePixel(x < 2 ? 0.1 : 0.9));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.5, WarpAmplitude: 0.0);
         Matrix<Rgb8> result = PaperGranulation.Apply(image, options, heightMap);
@@ -273,14 +213,7 @@ public class PaperGranulationTests
     {
         const int width = 16;
         const int height = 16;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = new Rgb8(128, 128, 128);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(width, height, new Rgb8(128, 128, 128));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.35, WarpAmplitude: 0.0);
         Matrix<Rgb8> result = PaperGranulation.Apply(image, options);
@@ -308,20 +241,9 @@ public class PaperGranulationTests
     [Fact]
     public void Apply_MicroWarpDisplacementNearEdges_DensityStrengthZeroWarpPositive()
     {
-        const int width = 16;
-        const int height = 16;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var heightMap = new SequentialMatrix<DoublePixel>(width, height);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = x < 8 ? new Rgb8(220, 220, 220) : new Rgb8(40, 40, 40);
-                // Step height map creating a strong gradient at x = 7/8
-                heightMap[x, y] = new DoublePixel(x < 8 ? 0.0 : 1.0);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(16, 16, new Rgb8(220, 220, 220), new Rgb8(40, 40, 40), splitX: 8);
+        // Step height map creating a strong gradient at x = 7/8
+        SequentialMatrix<DoublePixel> heightMap = TestMatrices.Create(16, 16, (x, _) => new DoublePixel(x < 8 ? 0.0 : 1.0));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: 2.0);
         Matrix<Rgb8> result = PaperGranulation.Apply(image, options, heightMap);
@@ -339,31 +261,14 @@ public class PaperGranulationTests
     [Fact]
     public void Apply_NaNHeightMapValues_ShouldHandleGracefullyWithoutThrowing()
     {
-        const int width = 4;
-        const int height = 4;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var heightMap = new SequentialMatrix<DoublePixel>(width, height);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = new Rgb8(128, 128, 128);
-                heightMap[x, y] = new DoublePixel(double.NaN);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(4, 4, new Rgb8(128, 128, 128));
+        SequentialMatrix<DoublePixel> heightMap = TestMatrices.Constant(4, 4, new DoublePixel(double.NaN));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.4, WarpAmplitude: 1.0);
         Matrix<Rgb8> result = PaperGranulation.Apply(image, options, heightMap);
 
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                // NaN height defaults to 0.5 (neutral density offset = 0) and NaN gradients are bypassed
-                Assert.Equal(image[x, y], result[x, y]);
-            }
-        }
+        // NaN height defaults to 0.5 (neutral density offset = 0) and NaN gradients are bypassed
+        MatrixAssert.Equal(image, result);
     }
 
     /// <summary>
@@ -372,27 +277,12 @@ public class PaperGranulationTests
     [Fact]
     public void Apply_PaperWhiteAndPureBlack_RemainInvariantUnderDensityAdjustment()
     {
-        var image = new SequentialMatrix<Rgb8>(8, 8);
-        for (int y = 0; y < 8; y++)
-        {
-            for (int x = 0; x < 8; x++)
-            {
-                image[x, y] = (x + y) % 2 == 0
-                    ? new Rgb8(255, 255, 255)
-                    : new Rgb8(0, 0, 0);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Checkerboard(8, 8, new Rgb8(255, 255, 255), new Rgb8(0, 0, 0));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.5, WarpAmplitude: 0.0);
         Matrix<Rgb8> result = PaperGranulation.Apply(image, options);
 
-        for (int y = 0; y < 8; y++)
-        {
-            for (int x = 0; x < 8; x++)
-            {
-                Assert.Equal(image[x, y], result[x, y]);
-            }
-        }
+        MatrixAssert.Equal(image, result);
     }
 
     /// <summary>
@@ -415,60 +305,9 @@ public class PaperGranulationTests
     [Fact]
     public void Apply_CustomReadOnlyMatrix_ShouldWork()
     {
-        var custom = new TestReadOnlyMatrix<Rgb8>(8, 8, new Rgb8(128, 128, 128));
+        var custom = new DummyReadOnlyMatrix<Rgb8>(8, 8, new Rgb8(128, 128, 128));
         Matrix<Rgb8> result = PaperGranulation.Apply(custom);
 
         Assert.Equal(custom.Size, result.Size);
-    }
-
-    private sealed class TestReadOnlyMatrix<T> : IReadOnlyMatrix<T>
-        where T : struct
-    {
-        private readonly T[,] _data;
-
-        public TestReadOnlyMatrix(int width, int height, T initial)
-        {
-            Width = width;
-            Height = height;
-            _data = new T[width, height];
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    _data[x, y] = initial;
-                }
-            }
-        }
-
-        public int Width { get; }
-
-        public int Height { get; }
-
-        public Size Size => new(Width, Height);
-
-        public int Count => Width * Height;
-
-        public T this[int x, int y] => _data[x, y];
-
-        public T this[Coord coord] => _data[coord.X, coord.Y];
-
-        public T this[int index] => _data[index % Width, index / Width];
-
-        public T GetElement(int index) => this[index];
-
-        public T GetElement(int width, int height) => _data[width, height];
-
-        public IEnumerator<T> GetEnumerator()
-        {
-            for (int y = 0; y < Height; y++)
-            {
-                for (int x = 0; x < Width; x++)
-                {
-                    yield return _data[x, y];
-                }
-            }
-        }
-
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

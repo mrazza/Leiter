@@ -1,14 +1,12 @@
-namespace Leiter.Tests.Platform.Linux;
+namespace Leiter.Tests.Platform.ImageSharp;
 
-using System.Runtime.Versioning;
-using Leiter.Platform.Linux;
+using Leiter.Platform.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 /// <summary>
-/// Provides unit tests for <see cref="Leiter.Platform.Linux.ColorExtensions" />.
+/// Provides unit tests for <see cref="Leiter.Platform.ImageSharp.ColorExtensions" />.
 /// </summary>
-[SupportedOSPlatform("linux")]
 public class ColorExtensionsTests
 {
     [Fact]

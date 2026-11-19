@@ -1,12 +1,11 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -74,26 +73,12 @@ public class EdgeDarkeningTests
     [Fact]
     public void Apply_ZeroIntensity_ShouldReturnExactClone()
     {
-        var image = new SequentialMatrix<Rgb8>(4, 4);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                image[x, y] = new Rgb8((byte)(x * 40), (byte)(y * 50), 100);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(4, 4, (x, y) => new Rgb8((byte)(x * 40), (byte)(y * 50), 100));
 
         var options = new EdgeDarkeningOptions(Intensity: 0.0);
         Matrix<Rgb8> result = EdgeDarkening.Apply(image, options);
 
-        Assert.Equal(image.Size, result.Size);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                Assert.Equal(image[x, y], result[x, y]);
-            }
-        }
+        MatrixAssert.Equal(image, result);
     }
 
     /// <summary>
@@ -102,19 +87,12 @@ public class EdgeDarkeningTests
     [Fact]
     public void Apply_ZeroIntensity_CustomReadOnlyMatrix_ShouldReturnExactCopy()
     {
-        var custom = new TestReadOnlyMatrix<Rgb8>(3, 3, new Rgb8(150, 160, 170));
+        var custom = new DummyReadOnlyMatrix<Rgb8>(3, 3, new Rgb8(150, 160, 170));
         var options = new EdgeDarkeningOptions(Intensity: 0.0);
 
         Matrix<Rgb8> result = EdgeDarkening.Apply(custom, options);
 
-        Assert.Equal(custom.Size, result.Size);
-        for (int y = 0; y < 3; y++)
-        {
-            for (int x = 0; x < 3; x++)
-            {
-                Assert.Equal(custom[x, y], result[x, y]);
-            }
-        }
+        MatrixAssert.Equal(custom, result);
     }
 
     /// <summary>
@@ -123,25 +101,12 @@ public class EdgeDarkeningTests
     [Fact]
     public void Apply_FlatImage_ShouldRemainUnchanged()
     {
-        var image = new SequentialMatrix<Rgb8>(8, 8);
         var color = new Rgb8(140, 160, 180);
-        for (int y = 0; y < 8; y++)
-        {
-            for (int x = 0; x < 8; x++)
-            {
-                image[x, y] = color;
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(8, 8, color);
 
         Matrix<Rgb8> result = EdgeDarkening.Apply(image);
 
-        for (int y = 0; y < 8; y++)
-        {
-            for (int x = 0; x < 8; x++)
-            {
-                Assert.Equal(color, result[x, y]);
-            }
-        }
+        MatrixAssert.Equal(image, result);
     }
 
     /// <summary>
@@ -150,19 +115,9 @@ public class EdgeDarkeningTests
     [Fact]
     public void Apply_StepEdge_EdgePixelsDarkenStrictlyRelativeToInteriorPixels()
     {
-        const int width = 32;
-        const int height = 16;
-        var image = new SequentialMatrix<Rgb8>(width, height);
         var leftColor = new Rgb8(200, 200, 200);
         var rightColor = new Rgb8(60, 60, 60);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = x < 16 ? leftColor : rightColor;
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(32, 16, leftColor, rightColor, splitX: 16);
 
         var options = new EdgeDarkeningOptions(Intensity: 0.7, BlurSigma: 1.0);
         Matrix<Rgb8> result = EdgeDarkening.Apply(image, options);
@@ -183,16 +138,7 @@ public class EdgeDarkeningTests
     [Fact]
     public void Apply_HigherIntensity_ProducesStrongerDarkening()
     {
-        const int width = 16;
-        const int height = 16;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = x < 8 ? new Rgb8(220, 220, 220) : new Rgb8(50, 50, 50);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(16, 16, new Rgb8(220, 220, 220), new Rgb8(50, 50, 50), splitX: 8);
 
         var optionsLow = new EdgeDarkeningOptions(Intensity: 0.25, BlurSigma: 0.5);
         var optionsHigh = new EdgeDarkeningOptions(Intensity: 0.85, BlurSigma: 0.5);
@@ -209,16 +155,7 @@ public class EdgeDarkeningTests
     [Fact]
     public void Apply_BlurSigmaZero_VsPositiveBlurSigma_SpreadsDarkening()
     {
-        const int width = 20;
-        const int height = 16;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = x < 10 ? new Rgb8(210, 210, 210) : new Rgb8(40, 40, 40);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(20, 16, new Rgb8(210, 210, 210), new Rgb8(40, 40, 40), splitX: 10);
 
         var optionsNoBlur = new EdgeDarkeningOptions(Intensity: 0.7, BlurSigma: 0.0);
         var optionsBlurred = new EdgeDarkeningOptions(Intensity: 0.7, BlurSigma: 2.0);
@@ -236,17 +173,8 @@ public class EdgeDarkeningTests
     [Fact]
     public void Apply_ScharrOperator_ShouldDarkenEdges()
     {
-        const int width = 16;
-        const int height = 16;
-        var image = new SequentialMatrix<Rgb8>(width, height);
         var leftColor = new Rgb8(190, 190, 190);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = x < 8 ? leftColor : new Rgb8(40, 40, 40);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(16, 16, leftColor, new Rgb8(40, 40, 40), splitX: 8);
 
         var options = new EdgeDarkeningOptions(Intensity: 0.6, GradientOperator: GradientOperator.Scharr);
         Matrix<Rgb8> result = EdgeDarkening.Apply(image, options);
@@ -260,61 +188,10 @@ public class EdgeDarkeningTests
     [Fact]
     public void Apply_CustomReadOnlyMatrix_ShouldWork()
     {
-        var custom = new TestReadOnlyMatrix<Rgb8>(8, 8, new Rgb8(150, 150, 150));
+        var custom = new DummyReadOnlyMatrix<Rgb8>(8, 8, new Rgb8(150, 150, 150));
         Matrix<Rgb8> result = EdgeDarkening.Apply(custom);
 
         Assert.Equal(custom.Size, result.Size);
         Assert.Equal(new Rgb8(150, 150, 150), result[4, 4]);
-    }
-
-    private sealed class TestReadOnlyMatrix<T> : IReadOnlyMatrix<T>
-        where T : struct
-    {
-        private readonly T[,] _data;
-
-        public TestReadOnlyMatrix(int width, int height, T initial)
-        {
-            Width = width;
-            Height = height;
-            _data = new T[width, height];
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    _data[x, y] = initial;
-                }
-            }
-        }
-
-        public int Width { get; }
-
-        public int Height { get; }
-
-        public Size Size => new(Width, Height);
-
-        public int Count => Width * Height;
-
-        public T this[int x, int y] => _data[x, y];
-
-        public T this[Coord coord] => _data[coord.X, coord.Y];
-
-        public T this[int index] => _data[index % Width, index / Width];
-
-        public T GetElement(int index) => this[index];
-
-        public T GetElement(int width, int height) => _data[width, height];
-
-        public IEnumerator<T> GetEnumerator()
-        {
-            for (int y = 0; y < Height; y++)
-            {
-                for (int x = 0; x < Width; x++)
-                {
-                    yield return _data[x, y];
-                }
-            }
-        }
-
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

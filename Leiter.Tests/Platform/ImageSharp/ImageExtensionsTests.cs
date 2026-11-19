@@ -1,16 +1,16 @@
-namespace Leiter.Tests.Platform.Linux;
+namespace Leiter.Tests.Platform.ImageSharp;
 
-using System.Runtime.Versioning;
+using System;
 using Leiter.Core;
-using Leiter.Platform.Linux;
+using Leiter.Pixels;
+using Leiter.Platform.ImageSharp;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 /// <summary>
-/// Provides unit tests for <see cref="Leiter.Platform.Linux.ImageExtensions" />.
+/// Provides unit tests for <see cref="Leiter.Platform.ImageSharp.ImageExtensions" />.
 /// </summary>
-[SupportedOSPlatform("linux")]
 public class ImageExtensionsTests
 {
     [Fact]
@@ -46,5 +46,15 @@ public class ImageExtensionsTests
             var row = accessor.GetRowSpan(3);
             Assert.Equal(new Rgb24(0, 30, 0), row[0]);
         });
+    }
+
+    [Fact]
+    public void ImageExtensions_NullOrEmptyDimensions_ShouldThrowExpectedExceptions()
+    {
+        Assert.Throws<ArgumentNullException>(() => ((Image<Rgb24>)null!).ToSequentialMatrix());
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb8>)null!).ToImage());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 5).ToImage());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(5, 0).ToImage());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 0).ToImage());
     }
 }

@@ -3,6 +3,7 @@ namespace Leiter.Tests.Algorithms.Saliency;
 using System;
 using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Saliency;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -35,11 +36,7 @@ public class SaliencyMaskOptionsTests
     }
 
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidFixedThreshold_ShouldThrowArgumentOutOfRangeException(double fixedThreshold)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -47,11 +44,7 @@ public class SaliencyMaskOptionsTests
     }
 
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMinAreaFraction_ShouldThrowArgumentOutOfRangeException(double minAreaFraction)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>

@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -35,9 +36,7 @@ public class LodAbstractionOptionsTests
     /// </summary>
     /// <param name="salientKernelSize">The invalid salient kernel size.</param>
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(-10)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSalientKernelSize_ShouldThrowArgumentOutOfRangeException(int salientKernelSize)
     {
         var options = new LodAbstractionOptions(SalientKernelSize: salientKernelSize);
@@ -49,9 +48,7 @@ public class LodAbstractionOptionsTests
     /// </summary>
     /// <param name="minNonSalientKernelSize">The invalid minimum non-salient kernel size.</param>
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(-10)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMinNonSalientKernelSize_ShouldThrowArgumentOutOfRangeException(int minNonSalientKernelSize)
     {
         var options = new LodAbstractionOptions(MinNonSalientKernelSize: minNonSalientKernelSize);
@@ -79,11 +76,7 @@ public class LodAbstractionOptionsTests
     /// </summary>
     /// <param name="scale">The invalid distance kernel scale.</param>
     [Theory]
-    [InlineData(-0.001)]
-    [InlineData(-10.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidDistanceKernelScale_ShouldThrowArgumentOutOfRangeException(double scale)
     {
         var options = new LodAbstractionOptions(DistanceKernelScale: scale);
@@ -124,11 +117,7 @@ public class LodAbstractionOptionsTests
     /// </summary>
     /// <param name="colorScale">The invalid cross segment color scale.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(-5.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidCrossSegmentColorScale_ShouldThrowArgumentOutOfRangeException(double colorScale)
     {
         var options = new LodAbstractionOptions(CrossSegmentColorScale: colorScale);
@@ -140,11 +129,7 @@ public class LodAbstractionOptionsTests
     /// </summary>
     /// <param name="threshold">The invalid salient overlap threshold.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSalientOverlapThreshold_ShouldThrowArgumentOutOfRangeException(double threshold)
     {
         var options = new LodAbstractionOptions(SalientOverlapThreshold: threshold);
@@ -210,16 +195,8 @@ public class LodAbstractionOptionsTests
             LodAbstractionOptions.ForSize(size).Validate();
         }
 
-        var flat = new SequentialMatrix<Rgb8>(64, 64);
-        flat.SetAll(new Rgb8(120, 120, 120));
-        var vibrant = new SequentialMatrix<Rgb8>(64, 64);
-        for (int y = 0; y < 64; y++)
-        {
-            for (int x = 0; x < 64; x++)
-            {
-                vibrant[x, y] = (x + y) % 2 == 0 ? new Rgb8(255, 240, 20) : new Rgb8(10, 20, 235);
-            }
-        }
+        SequentialMatrix<Rgb8> flat = TestMatrices.Constant(64, 64, new Rgb8(120, 120, 120));
+        SequentialMatrix<Rgb8> vibrant = TestMatrices.Checkerboard(64, 64, new Rgb8(255, 240, 20), new Rgb8(10, 20, 235));
 
         LodAbstractionOptions flatOpts = LodAbstractionOptions.ForImage(flat);
         LodAbstractionOptions vibrantOpts = LodAbstractionOptions.ForImage(vibrant);

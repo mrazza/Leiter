@@ -4,7 +4,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 
-A pure-C# image processing, computer vision, and non-photorealistic rendering (NPR) library targeting **.NET 10**. `Leiter` provides strongly-typed generic pixel and matrix abstractions with **zero external dependencies** in its core library, OS-specific image adapters, and a complete end-to-end artistic **photo watercolorization** pipeline composed from modular primitives.
+A pure-C# image processing, computer vision, and non-photorealistic rendering (NPR) library targeting **.NET 10**. `Leiter` provides strongly-typed generic pixel and matrix abstractions with **zero external dependencies** in its core library, cross-platform (`SixLabors.ImageSharp`) and Windows GDI+ (`System.Drawing.Common`) image adapters, and a complete end-to-end artistic **photo watercolorization** pipeline composed from modular primitives.
 
 ---
 
@@ -37,7 +37,7 @@ using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
-using Leiter.Platform.Linux; // Or Leiter.Platform.Windows on Windows
+using Leiter.Platform.ImageSharp; // Or Leiter.Platform.Windows on Windows
 
 class Program
 {
@@ -87,7 +87,7 @@ using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
-using Leiter.Platform.Linux;
+using Leiter.Platform.ImageSharp;
 
 using Image<Rgb24> input = Image.Load<Rgb24>("examples/input.png");
 Matrix<Rgb8> source = input.ToSequentialMatrix();
@@ -144,7 +144,7 @@ WatercolorResult detailed = WatercolorPipeline.RenderDetailed(source, options);
 ## Solution Architecture & CLI Harness
 
 - **`Leiter`**: Zero-dependency core library containing matrices, pixel types, color spaces, vision algorithms, and stylization pipelines.
-- **`Leiter.Platform.Linux`**: Cross-platform image I/O via `SixLabors.ImageSharp`.
+- **`Leiter.Platform.ImageSharp`**: Cross-platform image I/O via `SixLabors.ImageSharp`.
 - **`Leiter.Platform.Windows`**: Native Windows GDI+ (`System.Drawing.Common`) image I/O via `Bitmap.LockBits`.
 - **`Leiter.Tests`**: Unit test suite validating core math, platform interop, and algorithm behavior.
 - **`LeiterTest`**: CLI benchmark harness executing the library's operations against an input image.

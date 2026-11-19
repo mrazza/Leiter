@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -31,12 +32,7 @@ public class OrientedEllipticalFilterOptionsTests
     /// </summary>
     /// <param name="majorRadius">The invalid major radius value.</param>
     [Theory]
-    [InlineData(0.0)]
-    [InlineData(-1.0)]
-    [InlineData(-10.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMajorRadius_ShouldThrowArgumentOutOfRangeException(double majorRadius)
     {
         var options = new OrientedEllipticalFilterOptions(MajorRadius: majorRadius);
@@ -48,12 +44,7 @@ public class OrientedEllipticalFilterOptionsTests
     /// </summary>
     /// <param name="minorRadius">The invalid minor radius value.</param>
     [Theory]
-    [InlineData(0.0)]
-    [InlineData(-1.0)]
-    [InlineData(-5.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMinorRadius_ShouldThrowArgumentOutOfRangeException(double minorRadius)
     {
         var options = new OrientedEllipticalFilterOptions(MinorRadius: minorRadius);
@@ -65,12 +56,7 @@ public class OrientedEllipticalFilterOptionsTests
     /// </summary>
     /// <param name="sigmaScale">The invalid sigma scale value.</param>
     [Theory]
-    [InlineData(0.0)]
-    [InlineData(-0.5)]
-    [InlineData(-2.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSigmaScale_ShouldThrowArgumentOutOfRangeException(double sigmaScale)
     {
         var options = new OrientedEllipticalFilterOptions(SigmaScale: sigmaScale);

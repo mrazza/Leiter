@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -195,16 +196,14 @@ public class PiecewiseToneCurveTests
     public void Apply_MultiPixelImageWithCustomOptions_ShouldMapAllChannels()
     {
         var custom = new PiecewiseToneCurveOptions(MinTone: 0.1, MaxTone: 0.9, ShadowKnee: 0.2, HighlightKnee: 0.8);
-        var image = new SequentialMatrix<Rgb8>(3, 2);
-
-        for (int y = 0; y < 2; y++)
-        {
-            for (int x = 0; x < 3; x++)
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            3,
+            2,
+            (x, y) =>
             {
-                byte val = (byte)((y * 3 + x) * 40);
-                image[x, y] = new Rgb8(val, val, val);
-            }
-        }
+                byte val = (byte)(((y * 3) + x) * 40);
+                return new Rgb8(val, val, val);
+            });
 
         Matrix<Rgb8> result = PiecewiseToneCurve.Apply(image, custom);
 

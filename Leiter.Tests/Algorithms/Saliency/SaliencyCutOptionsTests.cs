@@ -6,6 +6,7 @@ using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -29,11 +30,7 @@ public class SaliencyCutOptionsTests
     }
 
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidInitialThreshold_ShouldThrowArgumentOutOfRangeException(double initialThreshold)
     {
         var options = new SaliencyCutOptions(Mask: new SaliencyMaskOptions(FixedThreshold: initialThreshold));
@@ -41,9 +38,7 @@ public class SaliencyCutOptionsTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(-10)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMaxOuterIterations_ShouldThrowArgumentOutOfRangeException(int maxOuterIterations)
     {
         var options = new SaliencyCutOptions(MaxOuterIterations: maxOuterIterations);
@@ -51,9 +46,7 @@ public class SaliencyCutOptionsTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(-10)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidInnerGrabCutIterations_ShouldThrowArgumentOutOfRangeException(int innerGrabCutIterations)
     {
         var options = new SaliencyCutOptions(GrabCut: new GrabCutOptions(Iterations: innerGrabCutIterations));
@@ -61,9 +54,7 @@ public class SaliencyCutOptionsTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(-10)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidTrimapBandRadius_ShouldThrowArgumentOutOfRangeException(int trimapBandRadius)
     {
         var options = new SaliencyCutOptions(TrimapBandRadius: trimapBandRadius);
@@ -71,9 +62,7 @@ public class SaliencyCutOptionsTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(-10)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMixtureComponentCount_ShouldThrowArgumentOutOfRangeException(int mixtureComponentCount)
     {
         var options = new SaliencyCutOptions(GrabCut: new GrabCutOptions(MixtureComponentCount: mixtureComponentCount));
@@ -81,11 +70,7 @@ public class SaliencyCutOptionsTests
     }
 
     [Theory]
-    [InlineData(-0.1)]
-    [InlineData(-50.0)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSmoothnessWeight_ShouldThrowArgumentOutOfRangeException(double smoothnessWeight)
     {
         var options = new SaliencyCutOptions(GrabCut: new GrabCutOptions(SmoothnessWeight: smoothnessWeight));
@@ -100,11 +85,7 @@ public class SaliencyCutOptionsTests
     }
 
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidUnitIntervalDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMinAreaFraction_ShouldThrowArgumentOutOfRangeException(double minAreaFraction)
     {
         var options = new SaliencyCutOptions(Mask: new SaliencyMaskOptions(MinAreaFraction: minAreaFraction));
@@ -154,16 +135,8 @@ public class SaliencyCutOptionsTests
             SaliencyCutOptions.ForSize(size).Validate();
         }
 
-        var flat = new SequentialMatrix<Rgb8>(64, 64);
-        flat.SetAll(new Rgb8(110, 110, 110));
-        var vibrant = new SequentialMatrix<Rgb8>(64, 64);
-        for (int y = 0; y < 64; y++)
-        {
-            for (int x = 0; x < 64; x++)
-            {
-                vibrant[x, y] = (x + y) % 2 == 0 ? new Rgb8(255, 250, 20) : new Rgb8(10, 20, 240);
-            }
-        }
+        SequentialMatrix<Rgb8> flat = TestMatrices.Constant(64, 64, new Rgb8(110, 110, 110));
+        SequentialMatrix<Rgb8> vibrant = TestMatrices.Checkerboard(64, 64, new Rgb8(255, 250, 20), new Rgb8(10, 20, 240));
 
         Assert.Equal(4, SaliencyCutOptions.ForImage(flat).GrabCut!.MixtureComponentCount);
         Assert.Equal(6, SaliencyCutOptions.ForImage(vibrant).GrabCut!.MixtureComponentCount);

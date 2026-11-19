@@ -1,9 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
@@ -20,7 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Leiter\Leiter.csproj" />
-    <ProjectReference Include="..\Leiter.Platform.Linux\Leiter.Platform.Linux.csproj" />
+    <ProjectReference Include="..\Leiter.Platform.ImageSharp\Leiter.Platform.ImageSharp.csproj" />
     <ProjectReference Include="..\Leiter.Platform.Windows\Leiter.Platform.Windows.csproj" />
   </ItemGroup>
 
