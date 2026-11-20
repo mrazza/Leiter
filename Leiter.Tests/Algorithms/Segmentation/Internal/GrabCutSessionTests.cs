@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Segmentation.Internal;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Segmentation.Internal;
 using Leiter.Core;
@@ -192,5 +193,25 @@ public class GrabCutSessionTests
         Assert.True(factoryMask[0, 0]);
         if (width * height > 1)
             Assert.False(factoryMask[width - 1, height - 1]);
+    }
+
+    [Fact]
+    public void SessionAndRun_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            12,
+            12,
+            (x, y) => x >= 3 && x < 9 && y >= 3 && y < 9 ? new Rgb8(220, 30, 30) : new Rgb8(20, 150, 220));
+        TrimapMatrix trimap = TrimapMatrix.FromBoundingBox(image.Size, new Coord(2, 2), new Size(8, 8));
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() => new GrabCutSession(image, GrabCutOptions.Default, canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() => GrabCut.CreateSession(image, GrabCutOptions.Default, canceledCts.Token));
+
+        GrabCutSession session = GrabCut.CreateSession(image, GrabCutOptions.Default);
+        Assert.Throws<OperationCanceledException>(() => session.Run(trimap, canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() => session.Run(trimap, iterations: 2, cancellationToken: canceledCts.Token));
     }
 }

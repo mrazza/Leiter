@@ -3,6 +3,7 @@ namespace Leiter.Algorithms.Segmentation.Internal;
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -56,22 +57,26 @@ internal sealed partial class MeanShiftSpatialLattice
     /// <param name="height">The height of the image lattice in pixels.</param>
     /// <param name="spatialCellWidth">The width of each spatial lattice cell.</param>
     /// <param name="rangeCellWidth">The width of each color range lattice cell.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any dimension is negative, or any cell width is non-positive or non-finite.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="pixels"/> length does not equal <paramref name="width"/> * <paramref name="height"/>.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
     public MeanShiftSpatialLattice(
         ReadOnlySpan<Lab32> pixels,
         int width,
         int height,
         double spatialCellWidth,
-        double rangeCellWidth)
+        double rangeCellWidth,
+        CancellationToken cancellationToken = default)
         : this(
-            ValidateAndCopyPixels(pixels, width, height, spatialCellWidth, rangeCellWidth),
+            ValidateAndCopyPixels(pixels, width, height, spatialCellWidth, rangeCellWidth, cancellationToken),
             width,
             height,
             spatialCellWidth,
             rangeCellWidth,
             buildInParallel: pixels.Length >= ParallelBuildPixelThreshold,
-            skipValidation: true)
+            skipValidation: true,
+            cancellationToken: cancellationToken)
     {
     }
 
@@ -81,7 +86,8 @@ internal sealed partial class MeanShiftSpatialLattice
         int height,
         double spatialCellWidth,
         double rangeCellWidth,
-        int sampleStride = 1)
+        int sampleStride = 1,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(pixels);
         return new MeanShiftSpatialLattice(
@@ -91,7 +97,8 @@ internal sealed partial class MeanShiftSpatialLattice
             spatialCellWidth,
             rangeCellWidth,
             buildInParallel: pixels.Length >= ParallelBuildPixelThreshold,
-            sampleStride: sampleStride);
+            sampleStride: sampleStride,
+            cancellationToken: cancellationToken);
     }
 
     private MeanShiftSpatialLattice(
@@ -102,10 +109,13 @@ internal sealed partial class MeanShiftSpatialLattice
         double rangeCellWidth,
         bool buildInParallel,
         int sampleStride = 1,
-        bool skipValidation = false)
+        bool skipValidation = false,
+        CancellationToken cancellationToken = default)
     {
         if (!skipValidation)
             ValidateArguments(sourcePixels.Length, width, height, spatialCellWidth, rangeCellWidth, sampleStride);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         this.spatialCellWidth = spatialCellWidth;
         this.rangeCellWidth = rangeCellWidth;
@@ -136,8 +146,10 @@ internal sealed partial class MeanShiftSpatialLattice
             ySpans,
             cellPointStartOffsets,
             points,
-            buildInParallel);
+            buildInParallel,
+            cancellationToken);
 
+        cancellationToken.ThrowIfCancellationRequested();
         colorBuckets = FlattenColorBuckets(perCellBuckets, out spatialCellOffsets);
     }
 

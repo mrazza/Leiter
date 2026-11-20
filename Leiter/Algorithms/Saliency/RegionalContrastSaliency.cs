@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Saliency;
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Saliency.Internal;
@@ -34,17 +35,21 @@ public static class RegionalContrastSaliency
     /// <param name="image">The input image.</param>
     /// <param name="segmentation">The segmentation to use.</param>
     /// <param name="options">Optional regional contrast post-processing parameters.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="segmentation"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> and <paramref name="segmentation"/> dimensions do not match.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> contains invalid parameters.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
     public static Matrix<DoublePixel> ComputeSaliency(
         IReadOnlyMatrix<Rgb8> image,
         IDisjointSet segmentation,
-        RegionalContrastSaliencyOptions? options = null)
+        RegionalContrastSaliencyOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         Guard.ThrowIfSizeMismatch(image, segmentation);
         RegionalContrastSaliencyOptions resolvedOptions = OptionsResolver.Resolve(options);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (image.Count == 0)
         {
@@ -52,7 +57,8 @@ public static class RegionalContrastSaliency
         }
 
         RegionGraph graph = segmentation.ToRegionGraph();
-        return ComputeSaliencyCore(image, graph, resolvedOptions);
+        cancellationToken.ThrowIfCancellationRequested();
+        return ComputeSaliencyCore(image, graph, resolvedOptions, cancellationToken);
     }
 
     /// <summary>
@@ -61,33 +67,38 @@ public static class RegionalContrastSaliency
     /// <param name="image">The input image.</param>
     /// <param name="regionGraph">The precomputed region adjacency graph matching <paramref name="image"/> dimensions.</param>
     /// <param name="options">Optional regional contrast post-processing parameters.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="regionGraph"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> and <paramref name="regionGraph"/> dimensions do not match.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> contains invalid parameters.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
     public static Matrix<DoublePixel> ComputeSaliency(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph regionGraph,
-        RegionalContrastSaliencyOptions? options = null)
+        RegionalContrastSaliencyOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
 
         RegionalContrastSaliencyOptions resolvedOptions = OptionsResolver.Resolve(options);
         Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (image.Count == 0)
         {
             return new SequentialMatrix<DoublePixel>(image.Size);
         }
 
-        return ComputeSaliencyCore(image, regionGraph, resolvedOptions);
+        return ComputeSaliencyCore(image, regionGraph, resolvedOptions, cancellationToken);
     }
 
     private static Matrix<DoublePixel> ComputeSaliencyCore(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph graph,
-        RegionalContrastSaliencyOptions resolvedOptions)
+        RegionalContrastSaliencyOptions resolvedOptions,
+        CancellationToken cancellationToken)
     {
         bool enableSmoothing = resolvedOptions.EnableSmoothing;
         bool computeBorderRegions = resolvedOptions.ComputeBorderRegions;
@@ -97,6 +108,7 @@ public static class RegionalContrastSaliency
         IReadOnlyMatrix<int> labels = graph.Labels;
 
         var (colorQuantizedImage, _, rgbToLabLookupTable) = SaliencyColorSmoother.QuantizeForSaliency(image);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var regionCounts = new int[regionCount];
         var centroidSums = new NormalizedCoord[regionCount];
@@ -124,6 +136,8 @@ public static class RegionalContrastSaliency
 
         for (int y = 0; y < height; y++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             int rowBase = y * width;
             double normY = y * invHeight;
             bool isRowInBorder = computeBorderRegions && (y < borderPixelHeight || y >= maxY);
@@ -159,6 +173,7 @@ public static class RegionalContrastSaliency
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         PairwiseLabDistanceTable distanceTable = PairwiseLabDistanceTable.Build(rgbToLabLookupTable);
 
         var processedRegions = new (int Total, (double Density, int DistanceIndex)[] ColorData)[regionCount];
@@ -178,8 +193,11 @@ public static class RegionalContrastSaliency
         var rawSaliency = new double[regionCount];
         const double sigmaSquared = 0.4;
         double centerPriorWeight = resolvedOptions.CenterPriorWeight;
+        ParallelOptions? parallelOptions = cancellationToken.CanBeCanceled
+            ? new ParallelOptions { CancellationToken = cancellationToken }
+            : null;
 
-        Parallel.For(0, regionCount, r =>
+        void ComputeRegionContrast(int r)
         {
             NormalizedCoord currCentroid = regionCentroids[r];
             var colorData = processedRegions[r].ColorData;
@@ -218,7 +236,16 @@ public static class RegionalContrastSaliency
             {
                 rawSaliency[r] = currSaliency;
             }
-        });
+        }
+
+        if (parallelOptions is not null)
+        {
+            Parallel.For(0, regionCount, parallelOptions, ComputeRegionContrast);
+        }
+        else
+        {
+            Parallel.For(0, regionCount, ComputeRegionContrast);
+        }
 
         double[] finalSaliency;
         if (enableSmoothing)
@@ -229,6 +256,8 @@ public static class RegionalContrastSaliency
 
             for (int y = 0; y < height; y++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 int rowBase = y * width;
                 for (int x = 0; x < width; x++)
                 {
@@ -248,10 +277,12 @@ public static class RegionalContrastSaliency
                 }
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             SaliencyColorSmoother.SmoothColorSaliency(colorSaliencies, distanceTable, neighborDivisor: 10);
 
             finalSaliency = new double[regionCount];
-            Parallel.For(0, regionCount, r =>
+
+            void ProjectSmoothedRegion(int r)
             {
                 var colorData = processedRegions[r].ColorData;
                 double regionSaliency = 0.0;
@@ -261,7 +292,16 @@ public static class RegionalContrastSaliency
                 }
 
                 finalSaliency[r] = regionSaliency;
-            });
+            }
+
+            if (parallelOptions is not null)
+            {
+                Parallel.For(0, regionCount, parallelOptions, ProjectSmoothedRegion);
+            }
+            else
+            {
+                Parallel.For(0, regionCount, ProjectSmoothedRegion);
+            }
         }
         else
         {
@@ -284,6 +324,7 @@ public static class RegionalContrastSaliency
             return new SequentialMatrix<DoublePixel>(image.Size);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         return labels.Map<int, DoublePixel>(label => (finalSaliency[label] - minSaliency) / saliencyRange);
     }
 }

@@ -1,6 +1,8 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
 using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
@@ -12,6 +14,7 @@ using Leiter.Pixels;
 /// </summary>
 internal sealed class GrabCutSession
 {
+    private const int SmoothnessEdgeCancellationCheckMask = 4095;
     private readonly record struct TrimapCounts(
         int ForegroundCount,
         int BackgroundCount,
@@ -48,10 +51,14 @@ internal sealed class GrabCutSession
     private readonly double[] sourceCapacities;
     private readonly double[] sinkCapacities;
 
-    public GrabCutSession(IReadOnlyMatrix<Rgb8> image, GrabCutOptions options)
+    public GrabCutSession(
+        IReadOnlyMatrix<Rgb8> image,
+        GrabCutOptions options,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(options);
+        cancellationToken.ThrowIfCancellationRequested();
 
         imageSize = image.Size;
         pixelCount = image.Count;
@@ -66,7 +73,7 @@ internal sealed class GrabCutSession
         else
         {
             solver = new GridMinCutSolver(imageSize);
-            InitializeSmoothnessEdges(solver, imageSize, pixels, smoothnessWeight);
+            InitializeSmoothnessEdges(solver, imageSize, pixels, smoothnessWeight, cancellationToken);
         }
 
         foregroundGmm = new GaussianMixtureModel(options.MixtureComponentCount);
@@ -79,12 +86,15 @@ internal sealed class GrabCutSession
         sinkCapacities = new double[pixelCount];
     }
 
-    public MaskMatrix Run(IReadOnlyMatrix<TrimapLabel> trimap) =>
-        Run(trimap, defaultIterations);
+    public MaskMatrix Run(IReadOnlyMatrix<TrimapLabel> trimap, CancellationToken cancellationToken = default) =>
+        Run(trimap, defaultIterations, cancellationToken);
 
-    public MaskMatrix Run(IReadOnlyMatrix<TrimapLabel> trimap, int iterations)
+    public MaskMatrix Run(
+        IReadOnlyMatrix<TrimapLabel> trimap,
+        int iterations,
+        CancellationToken cancellationToken = default)
     {
-        TrimapCounts initialCounts = LoadAndValidateTrimap(trimap);
+        TrimapCounts initialCounts = LoadAndValidateTrimap(trimap, cancellationToken);
 
         if (initialCounts.ForegroundCount == 0 || solver is null)
             return new MaskMatrix(imageSize);
@@ -96,7 +106,8 @@ internal sealed class GrabCutSession
             return allForeground;
         }
 
-        InitializeGmms(initialCounts);
+        cancellationToken.ThrowIfCancellationRequested();
+        InitializeGmms(initialCounts, cancellationToken);
 
         int fgCount = initialCounts.ForegroundCount;
         int bgCount = initialCounts.BackgroundCount;
@@ -104,11 +115,13 @@ internal sealed class GrabCutSession
 
         for (int iteration = 0; iteration < iterations; iteration++)
         {
-            if (iteration > 0)
-                RefitGmmsFromSegmentation(fgCount, bgCount);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            ComputeTerminalCapacities(hardWeight);
-            solver.Solve(sourceCapacities, sinkCapacities);
+            if (iteration > 0)
+                RefitGmmsFromSegmentation(fgCount, bgCount, cancellationToken);
+
+            ComputeTerminalCapacities(hardWeight, cancellationToken);
+            solver.Solve(sourceCapacities, sinkCapacities, cancellationToken);
 
             bool changed = UpdateSegmentationFromCut(solver, out fgCount);
             bgCount = pixelCount - fgCount;
@@ -119,10 +132,11 @@ internal sealed class GrabCutSession
         return BuildMaskFromState();
     }
 
-    private TrimapCounts LoadAndValidateTrimap(IReadOnlyMatrix<TrimapLabel> trimap)
+    private TrimapCounts LoadAndValidateTrimap(IReadOnlyMatrix<TrimapLabel> trimap, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(trimap);
         Guard.ThrowIfSizeMismatch(imageSize, trimap.Size, nameof(trimap));
+        cancellationToken.ThrowIfCancellationRequested();
 
         int fgCount = 0;
         int bgCount = 0;
@@ -131,6 +145,8 @@ internal sealed class GrabCutSession
 
         for (int y = 0; y < imageSize.Height; y++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             int rowBase = y * width;
             for (int x = 0; x < width; x++)
             {
@@ -158,7 +174,7 @@ internal sealed class GrabCutSession
         return new TrimapCounts(fgCount, bgCount, hardBgCount);
     }
 
-    private void InitializeGmms(TrimapCounts counts)
+    private void InitializeGmms(TrimapCounts counts, CancellationToken cancellationToken)
     {
         var fgIndices = new int[counts.ForegroundCount];
         bool useHardBackgroundOnly = counts.HardBackgroundCount > 0;
@@ -174,27 +190,40 @@ internal sealed class GrabCutSession
                 bgIndices[bgCursor++] = p;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         foregroundGmm.InitializeAndFit(pixels, fgIndices);
+        cancellationToken.ThrowIfCancellationRequested();
         backgroundGmm.InitializeAndFit(pixels, bgIndices);
     }
 
-    private void RefitGmmsFromSegmentation(int fgCount, int bgCount)
+    private void RefitGmmsFromSegmentation(int fgCount, int bgCount, CancellationToken cancellationToken)
     {
-        Parallel.For(0, pixelCount, p =>
+        void AssignPixel(int p)
         {
             Rgb8 pixel = pixels[p];
             componentAssignments[p] = isForeground[p]
                 ? foregroundGmm.AssignBestComponent(pixel)
                 : backgroundGmm.AssignBestComponent(pixel);
-        });
+        }
 
+        if (cancellationToken.CanBeCanceled)
+        {
+            Parallel.For(0, pixelCount, new ParallelOptions { CancellationToken = cancellationToken }, AssignPixel);
+        }
+        else
+        {
+            Parallel.For(0, pixelCount, AssignPixel);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
         foregroundGmm.FitFromAssignedComponents(pixels, isForeground, targetForeground: true, componentAssignments, fgCount);
+        cancellationToken.ThrowIfCancellationRequested();
         backgroundGmm.FitFromAssignedComponents(pixels, isForeground, targetForeground: false, componentAssignments, bgCount);
     }
 
-    private void ComputeTerminalCapacities(double hardWeight)
+    private void ComputeTerminalCapacities(double hardWeight, CancellationToken cancellationToken)
     {
-        Parallel.For(0, pixelCount, p =>
+        void ComputePixel(int p)
         {
             TrimapLabel label = trimapLabels[p];
             if (label == TrimapLabel.Foreground)
@@ -224,7 +253,16 @@ internal sealed class GrabCutSession
                 sourceCapacities[p] = 0.0;
                 sinkCapacities[p] = fgNll - bgNll;
             }
-        });
+        }
+
+        if (cancellationToken.CanBeCanceled)
+        {
+            Parallel.For(0, pixelCount, new ParallelOptions { CancellationToken = cancellationToken }, ComputePixel);
+        }
+        else
+        {
+            Parallel.For(0, pixelCount, ComputePixel);
+        }
     }
 
     private bool UpdateSegmentationFromCut(GridMinCutSolver minCutSolver, out int fgCount)
@@ -260,7 +298,8 @@ internal sealed class GrabCutSession
         GridMinCutSolver solver,
         Size imageSize,
         Rgb8[] pixels,
-        double smoothnessWeight)
+        double smoothnessWeight,
+        CancellationToken cancellationToken)
     {
         if (smoothnessWeight == 0.0 || imageSize.IsEmpty)
             return;
@@ -273,22 +312,27 @@ internal sealed class GrabCutSession
             return;
 
         var state = new SmoothnessScanState(imageSize, pixels, new ForwardSmoothnessPair[pairCapacity]);
-        GridNeighborhood.ForEachForwardPair(
-            imageSize,
-            GridConnectivity.EightConnected,
-            state,
-            static (first, second, neighbor, s) =>
-            {
-                int firstIndex = s.Size.IndexOf(first);
-                int secondIndex = s.Size.IndexOf(second);
-                double diffSq = s.Pixels[firstIndex].DistanceSquared(s.Pixels[secondIndex]);
-                s.SumSquaredDiff += diffSq;
-                s.Pairs[s.Count++] = new ForwardSmoothnessPair(
-                    firstIndex,
-                    neighbor.Direction,
-                    neighbor.InverseDistance,
-                    diffSq);
-            });
+        for (int y = 0; y < imageSize.Height; y++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            GridNeighborhood.ForEachForwardPairInRow(
+                imageSize,
+                y,
+                GridConnectivity.EightConnected,
+                state,
+                static (first, second, neighbor, s) =>
+                {
+                    int firstIndex = s.Size.IndexOf(first);
+                    int secondIndex = s.Size.IndexOf(second);
+                    double diffSq = s.Pixels[firstIndex].DistanceSquared(s.Pixels[secondIndex]);
+                    s.SumSquaredDiff += diffSq;
+                    s.Pairs[s.Count++] = new ForwardSmoothnessPair(
+                        firstIndex,
+                        neighbor.Direction,
+                        neighbor.InverseDistance,
+                        diffSq);
+                });
+        }
 
         Debug.Assert(state.Count == pairCapacity);
 
@@ -298,6 +342,9 @@ internal sealed class GrabCutSession
         ForwardSmoothnessPair[] pairs = state.Pairs;
         for (int i = 0; i < state.Count; i++)
         {
+            if ((i & SmoothnessEdgeCancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             ref readonly ForwardSmoothnessPair pair = ref pairs[i];
             double capacity = smoothnessWeight * pair.InverseDistance * Math.Exp(-beta * pair.DistanceSquared);
             solver.SetUndirectedEdgeCapacity(pair.PixelIndex, (int)pair.Direction, (float)capacity);

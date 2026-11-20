@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.DistanceTransform;
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.DistanceTransform;
 using Leiter.Core;
@@ -156,5 +157,32 @@ public class JumpFloodingTests
         Assert.Empty(JumpFlooding.ExtractBoundarySeeds(emptyView));
         Assert.Empty(JumpFlooding.ComputeNearestSeeds(emptyView));
         Assert.Empty(JumpFlooding.ComputeDistanceTransform(emptyView));
+    }
+
+    [Fact]
+    public void AllEntrypoints_CancellationToken_ShouldHonorCancellationAndMatchUncanceledResults()
+    {
+        SequentialMatrix<bool> mask = TestMatrices.CenteredBox(16, 16, 5, 5, 10, 10, true, false);
+        Coord[] seeds = [new(2, 2), new(12, 10)];
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+        CancellationToken canceled = canceledCts.Token;
+
+        Assert.Throws<OperationCanceledException>(() => JumpFlooding.ExtractBoundarySeeds(mask, cancellationToken: canceled));
+        Assert.Throws<OperationCanceledException>(() => JumpFlooding.ComputeNearestSeeds(mask.Size, seeds, canceled));
+        Assert.Throws<OperationCanceledException>(() => JumpFlooding.ComputeNearestSeeds(mask, canceled));
+        Assert.Throws<OperationCanceledException>(() => JumpFlooding.ComputeDistanceTransform(mask.Size, seeds, canceled));
+        Assert.Throws<OperationCanceledException>(() => JumpFlooding.ComputeDistanceTransform(mask, canceled));
+        Assert.Throws<OperationCanceledException>(() => JumpFlooding.ComputeNearestSeeds(new Size(0, 0), [], canceled));
+
+        using var activeCts = new CancellationTokenSource();
+        Matrix<NearestSeed> baselineSeeds = JumpFlooding.ComputeNearestSeeds(mask);
+        Matrix<NearestSeed> tokenSeeds = JumpFlooding.ComputeNearestSeeds(mask, activeCts.Token);
+        MatrixAssert.Equal(baselineSeeds, tokenSeeds);
+
+        Matrix<DoublePixel> baselineDist = JumpFlooding.ComputeDistanceTransform(mask.Size, seeds);
+        Matrix<DoublePixel> tokenDist = JumpFlooding.ComputeDistanceTransform(mask.Size, seeds, activeCts.Token);
+        MatrixAssert.Equal(baselineDist, tokenDist);
     }
 }

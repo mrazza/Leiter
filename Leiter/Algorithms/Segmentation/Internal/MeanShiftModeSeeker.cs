@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Core;
@@ -105,11 +106,13 @@ internal sealed class MeanShiftModeSeeker
     public static (MeanShiftMode[] Modes, Lab32[] SourcePixels) SeekModes(
         IReadOnlyMatrix<Lab32> labImage,
         MeanShiftOptions options,
-        int latticeRadiusThreshold = LatticeRadiusThreshold)
+        int latticeRadiusThreshold = LatticeRadiusThreshold,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(labImage);
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
 
         Size size = labImage.Size;
         int pixelCount = size.Count;
@@ -124,7 +127,7 @@ internal sealed class MeanShiftModeSeeker
         int sampleStride = ResolveLatticeSampleStride(spatialRadius);
 
         MeanShiftSpatialLattice? lattice = spatialRadius > latticeRadiusThreshold
-            ? MeanShiftSpatialLattice.Create(sourcePixels, size.Width, size.Height, spatialRadius, rangeRadius, sampleStride)
+            ? MeanShiftSpatialLattice.Create(sourcePixels, size.Width, size.Height, spatialRadius, rangeRadius, sampleStride, cancellationToken)
             : null;
 
         var seeker = new MeanShiftModeSeeker(
@@ -139,14 +142,14 @@ internal sealed class MeanShiftModeSeeker
         int coarseStride = ResolveCoarseGridStride(spatialRadius, size.Width, size.Height);
         if (coarseStride == 1)
         {
-            seeker.SeekAllPixelsExact(modes);
+            seeker.SeekAllPixelsExact(modes, cancellationToken);
         }
         else
         {
             int[] coarseXs = BuildCoarseAxisCoordinates(size.Width, coarseStride);
             int[] coarseYs = BuildCoarseAxisCoordinates(size.Height, coarseStride);
-            seeker.SeekCoarseGrid(coarseXs, coarseYs, modes);
-            seeker.RefineFinePixels(coarseStride, coarseXs, coarseYs, modes);
+            seeker.SeekCoarseGrid(coarseXs, coarseYs, modes, cancellationToken);
+            seeker.RefineFinePixels(coarseStride, coarseXs, coarseYs, modes, cancellationToken);
         }
 
         return (modes, sourcePixels);
@@ -223,23 +226,33 @@ internal sealed class MeanShiftModeSeeker
             ? Math.Clamp(spatialRadius / 6, 2, 4)
             : 1;
 
-    private void SeekAllPixelsExact(MeanShiftMode[] modes)
+    private void SeekAllPixelsExact(MeanShiftMode[] modes, CancellationToken cancellationToken)
     {
         int width = size.Width;
         int height = size.Height;
-        Parallel.For(0, height, y =>
+
+        void SeekRow(int y)
         {
             int rowStart = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
             {
                 modes[rowStart + x] = SeekPixelMode(x, y);
             }
-        });
+        }
+
+        if (cancellationToken.CanBeCanceled)
+        {
+            Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, SeekRow);
+        }
+        else
+        {
+            Parallel.For(0, height, SeekRow);
+        }
     }
 
-    private void SeekCoarseGrid(int[] coarseXs, int[] coarseYs, MeanShiftMode[] modes)
+    private void SeekCoarseGrid(int[] coarseXs, int[] coarseYs, MeanShiftMode[] modes, CancellationToken cancellationToken)
     {
-        Parallel.For(0, coarseYs.Length, yi =>
+        void SeekCoarseRow(int yi)
         {
             int coarseY = coarseYs[yi];
             int rowStart = size.IndexOf(0, coarseY);
@@ -248,10 +261,24 @@ internal sealed class MeanShiftModeSeeker
                 int coarseX = coarseXs[xi];
                 modes[rowStart + coarseX] = SeekPixelMode(coarseX, coarseY);
             }
-        });
+        }
+
+        if (cancellationToken.CanBeCanceled)
+        {
+            Parallel.For(0, coarseYs.Length, new ParallelOptions { CancellationToken = cancellationToken }, SeekCoarseRow);
+        }
+        else
+        {
+            Parallel.For(0, coarseYs.Length, SeekCoarseRow);
+        }
     }
 
-    private void RefineFinePixels(int coarseStride, int[] coarseXs, int[] coarseYs, MeanShiftMode[] modes)
+    private void RefineFinePixels(
+        int coarseStride,
+        int[] coarseXs,
+        int[] coarseYs,
+        MeanShiftMode[] modes,
+        CancellationToken cancellationToken)
     {
         int width = size.Width;
         int height = size.Height;
@@ -265,7 +292,7 @@ internal sealed class MeanShiftModeSeeker
             xAxes[x] = ComputeCoarseBilinearAxis(x, coarseXs, coarseStride, width);
         }
 
-        Parallel.For(0, height, y =>
+        void RefineRow(int y)
         {
             MatrixResampler.BilinearSampleAxis yAxis = ComputeCoarseBilinearAxis(y, coarseYs, coarseStride, height);
             bool isOnCoarseY = y == yAxis.LowerIndex;
@@ -293,7 +320,16 @@ internal sealed class MeanShiftModeSeeker
                     ? interpolatedMode
                     : SeekPixelMode(x, y);
             }
-        });
+        }
+
+        if (cancellationToken.CanBeCanceled)
+        {
+            Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, RefineRow);
+        }
+        else
+        {
+            Parallel.For(0, height, RefineRow);
+        }
     }
 
     private static MatrixResampler.BilinearSampleAxis ComputeCoarseBilinearAxis(

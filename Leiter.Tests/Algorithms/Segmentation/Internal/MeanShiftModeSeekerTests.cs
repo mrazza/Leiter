@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Segmentation.Internal;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Segmentation.Internal;
 using Leiter.Core;
@@ -165,5 +166,34 @@ public class MeanShiftModeSeekerTests
             modeColorToleranceSquared: 4.0,
             spatialRadiusSquared: 9.0,
             out _));
+    }
+
+    [Fact]
+    public void SeekModes_CancellationToken_ShouldHonorCancellationAndMatchUncanceledResults()
+    {
+        SequentialMatrix<Lab32> img = TestMatrices.Create(
+            32,
+            32,
+            (x, _) => x < 16 ? new Lab32(25f, 0f, 0f) : new Lab32(80f, 0f, 0f));
+
+        var directOptions = new MeanShiftOptions(SpatialRadius: 4, RangeRadius: 8.0, MinRegionSize: 0);
+        var coarseOptions = new MeanShiftOptions(SpatialRadius: 20, RangeRadius: 8.0, MinRegionSize: 0);
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() =>
+            MeanShiftModeSeeker.SeekModes(img, directOptions, cancellationToken: canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            MeanShiftModeSeeker.SeekModes(img, coarseOptions, cancellationToken: canceledCts.Token));
+
+        using var activeCts = new CancellationTokenSource();
+        (MeanShiftMode[] baseDirect, _) = MeanShiftModeSeeker.SeekModes(img, directOptions);
+        (MeanShiftMode[] tokenDirect, _) = MeanShiftModeSeeker.SeekModes(img, directOptions, cancellationToken: activeCts.Token);
+        Assert.Equal(baseDirect, tokenDirect);
+
+        (MeanShiftMode[] baseCoarse, _) = MeanShiftModeSeeker.SeekModes(img, coarseOptions);
+        (MeanShiftMode[] tokenCoarse, _) = MeanShiftModeSeeker.SeekModes(img, coarseOptions, cancellationToken: activeCts.Token);
+        Assert.Equal(baseCoarse, tokenCoarse);
     }
 }

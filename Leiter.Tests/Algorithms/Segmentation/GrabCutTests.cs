@@ -1,5 +1,6 @@
 namespace Leiter.Tests.Algorithms.Segmentation;
 
+using System.Threading;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -90,5 +91,31 @@ public class GrabCutTests
         Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.Segment(solid, new Coord(1, 1), new Size(2, 2), new GrabCutOptions(Iterations: 0)));
         Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.Segment(solid, new Coord(1, 1), new Size(2, 2), new GrabCutOptions(MixtureComponentCount: 0)));
         Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.Segment(solid, new Coord(1, 1), new Size(2, 2), new GrabCutOptions(SmoothnessWeight: -1.0)));
+    }
+
+    [Fact]
+    public void Segment_CancellationToken_ShouldHonorCancellationAndMatchUncanceledResults()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            16,
+            16,
+            (x, y) => x >= 4 && x < 12 && y >= 4 && y < 12
+                ? new Rgb8(220, 30, 30)
+                : new Rgb8(20, 140, 220));
+        TrimapMatrix trimap = TrimapMatrix.FromBoundingBox(image.Size, new Coord(3, 3), new Size(10, 10));
+        var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
+        var emptyTrimap = new TrimapMatrix(0, 0);
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() => GrabCut.Segment(image, new Coord(3, 3), new Size(10, 10), cancellationToken: canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() => GrabCut.Segment(image, trimap, cancellationToken: canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() => GrabCut.Segment(emptyImg, emptyTrimap, cancellationToken: canceledCts.Token));
+
+        using var activeCts = new CancellationTokenSource();
+        MaskMatrix baseline = GrabCut.Segment(image, trimap);
+        MaskMatrix withToken = GrabCut.Segment(image, trimap, cancellationToken: activeCts.Token);
+        MatrixAssert.Equal(baseline, withToken);
     }
 }
