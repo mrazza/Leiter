@@ -17,15 +17,7 @@ public class JumpFloodingTests
     [Fact]
     public void ExtractBoundarySeeds_ShouldDifferentiate4And8ConnectedBackground()
     {
-        var mask = new MaskMatrix(5, 5);
-        for (int y = 1; y <= 3; y++)
-        {
-            for (int x = 1; x <= 3; x++)
-            {
-                mask[x, y] = true;
-            }
-        }
-
+        SequentialMatrix<bool> mask = TestMatrices.CenteredBox(5, 5, 1, 1, 3, 3, true, false);
         mask[3, 3] = false;
 
         IReadOnlyList<Coord> eightConnected = JumpFlooding.ExtractBoundarySeeds(mask, backgroundConnectivity: GridConnectivity.EightConnected);
@@ -37,8 +29,7 @@ public class JumpFloodingTests
         var emptyMask = new MaskMatrix(0, 0);
         Assert.Empty(JumpFlooding.ExtractBoundarySeeds(emptyMask));
 
-        var allForeground = new MaskMatrix(3, 3);
-        allForeground.SetAll(true);
+        SequentialMatrix<bool> allForeground = TestMatrices.Constant(3, 3, true);
         Assert.Empty(JumpFlooding.ExtractBoundarySeeds(allForeground));
 
         Assert.Throws<ArgumentNullException>(() => JumpFlooding.ExtractBoundarySeeds(null!));
@@ -119,17 +110,11 @@ public class JumpFloodingTests
 
         // No seeds -> NearestSeed.None and +Infinity distances.
         Matrix<NearestSeed> noSeeds = JumpFlooding.ComputeNearestSeeds(new Size(4, 3), []);
-        for (int i = 0; i < noSeeds.Count; i++)
-        {
-            Assert.False(noSeeds[i].HasSeed);
-            Assert.Equal(NearestSeed.None, noSeeds[i]);
-        }
+        Assert.False(NearestSeed.None.HasSeed);
+        MatrixAssert.Equal(TestMatrices.Constant(4, 3, NearestSeed.None), noSeeds);
 
         Matrix<DoublePixel> noSeedDistances = JumpFlooding.ComputeDistanceTransform(new MaskMatrix(4, 3));
-        for (int i = 0; i < noSeedDistances.Count; i++)
-        {
-            Assert.True(double.IsPositiveInfinity(noSeedDistances[i].Value));
-        }
+        MatrixAssert.Equal(TestMatrices.Constant(4, 3, new DoublePixel(double.PositiveInfinity)), noSeedDistances);
 
         // Empty matrices.
         var emptySize = new Size(0, 0);
@@ -150,13 +135,7 @@ public class JumpFloodingTests
     [Fact]
     public void NonSequentialMatrixView_ShouldMatchMaterializedBoundarySeedsAndDistanceTransform()
     {
-        var source = new MaskMatrix(10, 8);
-        for (int y = 2; y <= 4; y++)
-        {
-            for (int x = 2; x <= 4; x++)
-                source[x, y] = true;
-        }
-
+        SequentialMatrix<bool> source = TestMatrices.CenteredBox(10, 8, 2, 2, 4, 4, true, false);
         source[4, 4] = false;
         source[7, 5] = true;
 

@@ -20,19 +20,16 @@ public class BinaryMorphologyTests
         MaskMatrix diskDilated = BinaryMorphology.Dilate(impulse, 2, StructuringElementShape.Disk);
         MaskMatrix squareDilated = BinaryMorphology.Dilate(impulse, 2, StructuringElementShape.Square);
 
-        for (int y = 0; y < 9; y++)
-        {
-            for (int x = 0; x < 9; x++)
-            {
-                int dx = x - 4;
-                int dy = y - 4;
-                bool expectedDisk = (dx * dx) + (dy * dy) <= 4;
-                bool expectedSquare = Math.Max(Math.Abs(dx), Math.Abs(dy)) <= 2;
-
-                Assert.Equal(expectedDisk, diskDilated[x, y]);
-                Assert.Equal(expectedSquare, squareDilated[x, y]);
-            }
-        }
+        SequentialMatrix<bool> expectedDisk = TestMatrices.Create(
+            9,
+            9,
+            static (x, y) => ((x - 4) * (x - 4)) + ((y - 4) * (y - 4)) <= 4);
+        SequentialMatrix<bool> expectedSquare = TestMatrices.Create(
+            9,
+            9,
+            static (x, y) => Math.Max(Math.Abs(x - 4), Math.Abs(y - 4)) <= 2);
+        MatrixAssert.Equal(expectedDisk, diskDilated);
+        MatrixAssert.Equal(expectedSquare, squareDilated);
 
         MaskMatrix erodedBack = BinaryMorphology.Erode(diskDilated, 2, StructuringElementShape.Disk);
         Assert.True(erodedBack[4, 4]);
@@ -43,22 +40,13 @@ public class BinaryMorphologyTests
     [Fact]
     public void Erode_BorderHandling_ShouldRespectBorderIsBackgroundSetting()
     {
-        var block = new MaskMatrix(5, 5);
-        block.SetAll(true);
+        SequentialMatrix<bool> block = TestMatrices.Constant(5, 5, true);
 
         MaskMatrix clamped = BinaryMorphology.Erode(block, 1, StructuringElementShape.Square, borderIsBackground: false);
-        for (int i = 0; i < clamped.Count; i++)
-            Assert.True(clamped[i]);
+        MatrixAssert.Equal(block, clamped);
 
         MaskMatrix zeroPadded = BinaryMorphology.Erode(block, 1, StructuringElementShape.Square, borderIsBackground: true);
-        for (int y = 0; y < 5; y++)
-        {
-            for (int x = 0; x < 5; x++)
-            {
-                bool expected = x >= 1 && x <= 3 && y >= 1 && y <= 3;
-                Assert.Equal(expected, zeroPadded[x, y]);
-            }
-        }
+        MatrixAssert.Equal(TestMatrices.CenteredBox(5, 5, 1, 1, 3, 3, true, false), zeroPadded);
 
         Assert.False(zeroPadded[0, 2]);
         Assert.False(zeroPadded[4, 2]);
@@ -99,8 +87,7 @@ public class BinaryMorphologyTests
         Assert.False(openedBackground[0, 0]);
         Assert.False(openedBackground[1, 1]);
 
-        var fullBlock = new MaskMatrix(5, 5);
-        fullBlock.SetAll(true);
+        SequentialMatrix<bool> fullBlock = TestMatrices.Constant(5, 5, true);
 
         MaskMatrix closedClamped = BinaryMorphology.Close(fullBlock, 1, StructuringElementShape.Square, borderIsBackground: false);
         MaskMatrix closedBackground = BinaryMorphology.Close(fullBlock, 1, StructuringElementShape.Square, borderIsBackground: true);
@@ -112,13 +99,7 @@ public class BinaryMorphologyTests
     [Fact]
     public void Open_And_Close_ShouldRemoveSpecksAndFillHoles()
     {
-        var mask = new MaskMatrix(11, 11);
-        for (int y = 2; y <= 8; y++)
-        {
-            for (int x = 2; x <= 8; x++)
-                mask[x, y] = true;
-        }
-
+        SequentialMatrix<bool> mask = TestMatrices.CenteredBox(11, 11, 2, 2, 8, 8, true, false);
         mask[5, 5] = false;
         mask[0, 0] = true;
 
@@ -165,19 +146,10 @@ public class BinaryMorphologyTests
     public void FilterConnectedComponents_AllRetentionPolicies_ShouldRetainExpectedComponents()
     {
         // 10x10 mask with a 4x4 component (16 px), a 2x2 component (4 px), and a 1x1 component (1 px)
-        var mask = new MaskMatrix(10, 10);
-        for (int y = 1; y <= 4; y++)
-        {
-            for (int x = 1; x <= 4; x++)
-                mask[x, y] = true;
-        }
-
-        for (int y = 7; y <= 8; y++)
-        {
-            for (int x = 7; x <= 8; x++)
-                mask[x, y] = true;
-        }
-
+        SequentialMatrix<bool> mask = TestMatrices.Create(
+            10,
+            10,
+            static (x, y) => (x >= 1 && x <= 4 && y >= 1 && y <= 4) || (x >= 7 && x <= 8 && y >= 7 && y <= 8));
         mask[0, 9] = true;
 
         // MinimumAreaFraction: 0.03 requires at least 3 pixels. 4x4 and 2x2 survive, 1x1 is discarded.
@@ -252,8 +224,7 @@ public class BinaryMorphologyTests
     [Fact]
     public void Erode_BorderIsBackgroundWithDisk_ShouldErodeBordersWithDiskShape()
     {
-        var mask = new MaskMatrix(5, 5);
-        mask.SetAll(true);
+        SequentialMatrix<bool> mask = TestMatrices.Constant(5, 5, true);
         // Clearing (0, 0) removes a corner outside the radius-2 disk centered at (2, 2),
         // distinguishing Disk from Square while verifying borderIsBackground: true behavior.
         mask[0, 0] = false;
@@ -264,14 +235,7 @@ public class BinaryMorphologyTests
             shape: StructuringElementShape.Disk,
             borderIsBackground: true);
 
-        for (int y = 0; y < 5; y++)
-        {
-            for (int x = 0; x < 5; x++)
-            {
-                bool expected = x == 2 && y == 2;
-                Assert.Equal(expected, erodedDisk[x, y]);
-            }
-        }
+        MatrixAssert.Equal(TestMatrices.Create(5, 5, static (x, y) => x == 2 && y == 2), erodedDisk);
     }
 
     [Fact]
@@ -297,13 +261,7 @@ public class BinaryMorphologyTests
     [Fact]
     public void NonSequentialMatrixView_ShouldMatchMaterializedMorphologyAndConnectedComponents()
     {
-        var source = new MaskMatrix(12, 12);
-        for (int y = 2; y <= 5; y++)
-        {
-            for (int x = 2; x <= 5; x++)
-                source[x, y] = true;
-        }
-
+        SequentialMatrix<bool> source = TestMatrices.CenteredBox(12, 12, 2, 2, 5, 5, true, false);
         source[3, 3] = false;
         source[8, 8] = true;
         source[9, 8] = true;

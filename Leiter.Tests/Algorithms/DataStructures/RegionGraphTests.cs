@@ -87,11 +87,10 @@ public class RegionGraphTests
     [Fact]
     public void Connectivity_FourConnectedVsEightConnected_DiagonalAdjacencyDifferences()
     {
-        var labels = new SequentialMatrix<int>(3, 3);
         // [0, 1, 1]
         // [1, 2, 1]
         // [1, 1, 1]
-        labels.SetAll(1);
+        SequentialMatrix<int> labels = TestMatrices.Constant(3, 3, 1);
         labels[0, 0] = 0;
         labels[1, 1] = 2;
 
@@ -160,15 +159,7 @@ public class RegionGraphTests
     [Fact]
     public void Adjacency_GetNeighborIds_And_GetBoundaryIndices_Alignment()
     {
-        var labels = new SequentialMatrix<int>(3, 3);
-        int id = 0;
-        for (int y = 0; y < 3; y++)
-        {
-            for (int x = 0; x < 3; x++)
-            {
-                labels[x, y] = id++;
-            }
-        }
+        SequentialMatrix<int> labels = TestMatrices.Create(3, 3, static (x, y) => (y * 3) + x);
 
         var graph = RegionGraph.FromLabels(labels);
 
@@ -204,15 +195,7 @@ public class RegionGraphTests
     [Fact]
     public void AreNeighbors_SelfNonNeighborsAndDegreeAsymmetry()
     {
-        var labels = new SequentialMatrix<int>(3, 3);
-        int id = 0;
-        for (int y = 0; y < 3; y++)
-        {
-            for (int x = 0; x < 3; x++)
-            {
-                labels[x, y] = id++;
-            }
-        }
+        SequentialMatrix<int> labels = TestMatrices.Create(3, 3, static (x, y) => (y * 3) + x);
 
         var graph = RegionGraph.FromLabels(labels);
 
@@ -290,8 +273,7 @@ public class RegionGraphTests
     [Fact]
     public void SingleRegion_ShouldHaveNoBoundaries()
     {
-        var labels = new SequentialMatrix<int>(5, 5);
-        labels.SetAll(10);
+        SequentialMatrix<int> labels = TestMatrices.Constant(5, 5, 10);
 
         var graph = RegionGraph.FromLabels(labels);
 
@@ -346,7 +328,7 @@ public class RegionGraphTests
         Assert.Throws<ArgumentOutOfRangeException>(() => RegionGraph.FromDisjointSet(validSeg, (GridConnectivity)99));
         Assert.Throws<ArgumentOutOfRangeException>(() => RegionGraph.FromLabels(validLabels, (GridConnectivity)99));
 
-        var graph = RegionGraph.FromLabels(validLabels);
+        RegionGraph graph = TestMatrices.SingleRegionGraph(2, 2);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.GetNeighborIds(-1));
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.GetNeighborIds(graph.RegionCount));
@@ -390,13 +372,7 @@ public class RegionGraphTests
     [Fact]
     public void ComputeRegionFractions_ShouldComputePerRegionOverlapAndValidate()
     {
-        var labels = new SequentialMatrix<int>(4, 3);
-        for (int x = 0; x < 4; x++)
-        {
-            labels[x, 0] = 0;
-            labels[x, 1] = 1;
-            labels[x, 2] = 2;
-        }
+        SequentialMatrix<int> labels = TestMatrices.Create(4, 3, static (_, y) => y);
 
         var graph = RegionGraph.FromLabels(labels);
         var mask = new MaskMatrix(4, 3);
@@ -428,14 +404,7 @@ public class RegionGraphTests
     [Fact]
     public void ComputeBoundaryNormal_ShouldPointTowardTargetRegionAndValidate()
     {
-        var labels = new SequentialMatrix<int>(4, 3);
-        for (int y = 0; y < 3; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                labels[x, y] = x < 2 ? 0 : 1;
-            }
-        }
+        SequentialMatrix<int> labels = TestMatrices.Create(4, 3, static (x, _) => x < 2 ? 0 : 1);
 
         var graph = RegionGraph.FromLabels(labels);
 
@@ -503,12 +472,7 @@ public class RegionGraphTests
     [Fact]
     public void ComputeRegionFlags_ShouldThresholdOverlapAndValidateInputs()
     {
-        var labels = new SequentialMatrix<int>(4, 2);
-        for (int x = 0; x < 4; x++)
-        {
-            labels[x, 0] = 0;
-            labels[x, 1] = 1;
-        }
+        SequentialMatrix<int> labels = TestMatrices.Create(4, 2, static (_, y) => y);
 
         var graph = RegionGraph.FromLabels(labels);
         var mask = new MaskMatrix(4, 2);
@@ -600,8 +564,7 @@ public class RegionGraphTests
     public void ComputeBoundaryBand_FourConnected_ShouldUseManhattanStepsAndBlockDiagonalShortcuts()
     {
         // 3x3 grid: region 0 at (0,0), region 1 everywhere else
-        var labels = new SequentialMatrix<int>(3, 3);
-        labels.SetAll(1);
+        SequentialMatrix<int> labels = TestMatrices.Constant(3, 3, 1);
         labels[0, 0] = 0;
 
         var graph4 = RegionGraph.FromLabels(labels, GridConnectivity.FourConnected);

@@ -8,6 +8,7 @@ using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -42,14 +43,10 @@ public class ColorTransferTests
     [Fact]
     public void Transfer_Lab32_ShouldMatchTargetMeanAndStdDev()
     {
-        var source = new SequentialMatrix<Lab32>(4, 4);
-        for (int y = 0; y < source.Height; y++)
-        {
-            for (int x = 0; x < source.Width; x++)
-            {
-                source[x, y] = new Lab32(30f + (x * 10f) + (y * 2f), -12f + (x * 6f), -8f + (y * 7f));
-            }
-        }
+        SequentialMatrix<Lab32> source = TestMatrices.Create(
+            4,
+            4,
+            static (x, y) => new Lab32(30f + (x * 10f) + (y * 2f), -12f + (x * 6f), -8f + (y * 7f)));
 
         var target = new LabColorStatistics(72.5, -5.0, 14.0, 12.0, 6.5, 9.0);
         Matrix<Lab32> transferred = ColorTransfer.Transfer(source, target);
@@ -63,10 +60,7 @@ public class ColorTransferTests
         Assert.Equal(target.StdDevB, resultStats.StdDevB, 3);
 
         Matrix<Lab32> unchanged = ColorTransfer.Transfer(source, target, strength: 0.0);
-        for (int i = 0; i < source.Count; i++)
-        {
-            Assert.Equal(source[i], unchanged[i]);
-        }
+        MatrixAssert.Equal(source, unchanged);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(source, target, strength: -0.1));
         Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(source, target, strength: 1.1));
@@ -75,14 +69,10 @@ public class ColorTransferTests
     [Fact]
     public void Transfer_ZeroStdDevChannel_ShouldShiftMeanWithoutNaN()
     {
-        var gray = new SequentialMatrix<Lab32>(3, 2);
-        for (int y = 0; y < gray.Height; y++)
-        {
-            for (int x = 0; x < gray.Width; x++)
-            {
-                gray[x, y] = new Lab32(40f + (x * 10f), 0f, 0f);
-            }
-        }
+        SequentialMatrix<Lab32> gray = TestMatrices.Create(
+            3,
+            2,
+            static (x, _) => new Lab32(40f + (x * 10f), 0f, 0f));
 
         var target = new LabColorStatistics(70.0, -8.5, 16.25, 15.0, 7.0, 12.0);
         Matrix<Lab32> transferred = ColorTransfer.Transfer(gray, target);
@@ -211,15 +201,14 @@ public class ColorTransferTests
     [Fact]
     public void TransferToClosestProfile_GrayscaleImageWithDefaultWeights_ShouldSelectMistyMonochromeAndStayNearAchromatic()
     {
-        var gray = new SequentialMatrix<Rgb8>(8, 8);
-        for (int y = 0; y < gray.Height; y++)
-        {
-            for (int x = 0; x < gray.Width; x++)
+        SequentialMatrix<Rgb8> gray = TestMatrices.Create(
+            8,
+            8,
+            static (x, _) =>
             {
                 byte v = (byte)(60 + (x * 20));
-                gray[x, y] = new Rgb8(v, v, v);
-            }
-        }
+                return new Rgb8(v, v, v);
+            });
 
         var (result, selected) = ColorTransfer.TransferToClosestProfile(
             gray,
@@ -253,8 +242,7 @@ public class ColorTransferTests
     public void Transfer_And_TransferToClosestProfile_WithUndefinedProfileIlluminant_ShouldThrowWithExpectedParamName()
     {
         var emptyRgb = new SequentialMatrix<Rgb8>(0, 0);
-        var sampleRgb = new SequentialMatrix<Rgb8>(2, 2);
-        sampleRgb.SetAll(new Rgb8(100, 120, 140));
+        SequentialMatrix<Rgb8> sampleRgb = TestMatrices.Constant(2, 2, new Rgb8(100, 120, 140));
 
         var badIlluminantProfile = new ColorTransferProfile("Invalid", new LabColorStatistics(50, 0, 0, 10, 5, 5), (Illuminant)999);
         var validProfile = WatercolorPalettes.BalancedWash;
@@ -321,8 +309,7 @@ public class ColorTransferTests
     [Fact]
     public void Transfer_And_TransferToClosestProfile_WithInvalidProfileNameOrStats_ShouldThrowWithExpectedParamName()
     {
-        var sampleRgb = new SequentialMatrix<Rgb8>(2, 2);
-        sampleRgb.SetAll(new Rgb8(100, 120, 140));
+        SequentialMatrix<Rgb8> sampleRgb = TestMatrices.Constant(2, 2, new Rgb8(100, 120, 140));
         ColorTransferProfile validProfile = WatercolorPalettes.BalancedWash;
 
         var emptyNameProfile = new ColorTransferProfile("   ", validProfile.Statistics);
@@ -346,14 +333,10 @@ public class ColorTransferTests
     [Fact]
     public void ComputeStatistics_And_Transfer_WithLab32MatrixView_ShouldMatchSequentialMatrix()
     {
-        var full = new SequentialMatrix<Lab32>(6, 5);
-        for (int y = 0; y < full.Height; y++)
-        {
-            for (int x = 0; x < full.Width; x++)
-            {
-                full[x, y] = new Lab32(25f + (x * 9f) + (y * 3f), -15f + (x * 5f), -10f + (y * 6f));
-            }
-        }
+        SequentialMatrix<Lab32> full = TestMatrices.Create(
+            6,
+            5,
+            static (x, y) => new Lab32(25f + (x * 9f) + (y * 3f), -15f + (x * 5f), -10f + (y * 6f)));
 
         var view = new MatrixView<Lab32>(full, 1, 1, 4, 3, EdgeHandling.Extend);
         SequentialMatrix<Lab32> materialized = view.ToSequentialMatrix();
@@ -371,7 +354,7 @@ public class ColorTransferTests
         var target = new LabColorStatistics(68.0, 4.0, -7.0, 10.0, 6.0, 8.0);
         Matrix<Lab32> viewTransferred = ColorTransfer.Transfer(view, target);
         Matrix<Lab32> seqTransferred = ColorTransfer.Transfer(materialized, target);
-        Assert.True(viewTransferred.ContentEquals(seqTransferred));
+        MatrixAssert.Equal(seqTransferred, viewTransferred);
     }
 
     [Fact]

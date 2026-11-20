@@ -42,6 +42,23 @@ public static class TestMatrices
     }
 
     /// <summary>
+    /// Creates a <see cref="RegionGraph"/> containing a single uniform region spanning the specified dimensions.
+    /// </summary>
+    public static RegionGraph SingleRegionGraph(
+        int width,
+        int height,
+        GridConnectivity connectivity = GridConnectivity.EightConnected) =>
+        RegionGraph.FromLabels(new SequentialMatrix<int>(width, height), connectivity);
+
+    /// <summary>
+    /// Creates a <see cref="RegionGraph"/> containing a single uniform region spanning <paramref name="size"/>.
+    /// </summary>
+    public static RegionGraph SingleRegionGraph(
+        Size size,
+        GridConnectivity connectivity = GridConnectivity.EightConnected) =>
+        SingleRegionGraph(size.Width, size.Height, connectivity);
+
+    /// <summary>
     /// Creates an RGB image split vertically at <paramref name="splitX"/> into left and right colors.
     /// </summary>
     public static SequentialMatrix<Rgb8> VerticalSplit(

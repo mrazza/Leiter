@@ -6,6 +6,7 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -26,7 +27,7 @@ public class WatercolorResultTests
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
         var meanShift = new SequentialMatrix<Rgb8>(2, 2);
-        var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(2, 2));
+        RegionGraph graph = TestMatrices.SingleRegionGraph(2, 2);
         var lod = new SequentialMatrix<Rgb8>(2, 2);
         var wet = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), []);
         var tremor = new SequentialMatrix<Rgb8>(2, 2);
@@ -79,7 +80,7 @@ public class WatercolorResultTests
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
         var meanShift = new SequentialMatrix<Rgb8>(2, 2);
-        var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(2, 2));
+        RegionGraph graph = TestMatrices.SingleRegionGraph(2, 2);
         var lod = new SequentialMatrix<Rgb8>(2, 2);
         var wet = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), []);
         var tremor = new SequentialMatrix<Rgb8>(2, 2);
@@ -116,7 +117,7 @@ public class WatercolorResultTests
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
         var meanShift = new SequentialMatrix<Rgb8>(2, 2);
-        var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(2, 2));
+        RegionGraph graph = TestMatrices.SingleRegionGraph(2, 2);
         var lod = new SequentialMatrix<Rgb8>(2, 2);
         var wet = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), []);
         var tremor = new SequentialMatrix<Rgb8>(2, 2);
@@ -127,7 +128,7 @@ public class WatercolorResultTests
         var badRgb = new SequentialMatrix<Rgb8>(3, 2);
         var badDouble = new SequentialMatrix<DoublePixel>(3, 2);
         var badMask = new MaskMatrix(3, 2);
-        var badGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(3, 2));
+        RegionGraph badGraph = TestMatrices.SingleRegionGraph(3, 2);
         var badWet = new WetInWetResult(badRgb, badMask, []);
 
         Assert.Throws<ArgumentException>(() => new WatercolorResult(image, badRgb, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, tone, granulated));
@@ -158,7 +159,7 @@ public class WatercolorResultTests
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
         var meanShift = new SequentialMatrix<Rgb8>(2, 2);
-        var zeroBoundaryGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(2, 2));
+        RegionGraph zeroBoundaryGraph = TestMatrices.SingleRegionGraph(2, 2);
         var lod = new SequentialMatrix<Rgb8>(2, 2);
         var tremor = new SequentialMatrix<Rgb8>(2, 2);
         var density = new SequentialMatrix<Rgb8>(2, 2);
@@ -191,7 +192,7 @@ public class WatercolorResultTests
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
         var meanShift = new SequentialMatrix<Rgb8>(2, 2);
-        var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(2, 2));
+        RegionGraph graph = TestMatrices.SingleRegionGraph(2, 2);
         var lod = new SequentialMatrix<Rgb8>(2, 2);
         var wet = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), []);
         var tremor = new SequentialMatrix<Rgb8>(2, 2);
