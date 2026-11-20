@@ -120,4 +120,396 @@ public static class GridNeighborhood
 
         return All8ConnectedData[(byte)direction].Offset;
     }
+
+    /// <summary>
+    /// Packs two 32-bit integer identifiers into a canonical order-independent 64-bit pair key.
+    /// </summary>
+    /// <param name="first">The first identifier.</param>
+    /// <param name="second">The second identifier.</param>
+    /// <returns>A 64-bit key storing the smaller signed value in the upper 32 bits and the larger in the lower 32 bits.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static ulong PackUnorderedPairKey(int first, int second)
+    {
+        (int low, int high) = first < second ? (first, second) : (second, first);
+        return ((ulong)(uint)low << 32) | (uint)high;
+    }
+
+    /// <summary>
+    /// Iterates sequentially over all unique forward neighbor index pairs in row-major order.
+    /// </summary>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="visitor">Callback invoked with <c>(firstIndex, secondIndex)</c> for each valid forward neighbor pair.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="connectivity"/> is invalid.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPair(
+        Size size,
+        GridConnectivity connectivity,
+        Action<int, int> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ForEachForwardPair(size, connectivity, visitor, static (firstIndex, secondIndex, action) => action(firstIndex, secondIndex));
+    }
+
+    /// <summary>
+    /// Iterates sequentially over all unique forward neighbor index pairs in row-major order, passing <paramref name="state"/> without per-pixel allocations.
+    /// </summary>
+    /// <typeparam name="TState">The caller state type forwarded to <paramref name="visitor"/>.</typeparam>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="state">Caller state forwarded to <paramref name="visitor"/>.</param>
+    /// <param name="visitor">Callback invoked with <c>(firstIndex, secondIndex, state)</c> for each valid forward neighbor pair.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="connectivity"/> is invalid.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPair<TState>(
+        Size size,
+        GridConnectivity connectivity,
+        TState state,
+        Action<int, int, TState> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ValidateGridAndConnectivity(size, connectivity);
+        if (size.IsEmpty)
+            return;
+
+        for (int y = 0; y < size.Height; y++)
+            ForEachForwardPairInRowCore(size, y, connectivity, state, visitor);
+    }
+
+    /// <summary>
+    /// Iterates sequentially over all unique forward neighbor coordinate pairs in row-major order.
+    /// </summary>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="visitor">Callback invoked with <c>(firstCoord, secondCoord, neighbor)</c> for each valid forward neighbor pair.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="connectivity"/> is invalid.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPair(
+        Size size,
+        GridConnectivity connectivity,
+        Action<Coord, Coord, GridNeighbor> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ForEachForwardPair(size, connectivity, visitor, static (first, second, neighbor, action) => action(first, second, neighbor));
+    }
+
+    /// <summary>
+    /// Iterates sequentially over all unique forward neighbor coordinate pairs in row-major order, passing <paramref name="state"/> without per-pixel allocations.
+    /// </summary>
+    /// <typeparam name="TState">The caller state type forwarded to <paramref name="visitor"/>.</typeparam>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="state">Caller state forwarded to <paramref name="visitor"/>.</param>
+    /// <param name="visitor">Callback invoked with <c>(firstCoord, secondCoord, neighbor, state)</c> for each valid forward neighbor pair.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="connectivity"/> is invalid.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPair<TState>(
+        Size size,
+        GridConnectivity connectivity,
+        TState state,
+        Action<Coord, Coord, GridNeighbor, TState> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ValidateGridAndConnectivity(size, connectivity);
+        if (size.IsEmpty)
+            return;
+
+        for (int y = 0; y < size.Height; y++)
+            ForEachForwardPairInRowCore(size, y, connectivity, state, visitor);
+    }
+
+    /// <summary>
+    /// Iterates over all unique forward neighbor index pairs originating in row <paramref name="y"/>.
+    /// </summary>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="y">The zero-based row index in <c>[0, size.Height)</c>.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="visitor">Callback invoked with <c>(firstIndex, secondIndex)</c> for each valid forward neighbor pair in row <paramref name="y"/>.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="size"/> has negative dimensions, <paramref name="y"/> is outside <c>[0, size.Height)</c>, or <paramref name="connectivity"/> is invalid.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPairInRow(
+        Size size,
+        int y,
+        GridConnectivity connectivity,
+        Action<int, int> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ForEachForwardPairInRow(size, y, connectivity, visitor, static (firstIndex, secondIndex, action) => action(firstIndex, secondIndex));
+    }
+
+    /// <summary>
+    /// Iterates over all unique forward neighbor index pairs originating in row <paramref name="y"/>, passing <paramref name="state"/> without per-pixel allocations.
+    /// </summary>
+    /// <typeparam name="TState">The caller state type forwarded to <paramref name="visitor"/>.</typeparam>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="y">The zero-based row index in <c>[0, size.Height)</c>.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="state">Caller state forwarded to <paramref name="visitor"/>.</param>
+    /// <param name="visitor">Callback invoked with <c>(firstIndex, secondIndex, state)</c> for each valid forward neighbor pair in row <paramref name="y"/>.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="size"/> has negative dimensions, <paramref name="y"/> is outside <c>[0, size.Height)</c>, or <paramref name="connectivity"/> is invalid.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPairInRow<TState>(
+        Size size,
+        int y,
+        GridConnectivity connectivity,
+        TState state,
+        Action<int, int, TState> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ValidateRowAndConnectivity(size, y, connectivity);
+        if (size.Width == 0)
+            return;
+
+        ForEachForwardPairInRowCore(size, y, connectivity, state, visitor);
+    }
+
+    /// <summary>
+    /// Iterates over all unique forward neighbor coordinate pairs originating in row <paramref name="y"/>.
+    /// </summary>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="y">The zero-based row index in <c>[0, size.Height)</c>.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="visitor">Callback invoked with <c>(firstCoord, secondCoord, neighbor)</c> for each valid forward neighbor pair in row <paramref name="y"/>.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="size"/> has negative dimensions, <paramref name="y"/> is outside <c>[0, size.Height)</c>, or <paramref name="connectivity"/> is invalid.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPairInRow(
+        Size size,
+        int y,
+        GridConnectivity connectivity,
+        Action<Coord, Coord, GridNeighbor> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ForEachForwardPairInRow(size, y, connectivity, visitor, static (first, second, neighbor, action) => action(first, second, neighbor));
+    }
+
+    /// <summary>
+    /// Iterates over all unique forward neighbor coordinate pairs originating in row <paramref name="y"/>, passing <paramref name="state"/> without per-pixel allocations.
+    /// </summary>
+    /// <typeparam name="TState">The caller state type forwarded to <paramref name="visitor"/>.</typeparam>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="y">The zero-based row index in <c>[0, size.Height)</c>.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="state">Caller state forwarded to <paramref name="visitor"/>.</param>
+    /// <param name="visitor">Callback invoked with <c>(firstCoord, secondCoord, neighbor, state)</c> for each valid forward neighbor pair in row <paramref name="y"/>.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="size"/> has negative dimensions, <paramref name="y"/> is outside <c>[0, size.Height)</c>, or <paramref name="connectivity"/> is invalid.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPairInRow<TState>(
+        Size size,
+        int y,
+        GridConnectivity connectivity,
+        TState state,
+        Action<Coord, Coord, GridNeighbor, TState> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ValidateRowAndConnectivity(size, y, connectivity);
+        if (size.Width == 0)
+            return;
+
+        ForEachForwardPairInRowCore(size, y, connectivity, state, visitor);
+    }
+
+    /// <summary>
+    /// Iterates in parallel by row over all unique forward neighbor coordinate pairs in the grid.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="visitor"/> may be invoked concurrently from multiple threads across distinct rows and must be thread-safe.
+    /// </remarks>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="visitor">Thread-safe callback invoked with <c>(firstCoord, secondCoord, neighbor)</c> for each valid forward neighbor pair.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="connectivity"/> is invalid.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPairParallel(
+        Size size,
+        GridConnectivity connectivity,
+        Action<Coord, Coord, GridNeighbor> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ForEachForwardPairParallel(size, connectivity, visitor, static (first, second, neighbor, action) => action(first, second, neighbor));
+    }
+
+    /// <summary>
+    /// Iterates in parallel by row over all unique forward neighbor coordinate pairs in the grid, passing <paramref name="state"/> without per-pixel allocations.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="visitor"/> may be invoked concurrently from multiple threads across distinct rows and must be thread-safe.
+    /// </remarks>
+    /// <typeparam name="TState">The caller state type forwarded to <paramref name="visitor"/>.</typeparam>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="state">Thread-safe caller state forwarded to <paramref name="visitor"/>.</param>
+    /// <param name="visitor">Thread-safe callback invoked with <c>(firstCoord, secondCoord, neighbor, state)</c> for each valid forward neighbor pair.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="connectivity"/> is invalid.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPairParallel<TState>(
+        Size size,
+        GridConnectivity connectivity,
+        TState state,
+        Action<Coord, Coord, GridNeighbor, TState> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ValidateGridAndConnectivity(size, connectivity);
+        if (size.IsEmpty)
+            return;
+
+        Parallel.For(0, size.Height, y => ForEachForwardPairInRowCore(size, y, connectivity, state, visitor));
+    }
+
+    /// <summary>
+    /// Iterates in parallel by row over all unique forward neighbor index pairs in the grid.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="visitor"/> may be invoked concurrently from multiple threads across distinct rows and must be thread-safe.
+    /// </remarks>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="visitor">Thread-safe callback invoked with <c>(firstIndex, secondIndex)</c> for each valid forward neighbor pair.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="connectivity"/> is invalid.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPairParallel(
+        Size size,
+        GridConnectivity connectivity,
+        Action<int, int> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ForEachForwardPairParallel(size, connectivity, visitor, static (firstIndex, secondIndex, action) => action(firstIndex, secondIndex));
+    }
+
+    /// <summary>
+    /// Iterates in parallel by row over all unique forward neighbor index pairs in the grid, passing <paramref name="state"/> without per-pixel allocations.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="visitor"/> may be invoked concurrently from multiple threads across distinct rows and must be thread-safe.
+    /// </remarks>
+    /// <typeparam name="TState">The caller state type forwarded to <paramref name="visitor"/>.</typeparam>
+    /// <param name="size">The 2D grid dimensions.</param>
+    /// <param name="connectivity">The grid connectivity mode.</param>
+    /// <param name="state">Thread-safe caller state forwarded to <paramref name="visitor"/>.</param>
+    /// <param name="visitor">Thread-safe callback invoked with <c>(firstIndex, secondIndex, state)</c> for each valid forward neighbor pair.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="connectivity"/> is invalid.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="visitor"/> is <see langword="null"/>.</exception>
+    public static void ForEachForwardPairParallel<TState>(
+        Size size,
+        GridConnectivity connectivity,
+        TState state,
+        Action<int, int, TState> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ValidateGridAndConnectivity(size, connectivity);
+        if (size.IsEmpty)
+            return;
+
+        Parallel.For(0, size.Height, y => ForEachForwardPairInRowCore(size, y, connectivity, state, visitor));
+    }
+
+    private static void ValidateGridAndConnectivity(Size size, GridConnectivity connectivity)
+    {
+        Guard.ThrowIfNegative(size);
+        Guard.ThrowIfUndefinedEnum(connectivity);
+    }
+
+    private static void ValidateRowAndConnectivity(Size size, int y, GridConnectivity connectivity)
+    {
+        ValidateGridAndConnectivity(size, connectivity);
+        if ((uint)y >= (uint)size.Height)
+            throw new ArgumentOutOfRangeException(nameof(y), y, $"Row index {y} must be within [0, {size.Height}).");
+    }
+
+    private static void ForEachForwardPairInRowCore<TState>(
+        Size size,
+        int y,
+        GridConnectivity connectivity,
+        TState state,
+        Action<int, int, TState> visitor)
+    {
+        int width = size.Width;
+        int rowBase = size.IndexOf(0, y);
+        bool hasSouth = y + 1 < size.Height;
+
+        if (connectivity == GridConnectivity.FourConnected)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int firstIndex = rowBase + x;
+                if (x + 1 < width)
+                    visitor(firstIndex, firstIndex + 1, state);
+                if (hasSouth)
+                    visitor(firstIndex, firstIndex + width, state);
+            }
+
+            return;
+        }
+
+        for (int x = 0; x < width; x++)
+        {
+            int firstIndex = rowBase + x;
+            bool hasEast = x + 1 < width;
+            if (hasEast)
+                visitor(firstIndex, firstIndex + 1, state);
+
+            if (hasSouth)
+            {
+                int southIndex = firstIndex + width;
+                visitor(firstIndex, southIndex, state);
+                if (hasEast)
+                    visitor(firstIndex, southIndex + 1, state);
+                if (x > 0)
+                    visitor(firstIndex, southIndex - 1, state);
+            }
+        }
+    }
+
+    private static void ForEachForwardPairInRowCore<TState>(
+        Size size,
+        int y,
+        GridConnectivity connectivity,
+        TState state,
+        Action<Coord, Coord, GridNeighbor, TState> visitor)
+    {
+        GridNeighbor east = All8ConnectedData[(int)GridDirection.East];
+        GridNeighbor south = All8ConnectedData[(int)GridDirection.South];
+        GridNeighbor southEast = All8ConnectedData[(int)GridDirection.SouthEast];
+        GridNeighbor southWest = All8ConnectedData[(int)GridDirection.SouthWest];
+        int width = size.Width;
+        bool hasSouth = y + 1 < size.Height;
+
+        if (connectivity == GridConnectivity.FourConnected)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                var first = new Coord(x, y);
+                if (x + 1 < width)
+                    visitor(first, new Coord(x + 1, y), east, state);
+                if (hasSouth)
+                    visitor(first, new Coord(x, y + 1), south, state);
+            }
+
+            return;
+        }
+
+        for (int x = 0; x < width; x++)
+        {
+            var first = new Coord(x, y);
+            bool hasEast = x + 1 < width;
+            if (hasEast)
+                visitor(first, new Coord(x + 1, y), east, state);
+
+            if (hasSouth)
+            {
+                visitor(first, new Coord(x, y + 1), south, state);
+                if (hasEast)
+                    visitor(first, new Coord(x + 1, y + 1), southEast, state);
+                if (x > 0)
+                    visitor(first, new Coord(x - 1, y + 1), southWest, state);
+            }
+        }
+    }
 }

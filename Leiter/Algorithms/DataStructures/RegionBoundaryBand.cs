@@ -40,12 +40,12 @@ public sealed class RegionBoundaryBand
     public int Height => Size.Height;
 
     /// <summary>
-    /// Gets the maximum 8-connected Chebyshev step radius expanded from qualifying boundary seed pixels.
+    /// Gets the maximum grid step radius expanded from qualifying boundary seed pixels.
     /// </summary>
     public int MaxRadius { get; }
 
     /// <summary>
-    /// Gets the per-pixel 8-connected step distance to the nearest qualifying boundary pixel,
+    /// Gets the per-pixel geodesic grid step distance to the nearest qualifying boundary pixel,
     /// or <see cref="int.MaxValue"/> for pixels outside the band.
     /// </summary>
     public IReadOnlyMatrix<int> Distances { get; }

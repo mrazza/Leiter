@@ -13,22 +13,23 @@ public class BucketingHistogramTests
     [Fact]
     public void BucketingHistogram_ShouldBucketCorrectly()
     {
-        // Bucket integers by parity (even/odd)
-        var hist = new BucketingHistogram<int>(val => val % 2);
+        // Bucket integers by parity (even/odd) using Func<int, int>
+        Func<int, int> bucketer = static val => val % 2;
+        var hist = new BucketingHistogram<int>(bucketer);
         
         hist.Increment(1); // odd (1)
         hist.Increment(2); // even (0)
         hist.Increment(3); // odd (1)
 
         Assert.Equal(2, hist.BucketCount);
-        Assert.Equal(3, hist.Total());
+        Assert.Equal(3, hist.Total);
         Assert.Equal(2, hist[1]); // odd bucket has 2
         Assert.Equal(1, hist[2]); // even bucket has 1
 
         // MapBuckets
         var mapped = hist.MapBuckets(b => b == 0 ? "Even" : "Odd");
         Assert.Equal(2, mapped.BucketCount);
-        Assert.Equal(3, mapped.Total());
+        Assert.Equal(3, mapped.Total);
         Assert.Equal(2, mapped["Odd"]);
         Assert.Equal(1, mapped["Even"]);
     }

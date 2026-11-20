@@ -15,7 +15,7 @@ public class DictionaryHistogramTests
     {
         var hist = new DictionaryHistogram<string>();
         Assert.Equal(0, hist.BucketCount);
-        Assert.Equal(0, hist.Total());
+        Assert.Equal(0, hist.Total);
         Assert.Equal(0, hist["apple"]);
         // Empty histogram density returns 0.0 cleanly
         Assert.Equal(0.0, hist.GetDensity("apple"));
@@ -24,7 +24,7 @@ public class DictionaryHistogramTests
         hist.Increment("banana", 2);
 
         Assert.Equal(2, hist.BucketCount);
-        Assert.Equal(3, hist.Total());
+        Assert.Equal(3, hist.Total);
         Assert.Equal(1, hist["apple"]);
         Assert.Equal(2, hist["banana"]);
         Assert.Equal(1.0 / 3.0, hist.GetDensity("apple"), 5);

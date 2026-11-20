@@ -70,7 +70,7 @@ public class QuantizedPaletteTests
         Assert.Equal(2, result.Image.Width);
         Assert.Equal(2, result.Image.Height);
         Assert.Equal(1, result.Histogram.BucketCount);
-        Assert.Equal(4, result.Histogram.Total());
+        Assert.Equal(4, result.Histogram.Total);
         Assert.Single(result.MetricLookup);
     }
 }

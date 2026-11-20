@@ -542,4 +542,111 @@ public class RegionGraphTests
         Assert.Throws<ArgumentOutOfRangeException>(() => RegionGraph.ComputeRegionFlags(values, double.NaN));
         Assert.Throws<ArgumentOutOfRangeException>(() => RegionGraph.ComputeRegionFlags(values, double.PositiveInfinity));
     }
+
+    /// <summary>
+    /// Verifies that <see cref="RegionGraph.ComputeBoundaryNormal"/> respects <see cref="GridConnectivity.FourConnected"/>
+    /// by ignoring diagonal neighbors that contribute under <see cref="GridConnectivity.EightConnected"/>.
+    /// </summary>
+    [Fact]
+    public void ComputeBoundaryNormal_FourConnected_ShouldIgnoreDiagonalNeighbors()
+    {
+        // [0, 0, 1]
+        // [0, 1, 1]
+        var labels = new SequentialMatrix<int>(3, 2);
+        labels[0, 0] = 0;
+        labels[1, 0] = 0;
+        labels[2, 0] = 1;
+        labels[0, 1] = 0;
+        labels[1, 1] = 1;
+        labels[2, 1] = 1;
+
+        var graph4 = RegionGraph.FromLabels(labels, GridConnectivity.FourConnected);
+        var graph8 = RegionGraph.FromLabels(labels, GridConnectivity.EightConnected);
+
+        // At (0, 0), only diagonal neighbor (1, 1) belongs to region 1:
+        // 4-connected sees no opposing cardinal neighbors -> Vector2D.Zero.
+        // 8-connected sees diagonal (1, 1) -> normalized (1/sqrt(2), 1/sqrt(2)).
+        Assert.Equal(Vector2D.Zero, graph4.ComputeBoundaryNormal(new Coord(0, 0), towardsRegionId: 1, fromRegionId: 0));
+        Vector2D normal8Corner = graph8.ComputeBoundaryNormal(new Coord(0, 0), towardsRegionId: 1, fromRegionId: 0);
+        Assert.Equal(ScalarMath.InvSqrt2, normal8Corner.X, 10);
+        Assert.Equal(ScalarMath.InvSqrt2, normal8Corner.Y, 10);
+
+        // Check L-shape where (1, 1) has cardinal neighbor (2, 1)=1 and diagonal neighbor (2, 2)=1:
+        // [0, 0, 0]
+        // [0, 0, 1]
+        // [0, 0, 1]
+        var lShape = new SequentialMatrix<int>(3, 3);
+        lShape[2, 1] = 1;
+        lShape[2, 2] = 1;
+
+        var lGraph4 = RegionGraph.FromLabels(lShape, GridConnectivity.FourConnected);
+        var lGraph8 = RegionGraph.FromLabels(lShape, GridConnectivity.EightConnected);
+
+        // At center (1, 1), only East (2, 1) is cardinal region 1, while SouthEast (2, 2) is diagonal region 1.
+        Vector2D lNormal4 = lGraph4.ComputeBoundaryNormal(new Coord(1, 1), towardsRegionId: 1, fromRegionId: 0);
+        Assert.Equal(1.0, lNormal4.X, 10);
+        Assert.Equal(0.0, lNormal4.Y, 10);
+
+        Vector2D lNormal8 = lGraph8.ComputeBoundaryNormal(new Coord(1, 1), towardsRegionId: 1, fromRegionId: 0);
+        Assert.True(lNormal8.X > 0.0);
+        Assert.True(lNormal8.Y > 0.4); // (+2, +1) normalized -> Y = 1/sqrt(5) ≈ 0.4472
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="RegionGraph.ComputeBoundaryBand"/> respects <see cref="GridConnectivity.FourConnected"/>
+    /// geodesic distances and does not step diagonally across corners.
+    /// </summary>
+    [Fact]
+    public void ComputeBoundaryBand_FourConnected_ShouldUseManhattanStepsAndBlockDiagonalShortcuts()
+    {
+        // 3x3 grid: region 0 at (0,0), region 1 everywhere else
+        var labels = new SequentialMatrix<int>(3, 3);
+        labels.SetAll(1);
+        labels[0, 0] = 0;
+
+        var graph4 = RegionGraph.FromLabels(labels, GridConnectivity.FourConnected);
+        var graph8 = RegionGraph.FromLabels(labels, GridConnectivity.EightConnected);
+
+        // Under 4-connected, border seeds for boundary (0,1) are (0,0), (1,0), (0,1).
+        // Seed (1,0) expands diagonally to (2,1) in 1 step under 8-connected, vs 2 steps under 4-connected.
+        RegionBoundaryBand band4Radius1 = graph4.ComputeBoundaryBand(maxRadius: 1);
+        RegionBoundaryBand band8Radius1 = graph8.ComputeBoundaryBand(maxRadius: 1);
+
+        Assert.Equal(1, band4Radius1.Distances[2, 0]);
+        Assert.Equal(1, band4Radius1.Distances[1, 1]);
+        Assert.Equal(int.MaxValue, band4Radius1.Distances[2, 1]);
+        Assert.Equal(1, band8Radius1.Distances[2, 1]);
+
+        RegionBoundaryBand band4Radius2 = graph4.ComputeBoundaryBand(maxRadius: 2);
+        Assert.Equal(2, band4Radius2.Distances[2, 1]);
+
+        // Test restrictToIncidentRegions across a diagonal-only bridge of region 1:
+        // [0, 1, 2]
+        // [2, 2, 1]
+        // Boundary 0 is between region 0 (0,0) and region 1 (1,0).
+        // Under 8-connected, (1,0) expands diagonally to (2,1) [also region 1] at distance 1.
+        // Under 4-connected, (1,0) is blocked by region 2 at (2,0) and (1,1), so (2,1) stays unreachable.
+        var bridge = new SequentialMatrix<int>(3, 2);
+        bridge[0, 0] = 0;
+        bridge[1, 0] = 1;
+        bridge[2, 0] = 2;
+        bridge[0, 1] = 2;
+        bridge[1, 1] = 2;
+        bridge[2, 1] = 1;
+
+        var bridge4 = RegionGraph.FromLabels(bridge, GridConnectivity.FourConnected);
+        var bridge8 = RegionGraph.FromLabels(bridge, GridConnectivity.EightConnected);
+
+        RegionBoundaryBand bridgeBand4 = bridge4.ComputeBoundaryBand(
+            maxRadius: 3,
+            boundaryPredicate: bi => bridge4.Boundaries[bi].First == 0 && bridge4.Boundaries[bi].Second == 1,
+            restrictToIncidentRegions: true);
+        RegionBoundaryBand bridgeBand8 = bridge8.ComputeBoundaryBand(
+            maxRadius: 3,
+            boundaryPredicate: bi => bridge8.Boundaries[bi].First == 0 && bridge8.Boundaries[bi].Second == 1,
+            restrictToIncidentRegions: true);
+
+        Assert.Equal(int.MaxValue, bridgeBand4.Distances[2, 1]);
+        Assert.Equal(1, bridgeBand8.Distances[2, 1]);
+    }
 }

@@ -30,7 +30,7 @@ public class PaletteQuantizerTests
         Assert.Equal(5, result.Image.Height);
         Assert.Empty(result.Image);
         Assert.Equal(0, result.Histogram.BucketCount);
-        Assert.Equal(0, result.Histogram.Total());
+        Assert.Equal(0, result.Histogram.Total);
         Assert.Empty(result.MetricLookup);
     }
 
@@ -74,7 +74,7 @@ public class PaletteQuantizerTests
 
         Assert.Equal(2, result.Histogram.BucketCount);
         Assert.Equal(2, result.MetricLookup.Count);
-        Assert.Equal(100, result.Histogram.Total());
+        Assert.Equal(100, result.Histogram.Total);
         Assert.Equal(63, result.Histogram[dark]);
         Assert.Equal(37, result.Histogram[light]);
         Assert.Equal(dark, result.Image[95]);

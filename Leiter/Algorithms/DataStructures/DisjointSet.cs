@@ -3,6 +3,7 @@ namespace Leiter.Algorithms.DataStructures;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -38,6 +39,8 @@ public class DisjointSet<T> : IDisjointSet
         }
 
         private readonly DisjointSet<T> disjointSet;
+
+        internal bool BelongsTo(DisjointSet<T> owner) => ReferenceEquals(disjointSet, owner);
 
         /// <inheritdoc/>
         public int RootIndex { get; }
@@ -89,14 +92,53 @@ public class DisjointSet<T> : IDisjointSet
     /// <inheritdoc/>
     public Size Size => image.Size;
 
-    /// <inheritdoc/>
-    public LongPixel this[int index] => FindRootReadOnly(index);
+    /// <summary>
+    /// Gets the partition identifier of the element at the specified linear index.
+    /// </summary>
+    /// <param name="index">The zero-based linear index of the element.</param>
+    /// <returns>The partition identifier at <paramref name="index"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="index"/> is outside <c>[0, Count)</c>.</exception>
+    public LongPixel this[int index]
+    {
+        get
+        {
+            ValidateIndex(index);
+            return FindRootReadOnly(index);
+        }
+    }
 
-    /// <inheritdoc/>
-    public LongPixel this[Coord coord] => FindRootReadOnly(image.IndexFromCoord(coord));
+    /// <summary>
+    /// Gets the partition identifier of the element at the specified coordinate.
+    /// </summary>
+    /// <param name="coord">The two-dimensional coordinate of the element.</param>
+    /// <returns>The partition identifier at <paramref name="coord"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="coord"/> is outside <c>[0, Width) × [0, Height)</c>.</exception>
+    public LongPixel this[Coord coord]
+    {
+        get
+        {
+            ValidateCoord(coord);
+            return FindRootReadOnly(image.IndexFromCoord(coord));
+        }
+    }
 
-    /// <inheritdoc/>
-    public LongPixel this[int x, int y] => FindRootReadOnly(image.IndexFromCoord(new Coord(x, y)));
+    /// <summary>
+    /// Gets the partition identifier of the element at the specified column and row coordinates.
+    /// </summary>
+    /// <param name="x">The zero-based column coordinate.</param>
+    /// <param name="y">The zero-based row coordinate.</param>
+    /// <returns>The partition identifier at (<paramref name="x"/>, <paramref name="y"/>).</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="x"/> is outside <c>[0, Width)</c> or <paramref name="y"/> is outside <c>[0, Height)</c>.
+    /// </exception>
+    public LongPixel this[int x, int y]
+    {
+        get
+        {
+            ValidateCoords(x, y);
+            return FindRootReadOnly(image.IndexFromCoord(new Coord(x, y)));
+        }
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DisjointSet{T}" /> class.
@@ -125,8 +167,10 @@ public class DisjointSet<T> : IDisjointSet
     /// </summary>
     /// <param name="coord">The coordinate to get the partition for.</param>
     /// <returns>A snapshot of the partition containing the specified coordinate.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="coord"/> is outside <c>[0, Width) × [0, Height)</c>.</exception>
     public Partition GetPartition(Coord coord)
     {
+        ValidateCoord(coord);
         return GetPartition(image.IndexFromCoord(coord));
     }
 
@@ -135,27 +179,48 @@ public class DisjointSet<T> : IDisjointSet
     /// </summary>
     /// <param name="index">The index in the matrix to get the partition for.</param>
     /// <returns>A snapshot of the partition containing the specified index.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="index"/> is outside <c>[0, Count)</c>.</exception>
     public Partition GetPartition(int index)
     {
+        ValidateIndex(index);
         var rootIndex = Find(index);
         return new Partition(this, rootIndex, elements[rootIndex].Size, elements[rootIndex].Value);
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Gets the region of pixels that belong to the specified partition.
+    /// </summary>
+    /// <param name="partition">The partition to get the region for.</param>
+    /// <returns>The region of pixels in <paramref name="partition"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="partition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <see cref="IDisjointSet.IPartition.RootIndex"/> is outside <c>[0, Count)</c>.</exception>
     public Region<Coord> GetRegion(IDisjointSet.IPartition partition)
     {
+        ArgumentNullException.ThrowIfNull(partition);
         return GetRegion(partition.RootIndex);
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Gets the region of pixels in the partition containing the specified coordinate.
+    /// </summary>
+    /// <param name="coord">The coordinate to get the region for.</param>
+    /// <returns>The region of pixels in the partition containing <paramref name="coord"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="coord"/> is outside <c>[0, Width) × [0, Height)</c>.</exception>
     public Region<Coord> GetRegion(Coord coord)
     {
+        ValidateCoord(coord);
         return GetRegion(image.IndexFromCoord(coord));
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Gets the region of pixels in the partition containing the specified linear index.
+    /// </summary>
+    /// <param name="index">The linear index to get the region for.</param>
+    /// <returns>The region of pixels in the partition containing <paramref name="index"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="index"/> is outside <c>[0, Count)</c>.</exception>
     public Region<Coord> GetRegion(int index)
     {
+        ValidateIndex(index);
         int rootIndex = FindRootReadOnly(index);
         var region = new Region<Coord>(elements[rootIndex].Size);
         int currIndex = rootIndex;
@@ -184,9 +249,19 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="secondPartition">The second partition to union.</param>
     /// <param name="unionValue">The value to assign to the unioned partition.</param>
     /// <returns>The partition that the two partitions were unioned into.</returns>
-    /// <exception cref="ArgumentException">Thrown when the two partitions are the same.</exception>
-    public Partition Union(Partition firstPartition, Partition secondPartition, T unionValue) =>
-        UnionCore(firstPartition.RootIndex, secondPartition.RootIndex, unionValue, nameof(secondPartition));
+    /// <exception cref="ArgumentException">
+    /// Thrown when either partition does not belong to this disjoint set, or when the two partitions are already the same.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when either partition root index is outside <c>[0, Count)</c>.</exception>
+    public Partition Union(Partition firstPartition, Partition secondPartition, T unionValue)
+    {
+        if (!firstPartition.BelongsTo(this))
+            throw new ArgumentException("Partition does not belong to this disjoint set.", nameof(firstPartition));
+        if (!secondPartition.BelongsTo(this))
+            throw new ArgumentException("Partition does not belong to this disjoint set.", nameof(secondPartition));
+
+        return UnionCore(firstPartition.RootIndex, secondPartition.RootIndex, unionValue, nameof(secondPartition));
+    }
 
     /// <summary>
     /// Unions the two partitions containing the specified coordinates.
@@ -195,9 +270,14 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="secondCoord">The second coordinate to union.</param>
     /// <param name="unionValue">The value to assign to the unioned partition.</param>
     /// <returns>The partition that the two partitions were unioned into.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="firstCoord"/> or <paramref name="secondCoord"/> is outside <c>[0, Width) × [0, Height)</c>.</exception>
     /// <exception cref="ArgumentException">Thrown when the two coordinates are already in the same partition.</exception>
-    public Partition Union(Coord firstCoord, Coord secondCoord, T unionValue) =>
-        UnionCore(image.IndexFromCoord(firstCoord), image.IndexFromCoord(secondCoord), unionValue, nameof(secondCoord));
+    public Partition Union(Coord firstCoord, Coord secondCoord, T unionValue)
+    {
+        ValidateCoord(firstCoord);
+        ValidateCoord(secondCoord);
+        return UnionCore(image.IndexFromCoord(firstCoord), image.IndexFromCoord(secondCoord), unionValue, nameof(secondCoord));
+    }
 
     /// <summary>
     /// Unions the two partitions containing the specified indices.
@@ -206,9 +286,14 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="secondIndex">The second index to union.</param>
     /// <param name="unionValue">The value to assign to the unioned partition.</param>
     /// <returns>The partition that the two partitions were unioned into.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="firstIndex"/> or <paramref name="secondIndex"/> is outside <c>[0, Count)</c>.</exception>
     /// <exception cref="ArgumentException">Thrown when the two indices are already in the same partition.</exception>
-    public Partition Union(int firstIndex, int secondIndex, T unionValue) =>
-        UnionCore(firstIndex, secondIndex, unionValue, nameof(secondIndex));
+    public Partition Union(int firstIndex, int secondIndex, T unionValue)
+    {
+        ValidateIndex(firstIndex);
+        ValidateIndex(secondIndex);
+        return UnionCore(firstIndex, secondIndex, unionValue, nameof(secondIndex));
+    }
 
     private Partition UnionCore(int firstIndex, int secondIndex, T unionValue, string secondParamName)
     {
@@ -228,8 +313,11 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="unionValue">The value to assign to the merged set.</param>
     /// <param name="mergedPartition">When this method returns, contains the merged partition, or the existing partition if both elements already belong to the same set.</param>
     /// <returns><see langword="true"/> if two distinct sets were merged; <see langword="false"/> if both indices already belonged to the same set.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="firstIndex"/> or <paramref name="secondIndex"/> is outside <c>[0, Count)</c>.</exception>
     public bool TryUnion(int firstIndex, int secondIndex, T unionValue, out Partition mergedPartition)
     {
+        ValidateIndex(firstIndex);
+        ValidateIndex(secondIndex);
         int firstSetRoot = Find(firstIndex);
         int secondSetRoot = Find(secondIndex);
         if (firstSetRoot == secondSetRoot)
@@ -320,11 +408,53 @@ public class DisjointSet<T> : IDisjointSet
         return current;
     }
 
-    /// <inheritdoc/>
-    public LongPixel GetElement(int index) => FindRootReadOnly(index);
+    /// <summary>
+    /// Gets the partition identifier of the element at the specified linear index.
+    /// </summary>
+    /// <param name="index">The zero-based linear index of the element.</param>
+    /// <returns>The partition identifier at <paramref name="index"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="index"/> is outside <c>[0, Count)</c>.</exception>
+    public LongPixel GetElement(int index)
+    {
+        ValidateIndex(index);
+        return FindRootReadOnly(index);
+    }
 
-    /// <inheritdoc/>
-    public LongPixel GetElement(int x, int y) => FindRootReadOnly(image.IndexFromCoord(new Coord(x, y)));
+    /// <summary>
+    /// Gets the partition identifier of the element at the specified column and row coordinates.
+    /// </summary>
+    /// <param name="x">The zero-based column coordinate.</param>
+    /// <param name="y">The zero-based row coordinate.</param>
+    /// <returns>The partition identifier at (<paramref name="x"/>, <paramref name="y"/>).</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="x"/> is outside <c>[0, Width)</c> or <paramref name="y"/> is outside <c>[0, Height)</c>.
+    /// </exception>
+    public LongPixel GetElement(int x, int y)
+    {
+        ValidateCoords(x, y);
+        return FindRootReadOnly(image.IndexFromCoord(new Coord(x, y)));
+    }
+
+    private void ValidateIndex(int index, [CallerArgumentExpression(nameof(index))] string? paramName = null)
+    {
+        if ((uint)index >= (uint)elements.Length)
+            throw new ArgumentOutOfRangeException(paramName, index, $"Index {index} must be within [0, {elements.Length}).");
+    }
+
+    private void ValidateCoord(Coord coord, [CallerArgumentExpression(nameof(coord))] string? paramName = null)
+    {
+        if (!image.Size.Contains(coord))
+            throw new ArgumentOutOfRangeException(paramName, coord, $"Coordinate {coord} is outside dimensions {image.Size}.");
+    }
+
+    private void ValidateCoords(int x, int y)
+    {
+        if ((uint)x >= (uint)Width)
+            throw new ArgumentOutOfRangeException(nameof(x), x, $"X coordinate {x} must be within [0, {Width}).");
+
+        if ((uint)y >= (uint)Height)
+            throw new ArgumentOutOfRangeException(nameof(y), y, $"Y coordinate {y} must be within [0, {Height}).");
+    }
 
     /// <summary>
     /// Converts a linear index into the corresponding 2D matrix coordinate.
@@ -353,7 +483,7 @@ public class DisjointSet<T> : IDisjointSet
 }
 
 /// <summary>
-/// Factory methods for creating <see cref="DisjointSet{T}"/> instances.
+/// Factory and extension methods for <see cref="DisjointSet{T}"/> and <see cref="IDisjointSet"/> instances.
 /// </summary>
 public static class DisjointSet
 {
@@ -367,5 +497,21 @@ public static class DisjointSet
     {
         ArgumentNullException.ThrowIfNull(matrix);
         return new DisjointSet<byte>(matrix, static _ => 0);
+    }
+
+    /// <summary>
+    /// Converts this disjoint-set segmentation into a deterministic <see cref="RegionGraph"/>.
+    /// </summary>
+    /// <param name="segmentation">The segmented pixel partition.</param>
+    /// <param name="connectivity">The grid connectivity used to detect neighboring regions.</param>
+    /// <returns>A populated <see cref="RegionGraph"/> instance.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="segmentation"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="connectivity"/> is invalid.</exception>
+    public static RegionGraph ToRegionGraph(
+        this IDisjointSet segmentation,
+        GridConnectivity connectivity = GridConnectivity.EightConnected)
+    {
+        ArgumentNullException.ThrowIfNull(segmentation);
+        return RegionGraph.FromDisjointSet(segmentation, connectivity);
     }
 }

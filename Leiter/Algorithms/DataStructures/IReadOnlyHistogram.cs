@@ -30,8 +30,7 @@ public interface IReadOnlyHistogram<T> : IEnumerable<KeyValuePair<T, int>>
     /// <summary>
     /// Gets the total number of all element occurrences recorded in the histogram.
     /// </summary>
-    /// <returns>The sum of counts across all buckets.</returns>
-    int Total();
+    int Total { get; }
 
     /// <summary>
     /// Gets the number of distinct buckets in the histogram.

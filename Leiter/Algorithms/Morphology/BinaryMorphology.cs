@@ -20,14 +20,21 @@ public static class BinaryMorphology
     /// <param name="mask">The boolean mask (<see langword="false"/> = background, <see langword="true"/> = foreground).</param>
     /// <param name="radius">The non-negative structuring element radius in pixels.</param>
     /// <param name="shape">The shape of the structuring element.</param>
+    /// <param name="borderIsBackground">
+    /// If <see langword="true"/>, samples outside the image bounds are treated as background (<see langword="false"/>);
+    /// otherwise coordinates are clamped to the nearest image edge. For centered symmetric structuring elements
+    /// (<see cref="StructuringElementShape.Disk"/> and <see cref="StructuringElementShape.Square"/>), both modes produce
+    /// identical results because clamped edge coordinates already lie within the in-bounds structuring element.
+    /// </param>
     /// <returns>A <see cref="MaskMatrix"/> containing <see langword="true"/> for dilated foreground pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="mask"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="radius"/> is negative or <paramref name="shape"/> is invalid.</exception>
     public static MaskMatrix Dilate(
         IReadOnlyMatrix<bool> mask,
         int radius,
-        StructuringElementShape shape = StructuringElementShape.Disk) =>
-        ApplyMorphology(mask, radius, shape, isErosion: false, borderIsBackground: false);
+        StructuringElementShape shape = StructuringElementShape.Disk,
+        bool borderIsBackground = false) =>
+        ApplyMorphology(mask, radius, shape, isErosion: false, borderIsBackground: borderIsBackground);
 
     /// <summary>
     /// Erodes foreground (<see langword="true"/>) pixels in a boolean mask using a structuring element of the specified radius and shape.
@@ -61,8 +68,9 @@ public static class BinaryMorphology
         if (mask.Count == 0 || radius == 0)
             return CloneMask(mask);
 
-        int width = mask.Width;
-        int height = mask.Height;
+        Size size = mask.Size;
+        int width = size.Width;
+        int height = size.Height;
         int rowStride = width + 1;
         int[] rowPrefixSums = BuildRowPrefixSums(mask);
         int[] horizontalHalfWidths = BuildHorizontalHalfWidths(radius, shape);
@@ -76,7 +84,7 @@ public static class BinaryMorphology
 
             int minNeighborY = Math.Max(0, y - radius);
             int maxNeighborY = Math.Min(height - 1, y + radius);
-            int dstRowBase = y * width;
+            int dstRowBase = size.IndexOf(0, y);
 
             for (int x = 0; x < width; x++)
             {
@@ -120,7 +128,7 @@ public static class BinaryMorphology
     /// <param name="mask">The boolean mask.</param>
     /// <param name="radius">The non-negative structuring element radius in pixels.</param>
     /// <param name="shape">The shape of the structuring element.</param>
-    /// <param name="borderIsBackground">Whether out-of-bounds samples during erosion are treated as background.</param>
+    /// <param name="borderIsBackground">Whether out-of-bounds samples are treated as background.</param>
     /// <returns>The opened <see cref="MaskMatrix"/>.</returns>
     public static MaskMatrix Open(
         IReadOnlyMatrix<bool> mask,
@@ -128,7 +136,7 @@ public static class BinaryMorphology
         StructuringElementShape shape = StructuringElementShape.Disk,
         bool borderIsBackground = false)
     {
-        return Dilate(Erode(mask, radius, shape, borderIsBackground), radius, shape);
+        return Dilate(Erode(mask, radius, shape, borderIsBackground), radius, shape, borderIsBackground);
     }
 
     /// <summary>
@@ -137,7 +145,7 @@ public static class BinaryMorphology
     /// <param name="mask">The boolean mask.</param>
     /// <param name="radius">The non-negative structuring element radius in pixels.</param>
     /// <param name="shape">The shape of the structuring element.</param>
-    /// <param name="borderIsBackground">Whether out-of-bounds samples during erosion are treated as background.</param>
+    /// <param name="borderIsBackground">Whether out-of-bounds samples are treated as background.</param>
     /// <returns>The closed <see cref="MaskMatrix"/>.</returns>
     public static MaskMatrix Close(
         IReadOnlyMatrix<bool> mask,
@@ -145,7 +153,7 @@ public static class BinaryMorphology
         StructuringElementShape shape = StructuringElementShape.Disk,
         bool borderIsBackground = false)
     {
-        return Erode(Dilate(mask, radius, shape), radius, shape, borderIsBackground);
+        return Erode(Dilate(mask, radius, shape, borderIsBackground), radius, shape, borderIsBackground);
     }
 
     /// <summary>
@@ -178,8 +186,9 @@ public static class BinaryMorphology
         if (retentionPolicy == ComponentRetentionPolicy.KeepAll)
             return MaskMatrix.From(mask);
 
-        int width = mask.Width;
-        int height = mask.Height;
+        Size size = mask.Size;
+        int width = size.Width;
+        int height = size.Height;
         var filtered = new MaskMatrix(width, height);
         var isForeground = new bool[mask.Count];
         bool hasAnyForeground = false;
@@ -193,7 +202,7 @@ public static class BinaryMorphology
         {
             for (int y = 0; y < height; y++)
             {
-                int rowBase = y * width;
+                int rowBase = size.IndexOf(0, y);
                 for (int x = 0; x < width; x++)
                 {
                     if (mask[x, y])
@@ -209,32 +218,15 @@ public static class BinaryMorphology
             return filtered;
 
         var disjointSet = DisjointSet.CreateSingletons(mask);
-        ReadOnlySpan<GridNeighbor> forwardSteps = GridNeighborhood.GetForward(connectivity);
-
-        for (int y = 0; y < height; y++)
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
+        GridNeighborhood.ForEachForwardPair(
+            size,
+            connectivity,
+            (disjointSet, isForeground),
+            static (currentIndex, neighborIndex, state) =>
             {
-                int currentIndex = rowBase + x;
-                if (!isForeground[currentIndex])
-                    continue;
-
-                var current = new Coord(x, y);
-                for (int s = 0; s < forwardSteps.Length; s++)
-                {
-                    Coord other = current + forwardSteps[s].Offset;
-                    if (!mask.Contains(other))
-                        continue;
-
-                    int neighborIndex = (other.Y * width) + other.X;
-                    if (!isForeground[neighborIndex])
-                        continue;
-
-                    disjointSet.TryUnion(currentIndex, neighborIndex, 0, out _);
-                }
-            }
-        }
+                if (state.isForeground[currentIndex] && state.isForeground[neighborIndex])
+                    state.disjointSet.TryUnion(currentIndex, neighborIndex, 0, out _);
+            });
 
         Span<bool> filteredSpan = filtered.AsSpan();
         if (retentionPolicy == ComponentRetentionPolicy.LargestComponentOnly)
@@ -286,8 +278,9 @@ public static class BinaryMorphology
 
     private static int[] BuildRowPrefixSums(IReadOnlyMatrix<bool> mask)
     {
-        int width = mask.Width;
-        int height = mask.Height;
+        Size size = mask.Size;
+        int width = size.Width;
+        int height = size.Height;
         int rowStride = width + 1;
         var rowPrefixSums = new int[height * rowStride];
 
@@ -296,7 +289,7 @@ public static class BinaryMorphology
             bool[] rawMask = sequentialMask.RawData;
             Parallel.For(0, height, y =>
             {
-                int srcRowOffset = y * width;
+                int srcRowOffset = size.IndexOf(0, y);
                 int dstRowOffset = y * rowStride;
                 int runningSum = 0;
                 for (int x = 0; x < width; x++)
