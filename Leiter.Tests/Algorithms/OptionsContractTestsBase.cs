@@ -17,9 +17,10 @@ public abstract class AlgorithmOptionsContractTestsBase<TOptions>
     protected abstract TOptions CreateValidCustomOptions();
 
     /// <summary>
-    /// Creates an invalid configuration expected to fail <see cref="IValidatableOptions.Validate"/>.
+    /// Creates an invalid configuration expected to fail <see cref="IValidatableOptions.Validate"/>,
+    /// or <see langword="null"/> when all combinations of <typeparamref name="TOptions"/> values are valid.
     /// </summary>
-    protected abstract TOptions CreateInvalidOptions();
+    protected virtual TOptions? CreateInvalidOptions() => null;
 
     /// <summary>
     /// Verifies that <typeparamref name="TOptions"/>.<see cref="IAlgorithmOptions{TSelf}.Default"/> is non-null and valid.
@@ -50,7 +51,11 @@ public abstract class AlgorithmOptionsContractTestsBase<TOptions>
     [Fact]
     public void Contract_InvalidOptions_ShouldFailValidation()
     {
-        TOptions invalid = CreateInvalidOptions();
+        if (CreateInvalidOptions() is not { } invalid)
+        {
+            return;
+        }
+
         Assert.ThrowsAny<ArgumentException>(() => invalid.Validate());
     }
 
@@ -66,8 +71,10 @@ public abstract class AlgorithmOptionsContractTestsBase<TOptions>
         TOptions custom = CreateValidCustomOptions();
         Assert.Same(custom, OptionsResolver.Resolve(custom));
 
-        TOptions invalid = CreateInvalidOptions();
-        Assert.ThrowsAny<ArgumentException>(() => OptionsResolver.Resolve(invalid));
+        if (CreateInvalidOptions() is { } invalid)
+        {
+            Assert.ThrowsAny<ArgumentException>(() => OptionsResolver.Resolve(invalid));
+        }
     }
 }
 
@@ -121,20 +128,22 @@ public abstract class SizeTunableOptionsContractTestsBase<TOptions> : AlgorithmO
     public void Contract_ForSize_InvalidArguments_ShouldThrow()
     {
         TOptions custom = CreateValidCustomOptions();
-        TOptions invalid = CreateInvalidOptions();
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => TOptions.ForSize(new Size(-1, 100)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TOptions.ForSize(new Size(100, -1)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TOptions.ForSize(new Size(-1, 100), custom));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TOptions.ForSize(new Size(100, -1), custom));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TOptions.ForSize(new Size(100, 100), 0.0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TOptions.ForSize(new Size(100, 100), -5.0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TOptions.ForSize(new Size(100, 100), double.NaN));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TOptions.ForSize(new Size(100, 100), double.PositiveInfinity));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TOptions.ForSize(new Size(100, 100), custom, 0.0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TOptions.ForSize(new Size(100, 100), custom, double.NegativeInfinity));
-        Assert.Throws<ArgumentNullException>(() => TOptions.ForSize(new Size(100, 100), baseline: null!));
-        Assert.ThrowsAny<ArgumentException>(() => TOptions.ForSize(new Size(100, 100), invalid));
-        Assert.ThrowsAny<ArgumentException>(() => TOptions.ForSize(new Size(0, 0), invalid));
+        Assert.Throws<ArgumentOutOfRangeException>("size", () => TOptions.ForSize(new Size(-1, 100)));
+        Assert.Throws<ArgumentOutOfRangeException>("size", () => TOptions.ForSize(new Size(100, -1)));
+        Assert.Throws<ArgumentOutOfRangeException>("size", () => TOptions.ForSize(new Size(-1, 100), custom));
+        Assert.Throws<ArgumentOutOfRangeException>("size", () => TOptions.ForSize(new Size(100, -1), custom));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => TOptions.ForSize(new Size(100, 100), 0.0));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => TOptions.ForSize(new Size(100, 100), -5.0));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => TOptions.ForSize(new Size(100, 100), double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => TOptions.ForSize(new Size(100, 100), double.PositiveInfinity));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => TOptions.ForSize(new Size(100, 100), custom, 0.0));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => TOptions.ForSize(new Size(100, 100), custom, double.NegativeInfinity));
+        Assert.Throws<ArgumentNullException>("baseline", () => TOptions.ForSize(new Size(100, 100), baseline: null!));
+        if (CreateInvalidOptions() is { } invalid)
+        {
+            Assert.ThrowsAny<ArgumentException>(() => TOptions.ForSize(new Size(100, 100), invalid));
+            Assert.ThrowsAny<ArgumentException>(() => TOptions.ForSize(new Size(0, 0), invalid));
+        }
     }
 }

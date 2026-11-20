@@ -18,7 +18,40 @@ internal readonly record struct ImageTuningProfile(
     double ColorSpreadFactor,
     double ClutterFactor)
 {
-    private const double CanonicalDimension = 256.0;
+    /// <summary>
+    /// The canonical thumbnail geometric-mean linear dimension used for scale-invariant image analysis.
+    /// </summary>
+    internal const double CanonicalDimension = 256.0;
+
+    /// <summary>
+    /// The minimum clamped color spread multiplier relative to <see cref="OptionTuning.ReferenceLabDispersion"/>.
+    /// </summary>
+    internal const double MinColorSpreadFactor = 0.75;
+
+    /// <summary>
+    /// The maximum clamped color spread multiplier relative to <see cref="OptionTuning.ReferenceLabDispersion"/>.
+    /// </summary>
+    internal const double MaxColorSpreadFactor = 1.35;
+
+    /// <summary>
+    /// The minimum clamped scene clutter multiplier relative to <see cref="OptionTuning.ReferenceClutterGradient"/>.
+    /// </summary>
+    internal const double MinClutterFactor = 0.75;
+
+    /// <summary>
+    /// The maximum clamped scene clutter multiplier relative to <see cref="OptionTuning.ReferenceClutterGradient"/>.
+    /// </summary>
+    internal const double MaxClutterFactor = 1.50;
+
+    /// <summary>
+    /// The geometric-mean image dimension below which clutter adaptation holds neutrally at <c>1.0</c>.
+    /// </summary>
+    internal const double ClutterRampStartDimension = 16.0;
+
+    /// <summary>
+    /// The linear ramp width above <see cref="ClutterRampStartDimension"/> over which clutter weight rises from <c>0</c> to <c>1</c> (reaching full weight at <c>64</c>).
+    /// </summary>
+    internal const double ClutterRampDimensionSpan = 48.0;
 
     /// <summary>
     /// Creates a neutral profile representing an empty image of dimensions <paramref name="size"/>.
@@ -32,7 +65,15 @@ internal readonly record struct ImageTuningProfile(
     public static ImageTuningProfile Analyze(IReadOnlyMatrix<Rgb8> image)
     {
         ArgumentNullException.ThrowIfNull(image);
+        Guard.ThrowIfNegative(image.Size);
+        return AnalyzeUnchecked(image);
+    }
 
+    /// <summary>
+    /// Analyzes a pre-validated <see cref="Rgb8"/> image using an anti-aliased canonical thumbnail.
+    /// </summary>
+    internal static ImageTuningProfile AnalyzeUnchecked(IReadOnlyMatrix<Rgb8> image)
+    {
         if (image.Count == 0)
         {
             return CreateEmpty(image.Size);
@@ -49,12 +90,22 @@ internal readonly record struct ImageTuningProfile(
     }
 
     /// <summary>
-    /// Analyzes a <see cref="Lab32"/> image using an anti-aliased canonical thumbnail to derive scale-invariant content metrics.
+    /// Analyzes a <see cref="Lab32"/> image under <paramref name="illuminant"/> using an anti-aliased canonical thumbnail
+    /// to derive scale-invariant content metrics.
     /// </summary>
-    public static ImageTuningProfile Analyze(IReadOnlyMatrix<Lab32> labImage)
+    public static ImageTuningProfile Analyze(IReadOnlyMatrix<Lab32> labImage, Illuminant illuminant = Illuminant.D65)
     {
         ArgumentNullException.ThrowIfNull(labImage);
+        Guard.ThrowIfNegative(labImage.Size);
+        Guard.ThrowIfUndefinedEnum(illuminant);
+        return AnalyzeUnchecked(labImage, illuminant);
+    }
 
+    /// <summary>
+    /// Analyzes a pre-validated <see cref="Lab32"/> image under <paramref name="illuminant"/> using an anti-aliased canonical thumbnail.
+    /// </summary>
+    internal static ImageTuningProfile AnalyzeUnchecked(IReadOnlyMatrix<Lab32> labImage, Illuminant illuminant)
+    {
         if (labImage.Count == 0)
         {
             return CreateEmpty(labImage.Size);
@@ -66,7 +117,7 @@ internal readonly record struct ImageTuningProfile(
             : labImage;
 
         LabColorStatistics labStats = ColorTransfer.ComputeStatistics(labThumb);
-        Matrix<Rgb8> rgbThumb = labThumb.ToRgb8(RgbColorSpace.SRgb);
+        Matrix<Rgb8> rgbThumb = labThumb.ToRgb8(RgbColorSpace.SRgb, illuminant);
         double clutterFactor = ComputeClutterFactor(rgbThumb, labImage.Size);
         return FromStatistics(labImage.Size, labStats, clutterFactor);
     }
@@ -91,12 +142,12 @@ internal readonly record struct ImageTuningProfile(
     /// Computes the 3D CIELAB dispersion norm <c>sqrt(StdDevL² + StdDevA² + StdDevB²)</c>.
     /// </summary>
     public static double ComputeDispersion(LabColorStatistics stats) =>
-        Math.Sqrt((stats.StdDevL * stats.StdDevL) + (stats.StdDevA * stats.StdDevA) + (stats.StdDevB * stats.StdDevB));
+        new Vector3D(stats.StdDevL, stats.StdDevA, stats.StdDevB).Length;
 
     private static ImageTuningProfile FromStatistics(Size imageSize, LabColorStatistics stats, double clutterFactor)
     {
         double dispersion = ComputeDispersion(stats);
-        double colorSpread = Math.Clamp(dispersion / OptionTuning.ReferenceLabDispersion, 0.75, 1.35);
+        double colorSpread = Math.Clamp(dispersion / OptionTuning.ReferenceLabDispersion, MinColorSpreadFactor, MaxColorSpreadFactor);
         return new ImageTuningProfile(imageSize, IsEmpty: false, stats, dispersion, colorSpread, clutterFactor);
     }
 
@@ -113,10 +164,10 @@ internal readonly record struct ImageTuningProfile(
         double meanEdge = sum / count;
         double thumbGeomMean = OptionTuning.GeometricMeanDimension(thumb.Size);
         double normalizedMeanEdge = meanEdge * (thumbGeomMean / CanonicalDimension);
-        double rawClutter = Math.Clamp(normalizedMeanEdge / OptionTuning.ReferenceClutterGradient, 0.75, 1.50);
+        double rawClutter = Math.Clamp(normalizedMeanEdge / OptionTuning.ReferenceClutterGradient, MinClutterFactor, MaxClutterFactor);
 
         double origGeomMean = OptionTuning.GeometricMeanDimension(originalSize);
-        double weight = Math.Clamp((origGeomMean - 16.0) / 48.0, 0.0, 1.0);
+        double weight = Math.Clamp((origGeomMean - ClutterRampStartDimension) / ClutterRampDimensionSpan, 0.0, 1.0);
         return ScalarMath.Lerp(1.0, rawClutter, weight);
     }
 
