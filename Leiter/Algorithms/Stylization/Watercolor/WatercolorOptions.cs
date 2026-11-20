@@ -48,7 +48,7 @@ public sealed record WatercolorOptions(
     PaperGranulationOptions? PaperGranulation = null,
     FxaaOptions? Fxaa = null,
     bool EnableFxaa = true,
-    double EgbiBlurSigma = 0.8) : IValidatableOptions
+    double EgbiBlurSigma = 0.8) : ISizeTunableOptions<WatercolorOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which pipeline stage parameters apply unscaled.
@@ -66,10 +66,10 @@ public sealed record WatercolorOptions(
     public static EgbiOptions DefaultSaliencyEgbi { get; } = new(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200);
 
     internal static EgbiOptions ResolveDefaultEgbi(int pixelCount) =>
-        DefaultSaliencyEgbi with { MinRegionSize = Math.Min(DefaultSaliencyEgbi.MinRegionSize, Math.Max(1, pixelCount / 16)) };
+        DefaultSaliencyEgbi with { MinRegionSize = OptionTuning.ClampRegionSize(DefaultSaliencyEgbi.MinRegionSize, pixelCount, 16) };
 
     internal static MeanShiftOptions ResolveDefaultMeanShift(int pixelCount) =>
-        new(MinRegionSize: Math.Min(MeanShiftOptions.Default.MinRegionSize, Math.Max(1, pixelCount / 32)));
+        new(MinRegionSize: OptionTuning.ClampRegionSize(MeanShiftOptions.Default.MinRegionSize, pixelCount, 32));
 
     /// <summary>
     /// Creates <see cref="WatercolorOptions"/> with every pipeline stage tuned geometrically for <paramref name="size"/> by delegating to each stage option type's <c>ForSize</c> factory.
@@ -80,29 +80,48 @@ public sealed record WatercolorOptions(
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static WatercolorOptions ForSize(
         Size size,
+        double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="WatercolorOptions"/> by scaling <paramref name="baseline"/> and every nested pipeline stage option geometrically for <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline watercolor pipeline configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="WatercolorOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static WatercolorOptions ForSize(
+        Size size,
+        WatercolorOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        double egbiBlurSigma = totalPixels == 0 ? 0.8 : 0.8 * s;
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
+        if (totalPixels == 0)
+        {
+            return baseline;
+        }
 
-        return new WatercolorOptions(
-            TargetPalette: null,
-            ColorTransferStrength: 1.0,
-            Egbi: EgbiOptions.ForSize(size, DefaultSaliencyEgbi, referenceDimension),
-            RegionalContrastSaliency: RegionalContrastSaliencyOptions.Default,
-            SaliencyCut: SaliencyCutOptions.ForSize(size, referenceDimension),
-            SaliencyDistanceField: SaliencyDistanceFieldOptions.Default,
-            MeanShift: MeanShiftOptions.ForSize(size, referenceDimension),
-            LodAbstraction: LodAbstractionOptions.ForSize(size, referenceDimension),
-            WetInWet: WetInWetOptions.ForSize(size, referenceDimension),
-            HandTremor: HandTremorOptions.ForSize(size, referenceDimension),
-            EdgeDarkening: EdgeDarkeningOptions.ForSize(size, referenceDimension),
-            TurbulenceFlow: TurbulenceFlowOptions.ForSize(size, referenceDimension),
-            ToneCurve: PiecewiseToneCurveOptions.ForSize(size, referenceDimension),
-            PaperGranulation: PaperGranulationOptions.ForSize(size, referenceDimension),
-            Fxaa: FxaaOptions.ForSize(size, referenceDimension),
-            EnableFxaa: true,
-            EgbiBlurSigma: egbiBlurSigma);
+        return baseline with
+        {
+            Egbi = EgbiOptions.ForSize(size, baseline.Egbi ?? DefaultSaliencyEgbi, referenceDimension),
+            RegionalContrastSaliency = baseline.RegionalContrastSaliency ?? RegionalContrastSaliencyOptions.Default,
+            SaliencyCut = SaliencyCutOptions.ForSize(size, baseline.SaliencyCut ?? SaliencyCutOptions.Default, referenceDimension),
+            SaliencyDistanceField = baseline.SaliencyDistanceField ?? SaliencyDistanceFieldOptions.Default,
+            MeanShift = MeanShiftOptions.ForSize(size, baseline.MeanShift ?? MeanShiftOptions.Default, referenceDimension),
+            LodAbstraction = LodAbstractionOptions.ForSize(size, baseline.LodAbstraction ?? LodAbstractionOptions.Default, referenceDimension),
+            WetInWet = WetInWetOptions.ForSize(size, baseline.WetInWet ?? WetInWetOptions.Default, referenceDimension),
+            HandTremor = HandTremorOptions.ForSize(size, baseline.HandTremor ?? HandTremorOptions.Default, referenceDimension),
+            EdgeDarkening = EdgeDarkeningOptions.ForSize(size, baseline.EdgeDarkening ?? EdgeDarkeningOptions.Default, referenceDimension),
+            TurbulenceFlow = TurbulenceFlowOptions.ForSize(size, baseline.TurbulenceFlow ?? TurbulenceFlowOptions.Default, referenceDimension),
+            ToneCurve = PiecewiseToneCurveOptions.ForSize(size, baseline.ToneCurve ?? PiecewiseToneCurveOptions.Default, referenceDimension),
+            PaperGranulation = PaperGranulationOptions.ForSize(size, baseline.PaperGranulation ?? PaperGranulationOptions.Default, referenceDimension),
+            Fxaa = FxaaOptions.ForSize(size, baseline.Fxaa ?? FxaaOptions.Default, referenceDimension),
+            EgbiBlurSigma = baseline.EgbiBlurSigma * s
+        };
     }
 
     /// <summary>
@@ -115,23 +134,44 @@ public sealed record WatercolorOptions(
     /// <returns>A validated <see cref="WatercolorOptions"/> instance with <see cref="TargetPalette"/> and all stage options tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or any palette entry in <paramref name="candidatePalettes"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="candidatePalettes"/> is empty.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static WatercolorOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
+        double referenceDimension = DefaultReferenceDimension,
+        IReadOnlyList<ColorTransferProfile>? candidatePalettes = null) =>
+        ForImage(image, Default, referenceDimension, candidatePalettes);
+
+    /// <summary>
+    /// Creates <see cref="WatercolorOptions"/> tuned from <paramref name="baseline"/> for both the dimensions and visual content of <paramref name="image"/>,
+    /// preserving any explicitly configured <see cref="TargetPalette"/> or selecting the closest candidate palette when <see langword="null"/>.
+    /// </summary>
+    /// <param name="image">The input RGB photograph to analyze.</param>
+    /// <param name="baseline">The baseline watercolor pipeline configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <param name="candidatePalettes">Optional candidate watercolor palettes for automatic palette selection when <paramref name="baseline"/>.<see cref="TargetPalette"/> is <see langword="null"/> (defaults to <see cref="WatercolorPalettes.Defaults"/>).</param>
+    /// <returns>A validated <see cref="WatercolorOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="baseline"/>, or any selected candidate palette entry is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="candidatePalettes"/> is empty (when used) or <paramref name="baseline"/> contains an invalid name.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static WatercolorOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        WatercolorOptions baseline,
         double referenceDimension = DefaultReferenceDimension,
         IReadOnlyList<ColorTransferProfile>? candidatePalettes = null)
     {
         OptionTuning.ValidateImageAndReference(image, referenceDimension);
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
 
         ImageTuningProfile rawProfile = ImageTuningProfile.Analyze(image);
-        ColorTransferProfile selectedPalette = ColorTransfer.SelectClosestProfile(
+        ColorTransferProfile selectedPalette = baseline.TargetPalette ?? ColorTransfer.SelectClosestProfile(
             rawProfile.LabStats,
             candidatePalettes ?? WatercolorPalettes.Defaults,
             WatercolorPalettes.DefaultFeatureWeights);
 
         if (rawProfile.IsEmpty)
         {
-            return ForSize(image.Size, referenceDimension) with
+            return ForSize(image.Size, baseline, referenceDimension) with
             {
                 TargetPalette = selectedPalette
             };
@@ -140,55 +180,48 @@ public sealed record WatercolorOptions(
         double srcChromaStd = Math.Sqrt((rawProfile.LabStats.StdDevA * rawProfile.LabStats.StdDevA) + (rawProfile.LabStats.StdDevB * rawProfile.LabStats.StdDevB));
         double palChromaStd = Math.Sqrt((selectedPalette.Statistics.StdDevA * selectedPalette.Statistics.StdDevA) + (selectedPalette.Statistics.StdDevB * selectedPalette.Statistics.StdDevB));
         double chromaGain = palChromaStd / Math.Max(1.0, srcChromaStd);
-        double transferStrength = chromaGain > 2.0
+        double autoStrength = chromaGain > 2.0
             ? Math.Clamp(2.0 / chromaGain, 0.55, 1.0)
             : chromaGain < 0.5
                 ? Math.Clamp(chromaGain * 2.0, 0.55, 1.0)
                 : 1.0;
+        double transferStrength = baseline.ColorTransferStrength * autoStrength;
 
         ImageTuningProfile postTransferProfile = rawProfile.WithTransferredStatistics(selectedPalette.Statistics, transferStrength);
         var (s, _, _) = OptionTuning.ComputeScales(image.Size, referenceDimension);
 
-        return new WatercolorOptions(
-            TargetPalette: selectedPalette,
-            ColorTransferStrength: transferStrength,
-            Egbi: EgbiOptions.ForProfile(in postTransferProfile, DefaultSaliencyEgbi, referenceDimension),
-            RegionalContrastSaliency: RegionalContrastSaliencyOptions.Default,
-            SaliencyCut: SaliencyCutOptions.ForProfile(in postTransferProfile, referenceDimension),
-            SaliencyDistanceField: SaliencyDistanceFieldOptions.Default,
-            MeanShift: MeanShiftOptions.ForProfile(in postTransferProfile, referenceDimension),
-            LodAbstraction: LodAbstractionOptions.ForProfile(in postTransferProfile, referenceDimension),
-            WetInWet: WetInWetOptions.ForProfile(in postTransferProfile, referenceDimension),
-            HandTremor: HandTremorOptions.ForProfile(in postTransferProfile, referenceDimension),
-            EdgeDarkening: EdgeDarkeningOptions.ForProfile(in postTransferProfile, referenceDimension),
-            TurbulenceFlow: TurbulenceFlowOptions.ForProfile(in postTransferProfile, referenceDimension),
-            ToneCurve: PiecewiseToneCurveOptions.ForProfile(in postTransferProfile, referenceDimension),
-            PaperGranulation: PaperGranulationOptions.ForProfile(in postTransferProfile, referenceDimension),
-            Fxaa: FxaaOptions.ForProfile(in postTransferProfile, referenceDimension),
-            EnableFxaa: true,
-            EgbiBlurSigma: 0.8 * s * Math.Sqrt(postTransferProfile.ClutterFactor));
+        return baseline with
+        {
+            TargetPalette = selectedPalette,
+            ColorTransferStrength = transferStrength,
+            Egbi = EgbiOptions.ForProfile(in postTransferProfile, baseline.Egbi ?? DefaultSaliencyEgbi, referenceDimension),
+            RegionalContrastSaliency = baseline.RegionalContrastSaliency ?? RegionalContrastSaliencyOptions.Default,
+            SaliencyCut = SaliencyCutOptions.ForProfile(in postTransferProfile, baseline.SaliencyCut ?? SaliencyCutOptions.Default, referenceDimension),
+            SaliencyDistanceField = baseline.SaliencyDistanceField ?? SaliencyDistanceFieldOptions.Default,
+            MeanShift = MeanShiftOptions.ForProfile(in postTransferProfile, baseline.MeanShift ?? MeanShiftOptions.Default, referenceDimension),
+            LodAbstraction = LodAbstractionOptions.ForProfile(in postTransferProfile, baseline.LodAbstraction ?? LodAbstractionOptions.Default, referenceDimension),
+            WetInWet = WetInWetOptions.ForProfile(in postTransferProfile, baseline.WetInWet ?? WetInWetOptions.Default, referenceDimension),
+            HandTremor = HandTremorOptions.ForSize(postTransferProfile.ImageSize, baseline.HandTremor ?? HandTremorOptions.Default, referenceDimension),
+            EdgeDarkening = EdgeDarkeningOptions.ForProfile(in postTransferProfile, baseline.EdgeDarkening ?? EdgeDarkeningOptions.Default, referenceDimension),
+            TurbulenceFlow = TurbulenceFlowOptions.ForSize(postTransferProfile.ImageSize, baseline.TurbulenceFlow ?? TurbulenceFlowOptions.Default, referenceDimension),
+            ToneCurve = PiecewiseToneCurveOptions.ForProfile(in postTransferProfile, baseline.ToneCurve ?? PiecewiseToneCurveOptions.Default, referenceDimension),
+            PaperGranulation = PaperGranulationOptions.ForSize(postTransferProfile.ImageSize, baseline.PaperGranulation ?? PaperGranulationOptions.Default, referenceDimension),
+            Fxaa = FxaaOptions.ForProfile(in postTransferProfile, baseline.Fxaa ?? FxaaOptions.Default, referenceDimension),
+            EgbiBlurSigma = baseline.EgbiBlurSigma * s * Math.Sqrt(postTransferProfile.ClutterFactor)
+        };
     }
 
     /// <summary>
     /// Validates that all configured pipeline options are finite and within their required domains.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when any numeric or enum option is invalid.</exception>
+    /// <exception cref="ArgumentException">Thrown when <see cref="TargetPalette"/> has an empty or whitespace name.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any numeric, enum, or nested option parameter is invalid.</exception>
     public void Validate()
     {
         Guard.ThrowIfNotFiniteInRange(ColorTransferStrength, 0.0, 1.0);
         Guard.ThrowIfNotFiniteNonNegative(EgbiBlurSigma);
 
-        if (TargetPalette is not null)
-        {
-            Guard.ThrowIfUndefinedEnum(TargetPalette.Illuminant, nameof(TargetPalette));
-            LabColorStatistics stats = TargetPalette.Statistics;
-            Guard.ThrowIfNotFinite(stats.MeanL, nameof(TargetPalette));
-            Guard.ThrowIfNotFinite(stats.MeanA, nameof(TargetPalette));
-            Guard.ThrowIfNotFinite(stats.MeanB, nameof(TargetPalette));
-            Guard.ThrowIfNotFiniteNonNegative(stats.StdDevL, nameof(TargetPalette));
-            Guard.ThrowIfNotFiniteNonNegative(stats.StdDevA, nameof(TargetPalette));
-            Guard.ThrowIfNotFiniteNonNegative(stats.StdDevB, nameof(TargetPalette));
-        }
+        TargetPalette?.Validate(nameof(TargetPalette));
 
         Egbi?.Validate();
         RegionalContrastSaliency?.Validate();

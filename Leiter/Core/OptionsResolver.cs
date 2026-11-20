@@ -6,6 +6,14 @@ namespace Leiter.Core;
 internal static class OptionsResolver
 {
     /// <summary>
+    /// Returns <typeparamref name="T"/>.<see cref="IAlgorithmOptions{T}.Default"/> when <paramref name="options"/> is <see langword="null"/>;
+    /// otherwise validates <paramref name="options"/> and returns it.
+    /// </summary>
+    public static T Resolve<T>(T? options)
+        where T : class, IAlgorithmOptions<T> =>
+        Resolve(options, T.Default);
+
+    /// <summary>
     /// Returns <paramref name="defaultOptions"/> when <paramref name="options"/> is <see langword="null"/>;
     /// otherwise validates <paramref name="options"/> and returns it.
     /// </summary>

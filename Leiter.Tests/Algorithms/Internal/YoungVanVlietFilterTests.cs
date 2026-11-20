@@ -1,8 +1,8 @@
-namespace Leiter.Tests.Algorithms;
+namespace Leiter.Tests.Algorithms.Internal;
 
 using System;
 using System.Numerics;
-using Leiter.Algorithms;
+using Leiter.Algorithms.Internal;
 using Xunit;
 
 /// <summary>

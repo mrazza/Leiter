@@ -67,6 +67,7 @@ public static class BinaryMorphology
         int[] rowPrefixSums = BuildRowPrefixSums(mask);
         int[] horizontalHalfWidths = BuildHorizontalHalfWidths(radius, shape);
         var result = new MaskMatrix(width, height);
+        bool[] resultData = result.RawData;
 
         Parallel.For(0, height, y =>
         {
@@ -75,6 +76,7 @@ public static class BinaryMorphology
 
             int minNeighborY = Math.Max(0, y - radius);
             int maxNeighborY = Math.Min(height - 1, y + radius);
+            int dstRowBase = y * width;
 
             for (int x = 0; x < width; x++)
             {
@@ -105,7 +107,7 @@ public static class BinaryMorphology
                     }
                 }
 
-                result[x, y] = resultValue;
+                resultData[dstRowBase + x] = resultValue;
             }
         });
 
@@ -182,15 +184,23 @@ public static class BinaryMorphology
         var isForeground = new bool[mask.Count];
         bool hasAnyForeground = false;
 
-        for (int y = 0; y < height; y++)
+        if (mask.TryGetReadOnlySpan(out ReadOnlySpan<bool> maskSpan))
         {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
+            maskSpan.CopyTo(isForeground);
+            hasAnyForeground = maskSpan.Contains(true);
+        }
+        else
+        {
+            for (int y = 0; y < height; y++)
             {
-                if (mask[x, y])
+                int rowBase = y * width;
+                for (int x = 0; x < width; x++)
                 {
-                    isForeground[rowBase + x] = true;
-                    hasAnyForeground = true;
+                    if (mask[x, y])
+                    {
+                        isForeground[rowBase + x] = true;
+                        hasAnyForeground = true;
+                    }
                 }
             }
         }
@@ -226,6 +236,7 @@ public static class BinaryMorphology
             }
         }
 
+        Span<bool> filteredSpan = filtered.AsSpan();
         if (retentionPolicy == ComponentRetentionPolicy.LargestComponentOnly)
         {
             int largestRoot = -1;
@@ -247,7 +258,7 @@ public static class BinaryMorphology
             for (int i = 0; i < isForeground.Length; i++)
             {
                 if (isForeground[i] && disjointSet.GetPartition(i).RootIndex == largestRoot)
-                    filtered[i] = true;
+                    filteredSpan[i] = true;
             }
         }
         else
@@ -256,7 +267,7 @@ public static class BinaryMorphology
             for (int i = 0; i < isForeground.Length; i++)
             {
                 if (isForeground[i] && disjointSet.GetPartition(i).Size >= minPixels)
-                    filtered[i] = true;
+                    filteredSpan[i] = true;
             }
         }
 
@@ -280,17 +291,36 @@ public static class BinaryMorphology
         int rowStride = width + 1;
         var rowPrefixSums = new int[height * rowStride];
 
-        Parallel.For(0, height, y =>
+        if (mask is SequentialMatrix<bool> sequentialMask)
         {
-            int rowOffset = y * rowStride;
-            int runningSum = 0;
-            for (int x = 0; x < width; x++)
+            bool[] rawMask = sequentialMask.RawData;
+            Parallel.For(0, height, y =>
             {
-                if (mask[x, y])
-                    runningSum++;
-                rowPrefixSums[rowOffset + x + 1] = runningSum;
-            }
-        });
+                int srcRowOffset = y * width;
+                int dstRowOffset = y * rowStride;
+                int runningSum = 0;
+                for (int x = 0; x < width; x++)
+                {
+                    if (rawMask[srcRowOffset + x])
+                        runningSum++;
+                    rowPrefixSums[dstRowOffset + x + 1] = runningSum;
+                }
+            });
+        }
+        else
+        {
+            Parallel.For(0, height, y =>
+            {
+                int rowOffset = y * rowStride;
+                int runningSum = 0;
+                for (int x = 0; x < width; x++)
+                {
+                    if (mask[x, y])
+                        runningSum++;
+                    rowPrefixSums[rowOffset + x + 1] = runningSum;
+                }
+            });
+        }
 
         return rowPrefixSums;
     }

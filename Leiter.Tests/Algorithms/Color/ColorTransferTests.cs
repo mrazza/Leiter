@@ -272,4 +272,103 @@ public class ColorTransferTests
             ColorTransfer.TransferToClosestProfile(sampleRgb, [validProfile, badIlluminantProfile]));
         Assert.Equal("profiles", closestNonEmptyEx.ParamName);
     }
+
+    [Fact]
+    public void ColorTransferProfile_Validate_ShouldValidateNameIlluminantAndStatistics()
+    {
+        foreach (ColorTransferProfile preset in WatercolorPalettes.Defaults)
+        {
+            preset.Validate();
+        }
+
+        new ColorTransferProfile("Custom D65", new LabColorStatistics(50.0, -5.0, 12.0, 0.0, 0.0, 0.0), Illuminant.D65).Validate();
+
+        var nullNameEx = Assert.Throws<ArgumentNullException>(() =>
+            new ColorTransferProfile(null!, WatercolorPalettes.BalancedWash.Statistics).Validate());
+        Assert.Equal(nameof(ColorTransferProfile.Name), nullNameEx.ParamName);
+
+        foreach (string badName in new[] { string.Empty, "   " })
+        {
+            var nameEx = Assert.Throws<ArgumentException>(() =>
+                new ColorTransferProfile(badName, WatercolorPalettes.BalancedWash.Statistics).Validate());
+            Assert.Equal(nameof(ColorTransferProfile.Name), nameEx.ParamName);
+        }
+
+        var illuminantEx = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ColorTransferProfile("BadIlluminant", WatercolorPalettes.BalancedWash.Statistics, (Illuminant)999).Validate());
+        Assert.Equal(nameof(ColorTransferProfile.Illuminant), illuminantEx.ParamName);
+
+        LabColorStatistics[] invalidStats =
+        [
+            new(double.NaN, 0.0, 0.0, 1.0, 1.0, 1.0),
+            new(50.0, double.PositiveInfinity, 0.0, 1.0, 1.0, 1.0),
+            new(50.0, 0.0, double.NegativeInfinity, 1.0, 1.0, 1.0),
+            new(50.0, 0.0, 0.0, -0.01, 1.0, 1.0),
+            new(50.0, 0.0, 0.0, 1.0, double.NaN, 1.0),
+            new(50.0, 0.0, 0.0, 1.0, 1.0, double.PositiveInfinity)
+        ];
+
+        foreach (LabColorStatistics stats in invalidStats)
+        {
+            var statsEx = Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new ColorTransferProfile("BadStats", stats).Validate());
+            Assert.Equal(nameof(ColorTransferProfile.Statistics), statsEx.ParamName);
+        }
+    }
+
+    [Fact]
+    public void Transfer_And_TransferToClosestProfile_WithInvalidProfileNameOrStats_ShouldThrowWithExpectedParamName()
+    {
+        var sampleRgb = new SequentialMatrix<Rgb8>(2, 2);
+        sampleRgb.SetAll(new Rgb8(100, 120, 140));
+        ColorTransferProfile validProfile = WatercolorPalettes.BalancedWash;
+
+        var emptyNameProfile = new ColorTransferProfile("   ", validProfile.Statistics);
+        var badStatsProfile = new ColorTransferProfile("BadStats", new LabColorStatistics(50.0, 0.0, 0.0, -1.0, 5.0, 5.0));
+
+        var transferNameEx = Assert.Throws<ArgumentException>(() => ColorTransfer.Transfer(sampleRgb, emptyNameProfile));
+        Assert.Equal("profile", transferNameEx.ParamName);
+
+        var transferStatsEx = Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(sampleRgb, badStatsProfile));
+        Assert.Equal("profile", transferStatsEx.ParamName);
+
+        var closestNameEx = Assert.Throws<ArgumentException>(() =>
+            ColorTransfer.TransferToClosestProfile(sampleRgb, [validProfile, emptyNameProfile]));
+        Assert.Equal("profiles", closestNameEx.ParamName);
+
+        var closestStatsEx = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ColorTransfer.TransferToClosestProfile(sampleRgb, [validProfile, badStatsProfile]));
+        Assert.Equal("profiles", closestStatsEx.ParamName);
+    }
+
+    [Fact]
+    public void ComputeStatistics_And_Transfer_WithLab32MatrixView_ShouldMatchSequentialMatrix()
+    {
+        var full = new SequentialMatrix<Lab32>(6, 5);
+        for (int y = 0; y < full.Height; y++)
+        {
+            for (int x = 0; x < full.Width; x++)
+            {
+                full[x, y] = new Lab32(25f + (x * 9f) + (y * 3f), -15f + (x * 5f), -10f + (y * 6f));
+            }
+        }
+
+        var view = new MatrixView<Lab32>(full, 1, 1, 4, 3, EdgeHandling.Extend);
+        SequentialMatrix<Lab32> materialized = view.ToSequentialMatrix();
+
+        LabColorStatistics viewStats = ColorTransfer.ComputeStatistics(view);
+        LabColorStatistics seqStats = ColorTransfer.ComputeStatistics(materialized);
+
+        Assert.Equal(seqStats.MeanL, viewStats.MeanL, 12);
+        Assert.Equal(seqStats.MeanA, viewStats.MeanA, 12);
+        Assert.Equal(seqStats.MeanB, viewStats.MeanB, 12);
+        Assert.Equal(seqStats.StdDevL, viewStats.StdDevL, 12);
+        Assert.Equal(seqStats.StdDevA, viewStats.StdDevA, 12);
+        Assert.Equal(seqStats.StdDevB, viewStats.StdDevB, 12);
+
+        var target = new LabColorStatistics(68.0, 4.0, -7.0, 10.0, 6.0, 8.0);
+        Matrix<Lab32> viewTransferred = ColorTransfer.Transfer(view, target);
+        Matrix<Lab32> seqTransferred = ColorTransfer.Transfer(materialized, target);
+        Assert.True(viewTransferred.ContentEquals(seqTransferred));
+    }
 }

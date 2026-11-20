@@ -255,6 +255,19 @@ public class MatrixMathTests
         Matrix<DoublePixel> hadamardScalarView = view.HadamardProduct<DoublePixel, DoublePixel>(img);
         Assert.Equal(4.0, hadamardScalarView[1, 0].Value);
 
+        var longScalars = new SequentialMatrix<LongPixel>(new Size(2, 2), [2L, 3L, 4L, 5L]);
+        var longView = new MatrixView<LongPixel>(longScalars, 0, 0, 2, 2, EdgeHandling.Extend);
+        Matrix<DoublePixel> hadamardLongScalar = view.HadamardProduct(longView);
+        Assert.Equal(2.0, hadamardLongScalar[0, 0].Value);
+        Assert.Equal(6.0, hadamardLongScalar[1, 0].Value);
+        Assert.Equal(12.0, hadamardLongScalar[0, 1].Value);
+        Assert.Equal(20.0, hadamardLongScalar[1, 1].Value);
+
+        var emptyLeft = new SequentialMatrix<DoublePixel>(0, 2);
+        var emptyRight = new SequentialMatrix<LongPixel>(0, 2);
+        Assert.Empty(emptyLeft.HadamardProduct<DoublePixel>(new SequentialMatrix<DoublePixel>(0, 2)));
+        Assert.Empty(emptyLeft.HadamardProduct(emptyRight));
+
         Matrix<DoublePixel> convolvedView = view.Convolve(identityKernel);
         Assert.Equal(3.0, convolvedView[0, 1].Value);
 

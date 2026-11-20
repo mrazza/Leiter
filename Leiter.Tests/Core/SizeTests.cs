@@ -47,4 +47,27 @@ public class SizeTests
         Assert.Equal(6, size.IndexOf(new Coord(2, 1)));
         Assert.Equal(new Coord(2, 1), size.CoordOf(6));
     }
+
+    [Fact]
+    public void IsEmpty_Area_And_LinearDimension_ShouldHandleNormalZeroNegativeAndLargeSizes()
+    {
+        Assert.False(new Size(1, 1).IsEmpty);
+        Assert.False(new Size(4, 3).IsEmpty);
+        Assert.True(new Size(0, 0).IsEmpty);
+        Assert.True(new Size(0, 5).IsEmpty);
+        Assert.True(new Size(5, 0).IsEmpty);
+        Assert.True(new Size(-2, 5).IsEmpty);
+        Assert.True(new Size(5, -2).IsEmpty);
+
+        Assert.Equal(12L, new Size(4, 3).Area);
+        Assert.Equal(10_000_000_000L, new Size(100_000, 100_000).Area);
+        Assert.Equal(0L, new Size(0, 100).Area);
+
+        Assert.Equal(6.0, new Size(4, 9).LinearDimension, 12);
+        Assert.Equal(100.0, new Size(100, 100).LinearDimension, 12);
+        Assert.Equal(0.0, new Size(0, 5).LinearDimension);
+        Assert.Equal(0.0, new Size(5, 0).LinearDimension);
+        Assert.Equal(0.0, new Size(-4, 9).LinearDimension);
+        Assert.Equal(0.0, new Size(4, -9).LinearDimension);
+    }
 }

@@ -3,14 +3,26 @@ namespace Leiter.Tests.Algorithms.Saliency;
 using System;
 using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Saliency;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="SaliencyMaskOptions"/>.
 /// </summary>
-public class SaliencyMaskOptionsTests
+public class SaliencyMaskOptionsTests : AlgorithmOptionsContractTestsBase<SaliencyMaskOptions>
 {
+    /// <inheritdoc/>
+    protected override SaliencyMaskOptions CreateValidCustomOptions() =>
+        new(
+            Method: SaliencyThresholdMethod.Fixed,
+            FixedThreshold: 0.4,
+            RetentionPolicy: ComponentRetentionPolicy.LargestComponentOnly,
+            MinAreaFraction: 0.05);
+
+    /// <inheritdoc/>
+    protected override SaliencyMaskOptions CreateInvalidOptions() =>
+        new(FixedThreshold: -0.1);
     [Fact]
     public void Constructor_DefaultProperties_ShouldMatchDefaultInstanceAndPassValidation()
     {

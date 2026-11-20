@@ -4,6 +4,9 @@ using System;
 using Leiter.Algorithms;
 using Leiter.Algorithms.AntiAliasing;
 using Leiter.Algorithms.Color;
+using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Morphology;
+using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Stylization;
@@ -11,14 +14,90 @@ using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="WatercolorOptions"/>.
 /// </summary>
-public class WatercolorOptionsTests
+public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<WatercolorOptions>
 {
+    /// <inheritdoc/>
+    protected override WatercolorOptions CreateValidCustomOptions() =>
+        new(
+            TargetPalette: WatercolorPalettes.CoastalCerulean,
+            ColorTransferStrength: 0.75,
+            Egbi: new EgbiOptions(KFactor: 75.0, Epsilon: 2.0, MinRegionSize: 150, Connectivity: GridConnectivity.FourConnected),
+            RegionalContrastSaliency: new RegionalContrastSaliencyOptions(EnableSmoothing: false, ComputeBorderRegions: false, CenterPriorWeight: 4.5),
+            SaliencyCut: new SaliencyCutOptions(
+                MaxOuterIterations: 3,
+                TrimapBandRadius: 14,
+                GrabCut: new GrabCutOptions(Iterations: 3, MixtureComponentCount: 4, SmoothnessWeight: 40.0),
+                Mask: new SaliencyMaskOptions(
+                    Method: SaliencyThresholdMethod.Otsu,
+                    FixedThreshold: 0.3,
+                    RetentionPolicy: ComponentRetentionPolicy.LargestComponentOnly,
+                    MinAreaFraction: 0.02),
+                MaxWorkingDimension: 512),
+            SaliencyDistanceField: new SaliencyDistanceFieldOptions(SmoothingSigma: 1.5, DefaultSigmaScale: 0.05),
+            MeanShift: new MeanShiftOptions(
+                SpatialRadius: 12,
+                RangeRadius: 8.0,
+                MinRegionSize: 80,
+                MaxIterations: 15,
+                ConvergenceEpsilon: 0.08,
+                Connectivity: GridConnectivity.FourConnected),
+            LodAbstraction: new LodAbstractionOptions(
+                SalientKernelSize: 7,
+                MinNonSalientKernelSize: 5,
+                MaxNonSalientKernelSize: 11,
+                DistanceKernelScale: 12.0,
+                DistanceKernelBias: 0.25,
+                CrossSegmentColorScale: 0.35,
+                SalientOverlapThreshold: 0.6),
+            WetInWet: new WetInWetOptions(
+                Mode: WetInWetMode.ExcludeSalientBoundaries,
+                ColorGradientThreshold: 0.15,
+                SalientHueThresholdDegrees: 25.0,
+                NonSalientHueThresholdDegrees: 75.0,
+                MinIntensityDifference: 0.04,
+                SalientOverlapThreshold: 0.6,
+                ScatterRadius: 6,
+                SeedProbability: 0.6,
+                EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: 8.0, MinorRadius: 3.0, SigmaScale: 0.65),
+                Seed: 99),
+            HandTremor: new HandTremorOptions(
+                Amplitude: 4.5,
+                SalientAmplitudeScale: 0.5,
+                SimilarHueThresholdDegrees: 25.0,
+                OverlapDarkening: 0.6,
+                PaperColor: new Rgb8(245, 242, 236),
+                PrimaryNoise: new PerlinNoiseOptions(Seed: 55, Frequency: 0.02, Octaves: 2),
+                SecondaryNoise: new PerlinNoiseOptions(Seed: 66, Frequency: 0.03, Octaves: 2),
+                MinContrastingChroma: 0.04,
+                PaperGapBias: 0.2,
+                PaperGapOpacity: 0.8),
+            EdgeDarkening: new EdgeDarkeningOptions(Intensity: 2.4, BlurSigma: 1.2, GradientOperator: GradientOperator.Scharr),
+            TurbulenceFlow: new TurbulenceFlowOptions(
+                Intensity: 0.5,
+                NoiseOptions: new PerlinNoiseOptions(Seed: 909, Frequency: 0.025, Octaves: 3, Lacunarity: 2.2, Persistence: 0.45)),
+            ToneCurve: new PiecewiseToneCurveOptions(MinTone: 0.02, MaxTone: 0.98, ShadowKnee: 0.2, HighlightKnee: 0.8),
+            PaperGranulation: new PaperGranulationOptions(
+                DensityStrength: 0.45,
+                WarpAmplitude: 0.9,
+                GrainNoiseOptions: new PerlinNoiseOptions(Seed: 808, Frequency: 0.12, Octaves: 3, Lacunarity: 2.1, Persistence: 0.5)),
+            Fxaa: new FxaaOptions(
+                RelativeContrastThreshold: 0.2,
+                AbsoluteContrastThreshold: 0.08,
+                SubpixelBlendStrength: 0.5,
+                MaxSpanSearchSteps: 12),
+            EnableFxaa: false,
+            EgbiBlurSigma: 1.2);
+
+    /// <inheritdoc/>
+    protected override WatercolorOptions CreateInvalidOptions() =>
+        new(ColorTransferStrength: -0.1);
     /// <summary>
     /// Verifies that default pipeline options match expected defaults and pass validation.
     /// </summary>
@@ -251,17 +330,57 @@ public class WatercolorOptionsTests
         Assert.InRange(mutedOpts.ColorTransferStrength, 0.55, 0.999);
 
         Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForImage(largeScene, baseline: null!));
         Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForImage(largeScene, 0.0));
         Assert.Throws<ArgumentException>(() => WatercolorOptions.ForImage(largeScene, candidatePalettes: []));
         Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForImage(largeScene, candidatePalettes: [null!]));
+
+        WatercolorOptions customBaseline = CreateValidCustomOptions();
+        WatercolorOptions customHalf = WatercolorOptions.ForSize(new Size(400, 400), customBaseline);
+        customHalf.Validate();
+        Assert.Same(WatercolorPalettes.CoastalCerulean, customHalf.TargetPalette);
+        Assert.Equal(0.75, customHalf.ColorTransferStrength, 6);
+        Assert.False(customHalf.EnableFxaa);
+        Assert.Equal(0.6, customHalf.EgbiBlurSigma, 6);
+        Assert.Equal(customBaseline.RegionalContrastSaliency, customHalf.RegionalContrastSaliency);
+        Assert.Equal(customBaseline.SaliencyDistanceField, customHalf.SaliencyDistanceField);
+        Assert.Equal(HandTremorOptions.ForSize(new Size(400, 400), customBaseline.HandTremor!), customHalf.HandTremor);
+
+        WatercolorOptions customImageOpts = WatercolorOptions.ForImage(largeScene, customBaseline);
+        customImageOpts.Validate();
+        Assert.Same(WatercolorPalettes.CoastalCerulean, customImageOpts.TargetPalette);
+        Assert.Equal(customBaseline.ColorTransferStrength * subsetOpts.ColorTransferStrength, customImageOpts.ColorTransferStrength, 6);
+        Assert.False(customImageOpts.EnableFxaa);
+        Assert.Equal(customBaseline.RegionalContrastSaliency, customImageOpts.RegionalContrastSaliency);
+        Assert.Equal(customBaseline.SaliencyDistanceField, customImageOpts.SaliencyDistanceField);
+        Assert.Equal(HandTremorOptions.ForSize(largeScene.Size, customBaseline.HandTremor!), customImageOpts.HandTremor);
+        Assert.Equal(TurbulenceFlowOptions.ForSize(largeScene.Size, customBaseline.TurbulenceFlow!), customImageOpts.TurbulenceFlow);
+        Assert.Equal(PaperGranulationOptions.ForSize(largeScene.Size, customBaseline.PaperGranulation!), customImageOpts.PaperGranulation);
+
+        WatercolorOptions customEmptyOpts = WatercolorOptions.ForImage(empty, customBaseline);
+        Assert.Equal(customBaseline, customEmptyOpts);
     }
 
     /// <summary>
-    /// Verifies that invalid <see cref="WatercolorOptions.TargetPalette"/> illuminants or CIELAB statistics fail validation.
+    /// Verifies that invalid <see cref="WatercolorOptions.TargetPalette"/> names, illuminants, or CIELAB statistics fail validation.
     /// </summary>
     [Fact]
     public void Validate_InvalidTargetPalette_ShouldThrowArgumentOutOfRangeException()
     {
+        ColorTransferProfile[] invalidNamePalettes =
+        [
+            new(null!, WatercolorPalettes.BalancedWash.Statistics),
+            new(string.Empty, WatercolorPalettes.BalancedWash.Statistics),
+            new("   ", WatercolorPalettes.BalancedWash.Statistics)
+        ];
+
+        foreach (ColorTransferProfile invalidNamePalette in invalidNamePalettes)
+        {
+            var ex = Assert.ThrowsAny<ArgumentException>(() =>
+                new WatercolorOptions(TargetPalette: invalidNamePalette).Validate());
+            Assert.Equal(nameof(WatercolorOptions.TargetPalette), ex.ParamName);
+        }
+
         ColorTransferProfile[] invalidPalettes =
         [
             new("BadIlluminant", WatercolorPalettes.BalancedWash.Statistics, (Illuminant)999),

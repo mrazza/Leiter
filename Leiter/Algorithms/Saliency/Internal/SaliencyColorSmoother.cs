@@ -1,8 +1,7 @@
-namespace Leiter.Algorithms.Saliency;
+namespace Leiter.Algorithms.Saliency.Internal;
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Leiter.Algorithms.Quantization;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -31,12 +30,15 @@ internal static class SaliencyColorSmoother
     /// <param name="colorSaliencyMap">The per-color saliency map to smooth in place.</param>
     /// <param name="rgbToLabLookupTable">Precomputed Lab colors for keys in <paramref name="colorSaliencyMap"/>.</param>
     /// <param name="neighborDivisor">Divisor applied to the active palette size to select the neighbor count.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="colorSaliencyMap"/> or <paramref name="rgbToLabLookupTable"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="neighborDivisor"/> is less than or equal to zero.</exception>
     public static void SmoothColorSaliency(
         Dictionary<Rgb8, double> colorSaliencyMap,
         IReadOnlyDictionary<Rgb8, Lab32> rgbToLabLookupTable,
         int neighborDivisor)
     {
+        ArgumentNullException.ThrowIfNull(colorSaliencyMap);
+        ArgumentNullException.ThrowIfNull(rgbToLabLookupTable);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(neighborDivisor, 0);
 
         int nearestColorCount = colorSaliencyMap.Count / neighborDivisor;
@@ -45,31 +47,79 @@ internal static class SaliencyColorSmoother
             return;
         }
 
-        var unsmoothed = new Dictionary<Rgb8, double>(colorSaliencyMap);
-        foreach (var bucket in unsmoothed)
+        PairwiseLabDistanceTable distanceTable = PairwiseLabDistanceTable.Build(rgbToLabLookupTable);
+        SmoothColorSaliency(colorSaliencyMap, distanceTable, neighborDivisor);
+    }
+
+    /// <summary>
+    /// Smooths per-color saliency values across nearest neighbors using a precomputed <see cref="PairwiseLabDistanceTable"/>.
+    /// </summary>
+    /// <param name="colorSaliencyMap">The per-color saliency map to smooth in place.</param>
+    /// <param name="distanceTable">Precomputed pairwise CIEDE2000 distance table covering all keys in <paramref name="colorSaliencyMap"/>.</param>
+    /// <param name="neighborDivisor">Divisor applied to the active palette size to select the neighbor count.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="colorSaliencyMap"/> or <paramref name="distanceTable"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="neighborDivisor"/> is less than or equal to zero.</exception>
+    public static void SmoothColorSaliency(
+        Dictionary<Rgb8, double> colorSaliencyMap,
+        PairwiseLabDistanceTable distanceTable,
+        int neighborDivisor)
+    {
+        ArgumentNullException.ThrowIfNull(colorSaliencyMap);
+        ArgumentNullException.ThrowIfNull(distanceTable);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(neighborDivisor, 0);
+
+        int nearestColorCount = colorSaliencyMap.Count / neighborDivisor;
+        if (nearestColorCount <= 1)
         {
-            // Computes [c, D(c, c sub i)] for m nearest neighbors of bucket.Key.
+            return;
+        }
+
+        int activeCount = colorSaliencyMap.Count;
+        var entries = new (Rgb8 Color, int TableIndex, double UnsmoothedValue, int Hash)[activeCount];
+        int entryIndex = 0;
+        foreach (var bucket in colorSaliencyMap)
+        {
+            entries[entryIndex++] = (bucket.Key, distanceTable.GetIndex(bucket.Key), bucket.Value, bucket.Key.GetHashCode());
+        }
+
+        var neighbors = new (int EntryIndex, double Distance, int Hash)[activeCount];
+        for (int i = 0; i < activeCount; i++)
+        {
+            ReadOnlySpan<double> distanceRow = distanceTable.GetRow(entries[i].TableIndex);
+            for (int j = 0; j < activeCount; j++)
+            {
+                neighbors[j] = (j, distanceRow[entries[j].TableIndex], entries[j].Hash);
+            }
+
+            Array.Sort(neighbors, static (a, b) =>
+            {
+                int cmp = a.Distance.CompareTo(b.Distance);
+                return cmp != 0 ? cmp : a.Hash.CompareTo(b.Hash);
+            });
+
+            // Computes T = sum(D(c, c sub i)).
             // Note that we include our own color here. The paper says "other colors" and "other pixels"
             // but the equations seem to explicitly include the color or pixel under evaluation and so
             // we do so here.
-            Lab32 bucketLab = rgbToLabLookupTable[bucket.Key];
-            var nearestNeighbors = unsmoothed.Keys
-                .Select(key => (color: key, distance: bucketLab.Distance(rgbToLabLookupTable[key])))
-                .OrderBy(neighbor => neighbor.distance)
-                .ThenBy(neighbor => neighbor.color.GetHashCode())
-                .Take(nearestColorCount)
-                .ToList();
+            double T = 0.0;
+            for (int k = 0; k < nearestColorCount; k++)
+            {
+                T += neighbors[k].Distance;
+            }
 
-            // Computes T = sum(D(c, c sub i)).
-            double T = nearestNeighbors.Sum(n => n.distance);
             if (T <= 0.0)
             {
                 continue;
             }
 
             // Computes (1 / ((m - 1) * T)) * sum((T - D(c, c sub i)) * S[c sub i]).
-            colorSaliencyMap[bucket.Key] = (1.0 / ((nearestColorCount - 1) * T)) *
-                nearestNeighbors.Sum(n => (T - n.distance) * unsmoothed[n.color]);
+            double weightedSum = 0.0;
+            for (int k = 0; k < nearestColorCount; k++)
+            {
+                weightedSum += (T - neighbors[k].Distance) * entries[neighbors[k].EntryIndex].UnsmoothedValue;
+            }
+
+            colorSaliencyMap[entries[i].Color] = (1.0 / ((nearestColorCount - 1) * T)) * weightedSum;
         }
     }
 

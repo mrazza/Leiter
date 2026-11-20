@@ -148,17 +148,7 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     public Lab32 ComponentMap(Func<float, float> func) => new() { L = func(L), A = func(A), B = func(B) };
 
     /// <inheritdoc/>
-    public Vector<double> ToDoubleVector()
-    {
-        if (Vector<double>.Count < 3)
-            throw new PlatformNotSupportedException("This operation is not supported on this platform. Vector width is too small.");
-
-        Span<double> data = stackalloc double[Vector<double>.Count];
-        data[0] = L;
-        data[1] = A;
-        data[2] = B;
-        return new(data);
-    }
+    public Vector<double> ToDoubleVector() => Internal.PixelVector.Create(L, A, B);
 
     /// <inheritdoc/>
     public static Lab32 FromDoubleVector(Vector<double> vector) => new((float)vector[0], (float)vector[1], (float)vector[2]);

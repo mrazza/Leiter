@@ -21,7 +21,7 @@ public sealed record MeanShiftOptions(
     int MinRegionSize = 50,
     int MaxIterations = 20,
     double ConvergenceEpsilon = 0.05,
-    GridConnectivity Connectivity = GridConnectivity.EightConnected) : IValidatableOptions
+    GridConnectivity Connectivity = GridConnectivity.EightConnected) : IProfileTunableOptions<MeanShiftOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default spatial parameters apply unscaled.
@@ -40,20 +40,37 @@ public sealed record MeanShiftOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="MeanShiftOptions"/> instance tuned for <paramref name="size"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static MeanShiftOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    public static MeanShiftOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="MeanShiftOptions"/> by scaling <paramref name="baseline"/> geometrically for <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline Mean-Shift configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="MeanShiftOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static MeanShiftOptions ForSize(
+        Size size,
+        MeanShiftOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
     {
         var (s, a, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        MeanShiftOptions defaults = Default;
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
         if (totalPixels == 0)
         {
-            return defaults;
+            return baseline;
         }
 
-        return defaults with
+        double maxConvergence = Math.Max(0.5, baseline.ConvergenceEpsilon);
+        return baseline with
         {
-            SpatialRadius = OptionTuning.RoundPositiveInt(defaults.SpatialRadius * s),
-            MinRegionSize = OptionTuning.ClampRegionSize(defaults.MinRegionSize * a, totalPixels, maxFractionDivisor: 32),
-            ConvergenceEpsilon = Math.Clamp(defaults.ConvergenceEpsilon * s, defaults.ConvergenceEpsilon, 0.5)
+            SpatialRadius = OptionTuning.RoundPositiveInt(baseline.SpatialRadius * s),
+            MinRegionSize = OptionTuning.ClampRegionSize(baseline.MinRegionSize * a, totalPixels, maxFractionDivisor: 32),
+            ConvergenceEpsilon = Math.Clamp(baseline.ConvergenceEpsilon * s, baseline.ConvergenceEpsilon, maxConvergence)
         };
     }
 
@@ -64,15 +81,26 @@ public sealed record MeanShiftOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="MeanShiftOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static MeanShiftOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
-        double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
-        return ForProfile(in profile, referenceDimension);
-    }
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage<MeanShiftOptions>(image, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="MeanShiftOptions"/> tuned from <paramref name="baseline"/> for the dimensions and image statistics of <paramref name="image"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image to analyze.</param>
+    /// <param name="baseline">The baseline Mean-Shift configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="MeanShiftOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static MeanShiftOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        MeanShiftOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage(image, baseline, referenceDimension);
 
     /// <summary>
     /// Creates <see cref="MeanShiftOptions"/> tuned for both the dimensions and CIELAB statistics of <paramref name="labImage"/>.
@@ -81,25 +109,45 @@ public sealed record MeanShiftOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="MeanShiftOptions"/> instance tuned for <paramref name="labImage"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="labImage"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="labImage"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static MeanShiftOptions ForImage(
         IReadOnlyMatrix<Lab32> labImage,
-        double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(labImage, referenceDimension);
-        ImageTuningProfile profile = ImageTuningProfile.Analyze(labImage);
-        return ForProfile(in profile, referenceDimension);
-    }
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForLabImage<MeanShiftOptions>(labImage, referenceDimension);
 
-    internal static MeanShiftOptions ForProfile(in ImageTuningProfile profile, double referenceDimension)
+    /// <summary>
+    /// Creates <see cref="MeanShiftOptions"/> tuned from <paramref name="baseline"/> for the dimensions and CIELAB statistics of <paramref name="labImage"/>.
+    /// </summary>
+    /// <param name="labImage">The input CIELAB image to analyze.</param>
+    /// <param name="baseline">The baseline Mean-Shift configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="MeanShiftOptions"/> instance tuned for <paramref name="labImage"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="labImage"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static MeanShiftOptions ForImage(
+        IReadOnlyMatrix<Lab32> labImage,
+        MeanShiftOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForLabImage(labImage, baseline, referenceDimension);
+
+    static MeanShiftOptions IProfileTunableOptions<MeanShiftOptions>.ForProfile(
+        in ImageTuningProfile profile,
+        MeanShiftOptions baseline,
+        double referenceDimension) =>
+        ForProfile(in profile, baseline, referenceDimension);
+
+    internal static MeanShiftOptions ForProfile(
+        in ImageTuningProfile profile,
+        MeanShiftOptions baseline,
+        double referenceDimension)
     {
-        MeanShiftOptions scaled = ForSize(profile.ImageSize, referenceDimension);
+        MeanShiftOptions scaled = ForSize(profile.ImageSize, baseline, referenceDimension);
         if (profile.IsEmpty)
         {
             return scaled;
         }
 
-        long totalPixels = (long)profile.ImageSize.Width * profile.ImageSize.Height;
+        long totalPixels = profile.ImageSize.Area;
         int minRegionSize = OptionTuning.ClampRegionSize(scaled.MinRegionSize * profile.ClutterFactor, totalPixels, maxFractionDivisor: 32);
 
         return scaled with

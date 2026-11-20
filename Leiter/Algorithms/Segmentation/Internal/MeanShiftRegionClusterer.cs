@@ -45,29 +45,28 @@ internal static class MeanShiftRegionClusterer
         MeanShiftMode[] modes,
         MeanShiftOptions options)
     {
-        int width = targetImage.Width;
-        int height = targetImage.Height;
-        int pixelCount = width * height;
+        Size size = targetImage.Size;
+        int pixelCount = size.Count;
         var disjointSet = DisjointSet.CreateSingletons(targetImage);
 
         if (pixelCount <= 1)
             return disjointSet;
 
-        int[] orderedPixels = OrderPixelsByModeGradient(modes, width, height);
-        ClusterDensityBasins(disjointSet, modes, orderedPixels, width, height, options);
+        int[] orderedPixels = OrderPixelsByModeGradient(modes, size);
+        ClusterDensityBasins(disjointSet, modes, orderedPixels, size, options);
 
         if (options.MinRegionSize > 1)
         {
-            PruneSmallRegions(disjointSet, sourcePixels, width, height, options);
+            PruneSmallRegions(disjointSet, sourcePixels, size, options);
         }
 
         return disjointSet;
     }
 
-    private static int[] OrderPixelsByModeGradient(MeanShiftMode[] modes, int width, int height)
+    private static int[] OrderPixelsByModeGradient(MeanShiftMode[] modes, Size size)
     {
-        int pixelCount = width * height;
-        double[] gradientSquared = ComputeMaxCardinalGradientSquared(modes, width, height);
+        int pixelCount = size.Count;
+        double[] gradientSquared = ComputeMaxCardinalGradientSquared(modes, size);
 
         var bucketCounts = new int[GradientBucketCount];
         for (int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
@@ -93,14 +92,16 @@ internal static class MeanShiftRegionClusterer
         return orderedPixels;
     }
 
-    private static double[] ComputeMaxCardinalGradientSquared(MeanShiftMode[] modes, int width, int height)
+    private static double[] ComputeMaxCardinalGradientSquared(MeanShiftMode[] modes, Size size)
     {
+        int width = size.Width;
+        int height = size.Height;
         ReadOnlySpan<GridNeighbor> cardinalNeighbors = GridNeighborhood.All4Connected;
-        var gradientSquared = new double[width * height];
+        var gradientSquared = new double[size.Count];
 
         for (int y = 0; y < height; y++)
         {
-            int rowStart = y * width;
+            int rowStart = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
             {
                 int pixelIndex = rowStart + x;
@@ -111,10 +112,10 @@ internal static class MeanShiftRegionClusterer
                 {
                     int nx = x + cardinalNeighbors[n].Offset.X;
                     int ny = y + cardinalNeighbors[n].Offset.Y;
-                    if ((uint)nx >= (uint)width || (uint)ny >= (uint)height)
+                    if (!size.Contains(nx, ny))
                         continue;
 
-                    double differenceSquared = centerColor.EuclideanDistanceSquared(modes[(ny * width) + nx].Color);
+                    double differenceSquared = centerColor.EuclideanDistanceSquared(modes[size.IndexOf(nx, ny)].Color);
                     if (differenceSquared > maxDifferenceSquared)
                         maxDifferenceSquared = differenceSquared;
                 }
@@ -135,8 +136,7 @@ internal static class MeanShiftRegionClusterer
         DisjointSet<byte> disjointSet,
         MeanShiftMode[] modes,
         int[] orderedPixels,
-        int width,
-        int height,
+        Size size,
         MeanShiftOptions options)
     {
         double spatialRadius = options.SpatialRadius;
@@ -146,7 +146,7 @@ internal static class MeanShiftRegionClusterer
         double seedColorBoundSquared = (SeedColorBoundMultiplier * rangeRadius) * (SeedColorBoundMultiplier * rangeRadius);
 
         ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(options.Connectivity);
-        var visited = new bool[width * height];
+        var visited = new bool[size.Count];
         var frontierQueue = new Queue<int>();
 
         for (int i = 0; i < orderedPixels.Length; i++)
@@ -161,8 +161,7 @@ internal static class MeanShiftRegionClusterer
                 neighbors,
                 visited,
                 frontierQueue,
-                width,
-                height,
+                size,
                 seedPixel,
                 spatialRadiusSquared,
                 rangeRadiusSquared,
@@ -176,8 +175,7 @@ internal static class MeanShiftRegionClusterer
         ReadOnlySpan<GridNeighbor> neighbors,
         bool[] visited,
         Queue<int> frontierQueue,
-        int width,
-        int height,
+        Size size,
         int seedPixel,
         double spatialRadiusSquared,
         double rangeRadiusSquared,
@@ -194,19 +192,17 @@ internal static class MeanShiftRegionClusterer
         while (frontierQueue.Count > 0)
         {
             int currentPixel = frontierQueue.Dequeue();
-            int currentX = currentPixel % width;
-            int currentY = currentPixel / width;
+            Coord current = size.CoordOf(currentPixel);
             MeanShiftMode currentMode = modes[currentPixel];
             Lab32 regionMeanColor = ComputeMeanColor(colorSum, memberCount);
 
             for (int n = 0; n < neighbors.Length; n++)
             {
-                int nx = currentX + neighbors[n].Offset.X;
-                int ny = currentY + neighbors[n].Offset.Y;
-                if ((uint)nx >= (uint)width || (uint)ny >= (uint)height)
+                Coord neighbor = current + neighbors[n].Offset;
+                if (!size.Contains(neighbor))
                     continue;
 
-                int neighborPixel = (ny * width) + nx;
+                int neighborPixel = size.IndexOf(neighbor);
                 if (visited[neighborPixel])
                     continue;
 
@@ -257,8 +253,7 @@ internal static class MeanShiftRegionClusterer
     private static void PruneSmallRegions(
         DisjointSet<byte> disjointSet,
         ReadOnlySpan<Lab32> sourcePixels,
-        int width,
-        int height,
+        Size size,
         MeanShiftOptions options)
     {
         int minRegionSize = options.MinRegionSize;
@@ -273,8 +268,7 @@ internal static class MeanShiftRegionClusterer
             CollectSmallRegionBoundaryEdges(
                 disjointSet,
                 in colorAccumulator,
-                width,
-                height,
+                size,
                 minRegionSize,
                 forwardNeighbors,
                 seenPairs,
@@ -291,8 +285,7 @@ internal static class MeanShiftRegionClusterer
     private static void CollectSmallRegionBoundaryEdges(
         DisjointSet<byte> disjointSet,
         in RegionColorAccumulator colorAccumulator,
-        int width,
-        int height,
+        Size size,
         int minRegionSize,
         ReadOnlySpan<GridNeighbor> forwardNeighbors,
         HashSet<ulong> seenPairs,
@@ -301,9 +294,12 @@ internal static class MeanShiftRegionClusterer
         seenPairs.Clear();
         candidateEdges.Clear();
 
+        int width = size.Width;
+        int height = size.Height;
+
         for (int y = 0; y < height; y++)
         {
-            int rowStart = y * width;
+            int rowStart = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
             {
                 int rootP = disjointSet.GetPartition(rowStart + x).RootIndex;
@@ -312,10 +308,10 @@ internal static class MeanShiftRegionClusterer
                 {
                     int nx = x + forwardNeighbors[n].Offset.X;
                     int ny = y + forwardNeighbors[n].Offset.Y;
-                    if ((uint)nx >= (uint)width || (uint)ny >= (uint)height)
+                    if (!size.Contains(nx, ny))
                         continue;
 
-                    int rootQ = disjointSet.GetPartition((ny * width) + nx).RootIndex;
+                    int rootQ = disjointSet.GetPartition(size.IndexOf(nx, ny)).RootIndex;
                     if (rootP == rootQ)
                         continue;
 

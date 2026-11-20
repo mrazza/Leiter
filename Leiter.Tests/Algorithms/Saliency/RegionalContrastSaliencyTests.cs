@@ -370,6 +370,19 @@ public class RegionalContrastSaliencyTests
         Matrix<DoublePixel> graphSaliency = RegionalContrastSaliency.ComputeSaliency(view, graph);
         Assert.Equal(img.Size, viewSaliency.Size);
         MatrixAssert.Equal(viewSaliency, graphSaliency);
+
+        // Offset MatrixView over multi-region image should match materialized SequentialMatrix
+        var padded = new SequentialMatrix<Rgb8>(14, 14);
+        for (int y = 0; y < 14; y++)
+            for (int x = 0; x < 14; x++)
+                padded[x, y] = new Rgb8((byte)(x * 18), (byte)(y * 18), 40);
+
+        var croppedView = new MatrixView<Rgb8>(padded, 2, 2, 10, 10, EdgeHandling.Extend);
+        SequentialMatrix<Rgb8> croppedSeq = croppedView.ToSequentialMatrix();
+        var croppedSeg = EgbiSegmentation.Segment(croppedSeq, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
+        MatrixAssert.Equal(
+            RegionalContrastSaliency.ComputeSaliency(croppedSeq, croppedSeg),
+            RegionalContrastSaliency.ComputeSaliency(croppedView, croppedSeg));
     }
 
     [Fact]

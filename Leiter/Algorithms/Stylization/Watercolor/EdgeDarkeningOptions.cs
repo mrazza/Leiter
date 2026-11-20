@@ -15,7 +15,7 @@ using Leiter.Pixels;
 public sealed record EdgeDarkeningOptions(
     double Intensity = 1.8,
     double BlurSigma = 0.8,
-    GradientOperator GradientOperator = GradientOperator.Sobel) : IValidatableOptions
+    GradientOperator GradientOperator = GradientOperator.Sobel) : IProfileTunableOptions<EdgeDarkeningOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default blur sigma and intensity apply unscaled.
@@ -34,20 +34,36 @@ public sealed record EdgeDarkeningOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="size"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static EdgeDarkeningOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    public static EdgeDarkeningOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="EdgeDarkeningOptions"/> by scaling <paramref name="baseline"/> blur sigma linearly and compensating intensity for Sobel impulse attenuation at <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline edge darkening configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static EdgeDarkeningOptions ForSize(
+        Size size,
+        EdgeDarkeningOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        EdgeDarkeningOptions defaults = Default;
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
         if (totalPixels == 0)
         {
-            return defaults;
+            return baseline;
         }
 
         double impulseCompensation = Math.Sqrt(((s * s) + 0.5) / 1.5);
-        return defaults with
+        return baseline with
         {
-            Intensity = defaults.Intensity * impulseCompensation,
-            BlurSigma = defaults.BlurSigma * s
+            Intensity = baseline.Intensity * impulseCompensation,
+            BlurSigma = baseline.BlurSigma * s
         };
     }
 
@@ -58,19 +74,39 @@ public sealed record EdgeDarkeningOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static EdgeDarkeningOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
-        double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
-        return ForProfile(in profile, referenceDimension);
-    }
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage<EdgeDarkeningOptions>(image, referenceDimension);
 
-    internal static EdgeDarkeningOptions ForProfile(in ImageTuningProfile profile, double referenceDimension)
+    /// <summary>
+    /// Creates <see cref="EdgeDarkeningOptions"/> tuned from <paramref name="baseline"/> for both the dimensions and color spread of <paramref name="image"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image to analyze.</param>
+    /// <param name="baseline">The baseline edge darkening configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static EdgeDarkeningOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        EdgeDarkeningOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage(image, baseline, referenceDimension);
+
+    static EdgeDarkeningOptions IProfileTunableOptions<EdgeDarkeningOptions>.ForProfile(
+        in ImageTuningProfile profile,
+        EdgeDarkeningOptions baseline,
+        double referenceDimension) =>
+        ForProfile(in profile, baseline, referenceDimension);
+
+    internal static EdgeDarkeningOptions ForProfile(
+        in ImageTuningProfile profile,
+        EdgeDarkeningOptions baseline,
+        double referenceDimension)
     {
-        EdgeDarkeningOptions scaled = ForSize(profile.ImageSize, referenceDimension);
+        EdgeDarkeningOptions scaled = ForSize(profile.ImageSize, baseline, referenceDimension);
         if (profile.IsEmpty)
         {
             return scaled;

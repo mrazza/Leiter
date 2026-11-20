@@ -129,9 +129,7 @@ public static class SpatialGradients
                 gradX[x, y] = gx;
                 gradY[x, y] = gy;
 
-                double frobeniusSq = (gx.R * gx.R) + (gx.G * gx.G) + (gx.B * gx.B) +
-                                     (gy.R * gy.R) + (gy.G * gy.G) + (gy.B * gy.B);
-                magnitude[x, y] = Math.Sqrt(frobeniusSq);
+                magnitude[x, y] = Math.Sqrt(gx.NormSquared() + gy.NormSquared());
             }
         });
 
@@ -171,7 +169,7 @@ public static class SpatialGradients
     /// <param name="derivative">The RGB derivative value.</param>
     /// <returns>The Euclidean norm of the color channels.</returns>
     public static double ChannelNorm(Rgb64 derivative) =>
-        Math.Sqrt((derivative.R * derivative.R) + (derivative.G * derivative.G) + (derivative.B * derivative.B));
+        derivative.Norm();
 
     internal static (double W0, double W1, double W2, double Scale) GetKernelWeights(GradientOperator gradientOperator) =>
         gradientOperator switch

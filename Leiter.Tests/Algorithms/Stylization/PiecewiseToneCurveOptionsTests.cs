@@ -4,14 +4,23 @@ using System;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
+using Leiter.Tests.TestUtils;
 using Xunit;
 using static Leiter.Tests.TestUtils.TestConstants;
 
 /// <summary>
 /// Provides unit tests for <see cref="PiecewiseToneCurveOptions"/>.
 /// </summary>
-public class PiecewiseToneCurveOptionsTests
+public class PiecewiseToneCurveOptionsTests : SizeTunableOptionsContractTestsBase<PiecewiseToneCurveOptions>
 {
+    /// <inheritdoc/>
+    protected override PiecewiseToneCurveOptions CreateValidCustomOptions() =>
+        new(MinTone: 0.02, MaxTone: 0.98, ShadowKnee: 0.2, HighlightKnee: 0.8);
+
+    /// <inheritdoc/>
+    protected override PiecewiseToneCurveOptions CreateInvalidOptions() =>
+        new(MinTone: -0.1);
     /// <summary>
     /// Verifies that default options match the paper specifications and pass validation.
     /// </summary>
@@ -33,9 +42,7 @@ public class PiecewiseToneCurveOptionsTests
     /// </summary>
     /// <param name="minTone">The invalid minimum tone floor.</param>
     [Theory]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonFiniteDoubles), MemberType = typeof(OptionValidationData))]
     [InlineData(-0.01)]
     [InlineData(-1.0)]
     [InlineData(1.0)]
@@ -51,9 +58,7 @@ public class PiecewiseToneCurveOptionsTests
     /// </summary>
     /// <param name="maxTone">The invalid maximum tone ceiling.</param>
     [Theory]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonFiniteDoubles), MemberType = typeof(OptionValidationData))]
     [InlineData(0.05)] // Equal to default MinTone (0.05)
     [InlineData(0.01)] // Less than default MinTone
     [InlineData(-0.5)]
@@ -70,9 +75,7 @@ public class PiecewiseToneCurveOptionsTests
     /// </summary>
     /// <param name="shadowKnee">The invalid shadow knee breakpoint.</param>
     [Theory]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonFiniteDoubles), MemberType = typeof(OptionValidationData))]
     [InlineData(0.0)]
     [InlineData(-0.1)]
     [InlineData(1.0)]
@@ -88,9 +91,7 @@ public class PiecewiseToneCurveOptionsTests
     /// </summary>
     /// <param name="highlightKnee">The invalid highlight knee breakpoint.</param>
     [Theory]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonFiniteDoubles), MemberType = typeof(OptionValidationData))]
     [InlineData(0.15)] // Equal to default ShadowKnee (0.15)
     [InlineData(0.10)] // Less than default ShadowKnee
     [InlineData(-0.1)]
@@ -158,8 +159,24 @@ public class PiecewiseToneCurveOptionsTests
         Assert.Equal(0.05, hcOpts.MinTone, PrecisionTolerance);
         Assert.Equal(0.96, hcOpts.MaxTone, PrecisionTolerance);
 
+        var tightBaseline = new PiecewiseToneCurveOptions(MinTone: 0.02, MaxTone: 0.98, ShadowKnee: 0.49, HighlightKnee: 0.51);
+        PiecewiseToneCurveOptions tightFlat = PiecewiseToneCurveOptions.ForImage(flat, tightBaseline);
+        PiecewiseToneCurveOptions tightHc = PiecewiseToneCurveOptions.ForImage(highContrast, tightBaseline);
+        tightFlat.Validate();
+        tightHc.Validate();
+        Assert.Equal(0.02, tightHc.MinTone, PrecisionTolerance);
+        Assert.Equal(0.98, tightHc.MaxTone, PrecisionTolerance);
+        Assert.True(tightHc.ShadowKnee < tightHc.HighlightKnee);
+        Assert.True(tightHc.ShadowKnee > tightFlat.ShadowKnee);
+
+        var edgeBaseline = new PiecewiseToneCurveOptions(MinTone: 0.01, MaxTone: 0.99, ShadowKnee: 0.001, HighlightKnee: 0.999);
+        PiecewiseToneCurveOptions edgeFlat = PiecewiseToneCurveOptions.ForImage(flat, edgeBaseline);
+        edgeFlat.Validate();
+        Assert.True(edgeFlat.ShadowKnee > 0.0 && edgeFlat.ShadowKnee < edgeFlat.HighlightKnee && edgeFlat.HighlightKnee < 1.0);
+
         Assert.Throws<ArgumentOutOfRangeException>(() => PiecewiseToneCurveOptions.ForSize(new Size(-1, 10)));
         Assert.Throws<ArgumentOutOfRangeException>(() => PiecewiseToneCurveOptions.ForSize(new Size(10, 10), 0.0));
         Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForImage(flat, null!));
     }
 }

@@ -4,14 +4,22 @@ using System;
 using Leiter.Algorithms.AntiAliasing;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="FxaaOptions"/>.
 /// </summary>
-public class FxaaOptionsTests
+public class FxaaOptionsTests : SizeTunableOptionsContractTestsBase<FxaaOptions>
 {
+    /// <inheritdoc/>
+    protected override FxaaOptions CreateValidCustomOptions() =>
+        new(RelativeContrastThreshold: 0.2, AbsoluteContrastThreshold: 0.08, SubpixelBlendStrength: 0.5, MaxSpanSearchSteps: 12);
+
+    /// <inheritdoc/>
+    protected override FxaaOptions CreateInvalidOptions() =>
+        new(MaxSpanSearchSteps: 0);
     /// <summary>
     /// Verifies that default options match expected default values and pass validation.
     /// </summary>
@@ -171,8 +179,26 @@ public class FxaaOptionsTests
         Assert.True(darkOpts.AbsoluteContrastThreshold < brightOpts.AbsoluteContrastThreshold);
         Assert.Equal(0.0625, brightOpts.AbsoluteContrastThreshold, 6);
 
+        var customBaseline = new FxaaOptions(
+            RelativeContrastThreshold: 0.25,
+            AbsoluteContrastThreshold: 0.08,
+            SubpixelBlendStrength: 0.4,
+            MaxSpanSearchSteps: 16);
+        FxaaOptions scaledCustom = FxaaOptions.ForSize(new Size(400, 400), customBaseline);
+        Assert.Equal(8, scaledCustom.MaxSpanSearchSteps);
+        Assert.Equal(0.25, scaledCustom.RelativeContrastThreshold, 6);
+        Assert.Equal(0.4, scaledCustom.SubpixelBlendStrength, 6);
+
+        FxaaOptions darkCustom = FxaaOptions.ForImage(darkImage, customBaseline);
+        Assert.True(darkCustom.AbsoluteContrastThreshold < customBaseline.AbsoluteContrastThreshold);
+        Assert.Equal(0.25, darkCustom.RelativeContrastThreshold, 6);
+
+        var zeroAbsBaseline = new FxaaOptions(AbsoluteContrastThreshold: 0.0);
+        Assert.Equal(0.0, FxaaOptions.ForImage(darkImage, zeroAbsBaseline).AbsoluteContrastThreshold, 6);
+
         Assert.Throws<ArgumentOutOfRangeException>(() => FxaaOptions.ForSize(new Size(-1, 10)));
         Assert.Throws<ArgumentOutOfRangeException>(() => FxaaOptions.ForSize(new Size(10, 10), 0.0));
         Assert.Throws<ArgumentNullException>(() => FxaaOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => FxaaOptions.ForImage(darkImage, null!));
     }
 }

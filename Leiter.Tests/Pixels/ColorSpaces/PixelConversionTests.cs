@@ -237,4 +237,121 @@ public class PixelConversionTests
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ToGrayscaleRgb8());
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ToRgb8(Rgb8.Zero, Rgb8.Zero));
     }
+
+    [Fact]
+    public void MatrixColorSpaceOverloads_ShouldConvertAllTwelveSignaturesAndPreserveViews()
+    {
+        var rgb8Seq = new SequentialMatrix<Rgb8>(new Size(2, 2), [
+            new Rgb8(255, 0, 0),
+            new Rgb8(0, 255, 0),
+            new Rgb8(0, 0, 255),
+            new Rgb8(120, 160, 200)
+        ]);
+        var rgb8View = new MatrixView<Rgb8>(rgb8Seq, 0, 0, 2, 2, EdgeHandling.Extend);
+
+        Matrix<Rgb64> rgb64FromRgb8 = rgb8View.ToRgb64();
+        Matrix<Xyz32> xyzFromRgb8 = rgb8View.ToXyz32(RgbColorSpace.SRgb);
+        Matrix<Lab32> labFromRgb8D65 = rgb8View.ToLab32(RgbColorSpace.SRgb);
+        Matrix<Lab32> labFromRgb8E = rgb8View.ToLab32(RgbColorSpace.SRgb, Illuminant.E);
+
+        var rgb64View = new MatrixView<Rgb64>(rgb64FromRgb8, 0, 0, 2, 2, EdgeHandling.Extend);
+        Matrix<Rgb8> rgb8FromRgb64 = rgb64View.ToRgb8();
+        Matrix<Xyz32> xyzFromRgb64 = rgb64View.ToXyz32(RgbColorSpace.SRgb);
+        Matrix<Lab32> labFromRgb64D65 = rgb64View.ToLab32(RgbColorSpace.SRgb);
+        Matrix<Lab32> labFromRgb64E = rgb64View.ToLab32(RgbColorSpace.LinearRgb, Illuminant.E);
+
+        var xyzView = new MatrixView<Xyz32>(xyzFromRgb8, 0, 0, 2, 2, EdgeHandling.Extend);
+        Matrix<Rgb8> rgb8FromXyz = xyzView.ToRgb8(RgbColorSpace.SRgb);
+        Matrix<Rgb64> rgb64FromXyz = xyzView.ToRgb64(RgbColorSpace.SRgb);
+        Matrix<Lab32> labFromXyzD65 = xyzView.ToLab32();
+        Matrix<Lab32> labFromXyzE = xyzView.ToLab32(Illuminant.E);
+
+        var labView = new MatrixView<Lab32>(labFromRgb8E, 0, 0, 2, 2, EdgeHandling.Extend);
+        Matrix<Rgb8> rgb8FromLab = labView.ToRgb8(RgbColorSpace.SRgb, Illuminant.E);
+        Matrix<Rgb64> rgb64FromLab = labView.ToRgb64(RgbColorSpace.SRgb, Illuminant.E);
+        Matrix<Xyz32> xyzFromLab = labView.ToXyz32(Illuminant.E);
+
+        for (int y = 0; y < 2; y++)
+        {
+            for (int x = 0; x < 2; x++)
+            {
+                Rgb8 rgb8 = rgb8Seq[x, y];
+                Rgb64 rgb64 = rgb8.ToRgb64();
+                Xyz32 xyz = rgb8.ToXyz32(RgbColorSpace.SRgb);
+                Lab32 labE = rgb8.ToLab32(RgbColorSpace.SRgb, Illuminant.E);
+
+                Assert.Equal(rgb64, rgb64FromRgb8[x, y]);
+                Assert.Equal(xyz, xyzFromRgb8[x, y]);
+                Assert.Equal(rgb8.ToLab32(RgbColorSpace.SRgb), labFromRgb8D65[x, y]);
+                Assert.Equal(labE, labFromRgb8E[x, y]);
+
+                Assert.Equal(rgb64.ToRgb8(), rgb8FromRgb64[x, y]);
+                Assert.Equal(rgb64.ToXyz32(RgbColorSpace.SRgb), xyzFromRgb64[x, y]);
+                Assert.Equal(rgb64.ToLab32(RgbColorSpace.SRgb), labFromRgb64D65[x, y]);
+                Assert.Equal(rgb64.ToLab32(RgbColorSpace.LinearRgb, Illuminant.E), labFromRgb64E[x, y]);
+
+                Assert.Equal(xyz.ToRgb8(RgbColorSpace.SRgb), rgb8FromXyz[x, y]);
+                Assert.Equal(xyz.ToRgb64(RgbColorSpace.SRgb), rgb64FromXyz[x, y]);
+                Assert.Equal(xyz.ToLab32(), labFromXyzD65[x, y]);
+                Assert.Equal(xyz.ToLab32(Illuminant.E), labFromXyzE[x, y]);
+
+                Assert.Equal(labE.ToRgb8(RgbColorSpace.SRgb, Illuminant.E), rgb8FromLab[x, y]);
+                Assert.Equal(labE.ToRgb64(RgbColorSpace.SRgb, Illuminant.E), rgb64FromLab[x, y]);
+                Assert.Equal(labE.ToXyz32(Illuminant.E), xyzFromLab[x, y]);
+            }
+        }
+    }
+
+    [Fact]
+    public void MatrixColorSpaceOverloads_NullAndEmptyInvalidEnums_ShouldValidateEagerly()
+    {
+        const RgbColorSpace invalidColorSpace = (RgbColorSpace)999;
+        const Illuminant invalidIlluminant = (Illuminant)999;
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Xyz32>)null!).ToRgb8(RgbColorSpace.SRgb));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb64>)null!).ToRgb8());
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Lab32>)null!).ToRgb8(RgbColorSpace.SRgb));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Xyz32>)null!).ToRgb64(RgbColorSpace.SRgb));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb8>)null!).ToRgb64());
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Lab32>)null!).ToRgb64(RgbColorSpace.SRgb));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb8>)null!).ToXyz32(RgbColorSpace.SRgb));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb64>)null!).ToXyz32(RgbColorSpace.SRgb));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Lab32>)null!).ToXyz32());
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb8>)null!).ToLab32(RgbColorSpace.SRgb));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb64>)null!).ToLab32(RgbColorSpace.SRgb));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Xyz32>)null!).ToLab32());
+
+        var emptyXyz = new SequentialMatrix<Xyz32>(0, 0);
+        var emptyRgb64 = new SequentialMatrix<Rgb64>(0, 0);
+        var emptyRgb8 = new SequentialMatrix<Rgb8>(0, 0);
+        var emptyLab = new SequentialMatrix<Lab32>(0, 0);
+
+        Assert.Empty(emptyXyz.ToRgb8(RgbColorSpace.SRgb));
+        Assert.Empty(emptyRgb64.ToRgb8());
+        Assert.Empty(emptyLab.ToRgb8(RgbColorSpace.SRgb));
+        Assert.Empty(emptyXyz.ToRgb64(RgbColorSpace.SRgb));
+        Assert.Empty(emptyRgb8.ToRgb64());
+        Assert.Empty(emptyLab.ToRgb64(RgbColorSpace.SRgb));
+        Assert.Empty(emptyRgb8.ToXyz32(RgbColorSpace.SRgb));
+        Assert.Empty(emptyRgb64.ToXyz32(RgbColorSpace.SRgb));
+        Assert.Empty(emptyLab.ToXyz32());
+        Assert.Empty(emptyRgb8.ToLab32(RgbColorSpace.SRgb));
+        Assert.Empty(emptyRgb64.ToLab32(RgbColorSpace.SRgb));
+        Assert.Empty(emptyXyz.ToLab32());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyXyz.ToRgb8(invalidColorSpace));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyLab.ToRgb8(invalidColorSpace));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyLab.ToRgb8(RgbColorSpace.SRgb, invalidIlluminant));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyXyz.ToRgb64(invalidColorSpace));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyLab.ToRgb64(invalidColorSpace));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyLab.ToRgb64(RgbColorSpace.SRgb, invalidIlluminant));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyRgb8.ToXyz32(invalidColorSpace));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyRgb64.ToXyz32(invalidColorSpace));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyLab.ToXyz32(invalidIlluminant));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyRgb8.ToLab32(invalidColorSpace));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyRgb8.ToLab32(RgbColorSpace.SRgb, invalidIlluminant));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyRgb64.ToLab32(invalidColorSpace));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyRgb64.ToLab32(RgbColorSpace.SRgb, invalidIlluminant));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyXyz.ToLab32(invalidIlluminant));
+    }
 }

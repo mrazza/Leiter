@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms;
 
 using System.Numerics;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 
 /// <summary>

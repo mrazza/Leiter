@@ -200,4 +200,85 @@ public class RegionColorStatisticsTests
         Assert.Throws<ArgumentOutOfRangeException>(() => RegionColorStatistics.ComputeLab(graph, img, colorSpace: (RgbColorSpace)99));
         Assert.Throws<ArgumentOutOfRangeException>(() => RegionColorStatistics.ComputeLab(graph, img, illuminant: (Illuminant)99));
     }
+
+    /// <summary>
+    /// Verifies that generic <see cref="RegionColorStatistics.Compute{TSource, TColor}"/> accumulates in double precision
+    /// without <see cref="Rgb8"/> byte saturation or 32-bit float precision loss on large multi-pixel regions.
+    /// </summary>
+    [Fact]
+    public void Compute_GenericLargeMultiPixelRegions_ShouldNotSaturateRgb8OrLoseLab32Precision()
+    {
+        // 20-pixel single region where each channel sum exceeds 255 (4000, 4400, 4600)
+        const int width = 5;
+        const int height = 4;
+        var labels = new SequentialMatrix<int>(width, height);
+        var graph = RegionGraph.FromLabels(labels);
+
+        var rgb8Img = new SequentialMatrix<Rgb8>(width, height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                rgb8Img[x, y] = ((x + y) % 2 == 0)
+                    ? new Rgb8(180, 200, 220)
+                    : new Rgb8(220, 240, 240);
+            }
+        }
+
+        RegionColorStatistics<Rgb8>[] rgb8Stats = RegionColorStatistics.Compute<Rgb8, Rgb8>(
+            graph,
+            rgb8Img,
+            static p => p,
+            static c => c.R,
+            static c => c.G / 255.0);
+
+        Assert.Single(rgb8Stats);
+        Assert.Equal(new Rgb8(200, 220, 230), rgb8Stats[0].MeanColor);
+        Assert.Equal(200.0, rgb8Stats[0].MeanHueDegrees, 6);
+        Assert.Equal(220.0 / 255.0, rgb8Stats[0].MeanIntensity, 6);
+
+        // 20-pixel Lab32 region with standard values (sumL = 1010)
+        var labImg = new SequentialMatrix<Lab32>(width, height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                labImg[x, y] = ((x + y) % 2 == 0)
+                    ? new Lab32(40.25f, 15.5f, -20.5f)
+                    : new Lab32(60.75f, 25.5f, 40.5f);
+            }
+        }
+
+        RegionColorStatistics<Lab32>[] labStats = RegionColorStatistics.Compute<Lab32, Lab32>(
+            graph,
+            labImg,
+            static p => p,
+            static c => c.GetHueDegrees(),
+            static c => c.GetNormalizedLightness());
+
+        Assert.Single(labStats);
+        Assert.Equal(50.5f, labStats[0].MeanColor.L, 5);
+        Assert.Equal(20.5f, labStats[0].MeanColor.A, 5);
+        Assert.Equal(10.0f, labStats[0].MeanColor.B, 5);
+
+        // 16-pixel precision regression: in float32, 16_777_216f + 1f drops the +1f terms completely;
+        // double-precision Vector<double> accumulation preserves all 15 smaller terms.
+        var precisionLabels = new SequentialMatrix<int>(16, 1);
+        var precisionGraph = RegionGraph.FromLabels(precisionLabels);
+        var precisionLab = new SequentialMatrix<Lab32>(16, 1);
+        precisionLab[0, 0] = new Lab32(16_777_216f, 0f, 0f);
+        for (int x = 1; x < 16; x++)
+            precisionLab[x, 0] = new Lab32(1.0f, 0f, 0f);
+
+        RegionColorStatistics<Lab32>[] precisionStats = RegionColorStatistics.Compute<Lab32, Lab32>(
+            precisionGraph,
+            precisionLab,
+            static p => p,
+            static c => c.GetHueDegrees(),
+            static c => c.GetNormalizedLightness());
+
+        float expectedMeanL = (float)((16_777_216.0 + 15.0) / 16.0);
+        Assert.Equal(expectedMeanL, precisionStats[0].MeanColor.L);
+        Assert.NotEqual(1_048_576.0f, precisionStats[0].MeanColor.L);
+    }
 }

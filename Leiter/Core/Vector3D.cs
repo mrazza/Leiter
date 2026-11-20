@@ -103,6 +103,26 @@ public readonly record struct Vector3D(double X, double Y, double Z)
     /// <returns>The scaled vector.</returns>
     public static Vector3D operator /(Vector3D vector, double scalar) => new(vector.X / scalar, vector.Y / scalar, vector.Z / scalar);
 
+    /// <summary>
+    /// Computes the squared Euclidean distance between this vector and <paramref name="other"/>.
+    /// </summary>
+    /// <param name="other">The target vector.</param>
+    /// <returns>The squared Euclidean distance between the two vectors.</returns>
+    public double DistanceSquared(Vector3D other)
+    {
+        double dx = X - other.X;
+        double dy = Y - other.Y;
+        double dz = Z - other.Z;
+        return (dx * dx) + (dy * dy) + (dz * dz);
+    }
+
+    /// <summary>
+    /// Computes the Euclidean distance between this vector and <paramref name="other"/>.
+    /// </summary>
+    /// <param name="other">The target vector.</param>
+    /// <returns>The Euclidean distance between the two vectors.</returns>
+    public double Distance(Vector3D other) => Math.Sqrt(DistanceSquared(other));
+
     private bool PrintMembers(StringBuilder builder)
     {
         builder.Append($"X = {X}, Y = {Y}, Z = {Z}");

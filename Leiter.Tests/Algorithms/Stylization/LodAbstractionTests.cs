@@ -493,4 +493,40 @@ public class LodAbstractionTests
             Assert.Empty(emptyResult);
         }
     }
+
+    /// <summary>
+    /// Verifies that <see cref="LodAbstraction.ApplyCore"/> with precomputed salient fractions produces identical output
+    /// to <see cref="LodAbstraction.Apply(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{DoublePixel}, IReadOnlyMatrix{bool}?, LodAbstractionOptions?)"/>
+    /// including exact overlap threshold boundaries.
+    /// </summary>
+    [Fact]
+    public void ApplyCore_PrecomputedSalientFractions_ShouldMatchMaskPathAtExactThreshold()
+    {
+        const int width = 8;
+        const int height = 8;
+        (SequentialMatrix<Rgb8> image, RegionGraph regionGraph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(100, 100, 100),
+            new Rgb8(110, 110, 110));
+
+        // Region 0 has 16/32 = 0.50 salient pixels (exact match to threshold 0.5); Region 1 has 0.0
+        var salientMask = new MaskMatrix(width, height);
+        for (int y = 0; y < 4; y++)
+        {
+            for (int x = 0; x < 4; x++)
+                salientMask[x, y] = true;
+        }
+
+        SequentialMatrix<DoublePixel> distanceField = TestMatrices.Create(width, height, (x, _) => new DoublePixel(x < 4 ? 0.0 : 0.8));
+        var options = new LodAbstractionOptions(SalientOverlapThreshold: 0.5);
+
+        Matrix<Rgb8> fromMask = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask, options);
+        double[] fractions = regionGraph.ComputeRegionFractions(salientMask);
+        Matrix<Rgb8> fromFractions = LodAbstraction.ApplyCore(image, regionGraph, distanceField, salientMask: null, fractions, options);
+
+        MatrixAssert.Equal(fromMask, fromFractions);
+        Assert.Equal((byte)100, fromFractions[3, 3].R);
+        Assert.Equal((byte)110, fromFractions[4, 3].R);
+    }
 }

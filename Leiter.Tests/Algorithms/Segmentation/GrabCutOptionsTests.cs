@@ -3,14 +3,22 @@ namespace Leiter.Tests.Algorithms.Segmentation;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="GrabCutOptions"/>.
 /// </summary>
-public class GrabCutOptionsTests
+public class GrabCutOptionsTests : SizeTunableOptionsContractTestsBase<GrabCutOptions>
 {
+    /// <inheritdoc/>
+    protected override GrabCutOptions CreateValidCustomOptions() =>
+        new(Iterations: 7, MixtureComponentCount: 4, SmoothnessWeight: 65.0);
+
+    /// <inheritdoc/>
+    protected override GrabCutOptions CreateInvalidOptions() =>
+        new(Iterations: 0);
     [Fact]
     public void Defaults_ShouldHaveExpectedValues()
     {
@@ -69,8 +77,21 @@ public class GrabCutOptionsTests
             GrabCutOptions.ForSize(size).Validate();
         }
 
+        GrabCutOptions customBaseline = CreateValidCustomOptions();
+        GrabCutOptions customHalf = GrabCutOptions.ForSize(new Size(400, 400), customBaseline);
+        Assert.Equal(7, customHalf.Iterations);
+        Assert.Equal(4, customHalf.MixtureComponentCount);
+        Assert.Equal(32.5, customHalf.SmoothnessWeight, 6);
+
+        GrabCutOptions customFlat = GrabCutOptions.ForImage(flat, customBaseline);
+        GrabCutOptions customRich = GrabCutOptions.ForImage(rich, customBaseline);
+        Assert.Equal(7, customFlat.Iterations);
+        Assert.Equal(3, customFlat.MixtureComponentCount);
+        Assert.Equal(5, customRich.MixtureComponentCount);
+
         Assert.Throws<ArgumentOutOfRangeException>(() => GrabCutOptions.ForSize(new Size(-1, 10)));
         Assert.Throws<ArgumentOutOfRangeException>(() => GrabCutOptions.ForSize(new Size(10, 10), 0.0));
         Assert.Throws<ArgumentNullException>(() => GrabCutOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => GrabCutOptions.ForImage(flat, null!));
     }
 }

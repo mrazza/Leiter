@@ -103,6 +103,26 @@ public class ImageExtensionsTests
         Assert.Throws<InvalidOperationException>(() => throwing.ToImage());
     }
 
+    [Fact]
+    public void ToImage_NonSequentialMatrixView_AndChannelOrder_ShouldPreserveExactPixels()
+    {
+        var source = new SequentialMatrix<Rgb8>(4, 3);
+        for (int y = 0; y < source.Height; y++)
+        {
+            for (int x = 0; x < source.Width; x++)
+            {
+                source[x, y] = new Rgb8((byte)(10 + (x * 40)), (byte)(80 + (y * 30)), (byte)(210 - (x * 20)));
+            }
+        }
+
+        using Image<Rgb24> seqImage = source.ToImage();
+        MatrixAssert.Equal(source, seqImage.ToSequentialMatrix());
+
+        var view = new MatrixView<Rgb8>(source, 1, 1, 2, 2, EdgeHandling.Extend);
+        using Image<Rgb24> viewImage = view.ToImage();
+        MatrixAssert.Equal(view.ToSequentialMatrix(), viewImage.ToSequentialMatrix());
+    }
+
     private sealed class ThrowingReadOnlyMatrix(int width, int height) : IReadOnlyMatrix<Rgb8>
     {
         public int Width => width;

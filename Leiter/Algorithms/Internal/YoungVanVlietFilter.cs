@@ -1,4 +1,4 @@
-namespace Leiter.Algorithms;
+namespace Leiter.Algorithms.Internal;
 
 using System.Numerics;
 using Leiter.Core;

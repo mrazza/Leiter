@@ -1,5 +1,6 @@
 namespace Leiter.Platform.ImageSharp;
 
+using System.Runtime.InteropServices;
 using Leiter.Core;
 using Leiter.Pixels;
 using SixLabors.ImageSharp;
@@ -24,13 +25,13 @@ public static class ImageExtensions
         var matrix = new SequentialMatrix<Rgb8>(image.Width, image.Height);
         image.ProcessPixelRows(accessor =>
         {
+            Span<Rgb8> dest = matrix.AsSpan();
+            int width = accessor.Width;
             for (int y = 0; y < accessor.Height; y++)
             {
-                var pixelRow = accessor.GetRowSpan(y);
-                for (int x = 0; x < pixelRow.Length; x++)
-                {
-                    matrix[x, y] = pixelRow[x].ToRgb8();
-                }
+                ReadOnlySpan<Rgb24> srcRow = accessor.GetRowSpan(y);
+                Span<Rgb8> destRow = dest.Slice(y * width, width);
+                MemoryMarshal.Cast<Rgb24, Rgb8>(srcRow).CopyTo(destRow);
             }
         });
         return matrix;
@@ -54,12 +55,26 @@ public static class ImageExtensions
         {
             image.ProcessPixelRows(accessor =>
             {
-                for (int y = 0; y < accessor.Height; y++)
+                int width = accessor.Width;
+                int height = accessor.Height;
+                if (matrix.TryGetReadOnlySpan(out ReadOnlySpan<Rgb8> src))
                 {
-                    var pixelRow = accessor.GetRowSpan(y);
-                    for (int x = 0; x < pixelRow.Length; x++)
+                    for (int y = 0; y < height; y++)
                     {
-                        pixelRow[x] = matrix[x, y].ToRgb24();
+                        ReadOnlySpan<Rgb8> srcRow = src.Slice(y * width, width);
+                        Span<Rgb24> destRow = accessor.GetRowSpan(y);
+                        MemoryMarshal.Cast<Rgb8, Rgb24>(srcRow).CopyTo(destRow);
+                    }
+                }
+                else
+                {
+                    for (int y = 0; y < height; y++)
+                    {
+                        Span<Rgb24> destRow = accessor.GetRowSpan(y);
+                        for (int x = 0; x < width; x++)
+                        {
+                            destRow[x] = matrix[x, y].ToRgb24();
+                        }
                     }
                 }
             });

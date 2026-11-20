@@ -4,7 +4,6 @@ using System;
 using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Noise;
 using Leiter.Core;
-using Leiter.Pixels;
 
 /// <summary>
 /// Configures parameters for watercolor turbulence flow and pigment dispersion (Bousseau et al. 2006).
@@ -13,7 +12,7 @@ using Leiter.Pixels;
 /// <param name="NoiseOptions">Optional Perlin noise options for generating the fractal turbulence field. If <see langword="null"/>, default flow noise parameters are used.</param>
 public sealed record TurbulenceFlowOptions(
     double Intensity = 0.35,
-    PerlinNoiseOptions? NoiseOptions = null) : IValidatableOptions
+    PerlinNoiseOptions? NoiseOptions = null) : ISizeTunableOptions<TurbulenceFlowOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default turbulence noise frequency applies unscaled.
@@ -42,33 +41,69 @@ public sealed record TurbulenceFlowOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="TurbulenceFlowOptions"/> instance tuned for <paramref name="size"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static TurbulenceFlowOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    public static TurbulenceFlowOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="TurbulenceFlowOptions"/> by scaling <paramref name="baseline"/> fractal flow <see cref="NoiseOptions"/> for <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline turbulence flow configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="TurbulenceFlowOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static TurbulenceFlowOptions ForSize(
+        Size size,
+        TurbulenceFlowOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
     {
-        OptionTuning.ValidateSizeAndReference(size, referenceDimension);
-        return Default with
+        var (_, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
+        if (totalPixels == 0)
         {
-            NoiseOptions = PerlinNoiseOptions.ForSize(size, DefaultNoise, referenceDimension)
+            return baseline;
+        }
+
+        PerlinNoiseOptions noiseBaseline = baseline.NoiseOptions ?? DefaultNoise;
+        return baseline with
+        {
+            NoiseOptions = PerlinNoiseOptions.ForSize(size, noiseBaseline, referenceDimension)
         };
     }
 
     /// <summary>
     /// Creates <see cref="TurbulenceFlowOptions"/> tuned for the dimensions of <paramref name="image"/>.
     /// </summary>
-    /// <param name="image">The input RGB image whose dimensions guide scaling.</param>
+    /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
+    /// <param name="image">The input image whose dimensions guide scaling.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="TurbulenceFlowOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static TurbulenceFlowOptions ForImage(
-        IReadOnlyMatrix<Rgb8> image,
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static TurbulenceFlowOptions ForImage<T>(
+        IReadOnlyMatrix<T> image,
         double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        return ForSize(image.Size, referenceDimension);
-    }
+        where T : struct =>
+        OptionTuning.TuneForSizeImage<TurbulenceFlowOptions, T>(image, referenceDimension);
 
-    internal static TurbulenceFlowOptions ForProfile(in ImageTuningProfile profile, double referenceDimension) =>
-        ForSize(profile.ImageSize, referenceDimension);
+    /// <summary>
+    /// Creates <see cref="TurbulenceFlowOptions"/> by scaling <paramref name="baseline"/> for the dimensions of <paramref name="image"/>.
+    /// </summary>
+    /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
+    /// <param name="image">The input image whose dimensions guide scaling.</param>
+    /// <param name="baseline">The baseline turbulence flow configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="TurbulenceFlowOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static TurbulenceFlowOptions ForImage<T>(
+        IReadOnlyMatrix<T> image,
+        TurbulenceFlowOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
+        where T : struct =>
+        OptionTuning.TuneForSizeImage(image, baseline, referenceDimension);
 
     /// <summary>
     /// Validates that all configuration parameters are within their required domains.

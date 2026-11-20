@@ -117,4 +117,20 @@ public class Vector3DTests
         Assert.Equal(a.GetHashCode(), aCopy.GetHashCode());
         Assert.Contains("1.5", a.ToString());
     }
+
+    /// <summary>
+    /// Verifies that <see cref="Vector3D.DistanceSquared"/> and <see cref="Vector3D.Distance"/> compute 3D Euclidean distances.
+    /// </summary>
+    [Fact]
+    public void DistanceAndDistanceSquared_ShouldComputeEuclideanDistance()
+    {
+        var a = new Vector3D(1.0, 2.0, 3.0);
+        var b = new Vector3D(3.0, 5.0, 9.0);
+
+        Assert.Equal(49.0, a.DistanceSquared(b), 12);
+        Assert.Equal(7.0, a.Distance(b), 12);
+        Assert.Equal(a.Distance(b), b.Distance(a), 12);
+        Assert.Equal(0.0, a.DistanceSquared(a));
+        Assert.Equal(0.0, a.Distance(a));
+    }
 }

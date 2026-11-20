@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Saliency.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -97,26 +98,25 @@ public static class RegionalContrastSaliency
         bool computeBorderRegions = resolvedOptions.ComputeBorderRegions;
         int regionCount = graph.RegionCount;
         IReadOnlyMatrix<int> labels = graph.Labels;
-        IReadOnlyList<Region<Coord>> regions = graph.Regions;
 
         var (colorQuantizedImage, _, rgbToLabLookupTable) = SaliencyColorSmoother.QuantizeForSaliency(image);
 
         var regionCentroids = new NormalizedCoord[regionCount];
         var avgRegionDistances = new double[regionCount];
+        var imageCenter = new NormalizedCoord(0.5, 0.5);
         for (int r = 0; r < regionCount; r++)
         {
-            Region<Coord> region = regions[r];
+            ReadOnlySpan<Coord> regionPixels = graph.GetRegionPixels(r);
             NormalizedCoord sum = new(0, 0);
             double sumDist = 0.0;
-            foreach (Coord coord in region.Pixels)
+            for (int p = 0; p < regionPixels.Length; p++)
             {
-                NormalizedCoord normalizedCoord = image.NormalizeCoord(coord);
+                NormalizedCoord normalizedCoord = image.NormalizeCoord(regionPixels[p]);
                 sum += normalizedCoord;
-                NormalizedCoord centered = normalizedCoord - 0.5;
-                sumDist += Math.Sqrt((centered.X * centered.X) + (centered.Y * centered.Y));
+                sumDist += normalizedCoord.Distance(imageCenter);
             }
 
-            double invCount = 1.0 / region.Pixels.Count;
+            double invCount = 1.0 / regionPixels.Length;
             regionCentroids[r] = sum * invCount;
             avgRegionDistances[r] = sumDist * invCount;
         }
@@ -135,27 +135,23 @@ public static class RegionalContrastSaliency
             }
         }
 
-        int rgbToIndexLookupTableIndex = 0;
-        Dictionary<Rgb8, int> rgbToIndexLookupTable = rgbToLabLookupTable.ToDictionary(entry => entry.Key, _ => rgbToIndexLookupTableIndex++);
-        double[] labDistanceLookupTable = rgbToLabLookupTable.SelectMany(
-            color1 => rgbToLabLookupTable.Select(color2 => color1.Value.Distance(color2.Value))).ToArray();
+        PairwiseLabDistanceTable distanceTable = PairwiseLabDistanceTable.Build(rgbToLabLookupTable);
 
-        var processedRegions = new (int Total, (Rgb8 Color, double Density, int DistanceIndex)[] ColorData)[regionCount];
+        var processedRegions = new (int Total, (double Density, int DistanceIndex)[] ColorData)[regionCount];
         for (int r = 0; r < regionCount; r++)
         {
             DictionaryHistogram<Rgb8> histogram = regionHistograms[r];
-            var colorData = new (Rgb8 Color, double Density, int DistanceIndex)[histogram.BucketCount];
+            var colorData = new (double Density, int DistanceIndex)[histogram.BucketCount];
             int idx = 0;
             foreach (Rgb8 bucket in histogram.Buckets)
             {
-                colorData[idx++] = (bucket, histogram.GetDensity(bucket), rgbToIndexLookupTable[bucket]);
+                colorData[idx++] = (histogram.GetDensity(bucket), distanceTable.GetIndex(bucket));
             }
 
             processedRegions[r] = (histogram.Total(), colorData);
         }
 
         var rawSaliency = new double[regionCount];
-        int colorCount = rgbToIndexLookupTable.Count;
         const double sigmaSquared = 0.4;
         double centerPriorWeight = resolvedOptions.CenterPriorWeight;
 
@@ -178,10 +174,10 @@ public static class RegionalContrastSaliency
                 for (int c = 0; c < colorData.Length; c++)
                 {
                     double bucketDensity = colorData[c].Density;
-                    int initialBucketOffset = colorData[c].DistanceIndex * colorCount;
+                    ReadOnlySpan<double> distanceRow = distanceTable.GetRow(colorData[c].DistanceIndex);
                     for (int oc = 0; oc < otherColorData.Length; oc++)
                     {
-                        distance += bucketDensity * otherColorData[oc].Density * labDistanceLookupTable[initialBucketOffset + otherColorData[oc].DistanceIndex];
+                        distance += bucketDensity * otherColorData[oc].Density * distanceRow[otherColorData[oc].DistanceIndex];
                     }
                 }
 
@@ -212,17 +208,18 @@ public static class RegionalContrastSaliency
 
             for (int r = 0; r < regionCount; r++)
             {
-                Region<Coord> region = regions[r];
+                ReadOnlySpan<Coord> regionPixels = graph.GetRegionPixels(r);
                 int borderPixels = 0;
-                foreach (Coord pixel in region.Pixels)
+                for (int p = 0; p < regionPixels.Length; p++)
                 {
+                    Coord pixel = regionPixels[p];
                     if (pixel.X < borderPixelWidth || pixel.X >= maxX || pixel.Y < borderPixelHeight || pixel.Y >= maxY)
                     {
                         borderPixels++;
                     }
                 }
 
-                if (borderPixels > region.Pixels.Count * regionInBorderPercentage)
+                if (borderPixels > graph.GetRegionPixelCount(r) * regionInBorderPercentage)
                 {
                     isBorderRegion[r] = true;
                     rawSaliency[r] = 0.0;
@@ -251,7 +248,7 @@ public static class RegionalContrastSaliency
             }
 
             Dictionary<Rgb8, double> colorSaliencyMap = intermediateColorSaliencyMap.ToDictionary(entry => entry.Key, entry => entry.Value.Saliency / entry.Value.Count);
-            SaliencyColorSmoother.SmoothColorSaliency(colorSaliencyMap, rgbToLabLookupTable, neighborDivisor: 10);
+            SaliencyColorSmoother.SmoothColorSaliency(colorSaliencyMap, distanceTable, neighborDivisor: 10);
 
             finalSaliency = new double[regionCount];
             Parallel.For(0, regionCount, r =>

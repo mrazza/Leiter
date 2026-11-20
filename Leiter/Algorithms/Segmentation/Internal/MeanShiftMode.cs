@@ -1,5 +1,6 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
+using Leiter.Core;
 using Leiter.Pixels;
 
 /// <summary>
@@ -15,10 +16,6 @@ internal readonly record struct MeanShiftMode(double X, double Y, Lab32 Color)
     /// </summary>
     /// <param name="other">The other mode to compare against.</param>
     /// <returns>The squared Euclidean spatial distance <c>(Δx² + Δy²)</c>.</returns>
-    public double SpatialDistanceSquared(MeanShiftMode other)
-    {
-        double dx = X - other.X;
-        double dy = Y - other.Y;
-        return (dx * dx) + (dy * dy);
-    }
+    public double SpatialDistanceSquared(MeanShiftMode other) =>
+        new Vector2D(X, Y).DistanceSquared(new Vector2D(other.X, other.Y));
 }

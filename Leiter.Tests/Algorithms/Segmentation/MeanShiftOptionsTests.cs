@@ -5,14 +5,28 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="MeanShiftOptions"/>.
 /// </summary>
-public class MeanShiftOptionsTests
+public class MeanShiftOptionsTests : SizeTunableOptionsContractTestsBase<MeanShiftOptions>
 {
+    /// <inheritdoc/>
+    protected override MeanShiftOptions CreateValidCustomOptions() =>
+        new(
+            SpatialRadius: 12,
+            RangeRadius: 8.0,
+            MinRegionSize: 80,
+            MaxIterations: 15,
+            ConvergenceEpsilon: 0.08,
+            Connectivity: GridConnectivity.FourConnected);
+
+    /// <inheritdoc/>
+    protected override MeanShiftOptions CreateInvalidOptions() =>
+        new(SpatialRadius: 0);
     [Fact]
     public void Defaults_ShouldHaveExpectedValues()
     {
@@ -126,9 +140,24 @@ public class MeanShiftOptionsTests
         labImage.SetAll(new Lab32(50f, 0f, 0f));
         MeanShiftOptions.ForImage(labImage).Validate();
 
+        MeanShiftOptions customBaseline = CreateValidCustomOptions();
+        MeanShiftOptions customScaled = MeanShiftOptions.ForSize(new Size(1600, 1600), customBaseline);
+        Assert.Equal(24, customScaled.SpatialRadius);
+        Assert.Equal(8.0, customScaled.RangeRadius, 6);
+        Assert.Equal(15, customScaled.MaxIterations);
+        Assert.Equal(GridConnectivity.FourConnected, customScaled.Connectivity);
+        Assert.Equal(0.16, customScaled.ConvergenceEpsilon, 6);
+
+        MeanShiftOptions customLab = MeanShiftOptions.ForImage(labImage, customBaseline);
+        Assert.Equal(15, customLab.MaxIterations);
+        Assert.Equal(GridConnectivity.FourConnected, customLab.Connectivity);
+        Assert.True(MeanShiftOptions.ForImage(cluttered, customBaseline).RangeRadius > MeanShiftOptions.ForImage(flat, customBaseline).RangeRadius);
+
         Assert.Throws<ArgumentOutOfRangeException>(() => MeanShiftOptions.ForSize(new Size(10, -1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => MeanShiftOptions.ForSize(new Size(10, 10), -1.0));
         Assert.Throws<ArgumentNullException>(() => MeanShiftOptions.ForImage((IReadOnlyMatrix<Rgb8>)null!));
         Assert.Throws<ArgumentNullException>(() => MeanShiftOptions.ForImage((IReadOnlyMatrix<Lab32>)null!));
+        Assert.Throws<ArgumentNullException>(() => MeanShiftOptions.ForImage(flat, null!));
+        Assert.Throws<ArgumentNullException>(() => MeanShiftOptions.ForImage(labImage, null!));
     }
 }

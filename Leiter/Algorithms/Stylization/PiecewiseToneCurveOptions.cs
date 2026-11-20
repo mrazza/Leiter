@@ -16,7 +16,7 @@ public sealed record PiecewiseToneCurveOptions(
     double MinTone = 0.05,
     double MaxTone = 0.96,
     double ShadowKnee = 0.15,
-    double HighlightKnee = 0.85) : IValidatableOptions
+    double HighlightKnee = 0.85) : IProfileTunableOptions<PiecewiseToneCurveOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) accepted for uniform <c>ForSize</c> signatures.
@@ -35,10 +35,27 @@ public sealed record PiecewiseToneCurveOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="PiecewiseToneCurveOptions"/> instance.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static PiecewiseToneCurveOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    public static PiecewiseToneCurveOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Validates and returns <paramref name="baseline"/> for <paramref name="size"/>. Tone mapping is resolution-invariant.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline tone curve configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>The validated <paramref name="baseline"/> instance.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static PiecewiseToneCurveOptions ForSize(
+        Size size,
+        PiecewiseToneCurveOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
     {
         OptionTuning.ValidateSizeAndReference(size, referenceDimension);
-        return Default;
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
+        return baseline;
     }
 
     /// <summary>
@@ -48,33 +65,65 @@ public sealed record PiecewiseToneCurveOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="PiecewiseToneCurveOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static PiecewiseToneCurveOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
-        double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
-        return ForProfile(in profile, referenceDimension);
-    }
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage<PiecewiseToneCurveOptions>(image, referenceDimension);
 
-    internal static PiecewiseToneCurveOptions ForProfile(in ImageTuningProfile profile, double referenceDimension)
+    /// <summary>
+    /// Creates <see cref="PiecewiseToneCurveOptions"/> tuned from <paramref name="baseline"/> with knee breakpoints gently adapted to the lightness dispersion of <paramref name="image"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image to analyze.</param>
+    /// <param name="baseline">The baseline tone curve configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="PiecewiseToneCurveOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static PiecewiseToneCurveOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        PiecewiseToneCurveOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage(image, baseline, referenceDimension);
+
+    static PiecewiseToneCurveOptions IProfileTunableOptions<PiecewiseToneCurveOptions>.ForProfile(
+        in ImageTuningProfile profile,
+        PiecewiseToneCurveOptions baseline,
+        double referenceDimension) =>
+        ForProfile(in profile, baseline, referenceDimension);
+
+    internal static PiecewiseToneCurveOptions ForProfile(
+        in ImageTuningProfile profile,
+        PiecewiseToneCurveOptions baseline,
+        double referenceDimension)
     {
-        PiecewiseToneCurveOptions defaults = ForSize(profile.ImageSize, referenceDimension);
+        PiecewiseToneCurveOptions validated = ForSize(profile.ImageSize, baseline, referenceDimension);
         if (profile.IsEmpty)
         {
-            return defaults;
+            return validated;
         }
 
         const double ReferenceStdDevL = 17.6;
         double contrastDelta = Math.Clamp((profile.LabStats.StdDevL - ReferenceStdDevL) / ReferenceStdDevL, -0.5, 1.0);
-        double shadowKnee = Math.Clamp(defaults.ShadowKnee + (0.06 * contrastDelta), 0.12, 0.22);
-        double highlightKnee = Math.Clamp(defaults.HighlightKnee - (0.06 * contrastDelta), 0.78, 0.88);
 
-        return defaults with
+        double shadowDelta;
+        double highlightDelta;
+        if (contrastDelta < 0.0)
         {
-            ShadowKnee = shadowKnee,
-            HighlightKnee = highlightKnee
+            shadowDelta = Math.Max(0.06 * contrastDelta, -0.5 * validated.ShadowKnee);
+            highlightDelta = Math.Min(-0.06 * contrastDelta, 0.5 * (1.0 - validated.HighlightKnee));
+        }
+        else
+        {
+            double maxInwardShift = Math.Min(0.06, 0.25 * (validated.HighlightKnee - validated.ShadowKnee));
+            shadowDelta = maxInwardShift * contrastDelta;
+            highlightDelta = -maxInwardShift * contrastDelta;
+        }
+
+        return validated with
+        {
+            ShadowKnee = validated.ShadowKnee + shadowDelta,
+            HighlightKnee = validated.HighlightKnee + highlightDelta
         };
     }
 

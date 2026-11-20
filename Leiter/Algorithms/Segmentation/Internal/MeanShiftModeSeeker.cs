@@ -19,8 +19,7 @@ internal sealed class MeanShiftModeSeeker
     private const double CornerMatchColorToleranceFactor = 0.35;
 
     private readonly Lab32[] sourcePixels;
-    private readonly int width;
-    private readonly int height;
+    private readonly Size size;
     private readonly int spatialRadius;
     private readonly double spatialRadiusSquared;
     private readonly double rangeRadiusSquared;
@@ -30,8 +29,7 @@ internal sealed class MeanShiftModeSeeker
 
     private MeanShiftModeSeeker(
         Lab32[] sourcePixels,
-        int width,
-        int height,
+        Size size,
         int spatialRadius,
         double rangeRadiusSquared,
         double convergenceEpsilonSquared,
@@ -39,8 +37,7 @@ internal sealed class MeanShiftModeSeeker
         MeanShiftSpatialLattice? lattice)
     {
         this.sourcePixels = sourcePixels;
-        this.width = width;
-        this.height = height;
+        this.size = size;
         this.spatialRadius = spatialRadius;
         spatialRadiusSquared = (double)spatialRadius * spatialRadius;
         this.rangeRadiusSquared = rangeRadiusSquared;
@@ -109,9 +106,8 @@ internal sealed class MeanShiftModeSeeker
         MeanShiftOptions options,
         int latticeRadiusThreshold)
     {
-        int width = labImage.Width;
-        int height = labImage.Height;
-        int pixelCount = width * height;
+        Size size = labImage.Size;
+        int pixelCount = size.Count;
         Lab32[] sourcePixels = labImage.ToArray();
 
         var modes = new MeanShiftMode[pixelCount];
@@ -123,20 +119,19 @@ internal sealed class MeanShiftModeSeeker
         int sampleStride = ResolveLatticeSampleStride(spatialRadius);
 
         MeanShiftSpatialLattice? lattice = spatialRadius > latticeRadiusThreshold
-            ? MeanShiftSpatialLattice.Create(sourcePixels, width, height, spatialRadius, rangeRadius, sampleStride)
+            ? MeanShiftSpatialLattice.Create(sourcePixels, size.Width, size.Height, spatialRadius, rangeRadius, sampleStride)
             : null;
 
         var seeker = new MeanShiftModeSeeker(
             sourcePixels,
-            width,
-            height,
+            size,
             spatialRadius,
             rangeRadius * rangeRadius,
             options.ConvergenceEpsilon * options.ConvergenceEpsilon,
             options.MaxIterations,
             lattice);
 
-        int coarseStride = ResolveCoarseGridStride(spatialRadius, width, height);
+        int coarseStride = ResolveCoarseGridStride(spatialRadius, size.Width, size.Height);
         if (coarseStride == 1)
         {
             seeker.SeekAllPixelsExact(modes);
@@ -152,7 +147,7 @@ internal sealed class MeanShiftModeSeeker
 
     private MeanShiftMode SeekPixelMode(int startX, int startY)
     {
-        var currentMode = new MeanShiftMode(startX, startY, sourcePixels[(startY * width) + startX]);
+        var currentMode = new MeanShiftMode(startX, startY, sourcePixels[size.IndexOf(startX, startY)]);
 
         for (int iteration = 0; iteration < maxIterations; iteration++)
         {
@@ -172,6 +167,8 @@ internal sealed class MeanShiftModeSeeker
 
     private MeanShiftMode ComputeDirectMeanStep(MeanShiftMode currentMode)
     {
+        int width = size.Width;
+        int height = size.Height;
         int minY = Math.Max(0, (int)Math.Floor(currentMode.Y - spatialRadius));
         int maxY = Math.Min(height - 1, (int)Math.Ceiling(currentMode.Y + spatialRadius));
 
@@ -187,7 +184,7 @@ internal sealed class MeanShiftModeSeeker
             double horizontalSpan = Math.Sqrt(spatialRadiusSquared - deltaYSquared);
             int rowMinX = Math.Max(0, (int)Math.Floor(currentMode.X - horizontalSpan));
             int rowMaxX = Math.Min(width - 1, (int)Math.Ceiling(currentMode.X + horizontalSpan));
-            int rowOffset = y * width;
+            int rowOffset = size.IndexOf(0, y);
 
             for (int x = rowMinX; x <= rowMaxX; x++)
             {
@@ -221,9 +218,11 @@ internal sealed class MeanShiftModeSeeker
 
     private void SeekAllPixelsExact(MeanShiftMode[] modes)
     {
+        int width = size.Width;
+        int height = size.Height;
         Parallel.For(0, height, y =>
         {
-            int rowStart = y * width;
+            int rowStart = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
             {
                 modes[rowStart + x] = SeekPixelMode(x, y);
@@ -233,13 +232,13 @@ internal sealed class MeanShiftModeSeeker
 
     private void SeekCoarseGrid(int coarseStride, MeanShiftMode[] modes)
     {
-        int[] coarseXs = BuildCoarseAxisCoordinates(width, coarseStride);
-        int[] coarseYs = BuildCoarseAxisCoordinates(height, coarseStride);
+        int[] coarseXs = BuildCoarseAxisCoordinates(size.Width, coarseStride);
+        int[] coarseYs = BuildCoarseAxisCoordinates(size.Height, coarseStride);
 
         Parallel.For(0, coarseYs.Length, yi =>
         {
             int coarseY = coarseYs[yi];
-            int rowStart = coarseY * width;
+            int rowStart = size.IndexOf(0, coarseY);
             for (int xi = 0; xi < coarseXs.Length; xi++)
             {
                 int coarseX = coarseXs[xi];
@@ -250,6 +249,8 @@ internal sealed class MeanShiftModeSeeker
 
     private void RefineFinePixels(int coarseStride, MeanShiftMode[] modes)
     {
+        int width = size.Width;
+        int height = size.Height;
         double modeColorToleranceSquared = (ModeAgreementColorToleranceFactor * ModeAgreementColorToleranceFactor) * rangeRadiusSquared;
         double sourceColorToleranceSquared = (SourceInterpolationColorToleranceFactor * SourceInterpolationColorToleranceFactor) * rangeRadiusSquared;
         double cornerMatchToleranceSquared = (CornerMatchColorToleranceFactor * CornerMatchColorToleranceFactor) * rangeRadiusSquared;
@@ -257,7 +258,7 @@ internal sealed class MeanShiftModeSeeker
         Parallel.For(0, height, y =>
         {
             CoarseAxisBracket yBracket = ComputeCoarseBracket(y, height, coarseStride);
-            int rowStart = y * width;
+            int rowStart = size.IndexOf(0, y);
 
             for (int x = 0; x < width; x++)
             {
@@ -304,8 +305,8 @@ internal sealed class MeanShiftModeSeeker
         double cornerMatchToleranceSquared,
         out MeanShiftMode interpolatedMode)
     {
-        int upperRowOffset = yBracket.Lower * width;
-        int lowerRowOffset = yBracket.Upper * width;
+        int upperRowOffset = size.IndexOf(0, yBracket.Lower);
+        int lowerRowOffset = size.IndexOf(0, yBracket.Upper);
         int index00 = upperRowOffset + xBracket.Lower;
         int index10 = upperRowOffset + xBracket.Upper;
         int index01 = lowerRowOffset + xBracket.Lower;
@@ -318,7 +319,7 @@ internal sealed class MeanShiftModeSeeker
         var corner01 = new CoarseCornerSample(sourcePixels[index01], modes[index01], oneMinusTx * yBracket.Fraction);
         var corner11 = new CoarseCornerSample(sourcePixels[index11], modes[index11], xBracket.Fraction * yBracket.Fraction);
 
-        Lab32 pixelColor = sourcePixels[(y * width) + x];
+        Lab32 pixelColor = sourcePixels[size.IndexOf(x, y)];
 
         if (CoarseCornersAgree(
             corner00.Mode,

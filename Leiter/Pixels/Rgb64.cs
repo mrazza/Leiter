@@ -127,17 +127,19 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
     public Rgb64 ComponentMap(Func<double, double> func) => ColorComponentMap(func);
 
     /// <inheritdoc/>
-    public Vector<double> ToDoubleVector()
-    {
-        if (Vector<double>.Count < 3)
-            throw new PlatformNotSupportedException("This operation is not supported on this platform. Vector width is too small.");
+    public Vector<double> ToDoubleVector() => Internal.PixelVector.Create(R, G, B);
 
-        Span<double> data = stackalloc double[Vector<double>.Count];
-        data[0] = R;
-        data[1] = G;
-        data[2] = B;
-        return new(data);
-    }
+    /// <summary>
+    /// Computes the squared Euclidean magnitude across the red, green, and blue channels (<c>R^2 + G^2 + B^2</c>).
+    /// </summary>
+    /// <returns>The squared Euclidean norm of this pixel's channels.</returns>
+    public double NormSquared() => (R * R) + (G * G) + (B * B);
+
+    /// <summary>
+    /// Computes the Euclidean magnitude across the red, green, and blue channels (<c>sqrt(R^2 + G^2 + B^2)</c>).
+    /// </summary>
+    /// <returns>The Euclidean norm of this pixel's channels.</returns>
+    public double Norm() => Math.Sqrt(NormSquared());
 
     /// <inheritdoc/>
     public static Rgb64 FromDoubleVector(Vector<double> vector) => new(vector[0], vector[1], vector[2]);

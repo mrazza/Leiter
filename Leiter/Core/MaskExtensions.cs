@@ -15,6 +15,18 @@ public static class MaskExtensions
     {
         ArgumentNullException.ThrowIfNull(mask);
 
+        if (mask.TryGetReadOnlySpan(out ReadOnlySpan<bool> span))
+        {
+            int spanCount = 0;
+            foreach (bool value in span)
+            {
+                if (value)
+                    spanCount++;
+            }
+
+            return spanCount;
+        }
+
         int count = 0;
         for (int y = 0; y < mask.Height; y++)
         {
@@ -62,19 +74,7 @@ public static class MaskExtensions
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(predicate);
-
-        int width = source.Width;
-        int height = source.Height;
-        var data = new bool[source.Count];
-
-        Parallel.For(0, height, y =>
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-                data[rowBase + x] = predicate(source[x, y]);
-        });
-
-        return new MaskMatrix(width, height, data);
+        return new MaskMatrix(source.Width, source.Height, source.MapToArray(predicate));
     }
 
     /// <summary>
@@ -138,18 +138,7 @@ public static class MaskExtensions
     {
         ArgumentNullException.ThrowIfNull(source);
         Guard.ThrowIfSizeMismatch(source, mask);
-
-        int width = source.Width;
-        int height = source.Height;
-        var result = new SequentialMatrix<T>(width, height);
-
-        Parallel.For(0, height, y =>
-        {
-            for (int x = 0; x < width; x++)
-                result[x, y] = mask[x, y] ? source[x, y] : background;
-        });
-
-        return result;
+        return source.Zip(mask, (value, isForeground) => isForeground ? value : background);
     }
 
     private static MaskMatrix CombineMasks(
@@ -157,19 +146,7 @@ public static class MaskExtensions
         IReadOnlyMatrix<bool> right,
         Func<bool, bool, bool> combiner)
     {
-        ArgumentNullException.ThrowIfNull(left);
-        Guard.ThrowIfSizeMismatch(left, right);
-
-        int width = left.Width;
-        int height = left.Height;
-        var result = new MaskMatrix(width, height);
-
-        Parallel.For(0, height, y =>
-        {
-            for (int x = 0; x < width; x++)
-                result[x, y] = combiner(left[x, y], right[x, y]);
-        });
-
-        return result;
+        bool[] data = left.ZipToArray(right, combiner);
+        return new(left.Width, left.Height, data);
     }
 }

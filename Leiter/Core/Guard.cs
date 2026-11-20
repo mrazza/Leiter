@@ -1,6 +1,7 @@
 namespace Leiter.Core;
 
 using System.Runtime.CompilerServices;
+using Leiter.Pixels;
 
 /// <summary>
 /// Provides shared internal argument and domain validation guards.
@@ -127,5 +128,31 @@ internal static class Guard
     {
         if (!double.IsFinite(value) || value <= minExclusive || value > maxInclusive)
             throw new ArgumentOutOfRangeException(paramName, value, $"{paramName} must be finite and within ({minExclusive}, {maxInclusive}].");
+    }
+
+    /// <summary>
+    /// Throws <see cref="ArgumentOutOfRangeException"/> if <paramref name="width"/> or <paramref name="height"/> is negative.
+    /// </summary>
+    public static void ThrowIfNegativeDimensions(
+        int width,
+        int height,
+        [CallerArgumentExpression(nameof(width))] string? widthParamName = null,
+        [CallerArgumentExpression(nameof(height))] string? heightParamName = null)
+    {
+        if (width < 0)
+            throw new ArgumentOutOfRangeException(widthParamName, width, $"{widthParamName} must be non-negative.");
+        if (height < 0)
+            throw new ArgumentOutOfRangeException(heightParamName, height, $"{heightParamName} must be non-negative.");
+    }
+
+    /// <summary>
+    /// Throws <see cref="ArgumentOutOfRangeException"/> if any channel of <paramref name="color"/> is not finite.
+    /// </summary>
+    public static void ThrowIfNotFinite(
+        Rgb64 color,
+        [CallerArgumentExpression(nameof(color))] string? paramName = null)
+    {
+        if (!double.IsFinite(color.R) || !double.IsFinite(color.G) || !double.IsFinite(color.B))
+            throw new ArgumentOutOfRangeException(paramName, color, "All RGB channels must be finite.");
     }
 }

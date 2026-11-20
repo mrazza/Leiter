@@ -4,14 +4,22 @@ using System;
 using Leiter.Algorithms.Noise;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="PerlinNoiseOptions"/>.
 /// </summary>
-public class PerlinNoiseOptionsTests
+public class PerlinNoiseOptionsTests : SizeTunableOptionsContractTestsBase<PerlinNoiseOptions>
 {
+    /// <inheritdoc/>
+    protected override PerlinNoiseOptions CreateValidCustomOptions() =>
+        new(Seed: 42, Frequency: 0.1, Octaves: 6, Lacunarity: 2.2, Persistence: 0.4);
+
+    /// <inheritdoc/>
+    protected override PerlinNoiseOptions CreateInvalidOptions() =>
+        new(Frequency: 0.0);
     /// <summary>
     /// Verifies that default options match expected default values and pass validation.
     /// </summary>
@@ -150,6 +158,9 @@ public class PerlinNoiseOptionsTests
         PerlinNoiseOptions fromImage = PerlinNoiseOptions.ForImage(image);
         Assert.Equal(PerlinNoiseOptions.ForSize(image.Size), fromImage);
         Assert.Equal(PerlinNoiseOptions.ForSize(image.Size, baseline), PerlinNoiseOptions.ForImage(image, baseline));
+
+        var scalarImage = new SequentialMatrix<DoublePixel>(200, 200);
+        Assert.Equal(PerlinNoiseOptions.ForSize(scalarImage.Size, baseline), PerlinNoiseOptions.ForImage(scalarImage, baseline));
     }
 
     /// <summary>

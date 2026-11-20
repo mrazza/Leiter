@@ -22,7 +22,7 @@ public sealed record LodAbstractionOptions(
     double DistanceKernelScale = 10.0,
     double DistanceKernelBias = 0.3,
     double CrossSegmentColorScale = 0.3,
-    double SalientOverlapThreshold = 0.5) : IValidatableOptions
+    double SalientOverlapThreshold = 0.5) : IProfileTunableOptions<LodAbstractionOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default kernel widths apply unscaled.
@@ -41,25 +41,41 @@ public sealed record LodAbstractionOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="LodAbstractionOptions"/> instance tuned for <paramref name="size"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static LodAbstractionOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    public static LodAbstractionOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="LodAbstractionOptions"/> by scaling <paramref name="baseline"/> kernel sizes and <see cref="DistanceKernelScale"/> linearly to <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline LOD abstraction configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="LodAbstractionOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static LodAbstractionOptions ForSize(
+        Size size,
+        LodAbstractionOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        LodAbstractionOptions defaults = Default;
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
         if (totalPixels == 0)
         {
-            return defaults;
+            return baseline;
         }
 
-        int salientKernel = OptionTuning.RoundPositiveInt(defaults.SalientKernelSize * s);
-        int minNonSalient = OptionTuning.RoundPositiveInt(defaults.MinNonSalientKernelSize * s);
-        int maxNonSalient = Math.Max(minNonSalient, OptionTuning.RoundPositiveInt(defaults.MaxNonSalientKernelSize * s));
+        int salientKernel = OptionTuning.RoundPositiveInt(baseline.SalientKernelSize * s);
+        int minNonSalient = OptionTuning.RoundPositiveInt(baseline.MinNonSalientKernelSize * s);
+        int maxNonSalient = Math.Max(minNonSalient, OptionTuning.RoundPositiveInt(baseline.MaxNonSalientKernelSize * s));
 
-        return defaults with
+        return baseline with
         {
             SalientKernelSize = salientKernel,
             MinNonSalientKernelSize = minNonSalient,
             MaxNonSalientKernelSize = maxNonSalient,
-            DistanceKernelScale = defaults.DistanceKernelScale * s
+            DistanceKernelScale = baseline.DistanceKernelScale * s
         };
     }
 
@@ -70,27 +86,49 @@ public sealed record LodAbstractionOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="LodAbstractionOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static LodAbstractionOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
-        double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
-        return ForProfile(in profile, referenceDimension);
-    }
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage<LodAbstractionOptions>(image, referenceDimension);
 
-    internal static LodAbstractionOptions ForProfile(in ImageTuningProfile profile, double referenceDimension)
+    /// <summary>
+    /// Creates <see cref="LodAbstractionOptions"/> tuned from <paramref name="baseline"/> for the dimensions and color spread of <paramref name="image"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image to analyze.</param>
+    /// <param name="baseline">The baseline LOD abstraction configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="LodAbstractionOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static LodAbstractionOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        LodAbstractionOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage(image, baseline, referenceDimension);
+
+    static LodAbstractionOptions IProfileTunableOptions<LodAbstractionOptions>.ForProfile(
+        in ImageTuningProfile profile,
+        LodAbstractionOptions baseline,
+        double referenceDimension) =>
+        ForProfile(in profile, baseline, referenceDimension);
+
+    internal static LodAbstractionOptions ForProfile(
+        in ImageTuningProfile profile,
+        LodAbstractionOptions baseline,
+        double referenceDimension)
     {
-        LodAbstractionOptions scaled = ForSize(profile.ImageSize, referenceDimension);
+        LodAbstractionOptions scaled = ForSize(profile.ImageSize, baseline, referenceDimension);
         if (profile.IsEmpty)
         {
             return scaled;
         }
 
+        double minColorScale = Math.Min(0.15, scaled.CrossSegmentColorScale);
+        double maxColorScale = Math.Max(0.50, scaled.CrossSegmentColorScale);
         return scaled with
         {
-            CrossSegmentColorScale = Math.Clamp(scaled.CrossSegmentColorScale * profile.ColorSpreadFactor, 0.15, 0.50)
+            CrossSegmentColorScale = Math.Clamp(scaled.CrossSegmentColorScale * profile.ColorSpreadFactor, minColorScale, maxColorScale)
         };
     }
 

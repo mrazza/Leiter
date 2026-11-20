@@ -5,14 +5,25 @@ using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="PaperGranulationOptions"/>.
 /// </summary>
-public class PaperGranulationOptionsTests
+public class PaperGranulationOptionsTests : SizeTunableOptionsContractTestsBase<PaperGranulationOptions>
 {
+    /// <inheritdoc/>
+    protected override PaperGranulationOptions CreateValidCustomOptions() =>
+        new(
+            DensityStrength: 0.45,
+            WarpAmplitude: 0.9,
+            GrainNoiseOptions: new PerlinNoiseOptions(Seed: 808, Frequency: 0.12, Octaves: 3, Lacunarity: 2.1, Persistence: 0.5));
+
+    /// <inheritdoc/>
+    protected override PaperGranulationOptions CreateInvalidOptions() =>
+        new(WarpAmplitude: -1.0);
     /// <summary>
     /// Verifies that default options match expected default values and pass validation.
     /// </summary>
@@ -107,8 +118,23 @@ public class PaperGranulationOptionsTests
         var image = new SequentialMatrix<Rgb8>(400, 400);
         Assert.Equal(PaperGranulationOptions.ForSize(image.Size), PaperGranulationOptions.ForImage(image));
 
+        PaperGranulationOptions customBaseline = CreateValidCustomOptions();
+        PaperGranulationOptions customHalf = PaperGranulationOptions.ForSize(new Size(400, 400), customBaseline);
+        Assert.Equal(0.45, customHalf.DensityStrength, 6);
+        Assert.Equal(0.45, customHalf.WarpAmplitude, 6);
+        Assert.Equal(0.24, customHalf.GrainNoiseOptions!.Frequency, 6);
+        Assert.Equal(808, customHalf.GrainNoiseOptions.Seed);
+
+        var scalarImage = new SequentialMatrix<DoublePixel>(400, 400);
+        Assert.Equal(customHalf, PaperGranulationOptions.ForImage(scalarImage, customBaseline));
+
+        var rgb64Image = new SequentialMatrix<Rgb64>(400, 400);
+        Assert.Equal(PaperGranulationOptions.ForSize(rgb64Image.Size), PaperGranulationOptions.ForImage(rgb64Image));
+
         Assert.Throws<ArgumentOutOfRangeException>(() => PaperGranulationOptions.ForSize(new Size(-1, 10)));
         Assert.Throws<ArgumentOutOfRangeException>(() => PaperGranulationOptions.ForSize(new Size(10, 10), double.NaN));
-        Assert.Throws<ArgumentNullException>(() => PaperGranulationOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => PaperGranulationOptions.ForImage<Rgb8>(null!));
+        Assert.Throws<ArgumentNullException>(() => PaperGranulationOptions.ForImage<Rgb8>(null!, customBaseline));
+        Assert.Throws<ArgumentNullException>(() => PaperGranulationOptions.ForImage(image, null!));
     }
 }

@@ -14,13 +14,15 @@ public class SequentialMatrix<T> : Matrix<T>
     /// </summary>
     /// <param name="width">The number of columns in the matrix.</param>
     /// <param name="height">The number of rows in the matrix.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> or <paramref name="height"/> is negative.</exception>
     public SequentialMatrix(int width, int height)
-        : this(width, height, new T[width * height]) { }
+        : this(width, height, AllocateData(width, height)) { }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SequentialMatrix{T}"/> class with the specified size dimensions.
     /// </summary>
     /// <param name="size">The dimensions of the matrix.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> has a negative width or height.</exception>
     public SequentialMatrix(Size size)
         : this(size.Width, size.Height) { }
 
@@ -28,8 +30,12 @@ public class SequentialMatrix<T> : Matrix<T>
     /// Initializes a new instance of the <see cref="SequentialMatrix{T}"/> class from a two-dimensional array indexed by <c>[row, column]</c>.
     /// </summary>
     /// <param name="values">The two-dimensional array indexed by <c>[row, column]</c> to copy elements from.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> is <see langword="null"/>.</exception>
     public SequentialMatrix(T[,] values)
-        : this(values.GetLength(1), values.GetLength(0), values.Cast<T>().ToArray()) { }
+        : this(
+            (values ?? throw new ArgumentNullException(nameof(values))).GetLength(1),
+            values.GetLength(0),
+            values.Cast<T>().ToArray()) { }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SequentialMatrix{T}"/> class with the specified size dimensions and an array of elements.
@@ -37,9 +43,10 @@ public class SequentialMatrix<T> : Matrix<T>
     /// <param name="size">The dimensions of the matrix.</param>
     /// <param name="values">The array of elements to copy into the matrix.</param>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> has a negative width or height.</exception>
     /// <exception cref="ArgumentException">The length of <paramref name="values"/> does not equal the total number of elements specified by <paramref name="size"/>.</exception>
     public SequentialMatrix(Size size, T[] values)
-        : this(size.Width, size.Height, (values ?? throw new ArgumentNullException(nameof(values))).ToArray(), nameof(values)) { }
+        : this(size.Width, size.Height, CopyInputArray(size, values), nameof(values)) { }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SequentialMatrix{T}"/> class, taking direct ownership of the provided data array without copying.
@@ -47,6 +54,7 @@ public class SequentialMatrix<T> : Matrix<T>
     /// <param name="width">The number of columns in the matrix.</param>
     /// <param name="height">The number of rows in the matrix.</param>
     /// <param name="data">The contiguous row-major data array to take direct ownership of.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> or <paramref name="height"/> is negative.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The length of <paramref name="data"/> does not match <paramref name="width"/> * <paramref name="height"/>.</exception>
     internal SequentialMatrix(int width, int height, T[] data)
@@ -62,6 +70,22 @@ public class SequentialMatrix<T> : Matrix<T>
         this.data = data;
     }
 
+    private static T[] AllocateData(int width, int height)
+    {
+        Guard.ThrowIfNegativeDimensions(width, height);
+        return new T[width * height];
+    }
+
+    private static T[] CopyInputArray(Size size, T[] values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        Guard.ThrowIfNegativeDimensions(size.Width, size.Height);
+        if (values.Length != size.Width * size.Height)
+            throw new ArgumentException("Data length does not match matrix size.", nameof(values));
+
+        return values.ToArray();
+    }
+
     internal T[] RawData => data;
 
     /// <summary>
@@ -70,7 +94,11 @@ public class SequentialMatrix<T> : Matrix<T>
     /// <returns>A <see cref="ReadOnlySpan{T}"/> viewing the matrix elements in row-major order.</returns>
     public ReadOnlySpan<T> AsReadOnlySpan() => data;
 
-    internal Span<T> AsSpan() => data;
+    /// <summary>
+    /// Returns a writable span over the underlying contiguous row-major element buffer.
+    /// </summary>
+    /// <returns>A <see cref="Span{T}"/> viewing the matrix elements in row-major order.</returns>
+    public Span<T> AsSpan() => data;
 
     /// <summary>
     /// Materializes any <see cref="IReadOnlyMatrix{T}"/> into a standalone <see cref="SequentialMatrix{T}"/>.

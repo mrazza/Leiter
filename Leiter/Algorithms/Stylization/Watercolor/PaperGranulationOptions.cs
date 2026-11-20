@@ -4,7 +4,6 @@ using System;
 using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Noise;
 using Leiter.Core;
-using Leiter.Pixels;
 
 /// <summary>
 /// Configures parameters for watercolor paper granulation and pigment settling (Bousseau et al. 2006).
@@ -15,7 +14,7 @@ using Leiter.Pixels;
 public sealed record PaperGranulationOptions(
     double DensityStrength = 0.3,
     double WarpAmplitude = 0.6,
-    PerlinNoiseOptions? GrainNoiseOptions = null) : IValidatableOptions
+    PerlinNoiseOptions? GrainNoiseOptions = null) : ISizeTunableOptions<PaperGranulationOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default grain frequency and micro-warp amplitude apply unscaled.
@@ -44,43 +43,70 @@ public sealed record PaperGranulationOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="PaperGranulationOptions"/> instance tuned for <paramref name="size"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static PaperGranulationOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    public static PaperGranulationOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="PaperGranulationOptions"/> by scaling <paramref name="baseline"/> warp amplitude linearly and grain frequency inversely to linear dimension for <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline paper granulation configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="PaperGranulationOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static PaperGranulationOptions ForSize(
+        Size size,
+        PaperGranulationOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        PaperGranulationOptions defaults = Default;
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
         if (totalPixels == 0)
         {
-            return defaults with
-            {
-                GrainNoiseOptions = DefaultGrainNoise
-            };
+            return baseline;
         }
 
-        return defaults with
+        PerlinNoiseOptions grainBaseline = baseline.GrainNoiseOptions ?? DefaultGrainNoise;
+        return baseline with
         {
-            WarpAmplitude = defaults.WarpAmplitude * s,
-            GrainNoiseOptions = PerlinNoiseOptions.ForSize(size, DefaultGrainNoise, referenceDimension)
+            WarpAmplitude = baseline.WarpAmplitude * s,
+            GrainNoiseOptions = PerlinNoiseOptions.ForSize(size, grainBaseline, referenceDimension)
         };
     }
 
     /// <summary>
     /// Creates <see cref="PaperGranulationOptions"/> tuned for the dimensions of <paramref name="image"/>.
     /// </summary>
-    /// <param name="image">The input RGB image whose dimensions guide scaling.</param>
+    /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
+    /// <param name="image">The input image whose dimensions guide scaling.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="PaperGranulationOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static PaperGranulationOptions ForImage(
-        IReadOnlyMatrix<Rgb8> image,
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static PaperGranulationOptions ForImage<T>(
+        IReadOnlyMatrix<T> image,
         double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        return ForSize(image.Size, referenceDimension);
-    }
+        where T : struct =>
+        OptionTuning.TuneForSizeImage<PaperGranulationOptions, T>(image, referenceDimension);
 
-    internal static PaperGranulationOptions ForProfile(in ImageTuningProfile profile, double referenceDimension) =>
-        ForSize(profile.ImageSize, referenceDimension);
+    /// <summary>
+    /// Creates <see cref="PaperGranulationOptions"/> by scaling <paramref name="baseline"/> for the dimensions of <paramref name="image"/>.
+    /// </summary>
+    /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
+    /// <param name="image">The input image whose dimensions guide scaling.</param>
+    /// <param name="baseline">The baseline paper granulation configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="PaperGranulationOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static PaperGranulationOptions ForImage<T>(
+        IReadOnlyMatrix<T> image,
+        PaperGranulationOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
+        where T : struct =>
+        OptionTuning.TuneForSizeImage(image, baseline, referenceDimension);
 
     /// <summary>
     /// Validates that all configuration parameters are within their required domains.

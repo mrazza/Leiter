@@ -14,7 +14,7 @@ public sealed record SaliencyMaskOptions(
     SaliencyThresholdMethod Method = SaliencyThresholdMethod.Otsu,
     double FixedThreshold = SaliencyMaskOptions.DefaultFixedThreshold,
     ComponentRetentionPolicy RetentionPolicy = ComponentRetentionPolicy.MinimumAreaFraction,
-    double MinAreaFraction = SaliencyMaskOptions.DefaultMinAreaFraction) : IValidatableOptions
+    double MinAreaFraction = SaliencyMaskOptions.DefaultMinAreaFraction) : IAlgorithmOptions<SaliencyMaskOptions>
 {
     /// <summary>
     /// The default fixed saliency threshold (<c>70 / 255</c>).

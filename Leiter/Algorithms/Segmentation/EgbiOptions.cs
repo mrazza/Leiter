@@ -17,7 +17,7 @@ public sealed record EgbiOptions(
     double KFactor = 100.0,
     double Epsilon = 1.0,
     int MinRegionSize = 100,
-    GridConnectivity Connectivity = GridConnectivity.EightConnected) : IValidatableOptions
+    GridConnectivity Connectivity = GridConnectivity.EightConnected) : IProfileTunableOptions<EgbiOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which baseline parameters apply unscaled.
@@ -53,10 +53,9 @@ public sealed record EgbiOptions(
         EgbiOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
+        var (s, a, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
         ArgumentNullException.ThrowIfNull(baseline);
         baseline.Validate();
-
-        var (s, a, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
         if (totalPixels == 0)
         {
             return baseline;
@@ -84,11 +83,11 @@ public sealed record EgbiOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="EgbiOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static EgbiOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
         double referenceDimension = DefaultReferenceDimension) =>
-        ForImage(image, Default, referenceDimension);
+        OptionTuning.TuneForImage<EgbiOptions>(image, referenceDimension);
 
     /// <summary>
     /// Creates <see cref="EgbiOptions"/> tuned from <paramref name="baseline"/> for the dimensions and statistics of <paramref name="image"/>.
@@ -102,15 +101,8 @@ public sealed record EgbiOptions(
     public static EgbiOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
         EgbiOptions baseline,
-        double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        ArgumentNullException.ThrowIfNull(baseline);
-        baseline.Validate();
-
-        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
-        return ForProfile(in profile, baseline, referenceDimension);
-    }
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage(image, baseline, referenceDimension);
 
     /// <summary>
     /// Creates <see cref="EgbiOptions"/> tuned for both the dimensions and CIELAB statistics of <paramref name="labImage"/>.
@@ -119,11 +111,11 @@ public sealed record EgbiOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="EgbiOptions"/> instance tuned for <paramref name="labImage"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="labImage"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="labImage"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static EgbiOptions ForImage(
         IReadOnlyMatrix<Lab32> labImage,
         double referenceDimension = DefaultReferenceDimension) =>
-        ForImage(labImage, Default, referenceDimension);
+        OptionTuning.TuneForLabImage<EgbiOptions>(labImage, referenceDimension);
 
     /// <summary>
     /// Creates <see cref="EgbiOptions"/> tuned from <paramref name="baseline"/> for the dimensions and CIELAB statistics of <paramref name="labImage"/>.
@@ -137,15 +129,14 @@ public sealed record EgbiOptions(
     public static EgbiOptions ForImage(
         IReadOnlyMatrix<Lab32> labImage,
         EgbiOptions baseline,
-        double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(labImage, referenceDimension);
-        ArgumentNullException.ThrowIfNull(baseline);
-        baseline.Validate();
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForLabImage(labImage, baseline, referenceDimension);
 
-        ImageTuningProfile profile = ImageTuningProfile.Analyze(labImage);
-        return ForProfile(in profile, baseline, referenceDimension);
-    }
+    static EgbiOptions IProfileTunableOptions<EgbiOptions>.ForProfile(
+        in ImageTuningProfile profile,
+        EgbiOptions baseline,
+        double referenceDimension) =>
+        ForProfile(in profile, baseline, referenceDimension);
 
     internal static EgbiOptions ForProfile(
         in ImageTuningProfile profile,
@@ -158,7 +149,7 @@ public sealed record EgbiOptions(
             return scaled;
         }
 
-        long totalPixels = (long)profile.ImageSize.Width * profile.ImageSize.Height;
+        long totalPixels = profile.ImageSize.Area;
         int minRegionSize = scaled.MinRegionSize == 0
             ? 0
             : OptionTuning.ClampRegionSize(scaled.MinRegionSize * profile.ClutterFactor, totalPixels, maxFractionDivisor: 16);

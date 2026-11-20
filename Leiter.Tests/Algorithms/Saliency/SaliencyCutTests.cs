@@ -68,6 +68,16 @@ public class SaliencyCutTests
         Assert.Equal(image.Size, downsampledMask.Size);
         Assert.True(downsampledMask[15, 14]);
         Assert.False(downsampledMask[1, 1]);
+
+        // Also exercise non-SequentialMatrix (MatrixView) inputs with MaxWorkingDimension
+        var imageView = new MatrixView<Rgb8>(image, 0, 0, 32, 32, EdgeHandling.Extend);
+        var saliencyView = new MatrixView<DoublePixel>(saliency, 0, 0, 32, 32, EdgeHandling.Extend);
+        MaskMatrix viewDownsampledMask = SaliencyCut.Extract(
+            imageView,
+            saliencyView,
+            new SaliencyCutOptions(MaxWorkingDimension: 16, TrimapBandRadius: 6));
+        Assert.Equal(downsampledMask.Size, viewDownsampledMask.Size);
+        Assert.True(downsampledMask.ContentEquals(viewDownsampledMask));
     }
 
     [Fact]

@@ -5,14 +5,24 @@ using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="TurbulenceFlowOptions"/>.
 /// </summary>
-public class TurbulenceFlowOptionsTests
+public class TurbulenceFlowOptionsTests : SizeTunableOptionsContractTestsBase<TurbulenceFlowOptions>
 {
+    /// <inheritdoc/>
+    protected override TurbulenceFlowOptions CreateValidCustomOptions() =>
+        new(
+            Intensity: 0.5,
+            NoiseOptions: new PerlinNoiseOptions(Seed: 909, Frequency: 0.025, Octaves: 3, Lacunarity: 2.2, Persistence: 0.45));
+
+    /// <inheritdoc/>
+    protected override TurbulenceFlowOptions CreateInvalidOptions() =>
+        new(Intensity: -1.0);
     /// <summary>
     /// Verifies that default options match expected default values and pass validation.
     /// </summary>
@@ -90,8 +100,22 @@ public class TurbulenceFlowOptionsTests
         var image = new SequentialMatrix<Rgb8>(400, 400);
         Assert.Equal(TurbulenceFlowOptions.ForSize(image.Size), TurbulenceFlowOptions.ForImage(image));
 
+        TurbulenceFlowOptions customBaseline = CreateValidCustomOptions();
+        TurbulenceFlowOptions customHalf = TurbulenceFlowOptions.ForSize(new Size(400, 400), customBaseline);
+        Assert.Equal(0.5, customHalf.Intensity, 6);
+        Assert.Equal(0.05, customHalf.NoiseOptions!.Frequency, 6);
+        Assert.Equal(909, customHalf.NoiseOptions.Seed);
+
+        var scalarImage = new SequentialMatrix<DoublePixel>(400, 400);
+        Assert.Equal(customHalf, TurbulenceFlowOptions.ForImage(scalarImage, customBaseline));
+
+        var rgb64Image = new SequentialMatrix<Rgb64>(400, 400);
+        Assert.Equal(TurbulenceFlowOptions.ForSize(rgb64Image.Size), TurbulenceFlowOptions.ForImage(rgb64Image));
+
         Assert.Throws<ArgumentOutOfRangeException>(() => TurbulenceFlowOptions.ForSize(new Size(-1, 10)));
         Assert.Throws<ArgumentOutOfRangeException>(() => TurbulenceFlowOptions.ForSize(new Size(10, 10), -2.0));
-        Assert.Throws<ArgumentNullException>(() => TurbulenceFlowOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => TurbulenceFlowOptions.ForImage<Rgb8>(null!));
+        Assert.Throws<ArgumentNullException>(() => TurbulenceFlowOptions.ForImage<Rgb8>(null!, customBaseline));
+        Assert.Throws<ArgumentNullException>(() => TurbulenceFlowOptions.ForImage(image, null!));
     }
 }
