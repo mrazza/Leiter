@@ -2,6 +2,7 @@ namespace Leiter.Algorithms.Segmentation.Internal;
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Internal;
 using Leiter.Core;
@@ -21,6 +22,7 @@ internal sealed class GridMinCutSolver
     private const int TerminalParent = -1;
     private const int NoParent = -2;
     private const float CapacityEpsilon = 1e-5f;
+    private const int CancellationCheckMask = 1023;
 
     private readonly Size gridSize;
     private readonly int pixelCount;
@@ -90,12 +92,17 @@ internal sealed class GridMinCutSolver
 
     public bool IsSourceSide(Coord pixel) => IsSourceSide(gridSize.IndexOf(pixel));
 
-    public double Solve(ReadOnlySpan<double> sourceCapacities, ReadOnlySpan<double> sinkCapacities)
+    public double Solve(
+        ReadOnlySpan<double> sourceCapacities,
+        ReadOnlySpan<double> sinkCapacities,
+        CancellationToken cancellationToken = default)
     {
         if (sourceCapacities.Length != pixelCount)
             throw new ArgumentException("Source capacity span length must match the grid pixel count.", nameof(sourceCapacities));
         if (sinkCapacities.Length != pixelCount)
             throw new ArgumentException("Sink capacity span length must match the grid pixel count.", nameof(sinkCapacities));
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         Array.Copy(baseNeighborCapacities, residualCapacities, residualCapacities.Length);
         Array.Clear(originTimestamp);
@@ -106,10 +113,14 @@ internal sealed class GridMinCutSolver
         double totalFlow = InitializeTerminalTrees(sourceCapacities, sinkCapacities);
         SeedBoundaryActiveNodes();
 
-        while (TryGrowToAugmentingPath(out int sourceEndpoint, out int sinkEndpoint, out int dirSourceToSink))
+        int augmentationCount = 0;
+        while (TryGrowToAugmentingPath(out int sourceEndpoint, out int sinkEndpoint, out int dirSourceToSink, cancellationToken))
         {
+            if ((augmentationCount++ & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             totalFlow += AugmentPath(sourceEndpoint, sinkEndpoint, dirSourceToSink);
-            AdoptOrphans();
+            AdoptOrphans(cancellationToken);
         }
 
         return totalFlow;
@@ -219,10 +230,18 @@ internal sealed class GridMinCutSolver
         }
     }
 
-    private bool TryGrowToAugmentingPath(out int sourceEndpoint, out int sinkEndpoint, out int dirSourceToSink)
+    private bool TryGrowToAugmentingPath(
+        out int sourceEndpoint,
+        out int sinkEndpoint,
+        out int dirSourceToSink,
+        CancellationToken cancellationToken)
     {
+        int stepCount = 0;
         while (activeQueue.Count > 0)
         {
+            if ((++stepCount & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             int p = activeQueue.Peek();
             SearchTree tree = treeMembership[p];
             if (tree == SearchTree.Free)
@@ -372,14 +391,18 @@ internal sealed class GridMinCutSolver
         return true;
     }
 
-    private void AdoptOrphans()
+    private void AdoptOrphans(CancellationToken cancellationToken)
     {
         if (orphanQueue.Count == 0)
             return;
 
         currentTimestamp++;
+        int stepCount = 0;
         while (orphanQueue.Count > 0)
         {
+            if ((++stepCount & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             int orphan = orphanQueue.Dequeue();
             if (!TryFindReplacementParent(orphan))
                 DemoteOrphanToFree(orphan);

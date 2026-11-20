@@ -1,6 +1,8 @@
 namespace Leiter.Algorithms.DistanceTransform;
 
 using System.Numerics;
+using System.Threading;
+using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -18,15 +20,19 @@ public static class JumpFlooding
     /// <param name="backgroundConnectivity">
     /// The neighborhood connectivity used to check adjacent pixels for background (<see langword="false"/>) values.
     /// </param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>The list of foreground boundary coordinates in row-major order.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="binaryMask"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="backgroundConnectivity"/> is invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
     public static IReadOnlyList<Coord> ExtractBoundarySeeds(
         IReadOnlyMatrix<bool> binaryMask,
-        GridConnectivity backgroundConnectivity = GridConnectivity.EightConnected)
+        GridConnectivity backgroundConnectivity = GridConnectivity.EightConnected,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(binaryMask);
         ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(backgroundConnectivity);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var seeds = new List<Coord>();
         Size size = binaryMask.Size;
@@ -38,6 +44,8 @@ public static class JumpFlooding
 
         for (int y = 0; y < height; y++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             for (int x = 0; x < width; x++)
             {
                 if (!binaryMask[x, y])
@@ -64,15 +72,21 @@ public static class JumpFlooding
     /// </summary>
     /// <param name="size">The dimensions of the grid.</param>
     /// <param name="seeds">The seed coordinates (out-of-bounds coordinates are ignored).</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>
     /// A matrix storing each cell's <see cref="NearestSeed"/>, or <see cref="NearestSeed.None"/> everywhere if no valid in-bounds seeds are supplied.
     /// </returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="seeds"/> is <see langword="null"/>.</exception>
-    public static Matrix<NearestSeed> ComputeNearestSeeds(Size size, IEnumerable<Coord> seeds)
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
+    public static Matrix<NearestSeed> ComputeNearestSeeds(
+        Size size,
+        IEnumerable<Coord> seeds,
+        CancellationToken cancellationToken = default)
     {
         Guard.ThrowIfNegative(size);
         ArgumentNullException.ThrowIfNull(seeds);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (size.IsEmpty)
             return new SequentialMatrix<NearestSeed>(size);
@@ -91,20 +105,25 @@ public static class JumpFlooding
             }
         }
 
-        return RunJumpFlooding(size, seedGrid, hasAnySeed);
+        return RunJumpFlooding(size, seedGrid, hasAnySeed, cancellationToken);
     }
 
     /// <summary>
     /// Computes the nearest <see langword="true"/> seed coordinate in <paramref name="seedMask"/> for every cell using <c>1+JFA</c>.
     /// </summary>
     /// <param name="seedMask">The boolean mask whose <see langword="true"/> entries define seed pixels.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>
     /// A matrix storing each cell's <see cref="NearestSeed"/>, or <see cref="NearestSeed.None"/> everywhere if <paramref name="seedMask"/> contains no <see langword="true"/> entries.
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="seedMask"/> is <see langword="null"/>.</exception>
-    public static Matrix<NearestSeed> ComputeNearestSeeds(IReadOnlyMatrix<bool> seedMask)
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
+    public static Matrix<NearestSeed> ComputeNearestSeeds(
+        IReadOnlyMatrix<bool> seedMask,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(seedMask);
+        cancellationToken.ThrowIfCancellationRequested();
 
         Size size = seedMask.Size;
         if (size.IsEmpty)
@@ -117,6 +136,8 @@ public static class JumpFlooding
         int height = size.Height;
         for (int y = 0; y < height; y++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             int rowBase = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
             {
@@ -133,7 +154,7 @@ public static class JumpFlooding
             }
         }
 
-        return RunJumpFlooding(size, seedGrid, hasAnySeed);
+        return RunJumpFlooding(size, seedGrid, hasAnySeed, cancellationToken);
     }
 
     /// <summary>
@@ -141,20 +162,45 @@ public static class JumpFlooding
     /// </summary>
     /// <param name="size">The dimensions of the grid.</param>
     /// <param name="seeds">The seed coordinates.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A matrix of Euclidean distances in pixels (<see cref="double.PositiveInfinity"/> if no seeds exist).</returns>
-    public static Matrix<DoublePixel> ComputeDistanceTransform(Size size, IEnumerable<Coord> seeds) =>
-        ComputeDistancesFromNearestSeeds(ComputeNearestSeeds(size, seeds));
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="seeds"/> is <see langword="null"/>.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
+    public static Matrix<DoublePixel> ComputeDistanceTransform(
+        Size size,
+        IEnumerable<Coord> seeds,
+        CancellationToken cancellationToken = default)
+    {
+        Matrix<NearestSeed> nearestSeeds = ComputeNearestSeeds(size, seeds, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return ComputeDistancesFromNearestSeeds(nearestSeeds);
+    }
 
     /// <summary>
     /// Computes the Euclidean distance to the nearest <see langword="true"/> pixel in <paramref name="seedMask"/>.
     /// </summary>
     /// <param name="seedMask">The boolean mask whose <see langword="true"/> pixels act as seeds.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A matrix of Euclidean distances in pixels (<see cref="double.PositiveInfinity"/> if no seeds exist).</returns>
-    public static Matrix<DoublePixel> ComputeDistanceTransform(IReadOnlyMatrix<bool> seedMask) =>
-        ComputeDistancesFromNearestSeeds(ComputeNearestSeeds(seedMask));
-
-    private static Matrix<NearestSeed> RunJumpFlooding(Size size, int[] currentSeeds, bool hasAnySeed)
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="seedMask"/> is <see langword="null"/>.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
+    public static Matrix<DoublePixel> ComputeDistanceTransform(
+        IReadOnlyMatrix<bool> seedMask,
+        CancellationToken cancellationToken = default)
     {
+        Matrix<NearestSeed> nearestSeeds = ComputeNearestSeeds(seedMask, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return ComputeDistancesFromNearestSeeds(nearestSeeds);
+    }
+
+    private static Matrix<NearestSeed> RunJumpFlooding(
+        Size size,
+        int[] currentSeeds,
+        bool hasAnySeed,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         var result = new SequentialMatrix<NearestSeed>(size);
 
         if (!hasAnySeed)
@@ -167,18 +213,24 @@ public static class JumpFlooding
         if (maxDimension > 1)
         {
             var nextSeeds = new int[currentSeeds.Length];
+            ParallelOptions? parallelOptions = cancellationToken.CanBeCanceled
+                ? new ParallelOptions { CancellationToken = cancellationToken }
+                : null;
 
-            ExecuteJumpPass(currentSeeds, nextSeeds, size, 1);
+            cancellationToken.ThrowIfCancellationRequested();
+            ExecuteJumpPass(currentSeeds, nextSeeds, size, 1, parallelOptions);
             (currentSeeds, nextSeeds) = (nextSeeds, currentSeeds);
 
             int largestStep = 1 << BitOperations.Log2((uint)(maxDimension - 1));
             for (int step = largestStep; step >= 1; step >>= 1)
             {
-                ExecuteJumpPass(currentSeeds, nextSeeds, size, step);
+                cancellationToken.ThrowIfCancellationRequested();
+                ExecuteJumpPass(currentSeeds, nextSeeds, size, step, parallelOptions);
                 (currentSeeds, nextSeeds) = (nextSeeds, currentSeeds);
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         Span<NearestSeed> resultSpan = result.AsSpan();
         for (int i = 0; i < currentSeeds.Length; i++)
         {
@@ -188,12 +240,17 @@ public static class JumpFlooding
         return result;
     }
 
-    private static void ExecuteJumpPass(int[] source, int[] destination, Size size, int step)
+    private static void ExecuteJumpPass(
+        int[] source,
+        int[] destination,
+        Size size,
+        int step,
+        ParallelOptions? parallelOptions)
     {
         int width = size.Width;
         int height = size.Height;
 
-        Parallel.For(0, height, y =>
+        void ProcessRow(int y)
         {
             for (int x = 0; x < width; x++)
             {
@@ -234,7 +291,16 @@ public static class JumpFlooding
 
                 destination[currentIndex] = bestSeed;
             }
-        });
+        }
+
+        if (parallelOptions is not null)
+        {
+            Parallel.For(0, height, parallelOptions, ProcessRow);
+        }
+        else
+        {
+            Parallel.For(0, height, ProcessRow);
+        }
     }
 
     private static Matrix<DoublePixel> ComputeDistancesFromNearestSeeds(IReadOnlyMatrix<NearestSeed> nearestSeeds) =>

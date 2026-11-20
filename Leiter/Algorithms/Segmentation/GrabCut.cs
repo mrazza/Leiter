@@ -1,5 +1,6 @@
 namespace Leiter.Algorithms.Segmentation;
 
+using System.Threading;
 using Leiter.Algorithms.Segmentation.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -18,21 +19,24 @@ public static class GrabCut
     /// <param name="rectangleTopLeft">The top-left coordinate of the bounding rectangle.</param>
     /// <param name="rectangleSize">The width and height of the bounding rectangle.</param>
     /// <param name="options">Optional GrabCut tuning parameters.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A <see cref="MaskMatrix"/> with <see langword="true"/> for foreground pixels and <see langword="false"/> for background pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="rectangleSize"/> dimensions are not positive or <paramref name="options"/> contains invalid values.</exception>
     /// <exception cref="ArgumentException">Thrown when the rectangle does not overlap the image or leaves zero background pixels outside it.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
     public static MaskMatrix Segment(
         IReadOnlyMatrix<Rgb8> image,
         Coord rectangleTopLeft,
         Size rectangleSize,
-        GrabCutOptions? options = null)
+        GrabCutOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
         GrabCutOptions resolvedOptions = OptionsResolver.Resolve(options);
 
         TrimapMatrix trimap = TrimapMatrix.FromBoundingBox(image.Size, rectangleTopLeft, rectangleSize);
-        return SegmentCore(image, trimap, resolvedOptions);
+        return SegmentCore(image, trimap, resolvedOptions, cancellationToken);
     }
 
     /// <summary>
@@ -41,38 +45,47 @@ public static class GrabCut
     /// <param name="image">The input RGB image.</param>
     /// <param name="trimap">A matrix of <see cref="TrimapLabel"/> values matching <paramref name="image"/> dimensions.</param>
     /// <param name="options">Optional GrabCut tuning parameters.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A <see cref="MaskMatrix"/> with <see langword="true"/> for foreground pixels and <see langword="false"/> for background pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="trimap"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="trimap"/> dimensions do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="trimap"/> contains an undefined <see cref="TrimapLabel"/> value or <paramref name="options"/> is invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
     public static MaskMatrix Segment(
         IReadOnlyMatrix<Rgb8> image,
         IReadOnlyMatrix<TrimapLabel> trimap,
-        GrabCutOptions? options = null)
+        GrabCutOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         Guard.ThrowIfSizeMismatch(image, trimap);
 
         GrabCutOptions resolvedOptions = OptionsResolver.Resolve(options);
-        return SegmentCore(image, trimap, resolvedOptions);
+        return SegmentCore(image, trimap, resolvedOptions, cancellationToken);
     }
 
-    internal static GrabCutSession CreateSession(IReadOnlyMatrix<Rgb8> image, GrabCutOptions options)
+    internal static GrabCutSession CreateSession(
+        IReadOnlyMatrix<Rgb8> image,
+        GrabCutOptions options,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
-        return new GrabCutSession(image, options);
+        return new GrabCutSession(image, options, cancellationToken);
     }
 
     private static MaskMatrix SegmentCore(
         IReadOnlyMatrix<Rgb8> image,
         IReadOnlyMatrix<TrimapLabel> trimap,
-        GrabCutOptions resolvedOptions)
+        GrabCutOptions resolvedOptions,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (image.Count == 0)
             return new MaskMatrix(image.Size);
 
-        var session = new GrabCutSession(image, resolvedOptions);
-        return session.Run(trimap);
+        var session = new GrabCutSession(image, resolvedOptions, cancellationToken);
+        return session.Run(trimap, cancellationToken);
     }
 }

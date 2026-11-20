@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
 using System.Linq;
+using System.Threading;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
@@ -432,5 +433,37 @@ public class RegionalContrastSaliencyTests
         Assert.True(biased[4, 15].Value < 0.20, $"Expected heavy center-prior suppression on edge patch, got {biased[4, 15].Value}");
         Assert.True(unbiased[4, 15].Value > 0.35, $"Expected higher unbiased saliency on edge patch, got {unbiased[4, 15].Value}");
         Assert.True(unbiased[4, 15].Value > biased[4, 15].Value * 2.5);
+    }
+
+    [Fact]
+    public void ComputeSaliency_CancellationToken_ShouldHonorCancellationAndMatchUncanceledResults()
+    {
+        SequentialMatrix<Rgb8> img = TestMatrices.Create(
+            20,
+            20,
+            (x, y) => new Rgb8((byte)(x * 12), (byte)(y * 12), (byte)((x + y) * 6)));
+        IDisjointSet seg = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
+        RegionGraph graph = RegionGraph.FromDisjointSet(seg);
+
+        var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
+        IDisjointSet emptySeg = EgbiSegmentation.Segment(emptyImg);
+        RegionGraph emptyGraph = RegionGraph.FromDisjointSet(emptySeg);
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() => RegionalContrastSaliency.ComputeSaliency(img, seg, cancellationToken: canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() => RegionalContrastSaliency.ComputeSaliency(img, graph, cancellationToken: canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() => RegionalContrastSaliency.ComputeSaliency(emptyImg, emptySeg, cancellationToken: canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() => RegionalContrastSaliency.ComputeSaliency(emptyImg, emptyGraph, cancellationToken: canceledCts.Token));
+
+        using var activeCts = new CancellationTokenSource();
+        foreach (bool enableSmoothing in new[] { false, true })
+        {
+            var opts = new RegionalContrastSaliencyOptions(EnableSmoothing: enableSmoothing, ComputeBorderRegions: true);
+            Matrix<DoublePixel> baseline = RegionalContrastSaliency.ComputeSaliency(img, graph, opts);
+            Matrix<DoublePixel> withToken = RegionalContrastSaliency.ComputeSaliency(img, graph, opts, activeCts.Token);
+            MatrixAssert.Equal(baseline, withToken);
+        }
     }
 }

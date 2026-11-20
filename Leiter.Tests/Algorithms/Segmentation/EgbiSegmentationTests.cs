@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading;
 
 namespace Leiter.Tests.Algorithms.Segmentation;
 
@@ -118,5 +119,30 @@ public class EgbiSegmentationTests
             checkerboard,
             new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 0, Connectivity: GridConnectivity.EightConnected));
         Assert.Equal(2, eightConnected.ToRegions().Count);
+    }
+
+    [Fact]
+    public void Segment_CancellationToken_ShouldHonorCancellationAndMatchUncanceledResults()
+    {
+        SequentialMatrix<Rgb8> img = TestMatrices.VerticalSplit(16, 16, new Rgb8(255, 0, 0), new Rgb8(0, 0, 255));
+        var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
+        var options = new EgbiOptions(KFactor: 5.0, Epsilon: 1.0, MinRegionSize: 10);
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() => EgbiSegmentation.Segment(img, options, canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() => EgbiSegmentation.Segment(emptyImg, options, canceledCts.Token));
+        Assert.Throws<ArgumentNullException>(() => EgbiSegmentation.Segment<Rgb8>(null!, options, canceledCts.Token));
+        Assert.Throws<ArgumentOutOfRangeException>(() => EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: -1.0), canceledCts.Token));
+
+        using var activeCts = new CancellationTokenSource();
+        foreach (GridConnectivity connectivity in new[] { GridConnectivity.FourConnected, GridConnectivity.EightConnected })
+        {
+            EgbiOptions connOpts = options with { Connectivity = connectivity };
+            Matrix<LongPixel> baseline = EgbiSegmentation.Segment(img, connOpts).ToMatrix();
+            Matrix<LongPixel> withToken = EgbiSegmentation.Segment(img, connOpts, activeCts.Token).ToMatrix();
+            MatrixAssert.Equal(baseline, withToken);
+        }
     }
 }

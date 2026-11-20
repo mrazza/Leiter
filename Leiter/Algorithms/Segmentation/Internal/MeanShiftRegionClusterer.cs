@@ -2,6 +2,7 @@ namespace Leiter.Algorithms.Segmentation.Internal;
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
@@ -16,12 +17,14 @@ internal static class MeanShiftRegionClusterer
     private const int GradientBucketCount = 1024;
     private const double GradientBucketScale = 4.0;
     private const double SeedColorBoundMultiplier = 1.5;
+    private const int CancellationCheckMask = 4095;
 
     public static IDisjointSet ClusterModes(
         IUntypedMatrix targetImage,
         Lab32[] sourcePixels,
         MeanShiftMode[] modes,
-        MeanShiftOptions options)
+        MeanShiftOptions options,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(targetImage);
         ArgumentNullException.ThrowIfNull(sourcePixels);
@@ -36,30 +39,38 @@ internal static class MeanShiftRegionClusterer
         if (modes.Length != pixelCount)
             throw new ArgumentException($"Mode array length ({modes.Length}) must match image pixel count ({pixelCount}).", nameof(modes));
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         var disjointSet = DisjointSet.CreateSingletons(targetImage);
 
         if (pixelCount <= 1)
             return disjointSet;
 
-        int[] orderedPixels = OrderPixelsByModeGradient(modes, size);
-        ClusterDensityBasins(disjointSet, modes, orderedPixels, size, options);
+        int[] orderedPixels = OrderPixelsByModeGradient(modes, size, cancellationToken);
+        ClusterDensityBasins(disjointSet, modes, orderedPixels, size, options, cancellationToken);
 
         if (options.MinRegionSize > 1)
         {
-            PruneSmallRegions(disjointSet, sourcePixels, size, options);
+            PruneSmallRegions(disjointSet, sourcePixels, size, options, cancellationToken);
         }
 
         return disjointSet;
     }
 
-    private static int[] OrderPixelsByModeGradient(MeanShiftMode[] modes, Size size)
+    private static int[] OrderPixelsByModeGradient(
+        MeanShiftMode[] modes,
+        Size size,
+        CancellationToken cancellationToken)
     {
         int pixelCount = size.Count;
-        double[] gradientSquared = ComputeMaxCardinalGradientSquared(modes, size);
+        double[] gradientSquared = ComputeMaxCardinalGradientSquared(modes, size, cancellationToken);
 
         var bucketCounts = new int[GradientBucketCount];
         for (int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
         {
+            if ((pixelIndex & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             bucketCounts[GetGradientBucketIndex(gradientSquared[pixelIndex])]++;
         }
 
@@ -74,6 +85,9 @@ internal static class MeanShiftRegionClusterer
         var orderedPixels = new int[pixelCount];
         for (int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
         {
+            if ((pixelIndex & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             int bucket = GetGradientBucketIndex(gradientSquared[pixelIndex]);
             orderedPixels[bucketWriteOffsets[bucket]++] = pixelIndex;
         }
@@ -81,21 +95,30 @@ internal static class MeanShiftRegionClusterer
         return orderedPixels;
     }
 
-    private static double[] ComputeMaxCardinalGradientSquared(MeanShiftMode[] modes, Size size)
+    private static double[] ComputeMaxCardinalGradientSquared(
+        MeanShiftMode[] modes,
+        Size size,
+        CancellationToken cancellationToken)
     {
         var gradientSquared = new double[size.Count];
-        GridNeighborhood.ForEachForwardPair(
-            size,
-            GridConnectivity.FourConnected,
-            (modes, gradientSquared),
-            static (firstIndex, secondIndex, state) =>
-            {
-                double differenceSquared = state.modes[firstIndex].Color.EuclideanDistanceSquared(state.modes[secondIndex].Color);
-                if (differenceSquared > state.gradientSquared[firstIndex])
-                    state.gradientSquared[firstIndex] = differenceSquared;
-                if (differenceSquared > state.gradientSquared[secondIndex])
-                    state.gradientSquared[secondIndex] = differenceSquared;
-            });
+        var state = (modes, gradientSquared);
+        for (int y = 0; y < size.Height; y++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            GridNeighborhood.ForEachForwardPairInRow(
+                size,
+                y,
+                GridConnectivity.FourConnected,
+                state,
+                static (firstIndex, secondIndex, s) =>
+                {
+                    double differenceSquared = s.modes[firstIndex].Color.EuclideanDistanceSquared(s.modes[secondIndex].Color);
+                    if (differenceSquared > s.gradientSquared[firstIndex])
+                        s.gradientSquared[firstIndex] = differenceSquared;
+                    if (differenceSquared > s.gradientSquared[secondIndex])
+                        s.gradientSquared[secondIndex] = differenceSquared;
+                });
+        }
 
         return gradientSquared;
     }
@@ -110,7 +133,8 @@ internal static class MeanShiftRegionClusterer
         MeanShiftMode[] modes,
         int[] orderedPixels,
         Size size,
-        MeanShiftOptions options)
+        MeanShiftOptions options,
+        CancellationToken cancellationToken)
     {
         double spatialRadius = options.SpatialRadius;
         double rangeRadius = options.RangeRadius;
@@ -124,6 +148,9 @@ internal static class MeanShiftRegionClusterer
 
         for (int i = 0; i < orderedPixels.Length; i++)
         {
+            if ((i & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             int seedPixel = orderedPixels[i];
             if (visited[seedPixel])
                 continue;
@@ -138,7 +165,8 @@ internal static class MeanShiftRegionClusterer
                 seedPixel,
                 spatialRadiusSquared,
                 rangeRadiusSquared,
-                seedColorBoundSquared);
+                seedColorBoundSquared,
+                cancellationToken);
         }
     }
 
@@ -152,7 +180,8 @@ internal static class MeanShiftRegionClusterer
         int seedPixel,
         double spatialRadiusSquared,
         double rangeRadiusSquared,
-        double seedColorBoundSquared)
+        double seedColorBoundSquared,
+        CancellationToken cancellationToken)
     {
         visited[seedPixel] = true;
         frontierQueue.Enqueue(seedPixel);
@@ -161,9 +190,13 @@ internal static class MeanShiftRegionClusterer
         Lab32 seedColor = modes[seedPixel].Color;
         Vector3D colorSum = seedColor.ToVector3D();
         int memberCount = 1;
+        int dequeuedCount = 0;
 
         while (frontierQueue.Count > 0)
         {
+            if ((++dequeuedCount & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             int currentPixel = frontierQueue.Dequeue();
             Coord current = size.CoordOf(currentPixel);
             MeanShiftMode currentMode = modes[currentPixel];
@@ -225,13 +258,17 @@ internal static class MeanShiftRegionClusterer
         DisjointSet<byte> disjointSet,
         Lab32[] sourcePixels,
         Size size,
-        MeanShiftOptions options)
+        MeanShiftOptions options,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         RegionGraph regionGraph = disjointSet.ToRegionGraph(options.Connectivity);
         int regionCount = regionGraph.RegionCount;
         if (regionCount <= 1 || regionGraph.Boundaries.Count == 0)
             return;
 
+        cancellationToken.ThrowIfCancellationRequested();
         var sourceMatrix = new SequentialMatrix<Lab32>(size.Width, size.Height, sourcePixels);
         RegionColorStatistics<Lab32>[] initialStats = RegionColorStatistics.Compute(regionGraph, sourceMatrix);
 
@@ -243,6 +280,9 @@ internal static class MeanShiftRegionClusterer
 
         for (int r = 0; r < regionCount; r++)
         {
+            if ((r & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             regionParent[r] = r;
             Region<Coord> region = regionGraph.Regions[r];
             int pixelCount = region.Pixels.Count;
@@ -263,6 +303,9 @@ internal static class MeanShiftRegionClusterer
         var activeEdges = new List<(int First, int Second)>(initialBoundaries.Count);
         for (int i = 0; i < initialBoundaries.Count; i++)
         {
+            if ((i & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             RegionBoundary boundary = initialBoundaries[i];
             if (regionSizes[boundary.First] < minRegionSize || regionSizes[boundary.Second] < minRegionSize)
                 activeEdges.Add((boundary.First, boundary.Second));
@@ -276,11 +319,15 @@ internal static class MeanShiftRegionClusterer
 
         while (activeEdges.Count > 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             seenPairs.Clear();
             candidateEdges.Clear();
 
             for (int i = 0; i < activeEdges.Count; i++)
             {
+                if ((i & CancellationCheckMask) == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+
                 (int rawFirst, int rawSecond) = activeEdges[i];
                 int rootA = FindRegionRoot(regionParent, rawFirst);
                 int rootB = FindRegionRoot(regionParent, rawSecond);
@@ -303,12 +350,16 @@ internal static class MeanShiftRegionClusterer
             if (candidateEdges.Count == 0)
                 break;
 
+            cancellationToken.ThrowIfCancellationRequested();
             candidateEdges.Sort(CompareRegionEdges);
 
             bool mergedInPass = false;
             activeEdges.Clear();
             for (int i = 0; i < candidateEdges.Count; i++)
             {
+                if ((i & CancellationCheckMask) == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+
                 UndirectedGraphEdge<int> edge = candidateEdges[i];
                 int r1 = FindRegionRoot(regionParent, edge.First);
                 int r2 = FindRegionRoot(regionParent, edge.Second);
@@ -331,6 +382,9 @@ internal static class MeanShiftRegionClusterer
 
             for (int i = 0; i < candidateEdges.Count; i++)
             {
+                if ((i & CancellationCheckMask) == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+
                 UndirectedGraphEdge<int> edge = candidateEdges[i];
                 int r1 = FindRegionRoot(regionParent, edge.First);
                 int r2 = FindRegionRoot(regionParent, edge.Second);

@@ -1,5 +1,6 @@
 namespace Leiter.Tests.Algorithms.Segmentation.Internal;
 
+using System.Threading;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation.Internal;
 using Leiter.Core;
@@ -101,5 +102,18 @@ public class GridMinCutSolverTests
 
         double flow = solver.Solve(sourceCaps, sinkCaps);
         Assert.Equal(8.0, flow, 4);
+    }
+
+    [Fact]
+    public void Solve_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        var solver = new GridMinCutSolver(3, 2);
+        double[] sourceCaps = [10.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        double[] sinkCaps = [0.0, 0.0, 10.0, 0.0, 0.0, 10.0];
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() => solver.Solve(sourceCaps, sinkCaps, canceledCts.Token));
     }
 }

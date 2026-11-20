@@ -1,6 +1,8 @@
 namespace Leiter.Algorithms.Segmentation;
 
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Internal;
 using Leiter.Core;
@@ -19,6 +21,7 @@ using Leiter.Pixels;
 /// </remarks>
 public static class EgbiSegmentation
 {
+    private const int CancellationCheckMask = 4095;
     /// <summary>
     /// Internal data structure used to track the internal difference of partitions/regions of the segmented image.
     /// </summary>
@@ -58,15 +61,21 @@ public static class EgbiSegmentation
     /// <typeparam name="T">The type of the pixels for the underlying image.</typeparam>
     /// <param name="image">The image to segment.</param>
     /// <param name="options">The EGBI configuration options, or <see langword="null"/> to use default options.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>An <see cref="IDisjointSet"/> representing the partitioned regions of the image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any option in <paramref name="options"/> is invalid.</exception>
-    public static IDisjointSet Segment<T>(IReadOnlyMatrix<T> image, EgbiOptions? options = null)
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
+    public static IDisjointSet Segment<T>(
+        IReadOnlyMatrix<T> image,
+        EgbiOptions? options = null,
+        CancellationToken cancellationToken = default)
         where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(image);
 
         EgbiOptions resolvedOptions = OptionsResolver.Resolve(options);
+        cancellationToken.ThrowIfCancellationRequested();
 
         double kFactor = resolvedOptions.KFactor;
         double epsilon = resolvedOptions.Epsilon;
@@ -76,13 +85,16 @@ public static class EgbiSegmentation
         if (image.Count == 0)
             return disjointSet;
 
-        SortableEdge[] graphEdges = BuildSortedGraphEdges(image, resolvedOptions.Connectivity);
+        SortableEdge[] graphEdges = BuildSortedGraphEdges(image, resolvedOptions.Connectivity, cancellationToken);
 
         // Reuse graphEdges in place for deferred edges: Segment owns this array exclusively,
         // and deferredCount <= i holds on every iteration so unread entries are never overwritten.
         int deferredCount = 0;
         for (int i = 0; i < graphEdges.Length; i++)
         {
+            if ((i & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             UndirectedGraphEdge<int> edge = graphEdges[i].Edge;
             var firstPartition = disjointSet.GetPartition(edge.First);
             var secondPartition = disjointSet.GetPartition(edge.Second);
@@ -102,13 +114,16 @@ public static class EgbiSegmentation
 
         if (minRegionSize > 0 && deferredCount > 0)
         {
-            MergeSmallPartitions(disjointSet, graphEdges.AsSpan(0, deferredCount), minRegionSize, kFactor);
+            MergeSmallPartitions(disjointSet, graphEdges.AsSpan(0, deferredCount), minRegionSize, kFactor, cancellationToken);
         }
 
         return disjointSet;
     }
 
-    private static SortableEdge[] BuildSortedGraphEdges<T>(IReadOnlyMatrix<T> image, GridConnectivity connectivity)
+    private static SortableEdge[] BuildSortedGraphEdges<T>(
+        IReadOnlyMatrix<T> image,
+        GridConnectivity connectivity,
+        CancellationToken cancellationToken)
         where T : struct, IPixel<T>
     {
         Size size = image.Size;
@@ -127,27 +142,42 @@ public static class EgbiSegmentation
         T[]? rawPixels = image is SequentialMatrix<T> sequential ? sequential.RawData : null;
         var state = new EdgeBuildState<T>(size, image, rawPixels, edges, rowCursors);
 
-        GridNeighborhood.ForEachForwardPairParallel(
-            size,
-            connectivity,
-            state,
-            static (first, second, _, s) =>
-            {
-                int firstIndex = s.Size.IndexOf(first);
-                int secondIndex = s.Size.IndexOf(second);
-                double weight = s.RawPixels is not null
-                    ? s.RawPixels[firstIndex].Distance(s.RawPixels[secondIndex])
-                    : s.Image[firstIndex].Distance(s.Image[secondIndex]);
+        if (cancellationToken.CanBeCanceled)
+        {
+            Parallel.For(
+                0,
+                height,
+                new ParallelOptions { CancellationToken = cancellationToken },
+                y => GridNeighborhood.ForEachForwardPairInRow(size, y, connectivity, state, VisitForwardPair));
+        }
+        else
+        {
+            GridNeighborhood.ForEachForwardPairParallel(size, connectivity, state, VisitForwardPair);
+        }
 
-                int writeIndex = s.RowCursors[first.Y]++;
-                ulong tieBreaker = SplitMix64.HashCoordinates(first.X, first.Y, second.X, second.Y);
-                s.Edges[writeIndex] = new SortableEdge(
-                    new UndirectedGraphEdge<int>(firstIndex, secondIndex, weight),
-                    tieBreaker);
-            });
-
+        cancellationToken.ThrowIfCancellationRequested();
         Array.Sort(edges, CompareEdges);
         return edges;
+    }
+
+    private static void VisitForwardPair<T>(
+        Coord first,
+        Coord second,
+        GridNeighbor _,
+        EdgeBuildState<T> s)
+        where T : struct, IPixel<T>
+    {
+        int firstIndex = s.Size.IndexOf(first);
+        int secondIndex = s.Size.IndexOf(second);
+        double weight = s.RawPixels is not null
+            ? s.RawPixels[firstIndex].Distance(s.RawPixels[secondIndex])
+            : s.Image[firstIndex].Distance(s.Image[secondIndex]);
+
+        int writeIndex = s.RowCursors[first.Y]++;
+        ulong tieBreaker = SplitMix64.HashCoordinates(first.X, first.Y, second.X, second.Y);
+        s.Edges[writeIndex] = new SortableEdge(
+            new UndirectedGraphEdge<int>(firstIndex, secondIndex, weight),
+            tieBreaker);
     }
 
     private static int CompareEdges(SortableEdge a, SortableEdge b)
@@ -187,10 +217,15 @@ public static class EgbiSegmentation
         DisjointSet<PartitionInfo> disjointSet,
         ReadOnlySpan<SortableEdge> deferredEdges,
         int minRegionSize,
-        double kFactor)
+        double kFactor,
+        CancellationToken cancellationToken)
     {
-        foreach (ref readonly SortableEdge item in deferredEdges)
+        for (int i = 0; i < deferredEdges.Length; i++)
         {
+            if ((i & CancellationCheckMask) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
+            ref readonly SortableEdge item = ref deferredEdges[i];
             UndirectedGraphEdge<int> edge = item.Edge;
             var firstPartition = disjointSet.GetPartition(edge.First);
             var secondPartition = disjointSet.GetPartition(edge.Second);

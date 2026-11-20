@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Segmentation.Internal;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.Segmentation.Internal;
 using Leiter.Pixels;
 using Xunit;
@@ -268,6 +269,40 @@ public class MeanShiftSpatialLatticeTests
             Assert.Equal(expected.Color.A, actual.Color.A, 3);
             Assert.Equal(expected.Color.B, actual.Color.B, 3);
         }
+    }
+
+    [Fact]
+    public void Build_CancellationToken_ShouldHonorCancellationAndMatchUncanceledParallelBuild()
+    {
+        var smallPixels = new Lab32[16];
+        Array.Fill(smallPixels, new Lab32(50f, 0f, 0f));
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() =>
+            new MeanShiftSpatialLattice(smallPixels, 4, 4, 2.0, 5.0, canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            MeanShiftSpatialLattice.Create(smallPixels, 4, 4, 2.0, 5.0, cancellationToken: canceledCts.Token));
+
+        // Exercise parallel build path (>= 65536 pixels) with an uncanceled cancellable token.
+        const int width = 256;
+        const int height = 256;
+        var largePixels = new Lab32[width * height];
+        for (int i = 0; i < largePixels.Length; i++)
+            largePixels[i] = new Lab32(30f + (i % 50), -10f, 10f);
+
+        Assert.Throws<OperationCanceledException>(() =>
+            MeanShiftSpatialLattice.Create(largePixels, width, height, 8.0, 12.0, cancellationToken: canceledCts.Token));
+
+        using var activeCts = new CancellationTokenSource();
+        MeanShiftSpatialLattice baseline = MeanShiftSpatialLattice.Create(largePixels, width, height, 8.0, 12.0);
+        MeanShiftSpatialLattice withToken = MeanShiftSpatialLattice.Create(largePixels, width, height, 8.0, 12.0, cancellationToken: activeCts.Token);
+
+        var query = new MeanShiftMode(128.0, 128.0, largePixels[(128 * width) + 128]);
+        Assert.Equal(
+            baseline.ComputeMeanStep(query, 64.0, 144.0),
+            withToken.ComputeMeanStep(query, 64.0, 144.0));
     }
 
     private static MeanShiftMode DirectBruteForceScan(

@@ -2,8 +2,10 @@ namespace Leiter.Tests.Algorithms.Segmentation;
 
 using System;
 using System.Linq;
+using System.Threading;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
+using Leiter.Algorithms.Segmentation.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -558,5 +560,139 @@ public class MeanShiftSegmentationTests
 
         Matrix<LongPixel> repeated = MeanShiftSegmentation.Segment(img, options).ToMatrix();
         MatrixAssert.Equal(segmentation.ToMatrix(), repeated);
+    }
+
+    [Fact]
+    public void SeekModesAndFilter_And_ClusterModes_ShouldMatchFilterAndSegmentBitForBit()
+    {
+        SequentialMatrix<Rgb8> rgb = TestMatrices.Create(
+            24,
+            24,
+            (x, y) =>
+            {
+                if (x < 12 && y < 12)
+                    return new Rgb8(220, 35, 35);
+                if (x >= 12 && y < 12)
+                    return new Rgb8(35, 180, 45);
+                if (x == 16 && y == 16)
+                    return new Rgb8(240, 230, 30);
+                return new Rgb8(35, 55, 220);
+            });
+
+        var baseOptions = new MeanShiftOptions(
+            SpatialRadius: 4,
+            RangeRadius: 10.0,
+            MinRegionSize: 1,
+            MaxIterations: 10,
+            Connectivity: GridConnectivity.EightConnected);
+
+        // Run mode seeking once, then re-run clustering across different MinRegionSize and Connectivity settings.
+        (MeanShiftMode[] rgbModes, Lab32[] rgbSourcePixels, Matrix<Rgb8> splitFilteredRgb) =
+            MeanShiftSegmentation.SeekModesAndFilter(rgb, baseOptions);
+
+        MeanShiftOptions[] clusterVariants =
+        [
+            baseOptions,
+            baseOptions with { MinRegionSize = 20 },
+            baseOptions with { Connectivity = GridConnectivity.FourConnected },
+            baseOptions with { MinRegionSize = 20, Connectivity = GridConnectivity.FourConnected },
+        ];
+
+        foreach (MeanShiftOptions variant in clusterVariants)
+        {
+            (Matrix<Rgb8> expectedFiltered, IDisjointSet expectedSeg) = MeanShiftSegmentation.FilterAndSegment(rgb, variant);
+            IDisjointSet splitSeg = MeanShiftSegmentation.ClusterModes(splitFilteredRgb, rgbSourcePixels, rgbModes, variant);
+
+            MatrixAssert.Equal(expectedFiltered, splitFilteredRgb);
+            MatrixAssert.Equal(expectedSeg.ToMatrix(), splitSeg.ToMatrix());
+        }
+
+        // Also verify Lab32 split helpers including coarse-to-fine lattice path (SpatialRadius > 16).
+        SequentialMatrix<Lab32> lab = TestMatrices.Create(
+            36,
+            36,
+            (x, y) => x < 18
+                ? new Lab32(25f + (y * 0.2f), -10f, 5f)
+                : new Lab32(82f, 12f, -8f));
+
+        var latticeOptions = new MeanShiftOptions(SpatialRadius: 18, RangeRadius: 8.0, MinRegionSize: 15);
+        (MeanShiftMode[] labModes, Lab32[] labSourcePixels, Matrix<Lab32> splitFilteredLab) =
+            MeanShiftSegmentation.SeekModesAndFilter(lab, latticeOptions);
+        IDisjointSet splitLabSeg = MeanShiftSegmentation.ClusterModes(lab, labSourcePixels, labModes, latticeOptions);
+        (Matrix<Lab32> expectedLabFiltered, IDisjointSet expectedLabSeg) = MeanShiftSegmentation.FilterAndSegment(lab, latticeOptions);
+
+        MatrixAssert.Equal(expectedLabFiltered, splitFilteredLab);
+        MatrixAssert.Equal(expectedLabSeg.ToMatrix(), splitLabSeg.ToMatrix());
+
+        // Empty images and argument validation on split helpers.
+        var emptyRgb = new SequentialMatrix<Rgb8>(0, 0);
+        var emptyLab = new SequentialMatrix<Lab32>(0, 0);
+        (MeanShiftMode[] emptyRgbModes, Lab32[] emptyRgbSrc, Matrix<Rgb8> emptyRgbFiltered) =
+            MeanShiftSegmentation.SeekModesAndFilter(emptyRgb);
+        Assert.Empty(emptyRgbModes);
+        Assert.Empty(emptyRgbSrc);
+        Assert.Empty(emptyRgbFiltered);
+        Assert.Empty(MeanShiftSegmentation.ClusterModes(emptyRgbFiltered, emptyRgbSrc, emptyRgbModes));
+
+        (MeanShiftMode[] emptyLabModes, Lab32[] emptyLabSrc, Matrix<Lab32> emptyLabFiltered) =
+            MeanShiftSegmentation.SeekModesAndFilter(emptyLab);
+        Assert.Empty(emptyLabModes);
+        Assert.Empty(emptyLabSrc);
+        Assert.Empty(emptyLabFiltered);
+        Assert.Empty(MeanShiftSegmentation.ClusterModes(emptyLabFiltered, emptyLabSrc, emptyLabModes));
+
+        Assert.Throws<ArgumentNullException>(() => MeanShiftSegmentation.SeekModesAndFilter((IReadOnlyMatrix<Rgb8>)null!));
+        Assert.Throws<ArgumentNullException>(() => MeanShiftSegmentation.SeekModesAndFilter((IReadOnlyMatrix<Lab32>)null!));
+        Assert.Throws<ArgumentNullException>(() => MeanShiftSegmentation.ClusterModes(null!, rgbSourcePixels, rgbModes));
+        Assert.Throws<ArgumentNullException>(() => MeanShiftSegmentation.ClusterModes(splitFilteredRgb, null!, rgbModes));
+        Assert.Throws<ArgumentNullException>(() => MeanShiftSegmentation.ClusterModes(splitFilteredRgb, rgbSourcePixels, null!));
+        Assert.Throws<ArgumentException>(() => MeanShiftSegmentation.ClusterModes(splitFilteredRgb, new Lab32[1], rgbModes));
+        Assert.Throws<ArgumentException>(() => MeanShiftSegmentation.ClusterModes(splitFilteredRgb, rgbSourcePixels, new MeanShiftMode[1]));
+    }
+
+    [Fact]
+    public void AllEntrypoints_CancellationToken_ShouldHonorCancellationAndMatchUncanceledResults()
+    {
+        SequentialMatrix<Rgb8> rgb = TestMatrices.VerticalSplit(12, 12, new Rgb8(220, 40, 40), new Rgb8(40, 60, 220));
+        Matrix<Lab32> lab = rgb.ToLab32(RgbColorSpace.SRgb);
+        var emptyRgb = new SequentialMatrix<Rgb8>(0, 0);
+        var emptyLab = new SequentialMatrix<Lab32>(0, 0);
+        var options = new MeanShiftOptions(SpatialRadius: 4, RangeRadius: 10.0, MinRegionSize: 10);
+
+        (MeanShiftMode[] modes, Lab32[] sourcePixels, Matrix<Rgb8> filteredRgb) =
+            MeanShiftSegmentation.SeekModesAndFilter(rgb, options);
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+        CancellationToken canceled = canceledCts.Token;
+
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.Filter(lab, options, canceled));
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.Filter(rgb, options, canceled));
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.Segment(lab, options, canceled));
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.Segment(rgb, options, canceled));
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.FilterAndSegment(lab, options, canceled));
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.FilterAndSegment(rgb, options, canceled));
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.SeekModesAndFilter(rgb, options, canceled));
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.SeekModesAndFilter(lab, options, canceled));
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.ClusterModes(filteredRgb, sourcePixels, modes, options, canceled));
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.Filter(emptyRgb, options, canceled));
+        Assert.Throws<OperationCanceledException>(() => MeanShiftSegmentation.Segment(emptyLab, options, canceled));
+
+        // Uncanceled cancellable token exercises ParallelOptions branches across direct and coarse-to-fine lattice paths.
+        using var activeCts = new CancellationTokenSource();
+        (Matrix<Rgb8> baselineRgb, IDisjointSet baselineSeg) = MeanShiftSegmentation.FilterAndSegment(rgb, options);
+        (Matrix<Rgb8> tokenRgb, IDisjointSet tokenSeg) = MeanShiftSegmentation.FilterAndSegment(rgb, options, activeCts.Token);
+        MatrixAssert.Equal(baselineRgb, tokenRgb);
+        MatrixAssert.Equal(baselineSeg.ToMatrix(), tokenSeg.ToMatrix());
+
+        SequentialMatrix<Lab32> largeLab = TestMatrices.Create(
+            36,
+            36,
+            (x, _) => x < 18 ? new Lab32(20f, 0f, 0f) : new Lab32(80f, 0f, 0f));
+        var latticeOptions = new MeanShiftOptions(SpatialRadius: 18, RangeRadius: 10.0, MinRegionSize: 20);
+        (Matrix<Lab32> baselineLarge, IDisjointSet baselineLargeSeg) = MeanShiftSegmentation.FilterAndSegment(largeLab, latticeOptions);
+        (Matrix<Lab32> tokenLarge, IDisjointSet tokenLargeSeg) = MeanShiftSegmentation.FilterAndSegment(largeLab, latticeOptions, activeCts.Token);
+        MatrixAssert.Equal(baselineLarge, tokenLarge);
+        MatrixAssert.Equal(baselineLargeSeg.ToMatrix(), tokenLargeSeg.ToMatrix());
     }
 }

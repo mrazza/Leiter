@@ -2,6 +2,7 @@ namespace Leiter.Algorithms.Segmentation.Internal;
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -27,15 +28,18 @@ internal sealed partial class MeanShiftSpatialLattice
     }
 
     private const int ParallelBuildPixelThreshold = 65536;
+    private const int SequentialCellCancellationCheckMask = 63;
 
     private static Lab32[] ValidateAndCopyPixels(
         ReadOnlySpan<Lab32> pixels,
         int width,
         int height,
         double spatialCellWidth,
-        double rangeCellWidth)
+        double rangeCellWidth,
+        CancellationToken cancellationToken)
     {
         ValidateArguments(pixels.Length, width, height, spatialCellWidth, rangeCellWidth, sampleStride: 1);
+        cancellationToken.ThrowIfCancellationRequested();
         return pixels.IsEmpty ? [] : pixels.ToArray();
     }
 
@@ -130,40 +134,59 @@ internal sealed partial class MeanShiftSpatialLattice
         AxisCellSpan[] ySpans,
         int[] cellPointStartOffsets,
         PackedPoint[] points,
-        bool buildInParallel)
+        bool buildInParallel,
+        CancellationToken cancellationToken)
     {
         int spatialCellCount = gridSize.Count;
         var perCellBuckets = new ColorBucket[spatialCellCount][];
 
         if (buildInParallel)
         {
-            Parallel.For(
-                0,
-                spatialCellCount,
-                static () => new CellBuildScratch(),
-                (cellIndex, _, scratch) =>
-                {
-                    perCellBuckets[cellIndex] = BuildCellAtIndex(
-                        sourcePixels,
-                        imageSize,
-                        rangeCellWidth,
-                        sampleStride,
-                        gridSize,
-                        xSpans,
-                        ySpans,
-                        cellPointStartOffsets,
-                        points,
-                        cellIndex,
-                        scratch);
-                    return scratch;
-                },
-                static _ => { });
+            Func<int, ParallelLoopState, CellBuildScratch, CellBuildScratch> body = (cellIndex, _, scratch) =>
+            {
+                perCellBuckets[cellIndex] = BuildCellAtIndex(
+                    sourcePixels,
+                    imageSize,
+                    rangeCellWidth,
+                    sampleStride,
+                    gridSize,
+                    xSpans,
+                    ySpans,
+                    cellPointStartOffsets,
+                    points,
+                    cellIndex,
+                    scratch);
+                return scratch;
+            };
+
+            if (cancellationToken.CanBeCanceled)
+            {
+                Parallel.For(
+                    0,
+                    spatialCellCount,
+                    new ParallelOptions { CancellationToken = cancellationToken },
+                    static () => new CellBuildScratch(),
+                    body,
+                    static _ => { });
+            }
+            else
+            {
+                Parallel.For(
+                    0,
+                    spatialCellCount,
+                    static () => new CellBuildScratch(),
+                    body,
+                    static _ => { });
+            }
         }
         else
         {
             var scratch = new CellBuildScratch();
             for (int cellIndex = 0; cellIndex < spatialCellCount; cellIndex++)
             {
+                if ((cellIndex & SequentialCellCancellationCheckMask) == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+
                 perCellBuckets[cellIndex] = BuildCellAtIndex(
                     sourcePixels,
                     imageSize,

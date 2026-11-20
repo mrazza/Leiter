@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Morphology;
@@ -324,5 +325,44 @@ public class SaliencyCutTests
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(Mask: new SaliencyMaskOptions(RetentionPolicy: (ComponentRetentionPolicy)99))));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(Mask: new SaliencyMaskOptions(MinAreaFraction: 1.5))));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(MaxWorkingDimension: 1)));
+    }
+
+    [Fact]
+    public void Extract_CancellationToken_ShouldHonorCancellationAndMatchUncanceledResults()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.CenteredBox(
+            24,
+            24,
+            6,
+            6,
+            17,
+            17,
+            new Rgb8(220, 35, 30),
+            new Rgb8(20, 45, 195));
+        SequentialMatrix<DoublePixel> saliency = TestMatrices.CenteredBox<DoublePixel>(
+            24,
+            24,
+            8,
+            8,
+            15,
+            15,
+            0.90,
+            0.05);
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() =>
+            SaliencyCut.Extract(image, saliency, new SaliencyCutOptions(TrimapBandRadius: 4), canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            SaliencyCut.Extract(image, saliency, new SaliencyCutOptions(MaxWorkingDimension: 12, TrimapBandRadius: 4), canceledCts.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            SaliencyCut.Extract(new SequentialMatrix<Rgb8>(0, 0), new SequentialMatrix<DoublePixel>(0, 0), cancellationToken: canceledCts.Token));
+
+        using var activeCts = new CancellationTokenSource();
+        var options = new SaliencyCutOptions(TrimapBandRadius: 4);
+        MaskMatrix baseline = SaliencyCut.Extract(image, saliency, options);
+        MaskMatrix withToken = SaliencyCut.Extract(image, saliency, options, activeCts.Token);
+        MatrixAssert.Equal(baseline, withToken);
     }
 }

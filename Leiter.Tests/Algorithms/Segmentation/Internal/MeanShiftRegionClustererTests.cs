@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Segmentation.Internal;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Segmentation.Internal;
@@ -134,5 +135,27 @@ public class MeanShiftRegionClustererTests
         Assert.Equal(seg[0, 0], seg[3, 0]);
         Assert.Equal(seg[0, 0], seg[4, 0]);
         Assert.NotEqual(seg[0, 0], seg[5, 0]);
+    }
+
+    [Fact]
+    public void ClusterModes_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        SequentialMatrix<Lab32> img = TestMatrices.Constant(4, 4, new Lab32(50f, 0f, 0f));
+        Lab32[] sourcePixels = img.ToArray();
+        var modes = new MeanShiftMode[sourcePixels.Length];
+        for (int y = 0; y < img.Height; y++)
+        {
+            for (int x = 0; x < img.Width; x++)
+            {
+                int idx = img.Size.IndexOf(x, y);
+                modes[idx] = new MeanShiftMode(x, y, sourcePixels[idx]);
+            }
+        }
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() =>
+            MeanShiftRegionClusterer.ClusterModes(img, sourcePixels, modes, MeanShiftOptions.Default, canceledCts.Token));
     }
 }
