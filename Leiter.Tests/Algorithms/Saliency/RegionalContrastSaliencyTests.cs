@@ -19,17 +19,10 @@ public class RegionalContrastSaliencyTests
     public void ComputeSaliency_MultiColorImage_ShouldComputeNormalizedRegionalSaliency()
     {
         // 20x20 image with 25+ unique quantized colors to satisfy the smoothing logic
-        var img = new SequentialMatrix<Rgb8>(20, 20);
-        for (int y = 0; y < 20; y++)
-        {
-            for (int x = 0; x < 20; x++)
-            {
-                byte r = (byte)(x * 12);
-                byte g = (byte)(y * 12);
-                byte b = (byte)((x + y) * 6);
-                img[x, y] = new Rgb8(r, g, b);
-            }
-        }
+        SequentialMatrix<Rgb8> img = TestMatrices.Create(
+            20,
+            20,
+            (x, y) => new Rgb8((byte)(x * 12), (byte)(y * 12), (byte)((x + y) * 6)));
 
         // Get segmentation
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
@@ -62,15 +55,7 @@ public class RegionalContrastSaliencyTests
     public void ComputeSaliency_ContrastingObject_ShouldBeMostSalient()
     {
         // 12x12 image with a 4x4 red square in the center (16 pixels) and black background
-        var img = new SequentialMatrix<Rgb8>(12, 12);
-        img.SetAll(new Rgb8(0, 0, 0));
-        for (int y = 4; y <= 7; y++)
-        {
-            for (int x = 4; x <= 7; x++)
-            {
-                img[x, y] = new Rgb8(255, 0, 0);
-            }
-        }
+        SequentialMatrix<Rgb8> img = TestMatrices.CenteredBox(12, 12, 4, 4, 7, 7, new Rgb8(255, 0, 0), new Rgb8(0, 0, 0));
 
         // Segment the image. With exact colors, the segment boundaries are completely clear.
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
@@ -91,26 +76,16 @@ public class RegionalContrastSaliencyTests
     [Fact]
     public void ComputeSaliency_SolidColorImage_ShouldReturnZerosWithoutNaN()
     {
-        var img = new SequentialMatrix<Rgb8>(10, 10);
-        img.SetAll(new Rgb8(100, 150, 200));
+        SequentialMatrix<Rgb8> img = TestMatrices.Constant(10, 10, new Rgb8(100, 150, 200));
 
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
 
         var withOptions = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: true, ComputeBorderRegions: true));
         var withoutOptions = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: false, ComputeBorderRegions: false));
 
-        Assert.Equal(10, withOptions.Width);
-        Assert.Equal(10, withOptions.Height);
-        Assert.All(withOptions, p =>
-        {
-            Assert.False(double.IsNaN(p.Value));
-            Assert.Equal(0.0, p.Value, 4);
-        });
-        Assert.All(withoutOptions, p =>
-        {
-            Assert.False(double.IsNaN(p.Value));
-            Assert.Equal(0.0, p.Value, 4);
-        });
+        SequentialMatrix<DoublePixel> expectedZeros = TestMatrices.Constant<DoublePixel>(10, 10, 0.0);
+        MatrixAssert.ApproxEqual(expectedZeros, withOptions, 1e-4);
+        MatrixAssert.ApproxEqual(expectedZeros, withoutOptions, 1e-4);
     }
 
     /// <summary>
@@ -119,15 +94,7 @@ public class RegionalContrastSaliencyTests
     [Fact]
     public void ComputeSaliency_ContrastingObjectWithSmoothing_ShouldNotProduceNaN()
     {
-        var img = new SequentialMatrix<Rgb8>(12, 12);
-        img.SetAll(new Rgb8(0, 0, 0));
-        for (int y = 4; y <= 7; y++)
-        {
-            for (int x = 4; x <= 7; x++)
-            {
-                img[x, y] = new Rgb8(255, 0, 0);
-            }
-        }
+        SequentialMatrix<Rgb8> img = TestMatrices.CenteredBox(12, 12, 4, 4, 7, 7, new Rgb8(255, 0, 0), new Rgb8(0, 0, 0));
 
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
 
@@ -136,7 +103,7 @@ public class RegionalContrastSaliencyTests
 
         foreach (var result in new[] { withoutBorderSuppression, withBorderSuppression })
         {
-            Assert.All(result, p => Assert.False(double.IsNaN(p.Value)));
+            MatrixAssert.AllInRange(result, 0.0, 1.0);
             Assert.Equal(1.0, result[5, 5].Value, 4);
             Assert.Equal(0.0, result[0, 0].Value, 4);
         }
@@ -150,26 +117,13 @@ public class RegionalContrastSaliencyTests
     public void ComputeSaliency_BorderSuppression_ShouldZeroBorderAndNormalizeInteriorToOne()
     {
         // 40x40 image so 2.5% border width/height covers the 1-pixel outer ring (x=0, x=39, y=0, y=39).
-        var img = new SequentialMatrix<Rgb8>(40, 40);
-        img.SetAll(new Rgb8(0, 0, 0));
-
-        // High-contrast white border strip (90 pixels, 10 on x=0 -> 11.1% > 10% border threshold).
-        for (int y = 15; y <= 24; y++)
-        {
-            for (int x = 0; x <= 8; x++)
-            {
-                img[x, y] = new Rgb8(255, 255, 255);
-            }
-        }
-
-        // Interior dark-gray salient square (100 pixels, 0 border pixels, distinct 12-level quantization bucket).
-        for (int y = 15; y <= 24; y++)
-        {
-            for (int x = 28; x <= 37; x++)
-            {
-                img[x, y] = new Rgb8(45, 45, 45);
-            }
-        }
+        SequentialMatrix<Rgb8> img = TestMatrices.Create(
+            40,
+            40,
+            (x, y) =>
+                x <= 8 && y >= 15 && y <= 24 ? new Rgb8(255, 255, 255) :
+                x >= 28 && x <= 37 && y >= 15 && y <= 24 ? new Rgb8(45, 45, 45) :
+                new Rgb8(0, 0, 0));
 
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
 
@@ -182,11 +136,7 @@ public class RegionalContrastSaliencyTests
         {
             var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: enableSmoothing, ComputeBorderRegions: true));
 
-            Assert.All(saliency, p =>
-            {
-                Assert.False(double.IsNaN(p.Value));
-                Assert.InRange(p.Value, 0.0, 1.0);
-            });
+            MatrixAssert.AllInRange(saliency, 0.0, 1.0);
 
             // Border regions (white strip and background ring) must be suppressed to 0.0.
             Assert.Equal(0.0, saliency[0, 20].Value, 4);
@@ -206,33 +156,22 @@ public class RegionalContrastSaliencyTests
     public void ComputeSaliency_BorderSuppressionWithActiveSmoothing_ShouldZeroBorderAndNormalizeInteriorToOne()
     {
         // 40x40 image split into a 5x5 grid of 8x8 blocks (25 distinct colors, 64 pixels each).
-        var img = new SequentialMatrix<Rgb8>(40, 40);
-        for (int by = 0; by < 5; by++)
-        {
-            for (int bx = 0; bx < 5; bx++)
+        SequentialMatrix<Rgb8> img = TestMatrices.Create(
+            40,
+            40,
+            (x, y) =>
             {
-                Rgb8 blockColor = (bx == 0 && by == 2)
+                int bx = x / 8;
+                int by = y / 8;
+                return (bx == 0 && by == 2)
                     ? new Rgb8(255, 255, 255)
-                    : new Rgb8((byte)(bx * 44 + 10), (byte)(by * 44 + 10), 60);
-
-                for (int y = by * 8; y < (by + 1) * 8; y++)
-                {
-                    for (int x = bx * 8; x < (bx + 1) * 8; x++)
-                    {
-                        img[x, y] = blockColor;
-                    }
-                }
-            }
-        }
+                    : new Rgb8((byte)((bx * 44) + 10), (byte)((by * 44) + 10), 60);
+            });
 
         var segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 10));
         var saliency = RegionalContrastSaliency.ComputeSaliency(img, segmentation, new RegionalContrastSaliencyOptions(EnableSmoothing: true, ComputeBorderRegions: true));
 
-        Assert.All(saliency, p =>
-        {
-            Assert.False(double.IsNaN(p.Value));
-            Assert.InRange(p.Value, 0.0, 1.0);
-        });
+        MatrixAssert.AllInRange(saliency, 0.0, 1.0);
 
         // All perimeter blocks touch the 1-pixel border along at least 8 of 64 pixels (12.5% > 10%) and must be 0.0.
         Assert.Equal(0.0, saliency[0, 0].Value, 4);
@@ -255,22 +194,64 @@ public class RegionalContrastSaliencyTests
     }
 
     /// <summary>
+    /// Verifies that border suppression applied after color-space smoothing does not darken interior regions sharing a color with a border region.
+    /// </summary>
+    [Fact]
+    public void ComputeSaliency_BorderSuppressionWithSmoothing_ShouldNotDarkenInteriorRegionsSharingColor()
+    {
+        // 40x40 image split into a 5x5 grid of 8x8 blocks where border block (0, 2) shares the exact color of interior block (2, 2),
+        // and all other blocks have distinct quantized colors so active smoothing runs (24 colors >= 20).
+        var sharedColor = new Rgb8(240, 20, 20);
+        SequentialMatrix<Rgb8> img = TestMatrices.Create(
+            40,
+            40,
+            (x, y) =>
+            {
+                int bx = x / 8;
+                int by = y / 8;
+                return (bx == 0 && by == 2) || (bx == 2 && by == 2)
+                    ? sharedColor
+                    : new Rgb8((byte)((bx * 44) + 10), (byte)((by * 44) + 10), 120);
+            });
+
+        SequentialMatrix<int> blockLabels = TestMatrices.Create(40, 40, (x, y) => ((y / 8) * 5) + (x / 8));
+        RegionGraph graph = RegionGraph.FromLabels(blockLabels);
+
+        Matrix<DoublePixel> unsuppressed = RegionalContrastSaliency.ComputeSaliency(
+            img,
+            graph,
+            new RegionalContrastSaliencyOptions(EnableSmoothing: true, ComputeBorderRegions: false));
+        Matrix<DoublePixel> suppressed = RegionalContrastSaliency.ComputeSaliency(
+            img,
+            graph,
+            new RegionalContrastSaliencyOptions(EnableSmoothing: true, ComputeBorderRegions: true));
+
+        // Border block (0, 2) must be suppressed to 0.0.
+        Assert.Equal(0.0, suppressed[4, 20].Value, 9);
+
+        // Interior regions (1,1), (2,2), (3,3) must preserve exact affine ordering/ratios relative to each other
+        // because border suppression happens after color-space smoothing.
+        double u11 = unsuppressed[12, 12].Value;
+        double u22 = unsuppressed[20, 20].Value;
+        double u33 = unsuppressed[28, 28].Value;
+
+        double s11 = suppressed[12, 12].Value;
+        double s22 = suppressed[20, 20].Value;
+        double s33 = suppressed[28, 28].Value;
+
+        double expectedRatio = (u22 - u11) / (u33 - u11);
+        double actualRatio = (s22 - s11) / (s33 - s11);
+        Assert.Equal(expectedRatio, actualRatio, 9);
+    }
+
+    /// <summary>
     /// Verifies that regional contrast saliency truncates rare (&lt;5%) noise colors cleanly without NaN.
     /// </summary>
     [Fact]
     public void ComputeSaliency_RareNoisePixels_ShouldTruncatePaletteCleanly()
     {
         // 20x20 image (400 pixels): 300 black (75%), 90 red (22.5%), and 10 rare noise colors (2.5% < 5%).
-        var img = new SequentialMatrix<Rgb8>(20, 20);
-        img.SetAll(new Rgb8(0, 0, 0));
-
-        for (int y = 5; y <= 13; y++)
-        {
-            for (int x = 5; x <= 14; x++)
-            {
-                img[x, y] = new Rgb8(255, 0, 0);
-            }
-        }
+        SequentialMatrix<Rgb8> img = TestMatrices.CenteredBox(20, 20, 5, 5, 14, 13, new Rgb8(255, 0, 0), new Rgb8(0, 0, 0));
 
         Rgb8[] rareColors =
         [
@@ -372,10 +353,10 @@ public class RegionalContrastSaliencyTests
         MatrixAssert.Equal(viewSaliency, graphSaliency);
 
         // Offset MatrixView over multi-region image should match materialized SequentialMatrix
-        var padded = new SequentialMatrix<Rgb8>(14, 14);
-        for (int y = 0; y < 14; y++)
-            for (int x = 0; x < 14; x++)
-                padded[x, y] = new Rgb8((byte)(x * 18), (byte)(y * 18), 40);
+        SequentialMatrix<Rgb8> padded = TestMatrices.Create(
+            14,
+            14,
+            (x, y) => new Rgb8((byte)(x * 18), (byte)(y * 18), 40));
 
         var croppedView = new MatrixView<Rgb8>(padded, 2, 2, 10, 10, EdgeHandling.Extend);
         SequentialMatrix<Rgb8> croppedSeq = croppedView.ToSequentialMatrix();
@@ -388,21 +369,15 @@ public class RegionalContrastSaliencyTests
     [Fact]
     public void ComputeSaliency_MultiRegionNonTrivialImage_DisjointSetAndRegionGraphOverloadsShouldMatchAcrossOptions()
     {
-        var img = new SequentialMatrix<Rgb8>(24, 24);
-        for (int by = 0; by < 4; by++)
-        {
-            for (int bx = 0; bx < 4; bx++)
+        SequentialMatrix<Rgb8> img = TestMatrices.Create(
+            24,
+            24,
+            (x, y) =>
             {
-                var color = new Rgb8((byte)((bx * 70) + 15), (byte)((by * 70) + 15), (byte)(((bx + by) % 4) * 70));
-                for (int y = by * 6; y < (by + 1) * 6; y++)
-                {
-                    for (int x = bx * 6; x < (bx + 1) * 6; x++)
-                    {
-                        img[x, y] = color;
-                    }
-                }
-            }
-        }
+                int bx = x / 6;
+                int by = y / 6;
+                return new Rgb8((byte)((bx * 70) + 15), (byte)((by * 70) + 15), (byte)(((bx + by) % 4) * 70));
+            });
 
         IDisjointSet segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
         RegionGraph graph = RegionGraph.FromDisjointSet(segmentation);
@@ -431,20 +406,13 @@ public class RegionalContrastSaliencyTests
     public void ComputeSaliency_ZeroCenterPriorWeight_ShouldRemoveCenterPriorSuppression()
     {
         // Place two identical contrasting red squares on black: one centered (13..17) and one near the left edge (2..6).
-        var img = new SequentialMatrix<Rgb8>(31, 31);
-        img.SetAll(new Rgb8(0, 0, 0));
-        for (int y = 13; y <= 17; y++)
-        {
-            for (int x = 13; x <= 17; x++)
-            {
-                img[x, y] = new Rgb8(255, 0, 0);
-            }
-
-            for (int x = 2; x <= 6; x++)
-            {
-                img[x, y] = new Rgb8(255, 0, 0);
-            }
-        }
+        SequentialMatrix<Rgb8> img = TestMatrices.Create(
+            31,
+            31,
+            (x, y) =>
+                y >= 13 && y <= 17 && ((x >= 13 && x <= 17) || (x >= 2 && x <= 6))
+                    ? new Rgb8(255, 0, 0)
+                    : new Rgb8(0, 0, 0));
 
         var seg = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
 

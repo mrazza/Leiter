@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Saliency;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Segmentation;
@@ -12,15 +13,15 @@ using Leiter.Pixels;
 /// </summary>
 /// <param name="MaxOuterIterations">Maximum number of trimap dilation/erosion refinement iterations (<c>≥ 1</c>).</param>
 /// <param name="TrimapBandRadius">Morphological dilation/erosion radius in pixels used to construct the unknown boundary band (<c>≥ 1</c>).</param>
-/// <param name="GrabCut">Optional inner GrabCut solver parameters; when <see langword="null"/>, defaults to <c>Iterations = 2</c>, <c>MixtureComponentCount = 5</c>, <c>SmoothnessWeight = 50.0</c>.</param>
-/// <param name="Mask">Optional initial binarization and connected-component retention parameters; when <see langword="null"/>, defaults to fixed threshold <c>70 / 255</c> and <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/> with <c>0.01</c>.</param>
+/// <param name="GrabCut">Optional inner GrabCut solver parameters; when <see langword="null"/>, defaults to <see cref="DefaultGrabCut"/> (<c>Iterations = 2</c>, <c>MixtureComponentCount = 5</c>, <c>SmoothnessWeight = 50.0</c>).</param>
+/// <param name="Mask">Optional initial binarization and connected-component retention parameters; when <see langword="null"/>, defaults to <see cref="DefaultMask"/> (fixed threshold <c>70 / 255</c> and <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/> with <c>0.01</c>).</param>
 /// <param name="MaxWorkingDimension">Optional maximum width or height for working resolution; <see langword="null"/> runs at full native resolution.</param>
 public sealed record SaliencyCutOptions(
     int MaxOuterIterations = 4,
     int TrimapBandRadius = 10,
     GrabCutOptions? GrabCut = null,
     SaliencyMaskOptions? Mask = null,
-    int? MaxWorkingDimension = null) : IProfileTunableOptions<SaliencyCutOptions>
+    int? MaxWorkingDimension = null) : ISizeTunableOptions<SaliencyCutOptions>, IProfileTunableOptions<SaliencyCutOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default band radii and smoothness weights apply unscaled.
@@ -35,16 +36,12 @@ public sealed record SaliencyCutOptions(
     /// <summary>
     /// Gets the default inner GrabCut options used when <see cref="GrabCut"/> is <see langword="null"/>.
     /// </summary>
-    public static GrabCutOptions DefaultGrabCut { get; } = new(Iterations: 2, MixtureComponentCount: 5, SmoothnessWeight: 50.0);
+    public static GrabCutOptions DefaultGrabCut { get; } = GrabCutOptions.Default with { Iterations = 2 };
 
     /// <summary>
     /// Gets the default initial binarization and component retention options used when <see cref="Mask"/> is <see langword="null"/>.
     /// </summary>
-    public static SaliencyMaskOptions DefaultMask { get; } = new(
-        Method: SaliencyThresholdMethod.Fixed,
-        FixedThreshold: SaliencyMaskOptions.DefaultFixedThreshold,
-        RetentionPolicy: ComponentRetentionPolicy.MinimumAreaFraction,
-        MinAreaFraction: SaliencyMaskOptions.DefaultMinAreaFraction);
+    public static SaliencyMaskOptions DefaultMask { get; } = SaliencyMaskOptions.Default with { Method = SaliencyThresholdMethod.Fixed };
 
     /// <summary>
     /// Creates <see cref="SaliencyCutOptions"/> with trimap band radius and inner GrabCut smoothness scaled linearly for full-resolution execution on <paramref name="size"/>.
@@ -57,8 +54,14 @@ public sealed record SaliencyCutOptions(
         ForSize(size, Default, referenceDimension);
 
     /// <summary>
-    /// Creates <see cref="SaliencyCutOptions"/> by scaling <paramref name="baseline"/> trimap band radius and inner GrabCut smoothness for <paramref name="size"/>.
+    /// Creates <see cref="SaliencyCutOptions"/> by scaling <paramref name="baseline"/> trimap band radius and inner GrabCut smoothness
+    /// linearly for <paramref name="size"/> in full-resolution coordinates while preserving <see cref="MaxWorkingDimension"/>.
     /// </summary>
+    /// <remarks>
+    /// When <see cref="MaxWorkingDimension"/> is non-null and exceeded by an input image at execution time,
+    /// <see cref="SaliencyCut.Extract"/> proportionally rescales both <see cref="TrimapBandRadius"/> and
+    /// <see cref="GrabCutOptions.SmoothnessWeight"/> from full-resolution coordinates to the working resolution.
+    /// </remarks>
     /// <param name="size">The target image dimensions.</param>
     /// <param name="baseline">The baseline SaliencyCut configuration calibrated at <paramref name="referenceDimension"/>.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
@@ -70,21 +73,17 @@ public sealed record SaliencyCutOptions(
         SaliencyCutOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
-        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        ArgumentNullException.ThrowIfNull(baseline);
-        baseline.Validate();
+        OptionTuning.ValidateSizeTuning(size, baseline, referenceDimension);
+        var (s, _, totalPixels) = OptionTuning.ComputeScalesUnchecked(size, referenceDimension);
         if (totalPixels == 0)
         {
             return baseline;
         }
 
-        int maxBand = Math.Max(1, Math.Min(size.Width, size.Height) / 3);
-        int bandRadius = Math.Clamp(OptionTuning.RoundPositiveInt(baseline.TrimapBandRadius * s), 1, maxBand);
         GrabCutOptions grabCutBaseline = baseline.GrabCut ?? DefaultGrabCut;
-
         return baseline with
         {
-            TrimapBandRadius = bandRadius,
+            TrimapBandRadius = ScaleTrimapBandRadius(size, baseline.TrimapBandRadius, s),
             GrabCut = GrabCutOptions.ForSize(size, grabCutBaseline, referenceDimension),
             Mask = baseline.Mask ?? DefaultMask
         };
@@ -118,6 +117,34 @@ public sealed record SaliencyCutOptions(
         double referenceDimension = DefaultReferenceDimension) =>
         OptionTuning.TuneForImage(image, baseline, referenceDimension);
 
+    /// <summary>
+    /// Creates <see cref="SaliencyCutOptions"/> tuned from defaults for the pre-analyzed image dimensions and statistics in <paramref name="analysis"/>.
+    /// </summary>
+    /// <param name="analysis">The cached image analysis profile to tune for.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="SaliencyCutOptions"/> instance tuned for <paramref name="analysis"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static SaliencyCutOptions ForAnalysis(
+        ImageAnalysis analysis,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis<SaliencyCutOptions>(analysis, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="SaliencyCutOptions"/> tuned from <paramref name="baseline"/> for the pre-analyzed image dimensions and statistics in <paramref name="analysis"/>.
+    /// </summary>
+    /// <param name="analysis">The cached image analysis profile to tune for.</param>
+    /// <param name="baseline">The baseline SaliencyCut configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="SaliencyCutOptions"/> instance tuned from <paramref name="baseline"/> for <paramref name="analysis"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static SaliencyCutOptions ForAnalysis(
+        ImageAnalysis analysis,
+        SaliencyCutOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis(analysis, baseline, referenceDimension);
+
     static SaliencyCutOptions IProfileTunableOptions<SaliencyCutOptions>.ForProfile(
         in ImageTuningProfile profile,
         SaliencyCutOptions baseline,
@@ -129,17 +156,25 @@ public sealed record SaliencyCutOptions(
         SaliencyCutOptions baseline,
         double referenceDimension)
     {
-        SaliencyCutOptions scaled = ForSize(profile.ImageSize, baseline, referenceDimension);
-        if (profile.IsEmpty)
+        var (s, _, totalPixels) = OptionTuning.ComputeScalesUnchecked(profile.ImageSize, referenceDimension);
+        if (totalPixels == 0 || profile.IsEmpty)
         {
-            return scaled;
+            return baseline;
         }
 
         GrabCutOptions grabCutBaseline = baseline.GrabCut ?? DefaultGrabCut;
-        return scaled with
+        return baseline with
         {
-            GrabCut = GrabCutOptions.ForProfile(in profile, grabCutBaseline, referenceDimension)
+            TrimapBandRadius = ScaleTrimapBandRadius(profile.ImageSize, baseline.TrimapBandRadius, s),
+            GrabCut = GrabCutOptions.ForProfile(in profile, grabCutBaseline, referenceDimension),
+            Mask = baseline.Mask ?? DefaultMask
         };
+    }
+
+    private static int ScaleTrimapBandRadius(Size size, int baselineBandRadius, double linearScale)
+    {
+        int maxBand = Math.Max(1, Math.Min(size.Width, size.Height) / 3);
+        return Math.Clamp(OptionTuning.RoundPositiveInt(baselineBandRadius * linearScale), 1, maxBand);
     }
 
     /// <summary>

@@ -19,7 +19,7 @@ public class RegionalContrastSaliencyOptionsTests : AlgorithmOptionsContractTest
     protected override RegionalContrastSaliencyOptions CreateInvalidOptions() =>
         new(CenterPriorWeight: -1.0);
     [Fact]
-    public void Constructor_DefaultProperties_ShouldMatchDefaultInstanceAndPassValidation()
+    public void Constructor_DefaultProperties_ShouldMatchDefaultInstance()
     {
         var options = new RegionalContrastSaliencyOptions();
 
@@ -27,9 +27,6 @@ public class RegionalContrastSaliencyOptionsTests : AlgorithmOptionsContractTest
         Assert.True(options.ComputeBorderRegions);
         Assert.Equal(9.0, options.CenterPriorWeight, 6);
         Assert.Equal(RegionalContrastSaliencyOptions.Default, options);
-
-        options.Validate();
-        RegionalContrastSaliencyOptions.Default.Validate();
     }
 
     [Fact]

@@ -19,16 +19,13 @@ public class SaliencyDistanceFieldOptionsTests : AlgorithmOptionsContractTestsBa
     protected override SaliencyDistanceFieldOptions CreateInvalidOptions() =>
         new(DefaultSigmaScale: -0.1);
     [Fact]
-    public void Constructor_DefaultProperties_ShouldMatchDefaultInstanceAndPassValidation()
+    public void Constructor_DefaultProperties_ShouldMatchDefaultInstance()
     {
         var options = new SaliencyDistanceFieldOptions();
 
         Assert.Null(options.SmoothingSigma);
         Assert.Equal(0.03, options.DefaultSigmaScale, 9);
         Assert.Equal(SaliencyDistanceFieldOptions.Default, options);
-
-        options.Validate();
-        SaliencyDistanceFieldOptions.Default.Validate();
     }
 
     [Theory]

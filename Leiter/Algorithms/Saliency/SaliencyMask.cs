@@ -38,6 +38,15 @@ public static class SaliencyMask
         };
     }
 
+    private delegate void SpanVisitor<TState>(scoped ReadOnlySpan<DoublePixel> span, ref TState state)
+        where TState : allows ref struct;
+
+    private ref struct OtsuHistogramAccumulator(Span<int> histogram)
+    {
+        public Span<int> Histogram = histogram;
+        public double TotalSum;
+    }
+
     /// <summary>
     /// Thresholds a continuous [0, 1] saliency map and filters connected foreground components into a boolean mask.
     /// </summary>
@@ -52,29 +61,28 @@ public static class SaliencyMask
     {
         ArgumentNullException.ThrowIfNull(saliencyMap);
 
-        SaliencyMaskOptions resolvedOptions = OptionsResolver.Resolve(options, SaliencyMaskOptions.Default);
+        SaliencyMaskOptions resolvedOptions = OptionsResolver.Resolve(options);
 
         double threshold = ComputeThreshold(saliencyMap, resolvedOptions.Method, resolvedOptions.FixedThreshold);
         MaskMatrix rawMask = saliencyMap.ToMaskMatrix(pixel => ScalarMath.ClampUnitOrDefault(pixel.Value) > threshold);
-        return BinaryMorphology.FilterConnectedComponents(rawMask, resolvedOptions.RetentionPolicy, resolvedOptions.MinAreaFraction);
+        return BinaryMorphology.FilterConnectedComponents(
+            rawMask,
+            resolvedOptions.RetentionPolicy,
+            resolvedOptions.MinAreaFraction,
+            resolvedOptions.Connectivity);
     }
 
     private static double ComputeAdaptiveMeanThreshold(IReadOnlyMatrix<DoublePixel> saliencyMap)
     {
         double sum = 0.0;
-        if (saliencyMap.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> span))
-        {
-            for (int i = 0; i < span.Length; i++)
-                sum += ScalarMath.ClampUnitOrDefault(span[i].Value);
-        }
-        else
-        {
-            for (int y = 0; y < saliencyMap.Height; y++)
+        ForEachSpan(
+            saliencyMap,
+            ref sum,
+            static (scoped ReadOnlySpan<DoublePixel> span, ref double acc) =>
             {
-                for (int x = 0; x < saliencyMap.Width; x++)
-                    sum += ScalarMath.ClampUnitOrDefault(saliencyMap[x, y].Value);
-            }
-        }
+                for (int i = 0; i < span.Length; i++)
+                    acc += ScalarMath.ClampUnitOrDefault(span[i].Value);
+            });
 
         double mean = sum / saliencyMap.Count;
         return Math.Clamp(2.0 * mean, 0.0, 0.95);
@@ -83,68 +91,75 @@ public static class SaliencyMask
     private static double ComputeOtsuThreshold(IReadOnlyMatrix<DoublePixel> saliencyMap)
     {
         Span<int> histogram = stackalloc int[256];
-        double totalSum = 0.0;
-
-        if (saliencyMap.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> span))
-        {
-            for (int i = 0; i < span.Length; i++)
+        var accumulator = new OtsuHistogramAccumulator(histogram);
+        ForEachSpan(
+            saliencyMap,
+            ref accumulator,
+            static (scoped ReadOnlySpan<DoublePixel> span, ref OtsuHistogramAccumulator acc) =>
             {
-                int bin = ToHistogramBin(span[i].Value);
-                histogram[bin]++;
-                totalSum += bin;
-            }
-        }
-        else
-        {
-            for (int y = 0; y < saliencyMap.Height; y++)
-            {
-                for (int x = 0; x < saliencyMap.Width; x++)
+                for (int i = 0; i < span.Length; i++)
                 {
-                    int bin = ToHistogramBin(saliencyMap[x, y].Value);
-                    histogram[bin]++;
-                    totalSum += bin;
+                    int bin = ToHistogramBin(span[i].Value);
+                    acc.Histogram[bin]++;
+                    acc.TotalSum += bin;
                 }
-            }
-        }
+            });
 
         int totalCount = saliencyMap.Count;
-        int backgroundCount = 0;
-        double backgroundSum = 0.0;
-        double bestVariance = -1.0;
-        long bestBinSum = 0;
-        int bestBinCount = 0;
-
-        for (int bin = 0; bin < 255; bin++)
+        double totalSum = accumulator.TotalSum;
+        double meanBin = totalSum / totalCount;
+        double totalVarianceSum = 0.0;
+        for (int bin = 0; bin < 256; bin++)
         {
-            backgroundCount += histogram[bin];
-            if (backgroundCount == 0)
-                continue;
-
-            int foregroundCount = totalCount - backgroundCount;
-            if (foregroundCount == 0)
-                break;
-
-            backgroundSum += (double)bin * histogram[bin];
-            double difference = ((double)totalCount * backgroundSum) - ((double)backgroundCount * totalSum);
-            double betweenVariance = (difference * difference) / ((double)backgroundCount * foregroundCount);
-
-            if (betweenVariance > bestVariance + 1e-12)
+            int count = histogram[bin];
+            if (count > 0)
             {
-                bestVariance = betweenVariance;
-                bestBinSum = bin;
-                bestBinCount = 1;
-            }
-            else if (Math.Abs(betweenVariance - bestVariance) <= 1e-12)
-            {
-                bestBinSum += bin;
-                bestBinCount++;
+                double delta = bin - meanBin;
+                totalVarianceSum += count * delta * delta;
             }
         }
 
-        if (bestBinCount > 0)
+        if (totalVarianceSum > 0.0)
         {
-            double meanBestBin = (double)bestBinSum / bestBinCount;
-            return (meanBestBin + 0.5) / 255.0;
+            int backgroundCount = 0;
+            double backgroundSum = 0.0;
+            double bestNormalizedVariance = -1.0;
+            long bestBinSum = 0;
+            int bestBinCount = 0;
+
+            for (int bin = 0; bin < 255; bin++)
+            {
+                backgroundCount += histogram[bin];
+                if (backgroundCount == 0)
+                    continue;
+
+                int foregroundCount = totalCount - backgroundCount;
+                if (foregroundCount == 0)
+                    break;
+
+                backgroundSum += (double)bin * histogram[bin];
+                double difference = ((double)totalCount * backgroundSum) - ((double)backgroundCount * totalSum);
+                double denominator = (double)totalCount * backgroundCount * foregroundCount * totalVarianceSum;
+                double normalizedBetweenVariance = (difference * difference) / denominator;
+
+                if (normalizedBetweenVariance > bestNormalizedVariance + 1e-12)
+                {
+                    bestNormalizedVariance = normalizedBetweenVariance;
+                    bestBinSum = bin;
+                    bestBinCount = 1;
+                }
+                else if (Math.Abs(normalizedBetweenVariance - bestNormalizedVariance) <= 1e-12)
+                {
+                    bestBinSum += bin;
+                    bestBinCount++;
+                }
+            }
+
+            if (bestBinCount > 0)
+            {
+                double meanBestBin = (double)bestBinSum / bestBinCount;
+                return (meanBestBin + 0.5) / 255.0;
+            }
         }
 
         for (int bin = 0; bin < 256; bin++)
@@ -154,6 +169,41 @@ public static class SaliencyMask
         }
 
         return 0.0;
+    }
+
+    private static void ForEachSpan<TState>(
+        IReadOnlyMatrix<DoublePixel> matrix,
+        ref TState state,
+        SpanVisitor<TState> visitor)
+        where TState : allows ref struct
+    {
+        if (matrix.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> span))
+        {
+            visitor(span, ref state);
+            return;
+        }
+
+        const int chunkCapacity = 256;
+        Span<DoublePixel> chunk = stackalloc DoublePixel[chunkCapacity];
+        int chunkLength = 0;
+        int width = matrix.Width;
+        int height = matrix.Height;
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                chunk[chunkLength++] = matrix[x, y];
+                if (chunkLength == chunkCapacity)
+                {
+                    visitor(chunk, ref state);
+                    chunkLength = 0;
+                }
+            }
+        }
+
+        if (chunkLength > 0)
+            visitor(chunk[..chunkLength], ref state);
     }
 
     private static int ToHistogramBin(double value) =>

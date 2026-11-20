@@ -88,7 +88,7 @@ public static class SaliencyDistanceField
                         : double.PositiveInfinity;
 
                 double borderRayParameter = Math.Min(tX, tY);
-                field[x, y] = Math.Clamp(1.0 / borderRayParameter, 0.0, 1.0);
+                field[x, y] = ScalarMath.ClampUnit(1.0 / borderRayParameter);
             }
         });
 
@@ -97,7 +97,7 @@ public static class SaliencyDistanceField
 
     /// <summary>
     /// Computes the saliency distance field from a boolean salient mask and smooths medial-axis / concavity
-    /// discontinuities continuously across non-salient regions via <see cref="Blur.GaussianBlurRecursive"/>,
+    /// discontinuities continuously across non-salient regions via <see cref="Blur.GaussianBlur{T}(IReadOnlyMatrix{T}, double)"/>,
     /// clamping salient mask pixels back to <c>0</c>.
     /// </summary>
     /// <param name="salientMask">The boolean salient mask (<see langword="false"/> = non-salient, <see langword="true"/> = salient).</param>
@@ -110,7 +110,7 @@ public static class SaliencyDistanceField
         SaliencyDistanceFieldOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(salientMask);
-        SaliencyDistanceFieldOptions resolvedOptions = OptionsResolver.Resolve(options, SaliencyDistanceFieldOptions.Default);
+        SaliencyDistanceFieldOptions resolvedOptions = OptionsResolver.Resolve(options);
         return ComputeCore(salientMask, resolvedOptions);
     }
 
@@ -126,14 +126,14 @@ public static class SaliencyDistanceField
         if (resolvedSigma <= 0.0)
             return normalizedField;
 
-        Matrix<DoublePixel> smoothed = Blur.GaussianBlurRecursive(normalizedField, resolvedSigma);
+        Matrix<DoublePixel> smoothed = Blur.GaussianBlur(normalizedField, resolvedSigma);
         for (int y = 0; y < salientMask.Height; y++)
         {
             for (int x = 0; x < salientMask.Width; x++)
             {
                 smoothed[x, y] = salientMask[x, y]
                     ? 0.0
-                    : Math.Clamp(smoothed[x, y].Value, 0.0, 1.0);
+                    : ScalarMath.ClampUnitOrDefault(smoothed[x, y].Value);
             }
         }
 
@@ -158,9 +158,8 @@ public static class SaliencyDistanceField
         SaliencyCutOptions? saliencyCutOptions = null,
         SaliencyDistanceFieldOptions? distanceFieldOptions = null)
     {
-        ArgumentNullException.ThrowIfNull(image);
         Guard.ThrowIfSizeMismatch(image, saliencyMap);
-        SaliencyDistanceFieldOptions resolvedDistanceOptions = OptionsResolver.Resolve(distanceFieldOptions, SaliencyDistanceFieldOptions.Default);
+        SaliencyDistanceFieldOptions resolvedDistanceOptions = OptionsResolver.Resolve(distanceFieldOptions);
 
         MaskMatrix salientMask = SaliencyCut.Extract(image, saliencyMap, saliencyCutOptions);
         Matrix<DoublePixel> distanceField = ComputeCore(salientMask, resolvedDistanceOptions);

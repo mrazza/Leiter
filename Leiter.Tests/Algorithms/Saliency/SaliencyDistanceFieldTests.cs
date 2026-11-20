@@ -15,14 +15,7 @@ public class SaliencyDistanceFieldTests
     [Fact]
     public void ComputeNormalizedField_KnownGeometry_ShouldMatchExpectedNormalizedDistances()
     {
-        var mask = new MaskMatrix(31, 31);
-        for (int y = 10; y <= 20; y++)
-        {
-            for (int x = 10; x <= 20; x++)
-            {
-                mask[x, y] = true;
-            }
-        }
+        SequentialMatrix<bool> mask = TestMatrices.CenteredBox(31, 31, 10, 10, 20, 20, true, false);
 
         Matrix<DoublePixel> rawField = SaliencyDistanceField.ComputeNormalizedField(mask);
         Assert.Equal(0.0, rawField[15, 15].Value, 9);
@@ -40,14 +33,7 @@ public class SaliencyDistanceFieldTests
     [Fact]
     public void Compute_SmoothingVariations_ShouldProduceSmoothedDistances()
     {
-        var mask = new MaskMatrix(31, 31);
-        for (int y = 10; y <= 20; y++)
-        {
-            for (int x = 10; x <= 20; x++)
-            {
-                mask[x, y] = true;
-            }
-        }
+        SequentialMatrix<bool> mask = TestMatrices.CenteredBox(31, 31, 10, 10, 20, 20, true, false);
 
         Matrix<DoublePixel> unblurred = SaliencyDistanceField.Compute(mask, new SaliencyDistanceFieldOptions(SmoothingSigma: 0.0));
         Assert.Equal(0.5, unblurred[25, 15].Value, 9);
@@ -55,10 +41,7 @@ public class SaliencyDistanceFieldTests
         Matrix<DoublePixel> smoothed = SaliencyDistanceField.Compute(mask);
         Assert.InRange(smoothed[10, 15].Value, 0.0, 0.4);
         Assert.True(smoothed[30, 15].Value > smoothed[15, 15].Value);
-        for (int i = 0; i < smoothed.Count; i++)
-        {
-            Assert.InRange(smoothed[i].Value, 0.0, 1.0);
-        }
+        MatrixAssert.AllInRange(smoothed, 0.0, 1.0);
     }
 
     [Fact]
@@ -70,34 +53,34 @@ public class SaliencyDistanceFieldTests
 
         var allBg = new MaskMatrix(4, 4);
         Matrix<DoublePixel> allBgField = SaliencyDistanceField.ComputeNormalizedField(allBg);
-        for (int i = 0; i < allBgField.Count; i++)
-        {
-            Assert.Equal(1.0, allBgField[i].Value, 9);
-        }
+        MatrixAssert.ApproxEqual(TestMatrices.Constant<DoublePixel>(4, 4, 1.0), allBgField, 1e-9);
 
-        var allFg = new MaskMatrix(4, 4);
-        allFg.SetAll(true);
+        SequentialMatrix<bool> allFg = TestMatrices.Constant(4, 4, true);
         Matrix<DoublePixel> allFgField = SaliencyDistanceField.ComputeNormalizedField(allFg);
-        for (int i = 0; i < allFgField.Count; i++)
-        {
-            Assert.Equal(0.0, allFgField[i].Value, 9);
-        }
+        MatrixAssert.ApproxEqual(TestMatrices.Constant<DoublePixel>(4, 4, 0.0), allFgField, 1e-9);
     }
 
     [Fact]
     public void Compute_ImageAndSaliencyOverload_ShouldExtractMaskAndComputeDistanceField()
     {
-        var image = new SequentialMatrix<Rgb8>(20, 20);
-        var saliency = new SequentialMatrix<DoublePixel>(20, 20);
-        for (int y = 0; y < 20; y++)
-        {
-            for (int x = 0; x < 20; x++)
-            {
-                bool fg = x >= 6 && x <= 13 && y >= 6 && y <= 13;
-                image[x, y] = fg ? new Rgb8(220, 30, 30) : new Rgb8(20, 180, 40);
-                saliency[x, y] = fg ? 0.9 : 0.05;
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.CenteredBox(
+            20,
+            20,
+            6,
+            6,
+            13,
+            13,
+            new Rgb8(220, 30, 30),
+            new Rgb8(20, 180, 40));
+        SequentialMatrix<DoublePixel> saliency = TestMatrices.CenteredBox<DoublePixel>(
+            20,
+            20,
+            6,
+            6,
+            13,
+            13,
+            0.9,
+            0.05);
 
         (MaskMatrix mask, Matrix<DoublePixel> field) = SaliencyDistanceField.Compute(image, saliency);
         Assert.True(mask[10, 10]);
@@ -171,14 +154,7 @@ public class SaliencyDistanceFieldTests
     [Fact]
     public void Compute_LargeSmoothingSigma_ShouldPreserveExactZeroInSalientMaskAndRecoverViaExtractSalientMask()
     {
-        var mask = new MaskMatrix(64, 64);
-        for (int y = 20; y <= 43; y++)
-        {
-            for (int x = 20; x <= 43; x++)
-            {
-                mask[x, y] = true;
-            }
-        }
+        SequentialMatrix<bool> mask = TestMatrices.CenteredBox(64, 64, 20, 20, 43, 43, true, false);
 
         Matrix<DoublePixel> smoothed = SaliencyDistanceField.Compute(mask, new SaliencyDistanceFieldOptions(SmoothingSigma: 18.0));
 

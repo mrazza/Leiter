@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Saliency;
 using Leiter.Tests.Algorithms;
@@ -18,13 +19,15 @@ public class SaliencyMaskOptionsTests : AlgorithmOptionsContractTestsBase<Salien
             Method: SaliencyThresholdMethod.Fixed,
             FixedThreshold: 0.4,
             RetentionPolicy: ComponentRetentionPolicy.LargestComponentOnly,
-            MinAreaFraction: 0.05);
+            MinAreaFraction: 0.05,
+            Connectivity: GridConnectivity.FourConnected);
 
     /// <inheritdoc/>
     protected override SaliencyMaskOptions CreateInvalidOptions() =>
         new(FixedThreshold: -0.1);
+
     [Fact]
-    public void Constructor_DefaultProperties_ShouldMatchDefaultInstanceAndPassValidation()
+    public void Constructor_DefaultProperties_ShouldMatchDefaultInstance()
     {
         var options = new SaliencyMaskOptions();
 
@@ -32,10 +35,8 @@ public class SaliencyMaskOptionsTests : AlgorithmOptionsContractTestsBase<Salien
         Assert.Equal(70.0 / 255.0, options.FixedThreshold, 9);
         Assert.Equal(ComponentRetentionPolicy.MinimumAreaFraction, options.RetentionPolicy);
         Assert.Equal(0.01, options.MinAreaFraction, 9);
+        Assert.Equal(GridConnectivity.EightConnected, options.Connectivity);
         Assert.Equal(SaliencyMaskOptions.Default, options);
-
-        options.Validate();
-        SaliencyMaskOptions.Default.Validate();
     }
 
     [Fact]
@@ -45,6 +46,8 @@ public class SaliencyMaskOptionsTests : AlgorithmOptionsContractTestsBase<Salien
             new SaliencyMaskOptions(Method: (SaliencyThresholdMethod)99).Validate());
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new SaliencyMaskOptions(RetentionPolicy: (ComponentRetentionPolicy)(-1)).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new SaliencyMaskOptions(Connectivity: (GridConnectivity)99).Validate());
     }
 
     [Theory]
