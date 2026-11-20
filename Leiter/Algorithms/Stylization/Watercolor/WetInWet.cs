@@ -64,7 +64,7 @@ public static class WetInWet
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        OrientedEllipticalFilterOptions filterOpts = opts.EllipticalFilter ?? WetInWetOptions.DefaultEllipticalFilter;
+        OrientedEllipticalFilterOptions filterOpts = opts.EllipticalFilter;
 
         int boundaryCount = regionGraph.Boundaries.Count;
         if (image.Count == 0 || opts.Mode == WetInWetMode.Disabled || boundaryCount == 0)

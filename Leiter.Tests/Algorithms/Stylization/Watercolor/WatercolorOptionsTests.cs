@@ -116,19 +116,19 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
 
         Assert.Null(options.TargetPalette);
         Assert.Equal(1.0, options.ColorTransferStrength);
-        Assert.Null(options.Egbi);
-        Assert.Null(options.RegionalContrastSaliency);
-        Assert.Null(options.SaliencyCut);
-        Assert.Null(options.SaliencyDistanceField);
-        Assert.Null(options.MeanShift);
-        Assert.Null(options.LodAbstraction);
-        Assert.Null(options.WetInWet);
-        Assert.Null(options.HandTremor);
-        Assert.Null(options.EdgeDarkening);
-        Assert.Null(options.TurbulenceFlow);
-        Assert.Null(options.ToneCurve);
-        Assert.Null(options.PaperGranulation);
-        Assert.Null(options.Fxaa);
+        Assert.Equal(WatercolorOptions.DefaultSaliencyEgbi, options.Egbi);
+        Assert.Equal(RegionalContrastSaliencyOptions.Default, options.RegionalContrastSaliency);
+        Assert.Equal(SaliencyCutOptions.Default, options.SaliencyCut);
+        Assert.Equal(SaliencyDistanceFieldOptions.Default, options.SaliencyDistanceField);
+        Assert.Equal(MeanShiftOptions.Default, options.MeanShift);
+        Assert.Equal(LodAbstractionOptions.Default, options.LodAbstraction);
+        Assert.Equal(WetInWetOptions.Default, options.WetInWet);
+        Assert.Equal(HandTremorOptions.Default, options.HandTremor);
+        Assert.Equal(EdgeDarkeningOptions.Default, options.EdgeDarkening);
+        Assert.Equal(TurbulenceFlowOptions.Default, options.TurbulenceFlow);
+        Assert.Equal(PiecewiseToneCurveOptions.Default, options.ToneCurve);
+        Assert.Equal(PaperGranulationOptions.Default, options.PaperGranulation);
+        Assert.Equal(FxaaOptions.Default, options.Fxaa);
         Assert.True(options.EnableFxaa);
         Assert.Equal(0.8, options.EgbiBlurSigma, 6);
         Assert.True(options.EnableColorTransfer);
@@ -140,6 +140,52 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
         Assert.True(options.EnableToneCurve);
         Assert.True(options.EnablePaperGranulation);
         Assert.Equal(WatercolorOptions.Default, options);
+
+        var explicitDefaults = new WatercolorOptions(
+            Egbi: WatercolorOptions.DefaultSaliencyEgbi,
+            RegionalContrastSaliency: RegionalContrastSaliencyOptions.Default,
+            SaliencyCut: SaliencyCutOptions.Default,
+            SaliencyDistanceField: SaliencyDistanceFieldOptions.Default,
+            MeanShift: MeanShiftOptions.Default,
+            LodAbstraction: LodAbstractionOptions.Default,
+            WetInWet: WetInWetOptions.Default,
+            HandTremor: HandTremorOptions.Default,
+            EdgeDarkening: EdgeDarkeningOptions.Default,
+            TurbulenceFlow: TurbulenceFlowOptions.Default,
+            ToneCurve: PiecewiseToneCurveOptions.Default,
+            PaperGranulation: PaperGranulationOptions.Default,
+            Fxaa: FxaaOptions.Default);
+        Assert.Equal(options, explicitDefaults);
+
+        WatercolorOptions resetViaWith = CreateValidCustomOptions() with
+        {
+            Egbi = null!,
+            RegionalContrastSaliency = null!,
+            SaliencyCut = null!,
+            SaliencyDistanceField = null!,
+            MeanShift = null!,
+            LodAbstraction = null!,
+            WetInWet = null!,
+            HandTremor = null!,
+            EdgeDarkening = null!,
+            TurbulenceFlow = null!,
+            ToneCurve = null!,
+            PaperGranulation = null!,
+            Fxaa = null!
+        };
+        Assert.Equal(WatercolorOptions.DefaultSaliencyEgbi, resetViaWith.Egbi);
+        Assert.Equal(RegionalContrastSaliencyOptions.Default, resetViaWith.RegionalContrastSaliency);
+        Assert.Equal(SaliencyCutOptions.Default, resetViaWith.SaliencyCut);
+        Assert.Equal(SaliencyDistanceFieldOptions.Default, resetViaWith.SaliencyDistanceField);
+        Assert.Equal(MeanShiftOptions.Default, resetViaWith.MeanShift);
+        Assert.Equal(LodAbstractionOptions.Default, resetViaWith.LodAbstraction);
+        Assert.Equal(WetInWetOptions.Default, resetViaWith.WetInWet);
+        Assert.Equal(HandTremorOptions.Default, resetViaWith.HandTremor);
+        Assert.Equal(EdgeDarkeningOptions.Default, resetViaWith.EdgeDarkening);
+        Assert.Equal(TurbulenceFlowOptions.Default, resetViaWith.TurbulenceFlow);
+        Assert.Equal(PiecewiseToneCurveOptions.Default, resetViaWith.ToneCurve);
+        Assert.Equal(PaperGranulationOptions.Default, resetViaWith.PaperGranulation);
+        Assert.Equal(FxaaOptions.Default, resetViaWith.Fxaa);
 
         options.Validate();
     }

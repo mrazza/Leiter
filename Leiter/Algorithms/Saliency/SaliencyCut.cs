@@ -66,7 +66,7 @@ public static class SaliencyCut
         Matrix<DoublePixel> smallSaliency = saliencyMap.ResizeBox(workingSize);
         int scaledBandRadius = OptionTuning.RoundPositiveInt(options.TrimapBandRadius * scale);
 
-        GrabCutOptions grabCutOptions = options.GrabCut ?? SaliencyCutOptions.DefaultGrabCut;
+        GrabCutOptions grabCutOptions = options.GrabCut;
         GrabCutOptions scaledGrabCut = grabCutOptions with
         {
             SmoothnessWeight = OptionTuning.ScaleFiniteNonNegative(grabCutOptions.SmoothnessWeight * scale)
@@ -87,7 +87,7 @@ public static class SaliencyCut
         SaliencyCutOptions options,
         out int foregroundCount)
     {
-        SaliencyMaskOptions maskOptions = options.Mask ?? SaliencyCutOptions.DefaultMask;
+        SaliencyMaskOptions maskOptions = options.Mask;
         MaskMatrix candidate = SaliencyMask.Binarize(saliencyMap, maskOptions);
 
         foregroundCount = candidate.CountTrue();
@@ -111,8 +111,8 @@ public static class SaliencyCut
         if (seedFgCount == 0 || seedFgCount == image.Count)
             return candidateMask;
 
-        GrabCutOptions grabCutOptions = options.GrabCut ?? SaliencyCutOptions.DefaultGrabCut;
-        SaliencyMaskOptions maskOptions = options.Mask ?? SaliencyCutOptions.DefaultMask;
+        GrabCutOptions grabCutOptions = options.GrabCut;
+        SaliencyMaskOptions maskOptions = options.Mask;
         int bandRadius = options.TrimapBandRadius;
 
         cancellationToken.ThrowIfCancellationRequested();

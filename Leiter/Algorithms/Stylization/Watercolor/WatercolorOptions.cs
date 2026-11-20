@@ -84,14 +84,131 @@ public sealed record WatercolorOptions(
     public const double DefaultEgbiBlurSigma = OptionTuning.DefaultBaseBlurSigma;
 
     /// <summary>
+    /// Gets the baseline EGBI segmentation options used in Stage 2 regional contrast saliency when <c>Egbi</c> is omitted or <see langword="null"/>.
+    /// </summary>
+    public static EgbiOptions DefaultSaliencyEgbi { get; } = new(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200);
+
+    /// <summary>
     /// Gets the default <see cref="WatercolorOptions"/> instance.
     /// </summary>
     public static WatercolorOptions Default { get; } = new();
 
     /// <summary>
-    /// Gets the baseline EGBI segmentation options used in Stage 2 regional contrast saliency when <see cref="Egbi"/> is <see langword="null"/>.
+    /// Gets the Stage 2 EGBI over-segmentation options used for regional contrast saliency (defaults to <see cref="DefaultSaliencyEgbi"/>).
     /// </summary>
-    public static EgbiOptions DefaultSaliencyEgbi { get; } = new(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200);
+    public EgbiOptions Egbi
+    {
+        get;
+        init => field = value ?? DefaultSaliencyEgbi;
+    } = Egbi ?? DefaultSaliencyEgbi;
+
+    /// <summary>
+    /// Gets the Stage 2 regional contrast saliency smoothing and border attenuation options.
+    /// </summary>
+    public RegionalContrastSaliencyOptions RegionalContrastSaliency
+    {
+        get;
+        init => field = value ?? RegionalContrastSaliencyOptions.Default;
+    } = RegionalContrastSaliency ?? RegionalContrastSaliencyOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 2 iterative salient region extraction options.
+    /// </summary>
+    public SaliencyCutOptions SaliencyCut
+    {
+        get;
+        init => field = value ?? SaliencyCutOptions.Default;
+    } = SaliencyCut ?? SaliencyCutOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 2 saliency distance field smoothing options.
+    /// </summary>
+    public SaliencyDistanceFieldOptions SaliencyDistanceField
+    {
+        get;
+        init => field = value ?? SaliencyDistanceFieldOptions.Default;
+    } = SaliencyDistanceField ?? SaliencyDistanceFieldOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 3 CIELAB Mean-Shift segmentation options.
+    /// </summary>
+    public MeanShiftOptions MeanShift
+    {
+        get;
+        init => field = value ?? MeanShiftOptions.Default;
+    } = MeanShift ?? MeanShiftOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 3 saliency-guided level-of-detail abstraction options.
+    /// </summary>
+    public LodAbstractionOptions LodAbstraction
+    {
+        get;
+        init => field = value ?? LodAbstractionOptions.Default;
+    } = LodAbstraction ?? LodAbstractionOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 4 wet-in-wet edge bleeding options.
+    /// </summary>
+    public WetInWetOptions WetInWet
+    {
+        get;
+        init => field = value ?? WetInWetOptions.Default;
+    } = WetInWet ?? WetInWetOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 5 hand-tremor boundary perturbation options.
+    /// </summary>
+    public HandTremorOptions HandTremor
+    {
+        get;
+        init => field = value ?? HandTremorOptions.Default;
+    } = HandTremor ?? HandTremorOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 6 pigment edge darkening options.
+    /// </summary>
+    public EdgeDarkeningOptions EdgeDarkening
+    {
+        get;
+        init => field = value ?? EdgeDarkeningOptions.Default;
+    } = EdgeDarkening ?? EdgeDarkeningOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 6 low-frequency turbulence wash variation options.
+    /// </summary>
+    public TurbulenceFlowOptions TurbulenceFlow
+    {
+        get;
+        init => field = value ?? TurbulenceFlowOptions.Default;
+    } = TurbulenceFlow ?? TurbulenceFlowOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 6 piecewise tone reproduction curve options.
+    /// </summary>
+    public PiecewiseToneCurveOptions ToneCurve
+    {
+        get;
+        init => field = value ?? PiecewiseToneCurveOptions.Default;
+    } = ToneCurve ?? PiecewiseToneCurveOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 6 paper fiber granulation and micro-warp options.
+    /// </summary>
+    public PaperGranulationOptions PaperGranulation
+    {
+        get;
+        init => field = value ?? PaperGranulationOptions.Default;
+    } = PaperGranulation ?? PaperGranulationOptions.Default;
+
+    /// <summary>
+    /// Gets the Stage 6 full-screen FXAA anti-aliasing options.
+    /// </summary>
+    public FxaaOptions Fxaa
+    {
+        get;
+        init => field = value ?? FxaaOptions.Default;
+    } = Fxaa ?? FxaaOptions.Default;
 
     /// <summary>
     /// Creates <see cref="WatercolorOptions"/> with every pipeline stage tuned geometrically for <paramref name="size"/> by delegating to each stage option type's <c>ForSize</c> factory.
@@ -132,19 +249,16 @@ public sealed record WatercolorOptions(
 
         return baseline with
         {
-            Egbi = EgbiOptions.ForSize(size, baseline.Egbi ?? DefaultSaliencyEgbi, referenceDimension),
-            RegionalContrastSaliency = baseline.RegionalContrastSaliency ?? RegionalContrastSaliencyOptions.Default,
-            SaliencyCut = SaliencyCutOptions.ForSize(size, baseline.SaliencyCut ?? SaliencyCutOptions.Default, referenceDimension),
-            SaliencyDistanceField = baseline.SaliencyDistanceField ?? SaliencyDistanceFieldOptions.Default,
-            MeanShift = MeanShiftOptions.ForSize(size, baseline.MeanShift ?? MeanShiftOptions.Default, referenceDimension),
-            LodAbstraction = LodAbstractionOptions.ForSizeUnchecked(size, baseline.LodAbstraction ?? LodAbstractionOptions.Default, referenceDimension),
-            WetInWet = WetInWetOptions.ForSizeUnchecked(size, baseline.WetInWet ?? WetInWetOptions.Default, referenceDimension),
-            HandTremor = HandTremorOptions.ForSizeUnchecked(size, baseline.HandTremor ?? HandTremorOptions.Default, referenceDimension),
-            EdgeDarkening = EdgeDarkeningOptions.ForSizeUnchecked(size, baseline.EdgeDarkening ?? EdgeDarkeningOptions.Default, referenceDimension),
-            TurbulenceFlow = TurbulenceFlowOptions.ForSizeUnchecked(size, baseline.TurbulenceFlow ?? TurbulenceFlowOptions.Default, referenceDimension),
-            ToneCurve = baseline.ToneCurve ?? PiecewiseToneCurveOptions.Default,
-            PaperGranulation = PaperGranulationOptions.ForSizeUnchecked(size, baseline.PaperGranulation ?? PaperGranulationOptions.Default, referenceDimension),
-            Fxaa = FxaaOptions.ForSize(size, baseline.Fxaa ?? FxaaOptions.Default, referenceDimension),
+            Egbi = EgbiOptions.ForSize(size, baseline.Egbi, referenceDimension),
+            SaliencyCut = SaliencyCutOptions.ForSize(size, baseline.SaliencyCut, referenceDimension),
+            MeanShift = MeanShiftOptions.ForSize(size, baseline.MeanShift, referenceDimension),
+            LodAbstraction = LodAbstractionOptions.ForSizeUnchecked(size, baseline.LodAbstraction, referenceDimension),
+            WetInWet = WetInWetOptions.ForSizeUnchecked(size, baseline.WetInWet, referenceDimension),
+            HandTremor = HandTremorOptions.ForSizeUnchecked(size, baseline.HandTremor, referenceDimension),
+            EdgeDarkening = EdgeDarkeningOptions.ForSizeUnchecked(size, baseline.EdgeDarkening, referenceDimension),
+            TurbulenceFlow = TurbulenceFlowOptions.ForSizeUnchecked(size, baseline.TurbulenceFlow, referenceDimension),
+            PaperGranulation = PaperGranulationOptions.ForSizeUnchecked(size, baseline.PaperGranulation, referenceDimension),
+            Fxaa = FxaaOptions.ForSize(size, baseline.Fxaa, referenceDimension),
             EgbiBlurSigma = baseline.EgbiBlurSigma == 0.0 ? 0.0 : OptionTuning.ScaleFiniteNonNegative(baseline.EgbiBlurSigma * s)
         };
     }
@@ -287,19 +401,17 @@ public sealed record WatercolorOptions(
         {
             TargetPalette = selectedPalette,
             ColorTransferStrength = transferStrength,
-            Egbi = EgbiOptions.ForProfile(in postTransferProfile, baseline.Egbi ?? DefaultSaliencyEgbi, referenceDimension),
-            RegionalContrastSaliency = baseline.RegionalContrastSaliency ?? RegionalContrastSaliencyOptions.Default,
-            SaliencyCut = SaliencyCutOptions.ForProfile(in postTransferProfile, baseline.SaliencyCut ?? SaliencyCutOptions.Default, referenceDimension),
-            SaliencyDistanceField = baseline.SaliencyDistanceField ?? SaliencyDistanceFieldOptions.Default,
-            MeanShift = MeanShiftOptions.ForProfile(in postTransferProfile, baseline.MeanShift ?? MeanShiftOptions.Default, referenceDimension),
-            LodAbstraction = LodAbstractionOptions.ForProfile(in postTransferProfile, baseline.LodAbstraction ?? LodAbstractionOptions.Default, referenceDimension),
-            WetInWet = WetInWetOptions.ForProfile(in postTransferProfile, baseline.WetInWet ?? WetInWetOptions.Default, referenceDimension),
-            HandTremor = HandTremorOptions.ForSizeUnchecked(postTransferProfile.ImageSize, baseline.HandTremor ?? HandTremorOptions.Default, referenceDimension),
-            EdgeDarkening = EdgeDarkeningOptions.ForProfile(in postTransferProfile, baseline.EdgeDarkening ?? EdgeDarkeningOptions.Default, referenceDimension),
-            TurbulenceFlow = TurbulenceFlowOptions.ForSizeUnchecked(postTransferProfile.ImageSize, baseline.TurbulenceFlow ?? TurbulenceFlowOptions.Default, referenceDimension),
-            ToneCurve = PiecewiseToneCurveOptions.ForProfile(in postTransferProfile, baseline.ToneCurve ?? PiecewiseToneCurveOptions.Default, referenceDimension),
-            PaperGranulation = PaperGranulationOptions.ForSizeUnchecked(postTransferProfile.ImageSize, baseline.PaperGranulation ?? PaperGranulationOptions.Default, referenceDimension),
-            Fxaa = FxaaOptions.ForProfile(in postTransferProfile, baseline.Fxaa ?? FxaaOptions.Default, referenceDimension),
+            Egbi = EgbiOptions.ForProfile(in postTransferProfile, baseline.Egbi, referenceDimension),
+            SaliencyCut = SaliencyCutOptions.ForProfile(in postTransferProfile, baseline.SaliencyCut, referenceDimension),
+            MeanShift = MeanShiftOptions.ForProfile(in postTransferProfile, baseline.MeanShift, referenceDimension),
+            LodAbstraction = LodAbstractionOptions.ForProfile(in postTransferProfile, baseline.LodAbstraction, referenceDimension),
+            WetInWet = WetInWetOptions.ForProfile(in postTransferProfile, baseline.WetInWet, referenceDimension),
+            HandTremor = HandTremorOptions.ForSizeUnchecked(postTransferProfile.ImageSize, baseline.HandTremor, referenceDimension),
+            EdgeDarkening = EdgeDarkeningOptions.ForProfile(in postTransferProfile, baseline.EdgeDarkening, referenceDimension),
+            TurbulenceFlow = TurbulenceFlowOptions.ForSizeUnchecked(postTransferProfile.ImageSize, baseline.TurbulenceFlow, referenceDimension),
+            ToneCurve = PiecewiseToneCurveOptions.ForProfile(in postTransferProfile, baseline.ToneCurve, referenceDimension),
+            PaperGranulation = PaperGranulationOptions.ForSizeUnchecked(postTransferProfile.ImageSize, baseline.PaperGranulation, referenceDimension),
+            Fxaa = FxaaOptions.ForProfile(in postTransferProfile, baseline.Fxaa, referenceDimension),
             EgbiBlurSigma = baseline.EgbiBlurSigma == 0.0
                 ? 0.0
                 : OptionTuning.ScaleFiniteNonNegative(baseline.EgbiBlurSigma * s * Math.Sqrt(postTransferProfile.ClutterFactor))
@@ -318,18 +430,18 @@ public sealed record WatercolorOptions(
 
         TargetPalette?.Validate(nameof(TargetPalette));
 
-        Egbi?.Validate();
-        RegionalContrastSaliency?.Validate();
-        SaliencyCut?.Validate();
-        SaliencyDistanceField?.Validate();
-        MeanShift?.Validate();
-        LodAbstraction?.Validate();
-        WetInWet?.Validate();
-        HandTremor?.Validate();
-        EdgeDarkening?.Validate();
-        TurbulenceFlow?.Validate();
-        ToneCurve?.Validate();
-        PaperGranulation?.Validate();
-        Fxaa?.Validate();
+        Egbi.Validate();
+        RegionalContrastSaliency.Validate();
+        SaliencyCut.Validate();
+        SaliencyDistanceField.Validate();
+        MeanShift.Validate();
+        LodAbstraction.Validate();
+        WetInWet.Validate();
+        HandTremor.Validate();
+        EdgeDarkening.Validate();
+        TurbulenceFlow.Validate();
+        ToneCurve.Validate();
+        PaperGranulation.Validate();
+        Fxaa.Validate();
     }
 }

@@ -23,12 +23,7 @@ public sealed record PaperGranulationOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
-    /// Gets the default <see cref="PaperGranulationOptions"/> instance.
-    /// </summary>
-    public static PaperGranulationOptions Default { get; } = new();
-
-    /// <summary>
-    /// Gets the default procedural paper grain Perlin noise options used when <see cref="GrainNoise"/> is <see langword="null"/>.
+    /// Gets the default procedural paper grain Perlin noise options used when <c>GrainNoise</c> is omitted or <see langword="null"/>.
     /// </summary>
     public static PerlinNoiseOptions DefaultGrainNoise { get; } = new(
         Seed: 707,
@@ -36,6 +31,20 @@ public sealed record PaperGranulationOptions(
         Octaves: 4,
         Lacunarity: 2.0,
         Persistence: 0.55);
+
+    /// <summary>
+    /// Gets the default <see cref="PaperGranulationOptions"/> instance.
+    /// </summary>
+    public static PaperGranulationOptions Default { get; } = new();
+
+    /// <summary>
+    /// Gets the Perlin noise options for procedural paper fiber synthesis (defaults to <see cref="DefaultGrainNoise"/>).
+    /// </summary>
+    public PerlinNoiseOptions GrainNoise
+    {
+        get;
+        init => field = value ?? DefaultGrainNoise;
+    } = GrainNoise ?? DefaultGrainNoise;
 
     /// <summary>
     /// Creates <see cref="PaperGranulationOptions"/> with <see cref="WarpAmplitude"/> scaled linearly and <see cref="GrainNoise"/> frequency scaled inversely to linear dimension for <paramref name="size"/>.
@@ -80,11 +89,10 @@ public sealed record PaperGranulationOptions(
             return baseline;
         }
 
-        PerlinNoiseOptions grainBaseline = baseline.GrainNoise ?? DefaultGrainNoise;
         return baseline with
         {
             WarpAmplitude = baseline.WarpAmplitude == 0.0 ? 0.0 : OptionTuning.ScaleFiniteNonNegative(baseline.WarpAmplitude * s),
-            GrainNoise = PerlinNoiseOptions.ForSize(size, grainBaseline, referenceDimension)
+            GrainNoise = PerlinNoiseOptions.ForSize(size, baseline.GrainNoise, referenceDimension)
         };
     }
 
@@ -165,6 +173,6 @@ public sealed record PaperGranulationOptions(
         Guard.ThrowIfNotFiniteNonNegative(DensityStrength);
         Guard.ThrowIfNotFiniteNonNegative(WarpAmplitude);
 
-        GrainNoise?.Validate();
+        GrainNoise.Validate();
     }
 }

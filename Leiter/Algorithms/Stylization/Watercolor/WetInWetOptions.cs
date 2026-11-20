@@ -51,6 +51,15 @@ public sealed record WetInWetOptions(
     public static WetInWetOptions Default { get; } = new();
 
     /// <summary>
+    /// Gets the oriented elliptical Gaussian smoothing configuration (defaults to <see cref="DefaultEllipticalFilter"/>).
+    /// </summary>
+    public OrientedEllipticalFilterOptions EllipticalFilter
+    {
+        get;
+        init => field = value ?? DefaultEllipticalFilter;
+    } = EllipticalFilter ?? DefaultEllipticalFilter;
+
+    /// <summary>
     /// Creates <see cref="WetInWetOptions"/> with scatter radius, elliptical filter radii, and color gradient threshold scaled for <paramref name="size"/>.
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
@@ -93,7 +102,6 @@ public sealed record WetInWetOptions(
             return baseline;
         }
 
-        OrientedEllipticalFilterOptions filterBaseline = baseline.EllipticalFilter ?? DefaultEllipticalFilter;
         double minGradient = Math.Min(MinScaledGradientThreshold, baseline.ColorGradientThreshold);
         double maxGradient = Math.Max(MaxScaledGradientThreshold, baseline.ColorGradientThreshold);
         double colorGradientThreshold = baseline.ColorGradientThreshold == 0.0
@@ -103,7 +111,7 @@ public sealed record WetInWetOptions(
         return baseline with
         {
             ScatterRadius = OptionTuning.RoundPositiveInt(baseline.ScatterRadius * s),
-            EllipticalFilter = OrientedEllipticalFilterOptions.ForSize(size, filterBaseline, referenceDimension),
+            EllipticalFilter = OrientedEllipticalFilterOptions.ForSize(size, baseline.EllipticalFilter, referenceDimension),
             ColorGradientThreshold = colorGradientThreshold
         };
     }
@@ -214,6 +222,6 @@ public sealed record WetInWetOptions(
         Guard.ThrowIfNotFiniteInRange(SalientOverlapThreshold, 0.0, 1.0);
         ArgumentOutOfRangeException.ThrowIfLessThan(ScatterRadius, 1);
         Guard.ThrowIfNotFiniteInRange(SeedProbability, 0.0, 1.0);
-        EllipticalFilter?.Validate();
+        EllipticalFilter.Validate();
     }
 }

@@ -33,7 +33,14 @@ public class TurbulenceFlowOptionsTests : SizeTunableOptionsContractTestsBase<Tu
         var options = new TurbulenceFlowOptions();
 
         Assert.Equal(0.35, options.Intensity);
-        Assert.Null(options.Noise);
+        Assert.Equal(TurbulenceFlowOptions.DefaultNoise, options.Noise);
+        Assert.Equal(TurbulenceFlowOptions.Default, options);
+
+        var explicitDefaults = new TurbulenceFlowOptions(Noise: TurbulenceFlowOptions.DefaultNoise);
+        Assert.Equal(options, explicitDefaults);
+
+        TurbulenceFlowOptions resetViaWith = CreateValidCustomOptions() with { Noise = null! };
+        Assert.Equal(TurbulenceFlowOptions.DefaultNoise, resetViaWith.Noise);
 
         options.Validate();
     }

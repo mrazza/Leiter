@@ -21,12 +21,7 @@ public sealed record TurbulenceFlowOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
-    /// Gets the default <see cref="TurbulenceFlowOptions"/> instance.
-    /// </summary>
-    public static TurbulenceFlowOptions Default { get; } = new();
-
-    /// <summary>
-    /// Gets the default fractal Perlin noise options used when <see cref="Noise"/> is <see langword="null"/>.
+    /// Gets the default fractal Perlin noise options used when <c>Noise</c> is omitted or <see langword="null"/>.
     /// </summary>
     public static PerlinNoiseOptions DefaultNoise { get; } = new(
         Seed: 404,
@@ -34,6 +29,20 @@ public sealed record TurbulenceFlowOptions(
         Octaves: 4,
         Lacunarity: 2.0,
         Persistence: 0.5);
+
+    /// <summary>
+    /// Gets the default <see cref="TurbulenceFlowOptions"/> instance.
+    /// </summary>
+    public static TurbulenceFlowOptions Default { get; } = new();
+
+    /// <summary>
+    /// Gets the Perlin noise options for generating the fractal turbulence field (defaults to <see cref="DefaultNoise"/>).
+    /// </summary>
+    public PerlinNoiseOptions Noise
+    {
+        get;
+        init => field = value ?? DefaultNoise;
+    } = Noise ?? DefaultNoise;
 
     /// <summary>
     /// Creates <see cref="TurbulenceFlowOptions"/> with fractal flow <see cref="Noise"/> scaled for <paramref name="size"/>.
@@ -78,10 +87,9 @@ public sealed record TurbulenceFlowOptions(
             return baseline;
         }
 
-        PerlinNoiseOptions noiseBaseline = baseline.Noise ?? DefaultNoise;
         return baseline with
         {
-            Noise = PerlinNoiseOptions.ForSize(size, noiseBaseline, referenceDimension)
+            Noise = PerlinNoiseOptions.ForSize(size, baseline.Noise, referenceDimension)
         };
     }
 
@@ -161,6 +169,6 @@ public sealed record TurbulenceFlowOptions(
     {
         Guard.ThrowIfNotFiniteNonNegative(Intensity);
 
-        Noise?.Validate();
+        Noise.Validate();
     }
 }
