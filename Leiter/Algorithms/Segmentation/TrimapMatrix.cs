@@ -83,7 +83,7 @@ public class TrimapMatrix : SequentialMatrix<TrimapLabel>
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(rectangleSize.Width, 0, nameof(rectangleSize));
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(rectangleSize.Height, 0, nameof(rectangleSize));
 
-        if (imageSize.Width == 0 || imageSize.Height == 0)
+        if (imageSize.IsEmpty)
             return new TrimapMatrix(imageSize);
 
         int left = Math.Max(0, rectangleTopLeft.X);
@@ -95,8 +95,7 @@ public class TrimapMatrix : SequentialMatrix<TrimapLabel>
             throw new ArgumentException("Foreground rectangle does not overlap the image bounds.", nameof(rectangleTopLeft));
 
         long overlapArea = (long)(right - left) * (bottom - top);
-        long totalArea = (long)imageSize.Width * imageSize.Height;
-        if (overlapArea == totalArea)
+        if (overlapArea == imageSize.Area)
             throw new ArgumentException("Foreground rectangle must leave at least one background pixel outside it.", nameof(rectangleSize));
 
         var trimap = new TrimapMatrix(imageSize);
@@ -131,18 +130,8 @@ public class TrimapMatrix : SequentialMatrix<TrimapLabel>
         if (candidateMask.Count == 0)
             return new TrimapMatrix(candidateMask.Size);
 
-        int width = candidateMask.Width;
-        int height = candidateMask.Height;
-        var data = new TrimapLabel[candidateMask.Count];
-
-        Parallel.For(0, height, y =>
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-                data[rowBase + x] = candidateMask[x, y] ? foregroundLabel : backgroundLabel;
-        });
-
-        return new TrimapMatrix(width, height, data);
+        TrimapLabel[] data = candidateMask.MapToArray(isForeground => isForeground ? foregroundLabel : backgroundLabel);
+        return new TrimapMatrix(candidateMask.Width, candidateMask.Height, data);
     }
 
     /// <summary>
@@ -160,22 +149,20 @@ public class TrimapMatrix : SequentialMatrix<TrimapLabel>
         IReadOnlyMatrix<bool> sureForeground,
         IReadOnlyMatrix<bool> possibleForegroundRegion)
     {
-        ArgumentNullException.ThrowIfNull(currentMask);
-        ArgumentNullException.ThrowIfNull(sureForeground);
-        ArgumentNullException.ThrowIfNull(possibleForegroundRegion);
         Guard.ThrowIfSizeMismatch(currentMask, sureForeground);
         Guard.ThrowIfSizeMismatch(currentMask, possibleForegroundRegion);
 
         if (currentMask.Count == 0)
             return new TrimapMatrix(currentMask.Size);
 
-        int width = currentMask.Width;
-        int height = currentMask.Height;
+        Size size = currentMask.Size;
+        int width = size.Width;
+        int height = size.Height;
         var data = new TrimapLabel[currentMask.Count];
 
         Parallel.For(0, height, y =>
         {
-            int rowBase = y * width;
+            int rowBase = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
             {
                 if (!possibleForegroundRegion[x, y])

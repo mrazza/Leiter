@@ -1,14 +1,10 @@
 namespace Leiter.Algorithms.Segmentation;
 
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Leiter.Algorithms;
+using System;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
-using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
 /// Efficient Graph-Based Image Segmentation
@@ -28,6 +24,23 @@ public static class EgbiSegmentation
     /// </summary>
     /// <param name="InternalDifference">The maximum edge weight in the minimum spanning tree of the partition plus threshold penalty.</param>
     private readonly record struct PartitionInfo(double InternalDifference);
+
+    private readonly record struct SortableEdge(UndirectedGraphEdge<int> Edge, ulong TieBreaker);
+
+    private sealed class EdgeBuildState<T>(
+        Size size,
+        IReadOnlyMatrix<T> image,
+        T[]? rawPixels,
+        SortableEdge[] edges,
+        int[] rowCursors)
+        where T : struct, IPixel<T>
+    {
+        public readonly Size Size = size;
+        public readonly IReadOnlyMatrix<T> Image = image;
+        public readonly T[]? RawPixels = rawPixels;
+        public readonly SortableEdge[] Edges = edges;
+        public readonly int[] RowCursors = rowCursors;
+    }
 
     /// <summary>
     /// Segments an image using the Efficient Graph-Based Image Segmentation (EGBI) algorithm.
@@ -53,7 +66,7 @@ public static class EgbiSegmentation
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        EgbiOptions resolvedOptions = OptionsResolver.Resolve(options, EgbiOptions.Default);
+        EgbiOptions resolvedOptions = OptionsResolver.Resolve(options);
 
         double kFactor = resolvedOptions.KFactor;
         double epsilon = resolvedOptions.Epsilon;
@@ -63,16 +76,14 @@ public static class EgbiSegmentation
         if (image.Count == 0)
             return disjointSet;
 
-        UndirectedGraphEdge<Coord>[] graphEdges = BuildSortedGraphEdges(image, resolvedOptions.Connectivity);
+        SortableEdge[] graphEdges = BuildSortedGraphEdges(image, resolvedOptions.Connectivity);
 
         // Reuse graphEdges in place for deferred edges: Segment owns this array exclusively,
         // and deferredCount <= i holds on every iteration so unread entries are never overwritten.
-        // This avoids both per-edge LinkedListNode heap allocations / pointer chasing and
-        // Large Object Heap array resizes from growing a separate List<UndirectedGraphEdge<Coord>>.
         int deferredCount = 0;
         for (int i = 0; i < graphEdges.Length; i++)
         {
-            UndirectedGraphEdge<Coord> edge = graphEdges[i];
+            UndirectedGraphEdge<int> edge = graphEdges[i].Edge;
             var firstPartition = disjointSet.GetPartition(edge.First);
             var secondPartition = disjointSet.GetPartition(edge.Second);
 
@@ -85,7 +96,7 @@ public static class EgbiSegmentation
             }
             else if (minRegionSize > 0)
             {
-                graphEdges[deferredCount++] = edge;
+                graphEdges[deferredCount++] = graphEdges[i];
             }
         }
 
@@ -97,65 +108,60 @@ public static class EgbiSegmentation
         return disjointSet;
     }
 
-    private static UndirectedGraphEdge<Coord>[] BuildSortedGraphEdges<T>(IReadOnlyMatrix<T> image, GridConnectivity connectivity)
+    private static SortableEdge[] BuildSortedGraphEdges<T>(IReadOnlyMatrix<T> image, GridConnectivity connectivity)
         where T : struct, IPixel<T>
     {
-        int edgesPerPixel = connectivity == GridConnectivity.EightConnected ? 4 : 2;
-        var rowEdges = new List<UndirectedGraphEdge<Coord>>[image.Height];
-        Parallel.For(0, image.Height, y =>
-        {
-            ReadOnlySpan<GridNeighbor> forwardNeighbors = GridNeighborhood.GetForward(connectivity);
-            var localEdges = new List<UndirectedGraphEdge<Coord>>(image.Width * edgesPerPixel);
-            for (int x = 0; x < image.Width; x++)
+        Size size = image.Size;
+        int width = size.Width;
+        int height = size.Height;
+        int rowEdgeStride = connectivity == GridConnectivity.EightConnected ? (4 * width) - 3 : (2 * width) - 1;
+        int totalEdges = ((height - 1) * rowEdgeStride) + (width - 1);
+        if (totalEdges <= 0)
+            return [];
+
+        var rowCursors = new int[height];
+        for (int y = 0; y < height; y++)
+            rowCursors[y] = y * rowEdgeStride;
+
+        var edges = new SortableEdge[totalEdges];
+        T[]? rawPixels = image is SequentialMatrix<T> sequential ? sequential.RawData : null;
+        var state = new EdgeBuildState<T>(size, image, rawPixels, edges, rowCursors);
+
+        GridNeighborhood.ForEachForwardPairParallel(
+            size,
+            connectivity,
+            state,
+            static (first, second, _, s) =>
             {
-                var self = new Coord(x, y);
-                T selfPixel = image[self];
-                for (int n = 0; n < forwardNeighbors.Length; n++)
-                {
-                    Coord other = self + forwardNeighbors[n].Offset;
-                    if (!image.Contains(other))
-                        continue;
+                int firstIndex = s.Size.IndexOf(first);
+                int secondIndex = s.Size.IndexOf(second);
+                double weight = s.RawPixels is not null
+                    ? s.RawPixels[firstIndex].Distance(s.RawPixels[secondIndex])
+                    : s.Image[firstIndex].Distance(s.Image[secondIndex]);
 
-                    localEdges.Add(new UndirectedGraphEdge<Coord>
-                    {
-                        First = self,
-                        Second = other,
-                        Weight = selfPixel.Distance(image[other]),
-                    });
-                }
-            }
+                int writeIndex = s.RowCursors[first.Y]++;
+                ulong tieBreaker = SplitMix64.HashCoordinates(first.X, first.Y, second.X, second.Y);
+                s.Edges[writeIndex] = new SortableEdge(
+                    new UndirectedGraphEdge<int>(firstIndex, secondIndex, weight),
+                    tieBreaker);
+            });
 
-            rowEdges[y] = localEdges;
-        });
-
-        int totalEdges = 0;
-        for (int y = 0; y < image.Height; y++)
-            totalEdges += rowEdges[y].Count;
-
-        var graphEdges = new UndirectedGraphEdge<Coord>[totalEdges];
-        int offset = 0;
-        for (int y = 0; y < image.Height; y++)
-        {
-            rowEdges[y].CopyTo(graphEdges, offset);
-            offset += rowEdges[y].Count;
-        }
-
-        Array.Sort(graphEdges, CompareEdges);
-        return graphEdges;
+        Array.Sort(edges, CompareEdges);
+        return edges;
     }
 
-    private static int CompareEdges(UndirectedGraphEdge<Coord> a, UndirectedGraphEdge<Coord> b)
+    private static int CompareEdges(SortableEdge a, SortableEdge b)
     {
-        int cmp = a.Weight.CompareTo(b.Weight);
-        if (cmp != 0) return cmp;
-        cmp = ComputeEdgeTieBreaker(a).CompareTo(ComputeEdgeTieBreaker(b));
-        if (cmp != 0) return cmp;
-        cmp = a.First.Y.CompareTo(b.First.Y);
-        if (cmp != 0) return cmp;
-        cmp = a.First.X.CompareTo(b.First.X);
-        if (cmp != 0) return cmp;
-        cmp = a.Second.Y.CompareTo(b.Second.Y);
-        return cmp != 0 ? cmp : a.Second.X.CompareTo(b.Second.X);
+        int cmp = a.Edge.Weight.CompareTo(b.Edge.Weight);
+        if (cmp != 0)
+            return cmp;
+
+        cmp = a.TieBreaker.CompareTo(b.TieBreaker);
+        if (cmp != 0)
+            return cmp;
+
+        cmp = a.Edge.First.CompareTo(b.Edge.First);
+        return cmp != 0 ? cmp : a.Edge.Second.CompareTo(b.Edge.Second);
     }
 
     private static bool ShouldMergePartitions(
@@ -179,12 +185,13 @@ public static class EgbiSegmentation
 
     private static void MergeSmallPartitions(
         DisjointSet<PartitionInfo> disjointSet,
-        ReadOnlySpan<UndirectedGraphEdge<Coord>> deferredEdges,
+        ReadOnlySpan<SortableEdge> deferredEdges,
         int minRegionSize,
         double kFactor)
     {
-        foreach (ref readonly UndirectedGraphEdge<Coord> edge in deferredEdges)
+        foreach (ref readonly SortableEdge item in deferredEdges)
         {
+            UndirectedGraphEdge<int> edge = item.Edge;
             var firstPartition = disjointSet.GetPartition(edge.First);
             var secondPartition = disjointSet.GetPartition(edge.Second);
 
@@ -195,13 +202,4 @@ public static class EgbiSegmentation
                 MergePartitions(disjointSet, firstPartition, secondPartition, edge.Weight, kFactor);
         }
     }
-
-    /// <summary>
-    /// Computes a deterministic, fixed-seed SplitMix64 tie-breaker from edge endpoint coordinates
-    /// so equal-weight edges break ties pseudo-randomly rather than sweeping in scanline order.
-    /// </summary>
-    /// <param name="edge">The graph edge whose endpoints are hashed.</param>
-    /// <returns>A 64-bit pseudo-random hash value for tie-breaking.</returns>
-    private static ulong ComputeEdgeTieBreaker(UndirectedGraphEdge<Coord> edge) =>
-        SplitMix64.HashCoordinates(edge.First.X, edge.First.Y, edge.Second.X, edge.Second.Y);
 }

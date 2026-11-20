@@ -14,8 +14,13 @@ using Leiter.Pixels;
 public sealed record GrabCutOptions(
     int Iterations = 5,
     int MixtureComponentCount = 5,
-    double SmoothnessWeight = 50.0) : IProfileTunableOptions<GrabCutOptions>
+    double SmoothnessWeight = 50.0) : ISizeTunableOptions<GrabCutOptions>, IProfileTunableOptions<GrabCutOptions>
 {
+    private const double LowDispersionThreshold = 14.0;
+    private const double HighDispersionThreshold = 30.0;
+    private const double MinColorSpreadClamp = 0.80;
+    private const double MaxColorSpreadClamp = 1.25;
+
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default smoothness weights apply unscaled.
     /// </summary>
@@ -50,18 +55,8 @@ public sealed record GrabCutOptions(
         GrabCutOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
-        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        ArgumentNullException.ThrowIfNull(baseline);
-        baseline.Validate();
-        if (totalPixels == 0)
-        {
-            return baseline;
-        }
-
-        return baseline with
-        {
-            SmoothnessWeight = baseline.SmoothnessWeight * s
-        };
+        OptionTuning.ValidateSizeTuning(size, baseline, referenceDimension);
+        return ScaleCore(size, baseline, referenceDimension, applyProfile: false, profile: default);
     }
 
     /// <summary>
@@ -92,6 +87,34 @@ public sealed record GrabCutOptions(
         double referenceDimension = DefaultReferenceDimension) =>
         OptionTuning.TuneForImage(image, baseline, referenceDimension);
 
+    /// <summary>
+    /// Creates <see cref="GrabCutOptions"/> tuned from default GrabCut parameters using pre-computed <paramref name="analysis"/>.
+    /// </summary>
+    /// <param name="analysis">The pre-computed image analysis profile.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="GrabCutOptions"/> instance tuned for <paramref name="analysis"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static GrabCutOptions ForAnalysis(
+        ImageAnalysis analysis,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis<GrabCutOptions>(analysis, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="GrabCutOptions"/> tuned from <paramref name="baseline"/> using pre-computed <paramref name="analysis"/>.
+    /// </summary>
+    /// <param name="analysis">The pre-computed image analysis profile.</param>
+    /// <param name="baseline">The baseline GrabCut configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="GrabCutOptions"/> instance tuned for <paramref name="analysis"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static GrabCutOptions ForAnalysis(
+        ImageAnalysis analysis,
+        GrabCutOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis(analysis, baseline, referenceDimension);
+
     static GrabCutOptions IProfileTunableOptions<GrabCutOptions>.ForProfile(
         in ImageTuningProfile profile,
         GrabCutOptions baseline,
@@ -101,19 +124,40 @@ public sealed record GrabCutOptions(
     internal static GrabCutOptions ForProfile(
         in ImageTuningProfile profile,
         GrabCutOptions baseline,
-        double referenceDimension)
+        double referenceDimension) =>
+        ScaleCore(profile.ImageSize, baseline, referenceDimension, applyProfile: !profile.IsEmpty, in profile);
+
+    private static GrabCutOptions ScaleCore(
+        Size size,
+        GrabCutOptions baseline,
+        double referenceDimension,
+        bool applyProfile,
+        in ImageTuningProfile profile)
     {
-        GrabCutOptions scaled = ForSize(profile.ImageSize, baseline, referenceDimension);
-        if (profile.IsEmpty)
+        var (linearScale, _, totalPixels) = OptionTuning.ComputeScalesUnchecked(size, referenceDimension);
+        if (totalPixels == 0)
         {
-            return scaled;
+            return baseline;
         }
 
-        int componentDelta = profile.LabDispersion < 14.0 ? -1 : profile.LabDispersion > 30.0 ? 1 : 0;
-        int components = Math.Max(1, scaled.MixtureComponentCount + componentDelta);
-        double smoothness = scaled.SmoothnessWeight / Math.Sqrt(Math.Clamp(profile.ColorSpreadFactor, 0.80, 1.25));
+        if (!applyProfile)
+        {
+            return baseline with
+            {
+                SmoothnessWeight = OptionTuning.ScaleFiniteNonNegative(baseline.SmoothnessWeight * linearScale)
+            };
+        }
 
-        return scaled with
+        int componentDelta = profile.LabDispersion < LowDispersionThreshold
+            ? -1
+            : profile.LabDispersion > HighDispersionThreshold
+                ? 1
+                : 0;
+        int components = Math.Max(1, baseline.MixtureComponentCount + componentDelta);
+        double colorFactor = Math.Sqrt(Math.Clamp(profile.ColorSpreadFactor, MinColorSpreadClamp, MaxColorSpreadClamp));
+        double smoothness = OptionTuning.ScaleFiniteNonNegative(baseline.SmoothnessWeight * (linearScale / colorFactor));
+
+        return baseline with
         {
             MixtureComponentCount = components,
             SmoothnessWeight = smoothness

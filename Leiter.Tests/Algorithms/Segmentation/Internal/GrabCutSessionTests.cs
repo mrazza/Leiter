@@ -16,47 +16,39 @@ public class GrabCutSessionTests
     [Fact]
     public void Run_MultiRunReuseAcrossTwoTrimaps_ShouldProduceConsistentMasks()
     {
-        var image = new SequentialMatrix<Rgb8>(16, 16);
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                bool inside = x >= 4 && x < 12 && y >= 4 && y < 12;
-                image[x, y] = inside ? new Rgb8(220, 30, 30) : new Rgb8(20, 150, 220);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            16,
+            16,
+            (x, y) => x >= 4 && x < 12 && y >= 4 && y < 12
+                ? new Rgb8(220, 30, 30)
+                : new Rgb8(20, 150, 220));
 
-        var session = new GrabCutSession(image, new GrabCutOptions(Iterations: 2, MixtureComponentCount: 3, SmoothnessWeight: 50.0));
+        GrabCutSession session = GrabCut.CreateSession(
+            image,
+            new GrabCutOptions(Iterations: 2, MixtureComponentCount: 3, SmoothnessWeight: 50.0));
 
-        var trimap1 = new TrimapMatrix(image.Size);
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
+        SequentialMatrix<TrimapLabel> trimap1 = TestMatrices.Create(
+            image.Width,
+            image.Height,
+            (x, y) =>
             {
                 if (x < 2 || y < 2 || x >= 14 || y >= 14)
-                    trimap1[x, y] = TrimapLabel.Background;
-                else if (x >= 6 && x < 10 && y >= 6 && y < 10)
-                    trimap1[x, y] = TrimapLabel.Foreground;
-                else
-                    trimap1[x, y] = TrimapLabel.ProbableForeground;
-            }
-        }
+                    return TrimapLabel.Background;
+                if (x >= 6 && x < 10 && y >= 6 && y < 10)
+                    return TrimapLabel.Foreground;
+                return TrimapLabel.ProbableForeground;
+            });
 
         MaskMatrix mask1 = session.Run(trimap1, iterations: 2);
         Assert.True(mask1[8, 8]);
         Assert.False(mask1[0, 0]);
 
-        var trimap2 = new TrimapMatrix(image.Size);
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                if (x < 4 || y < 4 || x >= 12 || y >= 12)
-                    trimap2[x, y] = TrimapLabel.Background;
-                else
-                    trimap2[x, y] = TrimapLabel.ProbableForeground;
-            }
-        }
+        SequentialMatrix<TrimapLabel> trimap2 = TestMatrices.Create(
+            image.Width,
+            image.Height,
+            (x, y) => x < 4 || y < 4 || x >= 12 || y >= 12
+                ? TrimapLabel.Background
+                : TrimapLabel.ProbableForeground);
 
         MaskMatrix mask2 = session.Run(trimap2, iterations: 2);
         Assert.True(mask2[8, 8]);
@@ -66,28 +58,22 @@ public class GrabCutSessionTests
     [Fact]
     public void Run_AllBackgroundOrAllForeground_ShouldShortCircuit()
     {
-        var image = new SequentialMatrix<Rgb8>(8, 8);
-        image.SetAll(new Rgb8(128, 128, 128));
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(8, 8, new Rgb8(128, 128, 128));
         var session = new GrabCutSession(image, new GrabCutOptions(Iterations: 2, MixtureComponentCount: 2, SmoothnessWeight: 20.0));
 
-        var allBackground = new TrimapMatrix(image.Size);
-        allBackground.SetAll(TrimapLabel.Background);
+        SequentialMatrix<TrimapLabel> allBackground = TestMatrices.Constant(image.Width, image.Height, TrimapLabel.Background);
         MaskMatrix bgMask = session.Run(allBackground, iterations: 2);
-        for (int i = 0; i < bgMask.Count; i++)
-            Assert.False(bgMask[i]);
+        MatrixAssert.Equal(TestMatrices.Constant(image.Width, image.Height, false), bgMask);
 
-        var allForeground = new TrimapMatrix(image.Size);
-        allForeground.SetAll(TrimapLabel.Foreground);
+        SequentialMatrix<TrimapLabel> allForeground = TestMatrices.Constant(image.Width, image.Height, TrimapLabel.Foreground);
         MaskMatrix fgMask = session.Run(allForeground, iterations: 2);
-        for (int i = 0; i < fgMask.Count; i++)
-            Assert.True(fgMask[i]);
+        MatrixAssert.Equal(TestMatrices.Constant(image.Width, image.Height, true), fgMask);
     }
 
     [Fact]
     public void Run_InvalidTrimapLabel_ShouldThrowArgumentOutOfRangeException()
     {
-        var image = new SequentialMatrix<Rgb8>(4, 4);
-        image.SetAll(new Rgb8(50, 50, 50));
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(4, 4, new Rgb8(50, 50, 50));
         var session = new GrabCutSession(image, new GrabCutOptions(Iterations: 1, MixtureComponentCount: 2, SmoothnessWeight: 10.0));
 
         var invalidTrimap = new TrimapMatrix(image.Size);
@@ -97,58 +83,61 @@ public class GrabCutSessionTests
     }
 
     [Fact]
-    public void Run_DefaultOptionsAndSingleArgOverload_ShouldMatchDefaultIterations()
+    public void Run_SingleArgOverload_ShouldMatchExplicitDefaultIterations()
     {
-        var image = new SequentialMatrix<Rgb8>(16, 16);
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                bool inside = x >= 4 && x < 12 && y >= 4 && y < 12;
-                image[x, y] = inside ? new Rgb8(220, 30, 30) : new Rgb8(20, 150, 220);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            16,
+            16,
+            (x, y) => x >= 4 && x < 12 && y >= 4 && y < 12
+                ? new Rgb8(220, 30, 30)
+                : new Rgb8(20, 150, 220));
 
-        var trimap = new TrimapMatrix(image.Size);
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
+        SequentialMatrix<TrimapLabel> trimap = TestMatrices.Create(
+            image.Width,
+            image.Height,
+            (x, y) =>
             {
                 if (x < 2 || y < 2 || x >= 14 || y >= 14)
-                    trimap[x, y] = TrimapLabel.Background;
-                else if (x >= 6 && x < 10 && y >= 6 && y < 10)
-                    trimap[x, y] = TrimapLabel.Foreground;
-                else
-                    trimap[x, y] = TrimapLabel.ProbableForeground;
-            }
-        }
+                    return TrimapLabel.Background;
+                if (x >= 6 && x < 10 && y >= 6 && y < 10)
+                    return TrimapLabel.Foreground;
+                return TrimapLabel.ProbableForeground;
+            });
 
-        var defaultSession = new GrabCutSession(image, options: null);
+        GrabCutSession factorySession = GrabCut.CreateSession(image, GrabCutOptions.Default);
         var explicitSession = new GrabCutSession(image, GrabCutOptions.Default);
 
-        MaskMatrix defaultMask = defaultSession.Run(trimap);
+        MaskMatrix factoryMask = factorySession.Run(trimap);
         MaskMatrix explicitMask = explicitSession.Run(trimap, GrabCutOptions.Default.Iterations);
 
-        MatrixAssert.Equal(explicitMask, defaultMask);
-        Assert.True(defaultMask[8, 8]);
-        Assert.False(defaultMask[0, 0]);
+        MatrixAssert.Equal(explicitMask, factoryMask);
+        Assert.True(factoryMask[8, 8]);
+        Assert.False(factoryMask[0, 0]);
     }
 
     [Fact]
-    public void Constructor_InvalidArguments_ShouldThrowExpectedExceptions()
+    public void Constructor_And_CreateSession_InvalidArguments_ShouldThrowExpectedExceptions()
     {
-        var image = new SequentialMatrix<Rgb8>(4, 4);
-        image.SetAll(new Rgb8(50, 50, 50));
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(4, 4, new Rgb8(50, 50, 50));
 
-        ArgumentNullException nullImageEx = Assert.Throws<ArgumentNullException>(() => new GrabCutSession(null!));
+        ArgumentNullException nullImageEx = Assert.Throws<ArgumentNullException>(() => new GrabCutSession(null!, GrabCutOptions.Default));
         Assert.Equal("image", nullImageEx.ParamName);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(Iterations: 0)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(Iterations: -1)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(MixtureComponentCount: 0)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(MixtureComponentCount: -1)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(SmoothnessWeight: -0.1)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(SmoothnessWeight: double.NaN)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(SmoothnessWeight: double.PositiveInfinity)));
+        ArgumentNullException nullOptionsEx = Assert.Throws<ArgumentNullException>(() => new GrabCutSession(image, null!));
+        Assert.Equal("options", nullOptionsEx.ParamName);
+
+        ArgumentNullException createNullImageEx = Assert.Throws<ArgumentNullException>(() => GrabCut.CreateSession(null!, GrabCutOptions.Default));
+        Assert.Equal("image", createNullImageEx.ParamName);
+
+        ArgumentNullException createNullOptionsEx = Assert.Throws<ArgumentNullException>(() => GrabCut.CreateSession(image, null!));
+        Assert.Equal("options", createNullOptionsEx.ParamName);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.CreateSession(image, new GrabCutOptions(Iterations: 0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.CreateSession(image, new GrabCutOptions(Iterations: -1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.CreateSession(image, new GrabCutOptions(MixtureComponentCount: 0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.CreateSession(image, new GrabCutOptions(MixtureComponentCount: -1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.CreateSession(image, new GrabCutOptions(SmoothnessWeight: -0.1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.CreateSession(image, new GrabCutOptions(SmoothnessWeight: double.NaN)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.CreateSession(image, new GrabCutOptions(SmoothnessWeight: double.PositiveInfinity)));
     }
 }

@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Segmentation;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
@@ -127,21 +128,26 @@ public class EgbiOptionsTests : SizeTunableOptionsContractTestsBase<EgbiOptions>
         Assert.Equal(0.0, scaledDisable.Epsilon, 6);
         Assert.Equal(0, scaledDisable.MinRegionSize);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            EgbiOptions.ForSize(size).Validate();
-        }
+        // Scale-1.0 identity for sub-floor Epsilon (0 < Epsilon < 0.15) and decay floor clamping.
+        var lowEpsilon = new EgbiOptions(KFactor: 50.0, Epsilon: 0.05, MinRegionSize: 100);
+        EgbiOptions lowEpsilonRef = EgbiOptions.ForSize(new Size(800, 800), lowEpsilon);
+        Assert.Equal(lowEpsilon, lowEpsilonRef);
+        EgbiOptions lowEpsilonLarge = EgbiOptions.ForSize(new Size(3200, 3200), lowEpsilon);
+        Assert.Equal(0.05, lowEpsilonLarge.Epsilon, 12);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => EgbiOptions.ForSize(new Size(-1, 100)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => EgbiOptions.ForSize(new Size(100, 100), double.NaN));
-        Assert.Throws<ArgumentNullException>(() => EgbiOptions.ForSize(new Size(100, 100), null!));
+        // Extreme scaling must remain finite and valid rather than overflowing to Infinity.
+        var hugeBaseline = new EgbiOptions(KFactor: double.MaxValue / 2.0, Epsilon: double.MaxValue / 2.0, MinRegionSize: 100);
+        EgbiOptions hugeScaled = EgbiOptions.ForSize(new Size(3200, 3200), hugeBaseline, referenceDimension: 1e-200);
+        hugeScaled.Validate();
+        Assert.True(double.IsFinite(hugeScaled.KFactor));
+        Assert.True(double.IsFinite(hugeScaled.Epsilon));
     }
 
     /// <summary>
-    /// Verifies that <see cref="EgbiOptions.ForImage(IReadOnlyMatrix{Rgb8}, double)"/> and CIELAB overloads adapt to image content and validate inputs.
+    /// Verifies that <see cref="EgbiOptions.ForImage(IReadOnlyMatrix{Rgb8}, double)"/>, CIELAB overloads, and <see cref="EgbiOptions.ForAnalysis"/> adapt to image content and validate inputs.
     /// </summary>
     [Fact]
-    public void ForImage_RgbAndLabOverloads_ShouldAdaptToContentAndValidate()
+    public void ForImage_And_ForAnalysis_RgbAndLabOverloads_ShouldAdaptToContentAndValidate()
     {
         SequentialMatrix<Rgb8> flatImage = TestMatrices.Constant(256, 256, new Rgb8(120, 125, 130));
         SequentialMatrix<Rgb8> busyImage = TestMatrices.Checkerboard(256, 256, new Rgb8(245, 40, 30), new Rgb8(20, 60, 230), cellSize: 4);
@@ -151,15 +157,28 @@ public class EgbiOptionsTests : SizeTunableOptionsContractTestsBase<EgbiOptions>
         Assert.True(busyOpts.MinRegionSize > flatOpts.MinRegionSize);
         Assert.True(busyOpts.KFactor > flatOpts.KFactor);
 
-        var labImage = new SequentialMatrix<Lab32>(64, 64);
-        labImage.SetAll(new Lab32(60f, 10f, -5f));
+        ImageAnalysis busyAnalysis = ImageAnalysis.Analyze(busyImage);
+        Assert.Equal(busyOpts, EgbiOptions.ForAnalysis(busyAnalysis));
+        var customBaseline = new EgbiOptions(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200);
+        Assert.Equal(EgbiOptions.ForImage(busyImage, customBaseline), EgbiOptions.ForAnalysis(busyAnalysis, customBaseline));
+
+        // Single-rounding check for MinRegionSize: 256x256 flat image has areaScale=0.1024, clutterFactor=0.75.
+        // 45 * 0.1024 * 0.75 = 3.456 -> rounds to 3 (whereas double-rounding Round(4.608)=5 -> Round(3.75)=4).
+        EgbiOptions singleRounded = EgbiOptions.ForImage(flatImage, new EgbiOptions(MinRegionSize: 45));
+        Assert.Equal(3, singleRounded.MinRegionSize);
+
+        SequentialMatrix<Lab32> labImage = TestMatrices.Constant(64, 64, new Lab32(60f, 10f, -5f));
         EgbiOptions labOpts = EgbiOptions.ForImage(labImage);
         labOpts.Validate();
-        EgbiOptions.ForImage(labImage, new EgbiOptions(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200)).Validate();
+        EgbiOptions.ForImage(labImage, customBaseline).Validate();
+        Assert.Equal(EgbiOptions.ForImage(labImage, customBaseline), EgbiOptions.ForAnalysis(ImageAnalysis.Analyze(labImage), customBaseline));
 
         Assert.Throws<ArgumentNullException>(() => EgbiOptions.ForImage((IReadOnlyMatrix<Rgb8>)null!));
         Assert.Throws<ArgumentNullException>(() => EgbiOptions.ForImage((IReadOnlyMatrix<Lab32>)null!));
         Assert.Throws<ArgumentNullException>(() => EgbiOptions.ForImage(flatImage, null!));
         Assert.Throws<ArgumentNullException>(() => EgbiOptions.ForImage(labImage, null!));
+        Assert.Throws<ArgumentNullException>("analysis", () => EgbiOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>("baseline", () => EgbiOptions.ForAnalysis(busyAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => EgbiOptions.ForAnalysis(busyAnalysis, 0.0));
     }
 }

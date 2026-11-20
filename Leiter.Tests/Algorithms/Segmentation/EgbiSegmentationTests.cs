@@ -49,17 +49,14 @@ public class EgbiSegmentationTests
     [Fact]
     public void Segment_EqualWeightGradient_ShouldBeDeterministicAcrossRuns()
     {
-        const int width = 30;
-        const int height = 30;
-        var img = new SequentialMatrix<Rgb8>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
+        SequentialMatrix<Rgb8> img = TestMatrices.Create(
+            30,
+            30,
+            (x, y) =>
             {
                 byte value = (byte)((x + y) * 4);
-                img[x, y] = new Rgb8(value, value, value);
-            }
-        }
+                return new Rgb8(value, value, value);
+            });
 
         var baselineOptions = new EgbiOptions(KFactor: 5.0, Epsilon: 0.0, MinRegionSize: 15);
         var baselineSegmentation = EgbiSegmentation.Segment(img, baselineOptions);
@@ -89,8 +86,7 @@ public class EgbiSegmentationTests
 
         // Single high-contrast pixel surrounded by black pixels stays separate when MinRegionSize is 0,
         // and merges into the background when MinRegionSize > 1.
-        var speckled = new SequentialMatrix<Rgb8>(6, 6);
-        speckled.SetAll(new Rgb8(0, 0, 0));
+        SequentialMatrix<Rgb8> speckled = TestMatrices.Constant(6, 6, new Rgb8(0, 0, 0));
         speckled[3, 3] = new Rgb8(255, 255, 255);
 
         IDisjointSet withoutPostMerge = EgbiSegmentation.Segment(speckled, new EgbiOptions(KFactor: 10.0, Epsilon: 1.0, MinRegionSize: 0));
@@ -107,11 +103,11 @@ public class EgbiSegmentationTests
     [Fact]
     public void Segment_FourConnectedVsEightConnected_ShouldControlDiagonalMerging()
     {
-        var checkerboard = new SequentialMatrix<Rgb8>(2, 2);
-        checkerboard[0, 0] = new Rgb8(255, 0, 0);
-        checkerboard[1, 1] = new Rgb8(255, 0, 0);
-        checkerboard[1, 0] = new Rgb8(0, 0, 255);
-        checkerboard[0, 1] = new Rgb8(0, 0, 255);
+        SequentialMatrix<Rgb8> checkerboard = TestMatrices.Checkerboard(
+            2,
+            2,
+            new Rgb8(255, 0, 0),
+            new Rgb8(0, 0, 255));
 
         IDisjointSet fourConnected = EgbiSegmentation.Segment(
             checkerboard,

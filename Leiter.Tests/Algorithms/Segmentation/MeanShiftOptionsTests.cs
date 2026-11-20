@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Segmentation;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
@@ -57,7 +58,7 @@ public class MeanShiftOptionsTests : SizeTunableOptionsContractTestsBase<MeanShi
     }
 
     [Theory]
-    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
+    [MemberData(nameof(OptionValidationData.InvalidNonNegativeInts), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMinRegionSize_ShouldThrowArgumentOutOfRangeException(int minRegionSize)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftOptions(MinRegionSize: minRegionSize).Validate());
@@ -117,16 +118,31 @@ public class MeanShiftOptionsTests : SizeTunableOptionsContractTestsBase<MeanShi
         MeanShiftOptions small = MeanShiftOptions.ForSize(new Size(200, 200));
         MeanShiftOptions large = MeanShiftOptions.ForSize(new Size(3200, 2400));
         Assert.Equal(2, small.SpatialRadius);
-        Assert.Equal(0.05, small.ConvergenceEpsilon, 6);
+        Assert.Equal(0.0125, small.ConvergenceEpsilon, 6);
+        Assert.True(small.ConvergenceEpsilon < refOpts.ConvergenceEpsilon);
         Assert.True(large.SpatialRadius > refOpts.SpatialRadius);
         Assert.True(small.MinRegionSize < refOpts.MinRegionSize);
         Assert.True(large.MinRegionSize > refOpts.MinRegionSize);
         Assert.True(large.ConvergenceEpsilon > refOpts.ConvergenceEpsilon && large.ConvergenceEpsilon <= 0.5);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            MeanShiftOptions.ForSize(size).Validate();
-        }
+        // MinRegionSize = 0 disables pruning and stays 0 across ForSize/ForImage/ForAnalysis.
+        var disabledPruning = new MeanShiftOptions(MinRegionSize: 0);
+        disabledPruning.Validate();
+        Assert.Equal(0, MeanShiftOptions.ForSize(new Size(1600, 1600), disabledPruning).MinRegionSize);
+
+        // Scale-1.0 identity for ConvergenceEpsilon below floor (0.01) and above ceiling (0.5).
+        var subFloorEpsilon = new MeanShiftOptions(ConvergenceEpsilon: 0.002);
+        Assert.Equal(subFloorEpsilon, MeanShiftOptions.ForSize(new Size(800, 800), subFloorEpsilon));
+        var aboveCeilingEpsilon = new MeanShiftOptions(ConvergenceEpsilon: 0.8);
+        Assert.Equal(aboveCeilingEpsilon, MeanShiftOptions.ForSize(new Size(800, 800), aboveCeilingEpsilon));
+        Assert.Equal(0.2, MeanShiftOptions.ForSize(new Size(200, 200), aboveCeilingEpsilon).ConvergenceEpsilon, 6);
+
+        // Extreme scaling must stay finite and valid.
+        var hugeBaseline = new MeanShiftOptions(RangeRadius: double.MaxValue / 2.0, ConvergenceEpsilon: double.MaxValue / 2.0);
+        MeanShiftOptions hugeScaled = MeanShiftOptions.ForSize(new Size(3200, 3200), hugeBaseline, referenceDimension: 1e-200);
+        hugeScaled.Validate();
+        Assert.True(double.IsFinite(hugeScaled.RangeRadius));
+        Assert.True(double.IsFinite(hugeScaled.ConvergenceEpsilon));
 
         SequentialMatrix<Rgb8> flat = TestMatrices.Constant(256, 256, new Rgb8(128, 128, 128));
         SequentialMatrix<Rgb8> cluttered = TestMatrices.Checkerboard(256, 256, new Rgb8(245, 220, 30), new Rgb8(20, 30, 235), cellSize: 4);
@@ -135,9 +151,17 @@ public class MeanShiftOptionsTests : SizeTunableOptionsContractTestsBase<MeanShi
         MeanShiftOptions clutteredOpts = MeanShiftOptions.ForImage(cluttered);
         Assert.True(clutteredOpts.RangeRadius > flatOpts.RangeRadius);
         Assert.True(clutteredOpts.MinRegionSize > flatOpts.MinRegionSize);
+        Assert.Equal(0, MeanShiftOptions.ForImage(cluttered, disabledPruning).MinRegionSize);
 
-        var labImage = new SequentialMatrix<Lab32>(64, 64);
-        labImage.SetAll(new Lab32(50f, 0f, 0f));
+        ImageAnalysis clutteredAnalysis = ImageAnalysis.Analyze(cluttered);
+        Assert.Equal(clutteredOpts, MeanShiftOptions.ForAnalysis(clutteredAnalysis));
+
+        // Single-rounding check for MinRegionSize: 256x256 flat image has areaScale=0.1024, clutterFactor=0.75.
+        // 45 * 0.1024 * 0.75 = 3.456 -> rounds to 3 (whereas double-rounding Round(4.608)=5 -> Round(3.75)=4).
+        MeanShiftOptions singleRounded = MeanShiftOptions.ForImage(flat, new MeanShiftOptions(MinRegionSize: 45));
+        Assert.Equal(3, singleRounded.MinRegionSize);
+
+        SequentialMatrix<Lab32> labImage = TestMatrices.Constant(64, 64, new Lab32(50f, 0f, 0f));
         MeanShiftOptions.ForImage(labImage).Validate();
 
         MeanShiftOptions customBaseline = CreateValidCustomOptions();
@@ -152,12 +176,14 @@ public class MeanShiftOptionsTests : SizeTunableOptionsContractTestsBase<MeanShi
         Assert.Equal(15, customLab.MaxIterations);
         Assert.Equal(GridConnectivity.FourConnected, customLab.Connectivity);
         Assert.True(MeanShiftOptions.ForImage(cluttered, customBaseline).RangeRadius > MeanShiftOptions.ForImage(flat, customBaseline).RangeRadius);
+        Assert.Equal(customLab, MeanShiftOptions.ForAnalysis(ImageAnalysis.Analyze(labImage), customBaseline));
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => MeanShiftOptions.ForSize(new Size(10, -1)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => MeanShiftOptions.ForSize(new Size(10, 10), -1.0));
         Assert.Throws<ArgumentNullException>(() => MeanShiftOptions.ForImage((IReadOnlyMatrix<Rgb8>)null!));
         Assert.Throws<ArgumentNullException>(() => MeanShiftOptions.ForImage((IReadOnlyMatrix<Lab32>)null!));
         Assert.Throws<ArgumentNullException>(() => MeanShiftOptions.ForImage(flat, null!));
         Assert.Throws<ArgumentNullException>(() => MeanShiftOptions.ForImage(labImage, null!));
+        Assert.Throws<ArgumentNullException>("analysis", () => MeanShiftOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>("baseline", () => MeanShiftOptions.ForAnalysis(clutteredAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => MeanShiftOptions.ForAnalysis(clutteredAnalysis, -1.0));
     }
 }

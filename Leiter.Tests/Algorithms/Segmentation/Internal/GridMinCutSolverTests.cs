@@ -81,4 +81,25 @@ public class GridMinCutSolverTests
         Assert.False(solver.IsSourceSide(new Coord(2, 0)));
         Assert.False(solver.IsSourceSide(new Coord(2, 1)));
     }
+
+    [Fact]
+    public void GridMinCutSolver_ChainWithMultipleOrphansAndReattachment_ShouldComputeExactMaxFlow()
+    {
+        // 5x2 grid with source at (0,0), sinks at (4,0) and (4,1), exercising multi-orphan reattachment in a single augmentation.
+        var solver = new GridMinCutSolver(5, 2);
+        for (int y = 0; y < 2; y++)
+        {
+            for (int x = 0; x < 4; x++)
+                solver.SetUndirectedEdgeCapacity(new Coord(x, y), GridDirection.East, 4f);
+        }
+
+        for (int x = 0; x < 5; x++)
+            solver.SetUndirectedEdgeCapacity(new Coord(x, 0), GridDirection.South, x == 2 ? 1f : 4f);
+
+        double[] sourceCaps = [10.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0];
+        double[] sinkCaps = [0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 10.0];
+
+        double flow = solver.Solve(sourceCaps, sinkCaps);
+        Assert.Equal(8.0, flow, 4);
+    }
 }

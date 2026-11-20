@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.Segmentation;
 
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -73,16 +74,16 @@ public class TrimapMatrixTests
     public void FromBoundingBox_ShouldClipRectanglesAndValidateArguments()
     {
         TrimapMatrix interior = TrimapMatrix.FromBoundingBox(new Size(6, 5), new Coord(1, 1), new Size(3, 2));
-        for (int y = 0; y < interior.Height; y++)
-        {
-            for (int x = 0; x < interior.Width; x++)
-            {
-                TrimapLabel expected = (x >= 1 && x < 4 && y >= 1 && y < 3)
-                    ? TrimapLabel.ProbableForeground
-                    : TrimapLabel.Background;
-                Assert.Equal(expected, interior[x, y]);
-            }
-        }
+        SequentialMatrix<TrimapLabel> expectedInterior = TestMatrices.CenteredBox(
+            6,
+            5,
+            left: 1,
+            top: 1,
+            rightInclusive: 3,
+            bottomInclusive: 2,
+            inside: TrimapLabel.ProbableForeground,
+            outside: TrimapLabel.Background);
+        MatrixAssert.Equal(expectedInterior, interior);
 
         // Clipped partially outside image bounds.
         TrimapMatrix clipped = TrimapMatrix.FromBoundingBox(new Size(5, 5), new Coord(-2, 3), new Size(4, 5));
@@ -164,10 +165,10 @@ public class TrimapMatrixTests
         Assert.Empty(TrimapMatrix.FromConfidenceBands(empty, empty, empty));
 
         var wrongSize = new MaskMatrix(2, 2);
-        Assert.Throws<ArgumentNullException>(() => TrimapMatrix.FromConfidenceBands(null!, sureForeground, possibleRegion));
-        Assert.Throws<ArgumentNullException>(() => TrimapMatrix.FromConfidenceBands(current, null!, possibleRegion));
-        Assert.Throws<ArgumentNullException>(() => TrimapMatrix.FromConfidenceBands(current, sureForeground, null!));
-        Assert.Throws<ArgumentException>(() => TrimapMatrix.FromConfidenceBands(current, wrongSize, possibleRegion));
-        Assert.Throws<ArgumentException>(() => TrimapMatrix.FromConfidenceBands(current, sureForeground, wrongSize));
+        Assert.Throws<ArgumentNullException>("currentMask", () => TrimapMatrix.FromConfidenceBands(null!, sureForeground, possibleRegion));
+        Assert.Throws<ArgumentNullException>("sureForeground", () => TrimapMatrix.FromConfidenceBands(current, null!, possibleRegion));
+        Assert.Throws<ArgumentNullException>("possibleForegroundRegion", () => TrimapMatrix.FromConfidenceBands(current, sureForeground, null!));
+        Assert.Throws<ArgumentException>("sureForeground", () => TrimapMatrix.FromConfidenceBands(current, wrongSize, possibleRegion));
+        Assert.Throws<ArgumentException>("possibleForegroundRegion", () => TrimapMatrix.FromConfidenceBands(current, sureForeground, wrongSize));
     }
 }

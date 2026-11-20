@@ -44,7 +44,50 @@ public static class SegmentationVisualizer
     /// </summary>
     /// <returns>A <see cref="ColorAssigner{Rgb8}"/> for use with <see cref="ColorRegions{T}(IReadOnlyMatrix{T}, IEnumerable{Region{Coord}}, ColorAssigner{T})"/>.</returns>
     public static ColorAssigner<Rgb8> AverageColorAssigner() =>
-        static (image, region) =>
+        AverageColorAssigner<Rgb8>();
+
+    /// <summary>
+    /// Returns a <see cref="ColorAssigner{T}"/> that assigns each segment the arithmetic mean pixel value
+    /// of the pixels contained in that segment, throwing <see cref="ArgumentException"/> when a segment has no pixels.
+    /// </summary>
+    /// <typeparam name="T">The pixel value type.</typeparam>
+    /// <returns>A <see cref="ColorAssigner{T}"/> for use with <see cref="ColorRegions{T}(IReadOnlyMatrix{T}, IEnumerable{Region{Coord}}, ColorAssigner{T})"/>.</returns>
+    public static ColorAssigner<T> AverageColorAssigner<T>()
+        where T : struct, IPixel<T>
+    {
+        if (typeof(T) == typeof(Rgb8))
+        {
+            ColorAssigner<Rgb8> rgb8Assigner = static (image, region) =>
+            {
+                ArgumentNullException.ThrowIfNull(image);
+                ArgumentNullException.ThrowIfNull(region);
+
+                int count = region.Pixels.Count;
+                if (count <= 0)
+                    throw new ArgumentException("All regions of the segmentation must have at least one pixel.", nameof(region));
+
+                long sumR = 0;
+                long sumG = 0;
+                long sumB = 0;
+                foreach (Coord coord in region.Pixels)
+                {
+                    Rgb8 pixel = image[coord];
+                    sumR += pixel.R;
+                    sumG += pixel.G;
+                    sumB += pixel.B;
+                }
+
+                double invCount = 1.0 / count;
+                return new Rgb8(
+                    Rgb8.ClampRoundedByte(sumR * invCount),
+                    Rgb8.ClampRoundedByte(sumG * invCount),
+                    Rgb8.ClampRoundedByte(sumB * invCount));
+            };
+
+            return (ColorAssigner<T>)(object)rgb8Assigner;
+        }
+
+        return static (image, region) =>
         {
             ArgumentNullException.ThrowIfNull(image);
             ArgumentNullException.ThrowIfNull(region);
@@ -53,47 +96,13 @@ public static class SegmentationVisualizer
             if (count <= 0)
                 throw new ArgumentException("All regions of the segmentation must have at least one pixel.", nameof(region));
 
-            double sumR = 0.0;
-            double sumG = 0.0;
-            double sumB = 0.0;
-            foreach (Coord coord in region.Pixels)
-            {
-                Rgb8 pixel = image[coord];
-                sumR += pixel.R;
-                sumG += pixel.G;
-                sumB += pixel.B;
-            }
-
-            double invCount = 1.0 / count;
-            return new Rgb8(
-                Rgb8.ClampRoundedByte(sumR * invCount),
-                Rgb8.ClampRoundedByte(sumG * invCount),
-                Rgb8.ClampRoundedByte(sumB * invCount));
-        };
-
-    /// <summary>
-    /// Returns a <see cref="ColorAssigner{T}"/> that assigns each segment the arithmetic mean pixel value
-    /// computed in double-precision SIMD vector space, or <see langword="default"/> when a segment has no pixels.
-    /// </summary>
-    /// <typeparam name="T">The pixel value type.</typeparam>
-    /// <returns>A <see cref="ColorAssigner{T}"/> for use with <see cref="ColorRegions{T}(IReadOnlyMatrix{T}, IEnumerable{Region{Coord}}, ColorAssigner{T})"/>.</returns>
-    public static ColorAssigner<T> AverageColorAssigner<T>()
-        where T : struct, IPixel<T> =>
-        static (image, region) =>
-        {
-            ArgumentNullException.ThrowIfNull(image);
-            ArgumentNullException.ThrowIfNull(region);
-
-            int count = region.Pixels.Count;
-            if (count <= 0)
-                return default;
-
             Vector256<double> sum = Vector256<double>.Zero;
             foreach (Coord coord in region.Pixels)
                 sum += image[coord].ToDoubleVector();
 
             return T.FromDoubleVector(sum / (double)count);
         };
+    }
 
     /// <summary>
     /// Returns a <see cref="ColorAssigner{T}"/> that assigns each segment a sequential <see cref="LongPixel"/> identifier.
@@ -194,7 +203,31 @@ public static class SegmentationVisualizer
         ArgumentNullException.ThrowIfNull(colorAssigner);
         Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
 
-        return ColorRegions(image, regionGraph.Regions, colorAssigner);
+        var result = new SequentialMatrix<T>(image.Size);
+        if (image.Count == 0)
+            return result;
+
+        var regionColors = new T[regionGraph.RegionCount];
+        for (int i = 0; i < regionColors.Length; i++)
+            regionColors[i] = colorAssigner(image, regionGraph.Regions[i]);
+
+        Span<T> resultSpan = result.AsSpan();
+        if (regionGraph.Labels.TryGetReadOnlySpan(out ReadOnlySpan<int> labelSpan))
+        {
+            for (int i = 0; i < resultSpan.Length; i++)
+                resultSpan[i] = regionColors[labelSpan[i]];
+        }
+        else
+        {
+            for (int i = 0; i < regionGraph.Regions.Count; i++)
+            {
+                T color = regionColors[i];
+                foreach (Coord pixel in regionGraph.Regions[i].Pixels)
+                    result[pixel.X, pixel.Y] = color;
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -229,31 +262,60 @@ public static class SegmentationVisualizer
         ColorAssigner<T> colorAssigner)
         where T : struct, IPixel<T>
     {
-        ArgumentNullException.ThrowIfNull(image);
-        ArgumentNullException.ThrowIfNull(segmentation);
-        ArgumentNullException.ThrowIfNull(colorAssigner);
         Guard.ThrowIfSizeMismatch(image, segmentation);
+        ArgumentNullException.ThrowIfNull(colorAssigner);
+
+        var result = new SequentialMatrix<T>(image.Size);
+        int pixelCount = image.Count;
+        if (pixelCount == 0)
+            return result;
 
         int width = segmentation.Width;
         int height = segmentation.Height;
-        var regionsByRoot = new Dictionary<long, Region<Coord>>();
-        var orderedRegions = new List<Region<Coord>>();
+        var rootToDenseId = new Dictionary<long, int>();
+        var regionSizes = new List<int>();
+        var rootIds = new List<long>();
+        var denseIds = new int[pixelCount];
+
+        int pixelIndex = 0;
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
                 long root = segmentation[x, y].Value;
-                if (!regionsByRoot.TryGetValue(root, out Region<Coord>? region))
+                if (!rootToDenseId.TryGetValue(root, out int denseId))
                 {
-                    region = new Region<Coord> { Id = unchecked((int)root) };
-                    regionsByRoot[root] = region;
-                    orderedRegions.Add(region);
+                    denseId = regionSizes.Count;
+                    rootToDenseId.Add(root, denseId);
+                    regionSizes.Add(0);
+                    rootIds.Add(root);
                 }
 
-                region.Pixels.Add(new Coord(x, y));
+                regionSizes[denseId]++;
+                denseIds[pixelIndex++] = denseId;
             }
         }
 
-        return ColorRegions(image, orderedRegions, colorAssigner);
+        int regionCount = regionSizes.Count;
+        var regions = new Region<Coord>[regionCount];
+        for (int id = 0; id < regionCount; id++)
+            regions[id] = new Region<Coord>(regionSizes[id]) { Id = unchecked((int)rootIds[id]) };
+
+        pixelIndex = 0;
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+                regions[denseIds[pixelIndex++]].Pixels.Add(new Coord(x, y));
+        }
+
+        var regionColors = new T[regionCount];
+        for (int id = 0; id < regionCount; id++)
+            regionColors[id] = colorAssigner(image, regions[id]);
+
+        Span<T> resultSpan = result.AsSpan();
+        for (int i = 0; i < pixelCount; i++)
+            resultSpan[i] = regionColors[denseIds[i]];
+
+        return result;
     }
 }

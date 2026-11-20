@@ -29,7 +29,7 @@ public static class GrabCut
         GrabCutOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
-        GrabCutOptions resolvedOptions = OptionsResolver.Resolve(options, GrabCutOptions.Default);
+        GrabCutOptions resolvedOptions = OptionsResolver.Resolve(options);
 
         TrimapMatrix trimap = TrimapMatrix.FromBoundingBox(image.Size, rectangleTopLeft, rectangleSize);
         return SegmentCore(image, trimap, resolvedOptions);
@@ -50,11 +50,18 @@ public static class GrabCut
         IReadOnlyMatrix<TrimapLabel> trimap,
         GrabCutOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(image);
         Guard.ThrowIfSizeMismatch(image, trimap);
 
-        GrabCutOptions resolvedOptions = OptionsResolver.Resolve(options, GrabCutOptions.Default);
+        GrabCutOptions resolvedOptions = OptionsResolver.Resolve(options);
         return SegmentCore(image, trimap, resolvedOptions);
+    }
+
+    internal static GrabCutSession CreateSession(IReadOnlyMatrix<Rgb8> image, GrabCutOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        return new GrabCutSession(image, options);
     }
 
     private static MaskMatrix SegmentCore(

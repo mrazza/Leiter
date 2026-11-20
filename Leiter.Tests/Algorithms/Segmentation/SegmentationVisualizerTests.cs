@@ -17,8 +17,7 @@ public class SegmentationVisualizerTests
     [Fact]
     public void Assigners_ShouldProduceExpectedColors()
     {
-        var img = new SequentialMatrix<Rgb8>(4, 2);
-        img.SetAll(new Rgb8(10, 20, 30));
+        SequentialMatrix<Rgb8> img = TestMatrices.Constant(4, 2, new Rgb8(10, 20, 30));
         img[0, 0] = new Rgb8(20, 40, 60);
         img[1, 0] = new Rgb8(40, 60, 80);
 
@@ -32,7 +31,8 @@ public class SegmentationVisualizerTests
         // AverageColorAssigner computes rounded mean and throws on empty region
         var avgAssigner = SegmentationVisualizer.AverageColorAssigner();
         Assert.Equal(new Rgb8(30, 50, 70), avgAssigner(img, region));
-        Assert.Throws<ArgumentException>(() => avgAssigner(img, new Region<Coord>()));
+        ArgumentException emptyEx = Assert.Throws<ArgumentException>(() => avgAssigner(img, new Region<Coord>()));
+        Assert.Equal("region", emptyEx.ParamName);
 
         // IntegerColorAssigner assigns sequential IDs
         var intAssigner = SegmentationVisualizer.IntegerColorAssigner();
@@ -44,8 +44,7 @@ public class SegmentationVisualizerTests
     [Fact]
     public void ColorRegions_ShouldBeNonMutatingAndSupportCustomAndReadOnlyInputs()
     {
-        var img = new SequentialMatrix<Rgb8>(3, 2);
-        img.SetAll(new Rgb8(200, 100, 50));
+        SequentialMatrix<Rgb8> img = TestMatrices.Constant(3, 2, new Rgb8(200, 100, 50));
         img[0, 0] = new Rgb8(10, 20, 30);
         img[1, 0] = new Rgb8(20, 30, 40);
 
@@ -148,8 +147,7 @@ public class SegmentationVisualizerTests
     [Fact]
     public void ColorRegions_DisjointSetWithMultipleRegions_ShouldBeDeterministicAcrossCalls()
     {
-        var img = new SequentialMatrix<Rgb8>(4, 4);
-        img.SetAll(new Rgb8(100, 100, 100));
+        SequentialMatrix<Rgb8> img = TestMatrices.Constant(4, 4, new Rgb8(100, 100, 100));
         DisjointSet<byte> dsu = DisjointSet.CreateSingletons(img);
 
         // Merge into 4 distinct multi-pixel regions with non-trivial union order
@@ -206,10 +204,18 @@ public class SegmentationVisualizerTests
             SegmentationVisualizer.ColorRegions(null!, graph, SegmentationVisualizer.AverageColorAssigner()));
         Assert.Throws<ArgumentNullException>(() =>
             SegmentationVisualizer.ColorRegions(img, (RegionGraph)null!, SegmentationVisualizer.AverageColorAssigner()));
-        Assert.Throws<ArgumentNullException>(() =>
+        ArgumentNullException dsuNullImgEx = Assert.Throws<ArgumentNullException>(() =>
             SegmentationVisualizer.ColorRegions(null!, dsu, SegmentationVisualizer.AverageColorAssigner()));
-        Assert.Throws<ArgumentNullException>(() =>
+        Assert.Equal("image", dsuNullImgEx.ParamName);
+        ArgumentNullException dsuNullSegEx = Assert.Throws<ArgumentNullException>(() =>
             SegmentationVisualizer.ColorRegions(img, (IDisjointSet)null!, SegmentationVisualizer.AverageColorAssigner()));
+        Assert.Equal("segmentation", dsuNullSegEx.ParamName);
+
+        // Complete partition overloads must not clone/read image pixels unless the assigner inspects them.
+        var throwingMatrix = new ThrowingReadOnlyMatrix(2, 2);
+        Matrix<Rgb8> graphNoClone = SegmentationVisualizer.ColorRegions(throwingMatrix, graph, seed: 7);
+        Matrix<Rgb8> dsuNoClone = SegmentationVisualizer.ColorRegions(throwingMatrix, dsu, seed: 7);
+        MatrixAssert.Equal(graphNoClone, dsuNoClone);
 
         var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
         DisjointSet<byte> emptyDsu = DisjointSet.CreateSingletons(emptyImg);
@@ -238,18 +244,18 @@ public class SegmentationVisualizerTests
     }
 
     [Fact]
-    public void AverageColorAssigner_Generic_ShouldSupportRgb8Rgb64Lab32AndEmptyRegions()
+    public void AverageColorAssigner_Generic_ShouldSupportRgb8Rgb64Lab32AndThrowOnEmptyRegions()
     {
-        // Rgb8 generic assigner: accurate over >10 pixels (sum > 255) and returns default on empty region
-        var rgb8Img = new SequentialMatrix<Rgb8>(4, 4);
+        // Rgb8 generic assigner: accurate over >10 pixels (sum > 255) and throws ArgumentException on empty region
+        SequentialMatrix<Rgb8> rgb8Img = TestMatrices.Create(
+            4,
+            4,
+            (x, y) => ((x + y) % 2 == 0) ? new Rgb8(180, 200, 220) : new Rgb8(220, 240, 240));
         var allCoords = new List<Coord>();
         for (int y = 0; y < 4; y++)
         {
             for (int x = 0; x < 4; x++)
-            {
-                rgb8Img[x, y] = ((x + y) % 2 == 0) ? new Rgb8(180, 200, 220) : new Rgb8(220, 240, 240);
                 allCoords.Add(new Coord(x, y));
-            }
         }
 
         var fullRegion = new Region<Coord>(allCoords) { Id = 0 };
@@ -257,9 +263,18 @@ public class SegmentationVisualizerTests
 
         SegmentationVisualizer.ColorAssigner<Rgb8> rgb8Assigner = SegmentationVisualizer.AverageColorAssigner<Rgb8>();
         Assert.Equal(new Rgb8(200, 220, 230), rgb8Assigner(rgb8Img, fullRegion));
-        Assert.Equal(default, rgb8Assigner(rgb8Img, emptyRegion));
+        ArgumentException rgb8EmptyEx = Assert.Throws<ArgumentException>(() => rgb8Assigner(rgb8Img, emptyRegion));
+        Assert.Equal("region", rgb8EmptyEx.ParamName);
         Assert.Throws<ArgumentNullException>(() => rgb8Assigner(null!, fullRegion));
         Assert.Throws<ArgumentNullException>(() => rgb8Assigner(rgb8Img, null!));
+
+        // Exact Rgb8 rounding parity: (1, 32) -> (1 + 32) / 2 = 16.5 -> 17 (no /255.0 * 255.0 drift)
+        var pairImg = new SequentialMatrix<Rgb8>(2, 1);
+        pairImg[0, 0] = new Rgb8(1, 1, 1);
+        pairImg[1, 0] = new Rgb8(32, 32, 32);
+        var pairRegion = new Region<Coord>([new Coord(0, 0), new Coord(1, 0)]) { Id = 0 };
+        Assert.Equal(new Rgb8(17, 17, 17), SegmentationVisualizer.AverageColorAssigner()(pairImg, pairRegion));
+        Assert.Equal(new Rgb8(17, 17, 17), rgb8Assigner(pairImg, pairRegion));
 
         Matrix<Rgb8> rgb8Colored = SegmentationVisualizer.ColorRegions(rgb8Img, [fullRegion], rgb8Assigner);
         Assert.Equal(new Rgb8(200, 220, 230), rgb8Colored[0, 0]);
@@ -276,29 +291,27 @@ public class SegmentationVisualizerTests
         Assert.Equal(0.4, meanRgb64.R, 10);
         Assert.Equal(0.6, meanRgb64.G, 10);
         Assert.Equal(0.8, meanRgb64.B, 10);
-        Assert.Equal(default, rgb64Assigner(rgb64Img, emptyRegion));
+        ArgumentException rgb64EmptyEx = Assert.Throws<ArgumentException>(() => rgb64Assigner(rgb64Img, emptyRegion));
+        Assert.Equal("region", rgb64EmptyEx.ParamName);
 
         Matrix<Rgb64> rgb64Colored = SegmentationVisualizer.ColorRegions(rgb64Img, [twoPixelRegion], rgb64Assigner);
         Assert.Equal(0.4, rgb64Colored[1, 0].R, 10);
 
         // Lab32 generic assigner across >10 pixels including negative chromaticity channels
-        var labImg = new SequentialMatrix<Lab32>(4, 4);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                labImg[x, y] = ((x + y) % 2 == 0)
-                    ? new Lab32(30.0f, -30.0f, 15.0f)
-                    : new Lab32(70.0f, 10.0f, -5.0f);
-            }
-        }
+        SequentialMatrix<Lab32> labImg = TestMatrices.Create(
+            4,
+            4,
+            (x, y) => ((x + y) % 2 == 0)
+                ? new Lab32(30.0f, -30.0f, 15.0f)
+                : new Lab32(70.0f, 10.0f, -5.0f));
 
         SegmentationVisualizer.ColorAssigner<Lab32> labAssigner = SegmentationVisualizer.AverageColorAssigner<Lab32>();
         Lab32 meanLab = labAssigner(labImg, fullRegion);
         Assert.Equal(50.0f, meanLab.L, 5);
         Assert.Equal(-10.0f, meanLab.A, 5);
         Assert.Equal(5.0f, meanLab.B, 5);
-        Assert.Equal(default, labAssigner(labImg, emptyRegion));
+        ArgumentException labEmptyEx = Assert.Throws<ArgumentException>(() => labAssigner(labImg, emptyRegion));
+        Assert.Equal("region", labEmptyEx.ParamName);
 
         Matrix<Lab32> labColored = SegmentationVisualizer.ColorRegions(labImg, [fullRegion], labAssigner);
         Assert.Equal(50.0f, labColored[2, 3].L, 5);

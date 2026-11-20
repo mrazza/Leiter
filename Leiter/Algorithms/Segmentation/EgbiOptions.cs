@@ -17,8 +17,11 @@ public sealed record EgbiOptions(
     double KFactor = 100.0,
     double Epsilon = 1.0,
     int MinRegionSize = 100,
-    GridConnectivity Connectivity = GridConnectivity.EightConnected) : IProfileTunableOptions<EgbiOptions>
+    GridConnectivity Connectivity = GridConnectivity.EightConnected) : ISizeTunableOptions<EgbiOptions>, IProfileTunableOptions<EgbiOptions>
 {
+    private const double MinEpsilonFloor = 0.15;
+    private const int MaxMinRegionSizeDivisor = 16;
+
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which baseline parameters apply unscaled.
     /// </summary>
@@ -53,27 +56,8 @@ public sealed record EgbiOptions(
         EgbiOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
-        var (s, a, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        ArgumentNullException.ThrowIfNull(baseline);
-        baseline.Validate();
-        if (totalPixels == 0)
-        {
-            return baseline;
-        }
-
-        double g = OptionTuning.ComputeBlurredEdgeAttenuation(s);
-        double kFactor = baseline.KFactor * a * g;
-        double epsilon = baseline.Epsilon == 0.0 ? 0.0 : Math.Max(0.15, baseline.Epsilon * g);
-        int minRegionSize = baseline.MinRegionSize == 0
-            ? 0
-            : OptionTuning.ClampRegionSize(baseline.MinRegionSize * a, totalPixels, maxFractionDivisor: 16);
-
-        return baseline with
-        {
-            KFactor = kFactor,
-            Epsilon = epsilon,
-            MinRegionSize = minRegionSize
-        };
+        OptionTuning.ValidateSizeTuning(size, baseline, referenceDimension);
+        return ScaleCore(size, baseline, referenceDimension, colorSpreadFactor: 1.0, clutterFactor: 1.0);
     }
 
     /// <summary>
@@ -132,6 +116,34 @@ public sealed record EgbiOptions(
         double referenceDimension = DefaultReferenceDimension) =>
         OptionTuning.TuneForLabImage(labImage, baseline, referenceDimension);
 
+    /// <summary>
+    /// Creates <see cref="EgbiOptions"/> tuned from default EGBI parameters using pre-computed <paramref name="analysis"/>.
+    /// </summary>
+    /// <param name="analysis">The pre-computed image analysis profile.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="EgbiOptions"/> instance tuned for <paramref name="analysis"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static EgbiOptions ForAnalysis(
+        ImageAnalysis analysis,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis<EgbiOptions>(analysis, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="EgbiOptions"/> tuned from <paramref name="baseline"/> using pre-computed <paramref name="analysis"/>.
+    /// </summary>
+    /// <param name="analysis">The pre-computed image analysis profile.</param>
+    /// <param name="baseline">The baseline EGBI parameters calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="EgbiOptions"/> instance tuned for <paramref name="analysis"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static EgbiOptions ForAnalysis(
+        ImageAnalysis analysis,
+        EgbiOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis(analysis, baseline, referenceDimension);
+
     static EgbiOptions IProfileTunableOptions<EgbiOptions>.ForProfile(
         in ImageTuningProfile profile,
         EgbiOptions baseline,
@@ -141,22 +153,41 @@ public sealed record EgbiOptions(
     internal static EgbiOptions ForProfile(
         in ImageTuningProfile profile,
         EgbiOptions baseline,
-        double referenceDimension)
+        double referenceDimension) =>
+        ScaleCore(
+            profile.ImageSize,
+            baseline,
+            referenceDimension,
+            profile.IsEmpty ? 1.0 : profile.ColorSpreadFactor,
+            profile.IsEmpty ? 1.0 : profile.ClutterFactor);
+
+    private static EgbiOptions ScaleCore(
+        Size size,
+        EgbiOptions baseline,
+        double referenceDimension,
+        double colorSpreadFactor,
+        double clutterFactor)
     {
-        EgbiOptions scaled = ForSize(profile.ImageSize, baseline, referenceDimension);
-        if (profile.IsEmpty)
+        var (linearScale, areaScale, totalPixels) = OptionTuning.ComputeScalesUnchecked(size, referenceDimension);
+        if (totalPixels == 0)
         {
-            return scaled;
+            return baseline;
         }
 
-        long totalPixels = profile.ImageSize.Area;
-        int minRegionSize = scaled.MinRegionSize == 0
+        double edgeAttenuation = OptionTuning.ComputeBlurredEdgeAttenuation(linearScale);
+        double kFactor = OptionTuning.ScaleFiniteNonNegative(baseline.KFactor * areaScale * edgeAttenuation * colorSpreadFactor);
+        double epsilonFloor = Math.Min(MinEpsilonFloor, baseline.Epsilon);
+        double epsilon = baseline.Epsilon == 0.0
+            ? 0.0
+            : OptionTuning.ScaleFinitePositive(baseline.Epsilon * edgeAttenuation, epsilonFloor);
+        int minRegionSize = baseline.MinRegionSize == 0
             ? 0
-            : OptionTuning.ClampRegionSize(scaled.MinRegionSize * profile.ClutterFactor, totalPixels, maxFractionDivisor: 16);
+            : OptionTuning.ClampRegionSize(baseline.MinRegionSize * areaScale * clutterFactor, totalPixels, MaxMinRegionSizeDivisor);
 
-        return scaled with
+        return baseline with
         {
-            KFactor = scaled.KFactor * profile.ColorSpreadFactor,
+            KFactor = kFactor,
+            Epsilon = epsilon,
             MinRegionSize = minRegionSize
         };
     }

@@ -1,5 +1,6 @@
 namespace Leiter.Tests.Algorithms.Segmentation;
 
+using Leiter.Algorithms;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -72,10 +73,8 @@ public class GrabCutOptionsTests : SizeTunableOptionsContractTestsBase<GrabCutOp
         Assert.Equal(4, flatOpts.MixtureComponentCount);
         Assert.Equal(6, richOpts.MixtureComponentCount);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            GrabCutOptions.ForSize(size).Validate();
-        }
+        ImageAnalysis richAnalysis = ImageAnalysis.Analyze(rich);
+        Assert.Equal(richOpts, GrabCutOptions.ForAnalysis(richAnalysis));
 
         GrabCutOptions customBaseline = CreateValidCustomOptions();
         GrabCutOptions customHalf = GrabCutOptions.ForSize(new Size(400, 400), customBaseline);
@@ -88,10 +87,18 @@ public class GrabCutOptionsTests : SizeTunableOptionsContractTestsBase<GrabCutOp
         Assert.Equal(7, customFlat.Iterations);
         Assert.Equal(3, customFlat.MixtureComponentCount);
         Assert.Equal(5, customRich.MixtureComponentCount);
+        Assert.Equal(customRich, GrabCutOptions.ForAnalysis(richAnalysis, customBaseline));
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => GrabCutOptions.ForSize(new Size(-1, 10)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => GrabCutOptions.ForSize(new Size(10, 10), 0.0));
+        // Extreme scaling must clamp to finite values rather than overflowing to Infinity.
+        var hugeBaseline = new GrabCutOptions(SmoothnessWeight: double.MaxValue / 2.0);
+        GrabCutOptions hugeScaled = GrabCutOptions.ForSize(new Size(3200, 3200), hugeBaseline, referenceDimension: 1e-200);
+        hugeScaled.Validate();
+        Assert.True(double.IsFinite(hugeScaled.SmoothnessWeight));
+
         Assert.Throws<ArgumentNullException>(() => GrabCutOptions.ForImage(null!));
         Assert.Throws<ArgumentNullException>(() => GrabCutOptions.ForImage(flat, null!));
+        Assert.Throws<ArgumentNullException>("analysis", () => GrabCutOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>("baseline", () => GrabCutOptions.ForAnalysis(richAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => GrabCutOptions.ForAnalysis(richAnalysis, 0.0));
     }
 }
