@@ -24,27 +24,28 @@ public static class Fxaa
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        FxaaOptions opts = OptionsResolver.Resolve(options, FxaaOptions.Default);
+        FxaaOptions opts = OptionsResolver.Resolve(options);
 
         if (image.Count == 0)
             return new SequentialMatrix<Rgb8>(image.Size);
 
-        int width = image.Width;
-        int height = image.Height;
+        Size size = image.Size;
+        int width = size.Width;
+        int height = size.Height;
 
         double[] luma = image.MapToArray(static pixel => pixel.GetLuma());
 
-        var result = new SequentialMatrix<Rgb8>(image.Size);
+        var result = new SequentialMatrix<Rgb8>(size);
 
         Parallel.For(0, height, y =>
         {
             for (int x = 0; x < width; x++)
             {
-                double lumaM = GetLumaClamped(luma, x, y, width, height);
-                double lumaN = GetLumaClamped(luma, x, y - 1, width, height);
-                double lumaS = GetLumaClamped(luma, x, y + 1, width, height);
-                double lumaW = GetLumaClamped(luma, x - 1, y, width, height);
-                double lumaE = GetLumaClamped(luma, x + 1, y, width, height);
+                double lumaM = GetLumaClamped(luma, x, y, size);
+                double lumaN = GetLumaClamped(luma, x, y - 1, size);
+                double lumaS = GetLumaClamped(luma, x, y + 1, size);
+                double lumaW = GetLumaClamped(luma, x - 1, y, size);
+                double lumaE = GetLumaClamped(luma, x + 1, y, size);
 
                 double maxLuma = Math.Max(lumaM, Math.Max(Math.Max(lumaN, lumaS), Math.Max(lumaW, lumaE)));
                 double minLuma = Math.Min(lumaM, Math.Min(Math.Min(lumaN, lumaS), Math.Min(lumaW, lumaE)));
@@ -57,10 +58,10 @@ public static class Fxaa
                     continue;
                 }
 
-                double lumaNW = GetLumaClamped(luma, x - 1, y - 1, width, height);
-                double lumaNE = GetLumaClamped(luma, x + 1, y - 1, width, height);
-                double lumaSW = GetLumaClamped(luma, x - 1, y + 1, width, height);
-                double lumaSE = GetLumaClamped(luma, x + 1, y + 1, width, height);
+                double lumaNW = GetLumaClamped(luma, x - 1, y - 1, size);
+                double lumaNE = GetLumaClamped(luma, x + 1, y - 1, size);
+                double lumaSW = GetLumaClamped(luma, x - 1, y + 1, size);
+                double lumaSE = GetLumaClamped(luma, x + 1, y + 1, size);
 
                 // Edge orientation using FXAA 3.11 second-derivative contrast across 3x3 neighborhood
                 double edgeHorz =
@@ -111,10 +112,10 @@ public static class Fxaa
                 {
                     int stepOffset = (int)stepSign;
                     var (distPos, lumaEndPos, foundPos) = SearchSpanEndpoint(
-                        luma, x, y, width, height, isHorizontal, 1, stepOffset,
+                        luma, x, y, size, isHorizontal, 1, stepOffset,
                         lumaLocalAvg, gradientThreshold, opts.MaxSpanSearchSteps);
                     var (distNeg, lumaEndNeg, foundNeg) = SearchSpanEndpoint(
-                        luma, x, y, width, height, isHorizontal, -1, stepOffset,
+                        luma, x, y, size, isHorizontal, -1, stepOffset,
                         lumaLocalAvg, gradientThreshold, opts.MaxSpanSearchSteps);
 
                     double spanLength = distPos + distNeg;
@@ -153,8 +154,7 @@ public static class Fxaa
         double[] luma,
         int x,
         int y,
-        int width,
-        int height,
+        Size size,
         bool isHorizontal,
         int tangentSign,
         int stepOffset,
@@ -170,7 +170,7 @@ public static class Fxaa
             int ox = isHorizontal ? tx : tx + stepOffset;
             int oy = isHorizontal ? ty + stepOffset : ty;
 
-            double sampleLuma = 0.5 * (GetLumaClamped(luma, tx, ty, width, height) + GetLumaClamped(luma, ox, oy, width, height));
+            double sampleLuma = 0.5 * (GetLumaClamped(luma, tx, ty, size) + GetLumaClamped(luma, ox, oy, size));
             if (Math.Abs(sampleLuma - lumaLocalAvg) >= gradientThreshold)
                 return (step, sampleLuma, true);
         }
@@ -178,10 +178,10 @@ public static class Fxaa
         return (maxSteps, lumaLocalAvg, false);
     }
 
-    private static double GetLumaClamped(double[] luma, int x, int y, int width, int height)
+    private static double GetLumaClamped(double[] luma, int x, int y, Size size)
     {
-        int cx = Math.Clamp(x, 0, width - 1);
-        int cy = Math.Clamp(y, 0, height - 1);
-        return luma[(cy * width) + cx];
+        int cx = EdgeHandling.Extend.ResolveIndex(x, size.Width);
+        int cy = EdgeHandling.Extend.ResolveIndex(y, size.Height);
+        return luma[size.IndexOf(cx, cy)];
     }
 }

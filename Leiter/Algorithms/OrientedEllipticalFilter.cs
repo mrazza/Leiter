@@ -28,11 +28,10 @@ public static class OrientedEllipticalFilter
         OrientedEllipticalFilterOptions? options = null,
         IReadOnlyMatrix<bool>? activeMask = null)
     {
-        ArgumentNullException.ThrowIfNull(image);
         Guard.ThrowIfSizeMismatch(image, orientations);
         Guard.ThrowIfSizeMismatchIfNotNull(image, activeMask);
 
-        OrientedEllipticalFilterOptions opts = OptionsResolver.Resolve(options, OrientedEllipticalFilterOptions.Default);
+        OrientedEllipticalFilterOptions opts = OptionsResolver.Resolve(options);
 
         return ApplyCore(image, orientations, opts, activeMask);
     }
@@ -46,8 +45,9 @@ public static class OrientedEllipticalFilter
         if (image.Count == 0)
             return new SequentialMatrix<Rgb8>(image.Size);
 
-        int width = image.Width;
-        int height = image.Height;
+        Size size = image.Size;
+        int width = size.Width;
+        int height = size.Height;
 
         Rgb64[] normalizedRgb = image.MapToArray(static pixel => pixel.ToRgb64());
 
@@ -61,7 +61,7 @@ public static class OrientedEllipticalFilter
         double invBSq = 1.0 / (b * b);
         int maxR = (int)Math.Min(Math.Ceiling(Math.Max(a, b)), Math.Max(width, height));
 
-        var result = new SequentialMatrix<Rgb8>(image.Size);
+        var result = new SequentialMatrix<Rgb8>(size);
 
         Parallel.For(0, height, y =>
         {
@@ -81,11 +81,7 @@ public static class OrientedEllipticalFilter
                 }
 
                 Vector2D vAxis = axis.Perpendicular;
-
-                int minY = Math.Max(0, y - maxR);
-                int maxY = Math.Min(height - 1, y + maxR);
-                int minX = Math.Max(0, x - maxR);
-                int maxX = Math.Min(width - 1, x + maxR);
+                (int minX, int maxX, int minY, int maxY) = size.ClampWindow(x, y, maxR);
 
                 double sumR = 0.0;
                 double sumG = 0.0;
@@ -95,7 +91,7 @@ public static class OrientedEllipticalFilter
                 for (int sampleY = minY; sampleY <= maxY; sampleY++)
                 {
                     double dy = sampleY - y;
-                    int sampleRowOffset = sampleY * width;
+                    int sampleRowOffset = size.IndexOf(0, sampleY);
 
                     for (int sampleX = minX; sampleX <= maxX; sampleX++)
                     {

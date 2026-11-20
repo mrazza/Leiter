@@ -1,6 +1,5 @@
 namespace Leiter.Algorithms;
 
-using System.Runtime.Intrinsics;
 using Leiter.Algorithms.Internal;
 using Leiter.Core;
 
@@ -9,12 +8,6 @@ using Leiter.Core;
 /// </summary>
 public static class Blur
 {
-    /// <summary>
-    /// Represents a method that applies a one-dimensional filter to a line of SIMD vector samples in place.
-    /// </summary>
-    /// <param name="line">The line of SIMD vectors to filter in place.</param>
-    private delegate void LineFilter1D(Span<Vector256<double>> line);
-
     /// <summary>
     /// Performs a Gaussian blur of the specified image using a single standard deviation <paramref name="sigma"/>,
     /// returning an unchanged clone when <paramref name="sigma"/> is <c>0</c>, an exact separable kernel blur when <paramref name="sigma"/> &lt;= <c>2.0</c>,
@@ -36,7 +29,7 @@ public static class Blur
             return image.Clone();
 
         return sigma <= 2.0
-            ? GaussianBlur(image, sigma, Math.Max(1, (int)Math.Ceiling(2.5 * sigma)))
+            ? GaussianBlur(image, sigma, ComputeGaussianKernelRadius(sigma))
             : GaussianBlurRecursive(image, sigma);
     }
 
@@ -116,11 +109,14 @@ public static class Blur
             return image.Clone();
 
         if (sigma < 0.5)
-            return GaussianBlur(image, sigma, Math.Max(1, (int)Math.Ceiling(3.0 * sigma)));
+            return GaussianBlur(image, sigma, ComputeGaussianKernelRadius(sigma));
 
         var filter = YoungVanVlietFilter.Create(sigma);
         return ApplySeparable1D(image, filter.FilterLine);
     }
+
+    private static int ComputeGaussianKernelRadius(double sigma) =>
+        Math.Max(1, (int)Math.Ceiling(2.5 * sigma));
 
     /// <summary>
     /// Applies a separable 1D line filter across an image using a parallel two-pass (row-then-column) approach.
@@ -129,40 +125,9 @@ public static class Blur
     /// <param name="image">The image to filter.</param>
     /// <param name="filterLine">The 1D line filter delegate applied to each row and column.</param>
     /// <returns>A new matrix containing the filtered result.</returns>
-    private static Matrix<T> ApplySeparable1D<T>(IReadOnlyMatrix<T> image, LineFilter1D filterLine)
-        where T : struct, IPixel<T>
-    {
-        int width = image.Width;
-        int height = image.Height;
-        Vector256<double>[] buffer = MatrixMath.VectorizeMatrix(image);
-
-        Parallel.For(0, height, y =>
-        {
-            filterLine(buffer.AsSpan(y * width, width));
-        });
-
-        var result = new SequentialMatrix<T>(width, height);
-
-        Parallel.For(
-            0,
-            width,
-            () => new Vector256<double>[height],
-            (x, _, col) =>
-            {
-                for (int y = 0; y < height; y++)
-                    col[y] = buffer[y * width + x];
-
-                filterLine(col);
-
-                for (int y = 0; y < height; y++)
-                    result[x, y] = T.FromDoubleVector(col[y]);
-
-                return col;
-            },
-            static _ => { });
-
-        return result;
-    }
+    private static Matrix<T> ApplySeparable1D<T>(IReadOnlyMatrix<T> image, SeparableProcessor.LineFilter1D filterLine)
+        where T : struct, IPixel<T> =>
+        SeparableProcessor.Apply(image, filterLine);
 
     private static double[] CreateGaussianKernel1D(double sigma, int radius)
     {

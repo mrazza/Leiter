@@ -15,8 +15,7 @@ public class BlurTests
     [Fact]
     public void Blur_GaussianBlur_AndBoxBlur_ShouldWork()
     {
-        var img = new SequentialMatrix<DoublePixel>(5, 5);
-        img.SetAll(10.0);
+        SequentialMatrix<DoublePixel> img = TestMatrices.Constant(5, 5, new DoublePixel(10.0));
 
         var blurredG = Blur.GaussianBlur(img, 1.0, 1);
         Assert.Equal(5, blurredG.Width);
@@ -90,16 +89,15 @@ public class BlurTests
         Matrix<DoublePixel> blurredConst = Blur.GaussianBlurRecursive(constantImg, 4.0);
         MatrixAssert.ApproxEqual(constantImg, blurredConst, 1e-10);
 
-        var symImg = new SequentialMatrix<DoublePixel>(21, 15);
-        for (int y = 0; y < symImg.Height; y++)
-        {
-            for (int x = 0; x < symImg.Width; x++)
+        SequentialMatrix<DoublePixel> symImg = TestMatrices.Create(
+            21,
+            15,
+            (x, y) =>
             {
                 int dx = x - 10;
                 int dy = y - 7;
-                symImg[x, y] = dx * dx + dy * dy + (dx == 0 && dy == 0 ? 50.0 : 0.0);
-            }
-        }
+                return new DoublePixel((dx * dx) + (dy * dy) + (dx == 0 && dy == 0 ? 50.0 : 0.0));
+            });
 
         var blurredSym = Blur.GaussianBlurRecursive(symImg, 3.5);
         for (int y = 0; y < symImg.Height; y++)
@@ -112,7 +110,6 @@ public class BlurTests
         }
 
         var impulse = new SequentialMatrix<DoublePixel>(81, 81);
-        impulse.SetAll(0.0);
         impulse[40, 40] = 1000.0;
 
         var recursive = Blur.GaussianBlurRecursive(impulse, 4.0);
@@ -132,8 +129,7 @@ public class BlurTests
     [Fact]
     public void Blur_EdgeCases_AndSmallMediumSigmaRecursive_ShouldWork()
     {
-        var uniform = new SequentialMatrix<DoublePixel>(6, 6);
-        uniform.SetAll(12.5);
+        SequentialMatrix<DoublePixel> uniform = TestMatrices.Constant(6, 6, new DoublePixel(12.5));
 
         Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlur(uniform, 1.0, -1));
         Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlur(uniform, 0.0, 1));
@@ -161,11 +157,8 @@ public class BlurTests
         // Exercise both small-sigma (< 0.5 FIR fallback) and medium-sigma (0.5 <= sigma < 2.5) branches.
         var smallSigma = Blur.GaussianBlurRecursive(uniform, 0.3);
         var mediumSigma = Blur.GaussianBlurRecursive(uniform, 1.2);
-        for (int i = 0; i < uniform.Count; i++)
-        {
-            Assert.Equal(12.5, smallSigma[i].Value, 10);
-            Assert.Equal(12.5, mediumSigma[i].Value, 10);
-        }
+        MatrixAssert.ApproxEqual(uniform, smallSigma, 1e-10);
+        MatrixAssert.ApproxEqual(uniform, mediumSigma, 1e-10);
 
         // Null, non-finite sigma, and non-Matrix IReadOnlyMatrix (MatrixView) inputs.
         Assert.Throws<ArgumentNullException>(() => Blur.GaussianBlur<DoublePixel>(null!, 1.0, 1));
@@ -208,5 +201,21 @@ public class BlurTests
         Matrix<DoublePixel> recursiveExpected = Blur.GaussianBlurRecursive(img, 3.5);
         Matrix<DoublePixel> recursiveAdaptive = Blur.GaussianBlur(img, 3.5);
         MatrixAssert.ApproxEqual(recursiveExpected, recursiveAdaptive, 1e-12);
+    }
+
+    [Theory]
+    [InlineData(0.2, 1)]
+    [InlineData(0.35, 1)]
+    [InlineData(0.45, 2)]
+    public void GaussianBlur_And_GaussianBlurRecursive_SmallSigma_ShouldMatch(double sigma, int expectedRadius)
+    {
+        SequentialMatrix<DoublePixel> img = TestMatrices.Create(15, 13, (x, y) => new DoublePixel(((x * 7.0) + (y * 11.0)) % 29.0));
+
+        Matrix<DoublePixel> expected = Blur.GaussianBlur(img, sigma, expectedRadius);
+        Matrix<DoublePixel> adaptive = Blur.GaussianBlur(img, sigma);
+        Matrix<DoublePixel> recursive = Blur.GaussianBlurRecursive(img, sigma);
+
+        MatrixAssert.ApproxEqual(expected, adaptive, 1e-12);
+        MatrixAssert.ApproxEqual(expected, recursive, 1e-12);
     }
 }

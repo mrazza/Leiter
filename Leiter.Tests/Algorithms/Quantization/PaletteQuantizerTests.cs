@@ -6,6 +6,7 @@ using Leiter.Algorithms.Quantization;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -129,8 +130,7 @@ public class PaletteQuantizerTests
     [Fact]
     public void QuantizeAndTruncate_FullCoverage_ShouldRetainAllBuckets()
     {
-        var img = new SequentialMatrix<Rgb8>(10, 10);
-        img.SetAll(new Rgb8(0, 0, 0));
+        SequentialMatrix<Rgb8> img = TestMatrices.Constant(10, 10, new Rgb8(0, 0, 0));
         img[0, 0] = new Rgb8(255, 0, 0);
 
         var result = PaletteQuantizer.QuantizeAndTruncate(

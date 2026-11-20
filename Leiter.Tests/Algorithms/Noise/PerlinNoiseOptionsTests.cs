@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Noise;
 
 using System;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Noise;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -149,10 +150,14 @@ public class PerlinNoiseOptionsTests : SizeTunableOptionsContractTestsBase<Perli
         PerlinNoiseOptions tiny = PerlinNoiseOptions.ForSize(new Size(16, 16), baseline);
         Assert.Equal(0.5, tiny.Frequency, 6); // Clamped to Nyquist limit
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            PerlinNoiseOptions.ForSize(size).Validate();
-        }
+        // Extreme scale factors must stay finite and bounded within [MinFrequency, MaxNyquistFrequency].
+        PerlinNoiseOptions overflowFreq = PerlinNoiseOptions.ForSize(new Size(16, 16), baseline, referenceDimension: 1e300);
+        overflowFreq.Validate();
+        Assert.Equal(OptionTuning.MaxNyquistFrequency, overflowFreq.Frequency, 12);
+
+        PerlinNoiseOptions underflowFreq = PerlinNoiseOptions.ForSize(new Size(16, 16), baseline, referenceDimension: 1e-300);
+        underflowFreq.Validate();
+        Assert.Equal(OptionTuning.MinFrequency, underflowFreq.Frequency, 12);
 
         var image = new SequentialMatrix<Rgb8>(400, 400);
         PerlinNoiseOptions fromImage = PerlinNoiseOptions.ForImage(image);
@@ -164,16 +169,11 @@ public class PerlinNoiseOptionsTests : SizeTunableOptionsContractTestsBase<Perli
     }
 
     /// <summary>
-    /// Verifies that <see cref="PerlinNoiseOptions.ForSize"/> and <see cref="PerlinNoiseOptions.ForImage{T}"/> validate arguments.
+    /// Verifies that <see cref="PerlinNoiseOptions.ForImage{T}"/> validates null arguments.
     /// </summary>
     [Fact]
-    public void ForSize_And_ForImage_InvalidArguments_ShouldThrow()
+    public void ForImage_InvalidArguments_ShouldThrow()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => PerlinNoiseOptions.ForSize(new Size(-1, 100)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => PerlinNoiseOptions.ForSize(new Size(100, -1)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => PerlinNoiseOptions.ForSize(new Size(100, 100), 0.0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => PerlinNoiseOptions.ForSize(new Size(100, 100), double.NaN));
-        Assert.Throws<ArgumentNullException>(() => PerlinNoiseOptions.ForSize(new Size(100, 100), null!));
         Assert.Throws<ArgumentNullException>(() => PerlinNoiseOptions.ForImage<Rgb8>(null!));
         Assert.Throws<ArgumentNullException>(() => PerlinNoiseOptions.ForImage<Rgb8>(null!, new PerlinNoiseOptions()));
         Assert.Throws<ArgumentNullException>(() => PerlinNoiseOptions.ForImage(new SequentialMatrix<Rgb8>(8, 8), null!));

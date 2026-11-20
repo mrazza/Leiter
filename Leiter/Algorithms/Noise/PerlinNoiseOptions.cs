@@ -58,17 +58,17 @@ public sealed record PerlinNoiseOptions(
         PerlinNoiseOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
-        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        ArgumentNullException.ThrowIfNull(baseline);
-        baseline.Validate();
+        OptionTuning.ValidateSizeTuning(size, baseline, referenceDimension);
+        var (s, _, totalPixels) = OptionTuning.ComputeScalesUnchecked(size, referenceDimension);
         if (totalPixels == 0)
         {
             return baseline;
         }
 
+        double scaledFrequency = OptionTuning.ScaleFinitePositive(baseline.Frequency / s, OptionTuning.MinFrequency);
         return baseline with
         {
-            Frequency = OptionTuning.ClampFrequency(baseline.Frequency / s)
+            Frequency = OptionTuning.ClampFrequency(scaledFrequency)
         };
     }
 

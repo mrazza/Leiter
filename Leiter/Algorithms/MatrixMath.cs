@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms;
 
 using System.Runtime.Intrinsics;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 
 /// <summary>
@@ -8,6 +9,25 @@ using Leiter.Core;
 /// </summary>
 public static class MatrixMath
 {
+    private interface IFrobeniusMultiplier<in TRight>
+        where TRight : struct
+    {
+        static abstract Vector256<double> Multiply(Vector256<double> left, TRight right);
+    }
+
+    private readonly struct PixelVectorMultiplier<T> : IFrobeniusMultiplier<T>
+        where T : struct, IPixel<T>
+    {
+        public static Vector256<double> Multiply(Vector256<double> left, T right) =>
+            left * right.ToDoubleVector();
+    }
+
+    private readonly struct ScalarMultiplier<R> : IFrobeniusMultiplier<R>
+        where R : struct, IScalar<R>
+    {
+        public static Vector256<double> Multiply(Vector256<double> left, R right) =>
+            left * right.AsDouble();
+    }
     /// <summary>
     /// Multiplies two matrices using standard matrix multiplication.
     /// </summary>
@@ -54,12 +74,8 @@ public static class MatrixMath
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static Matrix<T> HadamardProduct<T>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<T> right)
-        where T : struct, IPixel<T>
-    {
-        ArgumentNullException.ThrowIfNull(self);
-        Guard.ThrowIfSizeMismatch(self, right);
-        return self.Zip(right, static (leftPixel, rightPixel) => leftPixel.Multiply(rightPixel));
-    }
+        where T : struct, IPixel<T> =>
+        self.Zip(right, static (leftPixel, rightPixel) => leftPixel.Multiply(rightPixel));
 
     /// <summary>
     /// Computes the element-wise (Hadamard) product of a pixel matrix and a scalar matrix.
@@ -73,11 +89,89 @@ public static class MatrixMath
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static Matrix<T> HadamardProduct<T, R>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<R> right)
         where T : struct, IPixel<T>
-        where R : struct, IScalar<R>
+        where R : struct, IScalar<R> =>
+        self.Zip(right, static (leftPixel, rightScalar) => leftPixel.Multiply(rightScalar.AsDouble()));
+
+    /// <summary>
+    /// Computes the element-wise sum of two matrices of the same type.
+    /// </summary>
+    /// <typeparam name="T">The element type of both matrices.</typeparam>
+    /// <param name="self">The left-hand matrix.</param>
+    /// <param name="right">The right-hand matrix.</param>
+    /// <returns>A new matrix containing the element-wise sums.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
+    public static Matrix<T> Add<T>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<T> right)
+        where T : struct, ISelfOperable<T> =>
+        self.Zip(right, static (leftPixel, rightPixel) => leftPixel.Add(rightPixel));
+
+    /// <summary>
+    /// Multiplies every element of a matrix by a finite scalar factor.
+    /// </summary>
+    /// <typeparam name="T">The numeric element type of the matrix.</typeparam>
+    /// <param name="self">The source matrix.</param>
+    /// <param name="factor">The finite scalar multiplier.</param>
+    /// <returns>A new matrix containing the scaled elements.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="factor"/> is not finite.</exception>
+    public static Matrix<T> Scale<T>(this IReadOnlyMatrix<T> self, double factor)
+        where T : struct, INumericOperable<T>
     {
         ArgumentNullException.ThrowIfNull(self);
+        Guard.ThrowIfNotFinite(factor);
+        return self.Map(pixel => pixel.Multiply(factor));
+    }
+
+    internal static void AddInPlace<T>(this Matrix<T> self, IReadOnlyMatrix<T> right)
+        where T : struct, ISelfOperable<T>
+    {
         Guard.ThrowIfSizeMismatch(self, right);
-        return self.Zip(right, static (leftPixel, rightScalar) => leftPixel.Multiply(rightScalar.AsDouble()));
+
+        int count = self.Count;
+        if (count == 0)
+            return;
+
+        if (self is SequentialMatrix<T> leftSeq && right is SequentialMatrix<T> rightSeq)
+        {
+            T[] leftRaw = leftSeq.RawData;
+            T[] rightRaw = rightSeq.RawData;
+            Parallel.For(0, count, i => leftRaw[i] = leftRaw[i].Add(rightRaw[i]));
+            return;
+        }
+
+        int width = self.Width;
+        int height = self.Height;
+        Parallel.For(0, height, y =>
+        {
+            for (int x = 0; x < width; x++)
+                self[x, y] = self[x, y].Add(right[x, y]);
+        });
+    }
+
+    internal static void ScaleInPlace<T>(this Matrix<T> self, double factor)
+        where T : struct, INumericOperable<T>
+    {
+        ArgumentNullException.ThrowIfNull(self);
+        Guard.ThrowIfNotFinite(factor);
+
+        int count = self.Count;
+        if (count == 0)
+            return;
+
+        if (self is SequentialMatrix<T> sequential)
+        {
+            T[] raw = sequential.RawData;
+            Parallel.For(0, count, i => raw[i] = raw[i].Multiply(factor));
+            return;
+        }
+
+        int width = self.Width;
+        int height = self.Height;
+        Parallel.For(0, height, y =>
+        {
+            for (int x = 0; x < width; x++)
+                self[x, y] = self[x, y].Multiply(factor);
+        });
     }
 
     /// <summary>
@@ -91,7 +185,7 @@ public static class MatrixMath
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static T FrobeniusProduct<T>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<T> right)
         where T : struct, IPixel<T> =>
-        FrobeniusCore<IReadOnlyMatrix<T>, T>(self, right);
+        FrobeniusCore<IReadOnlyMatrix<T>, T, T, PixelVectorMultiplier<T>>(self, right);
 
     /// <summary>
     /// Computes the Frobenius inner product of a <see cref="MatrixView{T}"/> and a matrix of the same pixel type without boxing the view.
@@ -104,7 +198,7 @@ public static class MatrixMath
     /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
     public static T FrobeniusProduct<T>(this MatrixView<T> self, IReadOnlyMatrix<T> right)
         where T : struct, IPixel<T> =>
-        FrobeniusCore<MatrixView<T>, T>(self, right);
+        FrobeniusCore<MatrixView<T>, T, T, PixelVectorMultiplier<T>>(self, right);
 
     /// <summary>
     /// Computes the Frobenius inner product of a pixel matrix and a scalar matrix.
@@ -119,7 +213,7 @@ public static class MatrixMath
     public static T FrobeniusProduct<T, R>(this IReadOnlyMatrix<T> self, IReadOnlyMatrix<R> right)
         where T : struct, IPixel<T>
         where R : struct, IScalar<R> =>
-        FrobeniusScalarCore<IReadOnlyMatrix<T>, T, R>(self, right);
+        FrobeniusCore<IReadOnlyMatrix<T>, T, R, ScalarMultiplier<R>>(self, right);
 
     /// <summary>
     /// Computes the Frobenius inner product of a <see cref="MatrixView{T}"/> and a scalar matrix without boxing the view.
@@ -134,7 +228,7 @@ public static class MatrixMath
     public static T FrobeniusProduct<T, R>(this MatrixView<T> self, IReadOnlyMatrix<R> right)
         where T : struct, IPixel<T>
         where R : struct, IScalar<R> =>
-        FrobeniusScalarCore<MatrixView<T>, T, R>(self, right);
+        FrobeniusCore<MatrixView<T>, T, R, ScalarMultiplier<R>>(self, right);
 
     /// <summary>
     /// Convolves a matrix with a 2D scalar kernel using clamp-to-edge border handling.
@@ -194,71 +288,14 @@ public static class MatrixMath
         where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(self);
-
-        if (horizontalKernel.IsEmpty)
-            throw new ArgumentException("Horizontal kernel must not be empty.", nameof(horizontalKernel));
-        if (verticalKernel.IsEmpty)
-            throw new ArgumentException("Vertical kernel must not be empty.", nameof(verticalKernel));
-
-        int width = self.Width;
-        int height = self.Height;
-        var result = new SequentialMatrix<T>(width, height);
-        if (width == 0 || height == 0)
-            return result;
-
-        double[] hKernel = horizontalKernel.ToArray();
-        double[] vKernel = verticalKernel.ToArray();
-        int hLen = hKernel.Length;
-        int vLen = vKernel.Length;
-        int halfH = hLen / 2;
-        int halfV = vLen / 2;
-
-        var sourceVectors = VectorizeMatrix(self);
-        var temp = new Vector256<double>[width * height];
-
-        Parallel.For(0, height, y =>
-        {
-            int rowOffset = y * width;
-            for (int x = 0; x < width; x++)
-            {
-                Vector256<double> sum = Vector256<double>.Zero;
-                for (int kx = 0; kx < hLen; kx++)
-                    sum += sourceVectors[rowOffset + Math.Clamp(x - halfH + kx, 0, width - 1)] * hKernel[kx];
-                temp[rowOffset + x] = sum;
-            }
-        });
-
-        Parallel.For(0, height, y =>
-        {
-            Span<int> rowOffsets = vLen <= 256 ? stackalloc int[vLen] : new int[vLen];
-            for (int ky = 0; ky < vLen; ky++)
-                rowOffsets[ky] = Math.Clamp(y - halfV + ky, 0, height - 1) * width;
-
-            for (int x = 0; x < width; x++)
-            {
-                Vector256<double> sum = Vector256<double>.Zero;
-                for (int ky = 0; ky < vLen; ky++)
-                    sum += temp[rowOffsets[ky] + x] * vKernel[ky];
-                result[x, y] = T.FromDoubleVector(sum);
-            }
-        });
-
-        return result;
+        return SeparableProcessor.Convolve(self, horizontalKernel, verticalKernel);
     }
 
-    /// <summary>
-    /// Computes the Frobenius inner product of two matrices of the same pixel type using vectorized accumulation.
-    /// </summary>
-    /// <typeparam name="TLeft">The matrix type of the left-hand operand.</typeparam>
-    /// <typeparam name="T">The pixel type of both matrices.</typeparam>
-    /// <param name="self">The left-hand matrix operand.</param>
-    /// <param name="right">The right-hand matrix operand.</param>
-    /// <returns>The channel-wise sum of element-wise products as <typeparamref name="T"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
-    private static T FrobeniusCore<TLeft, T>(TLeft self, IReadOnlyMatrix<T> right)
+    private static T FrobeniusCore<TLeft, T, TRight, TMultiplier>(TLeft self, IReadOnlyMatrix<TRight> right)
         where TLeft : IReadOnlyMatrix<T>
         where T : struct, IPixel<T>
+        where TRight : struct
+        where TMultiplier : struct, IFrobeniusMultiplier<TRight>
     {
         if (self is null)
             throw new ArgumentNullException(nameof(self));
@@ -269,50 +306,11 @@ public static class MatrixMath
         int width = self.Width;
         int height = self.Height;
         for (int y = 0; y < height; y++)
+        {
             for (int x = 0; x < width; x++)
-                sum += self[x, y].ToDoubleVector() * right[x, y].ToDoubleVector();
+                sum += TMultiplier.Multiply(self[x, y].ToDoubleVector(), right[x, y]);
+        }
 
         return T.FromDoubleVector(sum);
     }
-
-    /// <summary>
-    /// Computes the Frobenius inner product of a pixel matrix and a scalar matrix using vectorized accumulation.
-    /// </summary>
-    /// <typeparam name="TLeft">The matrix type of the left-hand operand.</typeparam>
-    /// <typeparam name="T">The pixel type of the left-hand matrix.</typeparam>
-    /// <typeparam name="R">The scalar pixel type of the right-hand matrix.</typeparam>
-    /// <param name="self">The left-hand matrix operand.</param>
-    /// <param name="right">The right-hand scalar matrix operand.</param>
-    /// <returns>The weighted sum of elements as <typeparamref name="T"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="self"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">Thrown when the matrices have different dimensions.</exception>
-    private static T FrobeniusScalarCore<TLeft, T, R>(TLeft self, IReadOnlyMatrix<R> right)
-        where TLeft : IReadOnlyMatrix<T>
-        where T : struct, IPixel<T>
-        where R : struct, IScalar<R>
-    {
-        if (self is null)
-            throw new ArgumentNullException(nameof(self));
-        ArgumentNullException.ThrowIfNull(right);
-        Guard.ThrowIfSizeMismatch(self.Size, right.Size, nameof(right));
-
-        Vector256<double> sum = Vector256<double>.Zero;
-        int width = self.Width;
-        int height = self.Height;
-        for (int y = 0; y < height; y++)
-            for (int x = 0; x < width; x++)
-                sum += self[x, y].ToDoubleVector() * right[x, y].AsDouble();
-
-        return T.FromDoubleVector(sum);
-    }
-
-    /// <summary>
-    /// Converts a matrix of pixels into a flattened array of double-precision SIMD vectors.
-    /// </summary>
-    /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
-    /// <param name="matrix">The matrix to vectorize.</param>
-    /// <returns>A flattened array of SIMD vectors corresponding to the matrix pixels.</returns>
-    internal static Vector256<double>[] VectorizeMatrix<T>(IReadOnlyMatrix<T> matrix)
-        where T : struct, IPixel<T> =>
-        matrix.MapToArray(static pixel => pixel.ToDoubleVector());
 }

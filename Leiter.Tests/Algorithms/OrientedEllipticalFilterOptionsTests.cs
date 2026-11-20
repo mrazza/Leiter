@@ -102,11 +102,6 @@ public class OrientedEllipticalFilterOptionsTests : SizeTunableOptionsContractTe
         Assert.True(large.MajorRadius > refOptions.MajorRadius);
         Assert.True(large.MinorRadius > refOptions.MinorRadius);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            OrientedEllipticalFilterOptions.ForSize(size).Validate();
-        }
-
         var image = new SequentialMatrix<Rgb8>(400, 400);
         Assert.Equal(OrientedEllipticalFilterOptions.ForSize(image.Size), OrientedEllipticalFilterOptions.ForImage(image));
 
@@ -119,10 +114,24 @@ public class OrientedEllipticalFilterOptionsTests : SizeTunableOptionsContractTe
         var scalarImage = new SequentialMatrix<DoublePixel>(400, 400);
         Assert.Equal(halfScaled, OrientedEllipticalFilterOptions.ForImage(scalarImage, customBaseline));
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(-1, 100)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(100, -1)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(100, 100), -5.0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(100, 100), double.PositiveInfinity));
+        // Sub-0.25 radii must remain unchanged at scale 1.0 and clamp safely below scale 1.0.
+        var subFloorBaseline = new OrientedEllipticalFilterOptions(MajorRadius: 0.15, MinorRadius: 0.05, SigmaScale: 0.5);
+        Assert.Equal(subFloorBaseline, OrientedEllipticalFilterOptions.ForSize(new Size(800, 800), subFloorBaseline));
+        Assert.Equal(subFloorBaseline, OrientedEllipticalFilterOptions.ForSize(new Size(1000, 640), subFloorBaseline));
+        OrientedEllipticalFilterOptions shrunkSubFloor = OrientedEllipticalFilterOptions.ForSize(new Size(200, 200), subFloorBaseline);
+        Assert.Equal(0.15, shrunkSubFloor.MajorRadius, 12);
+        Assert.Equal(0.05, shrunkSubFloor.MinorRadius, 12);
+        OrientedEllipticalFilterOptions grownSubFloor = OrientedEllipticalFilterOptions.ForSize(new Size(1600, 1600), subFloorBaseline);
+        Assert.Equal(0.30, grownSubFloor.MajorRadius, 12);
+        Assert.Equal(0.10, grownSubFloor.MinorRadius, 12);
+
+        // Overflowing double scaling must remain finite and valid.
+        var hugeBaseline = new OrientedEllipticalFilterOptions(MajorRadius: 1e308, MinorRadius: 9e307, SigmaScale: 0.5);
+        OrientedEllipticalFilterOptions overflowSafe = OrientedEllipticalFilterOptions.ForSize(new Size(1600, 1600), hugeBaseline);
+        overflowSafe.Validate();
+        Assert.Equal(double.MaxValue, overflowSafe.MajorRadius);
+        Assert.Equal(double.MaxValue, overflowSafe.MinorRadius);
+
         Assert.Throws<ArgumentNullException>(() => OrientedEllipticalFilterOptions.ForImage<Rgb8>(null!));
         Assert.Throws<ArgumentNullException>(() => OrientedEllipticalFilterOptions.ForImage<Rgb8>(null!, customBaseline));
         Assert.Throws<ArgumentNullException>(() => OrientedEllipticalFilterOptions.ForImage(image, null!));

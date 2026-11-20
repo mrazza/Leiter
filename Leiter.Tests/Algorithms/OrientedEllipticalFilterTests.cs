@@ -21,20 +21,13 @@ public class OrientedEllipticalFilterTests
     {
         int width = 21;
         int height = 21;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var horizontalOrientations = new SequentialMatrix<Vector2D>(width, height);
-        var verticalOrientations = new SequentialMatrix<Vector2D>(width, height);
-
         // Draw a single horizontal white line at row 10 on a black background
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                image[x, y] = y == 10 ? new Rgb8(255, 255, 255) : new Rgb8(0, 0, 0);
-                horizontalOrientations[x, y] = new Vector2D(1.0, 0.0);
-                verticalOrientations[x, y] = new Vector2D(0.0, 1.0);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            width,
+            height,
+            (_, y) => y == 10 ? new Rgb8(255, 255, 255) : new Rgb8(0, 0, 0));
+        SequentialMatrix<Vector2D> horizontalOrientations = TestMatrices.Constant(width, height, new Vector2D(1.0, 0.0));
+        SequentialMatrix<Vector2D> verticalOrientations = TestMatrices.Constant(width, height, new Vector2D(0.0, 1.0));
 
         var options = new OrientedEllipticalFilterOptions(MajorRadius: 5.0, MinorRadius: 1.0, SigmaScale: 0.5);
 
@@ -58,18 +51,16 @@ public class OrientedEllipticalFilterTests
     public void Apply_ActiveMaskGating_ShouldPreserveUnmaskedPixels()
     {
         int size = 11;
-        var image = new SequentialMatrix<Rgb8>(size, size);
-        var orientations = new SequentialMatrix<Vector2D>(size, size);
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(size, size, (x, y) => new Rgb8((byte)(x * 20), (byte)(y * 20), 100));
+        SequentialMatrix<Vector2D> orientations = TestMatrices.Constant(size, size, new Vector2D(1.0, 0.0));
         var mask = new MaskMatrix(size, size);
 
-        for (int y = 0; y < size; y++)
+        // Mask active only for the top half
+        for (int y = 0; y < 5; y++)
         {
             for (int x = 0; x < size; x++)
             {
-                image[x, y] = new Rgb8((byte)(x * 20), (byte)(y * 20), 100);
-                orientations[x, y] = new Vector2D(1.0, 0.0);
-                // Mask active only for the top half
-                mask[x, y] = y < 5;
+                mask[x, y] = true;
             }
         }
 

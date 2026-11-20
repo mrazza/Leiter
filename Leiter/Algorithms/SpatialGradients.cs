@@ -11,6 +11,55 @@ using Leiter.Pixels.ColorSpaces;
 /// </summary>
 public static class SpatialGradients
 {
+    private interface IStencil3x3Processor
+    {
+        void Process(int x, int y, int xm1, int xp1, int ym1, int yp1);
+    }
+
+    private readonly struct ScalarGradientProcessor(
+        IReadOnlyMatrix<DoublePixel> source,
+        SequentialMatrix<Vector2D> result,
+        double w0,
+        double w1,
+        double w2,
+        double scale) : IStencil3x3Processor
+    {
+        public void Process(int x, int y, int xm1, int xp1, int ym1, int yp1)
+        {
+            var (gx, gy) = ComputeGradientAt(
+                source[xm1, ym1].Value, source[x, ym1].Value, source[xp1, ym1].Value,
+                source[xm1, y].Value,                          source[xp1, y].Value,
+                source[xm1, yp1].Value, source[x, yp1].Value, source[xp1, yp1].Value,
+                w0, w1, w2, scale);
+
+            result[x, y] = new Vector2D(gx, gy);
+        }
+    }
+
+    private readonly struct ColorGradientProcessor(
+        IReadOnlyMatrix<Rgb8> image,
+        SequentialMatrix<Rgb64> gradX,
+        SequentialMatrix<Rgb64> gradY,
+        SequentialMatrix<DoublePixel> magnitude,
+        double w0,
+        double w1,
+        double w2,
+        double normalizedScale) : IStencil3x3Processor
+    {
+        public void Process(int x, int y, int xm1, int xp1, int ym1, int yp1)
+        {
+            var (gx, gy) = ComputeRgb8GradientAt(
+                image[xm1, ym1], image[x, ym1], image[xp1, ym1],
+                image[xm1, y],                  image[xp1, y],
+                image[xm1, yp1], image[x, yp1], image[xp1, yp1],
+                w0, w1, w2, normalizedScale);
+
+            gradX[x, y] = gx;
+            gradY[x, y] = gy;
+            magnitude[x, y] = Math.Sqrt(gx.NormSquared() + gy.NormSquared());
+        }
+    }
+
     /// <summary>
     /// Computes spatial gradient vectors for a scalar image using the specified gradient operator.
     /// </summary>
@@ -32,27 +81,7 @@ public static class SpatialGradients
         if (width == 0 || height == 0)
             return result;
 
-        Parallel.For(0, height, y =>
-        {
-            int ym1 = Math.Clamp(y - 1, 0, height - 1);
-            int y0 = y;
-            int yp1 = Math.Clamp(y + 1, 0, height - 1);
-
-            for (int x = 0; x < width; x++)
-            {
-                int xm1 = Math.Clamp(x - 1, 0, width - 1);
-                int xp1 = Math.Clamp(x + 1, 0, width - 1);
-
-                var (gx, gy) = ComputeGradientAt(
-                    source[xm1, ym1].Value, source[x, ym1].Value, source[xp1, ym1].Value,
-                    source[xm1, y0].Value,                        source[xp1, y0].Value,
-                    source[xm1, yp1].Value, source[x, yp1].Value, source[xp1, yp1].Value,
-                    w0, w1, w2, scale);
-
-                result[x, y] = new Vector2D(gx, gy);
-            }
-        });
-
+        ParallelForEach3x3Stencil(width, height, new ScalarGradientProcessor(source, result, w0, w1, w2, scale));
         return result;
     }
 
@@ -109,31 +138,26 @@ public static class SpatialGradients
             return (gradX, gradY, magnitude);
 
         double normalizedScale = scale / 255.0;
+        ParallelForEach3x3Stencil(width, height, new ColorGradientProcessor(image, gradX, gradY, magnitude, w0, w1, w2, normalizedScale));
+
+        return (gradX, gradY, magnitude);
+    }
+
+    private static void ParallelForEach3x3Stencil<TProcessor>(int width, int height, TProcessor processor)
+        where TProcessor : struct, IStencil3x3Processor
+    {
         Parallel.For(0, height, y =>
         {
-            int ym1 = Math.Clamp(y - 1, 0, height - 1);
-            int y0 = y;
-            int yp1 = Math.Clamp(y + 1, 0, height - 1);
+            int ym1 = EdgeHandling.Extend.ResolveIndex(y - 1, height);
+            int yp1 = EdgeHandling.Extend.ResolveIndex(y + 1, height);
 
             for (int x = 0; x < width; x++)
             {
-                int xm1 = Math.Clamp(x - 1, 0, width - 1);
-                int xp1 = Math.Clamp(x + 1, 0, width - 1);
-
-                var (gx, gy) = ComputeRgb8GradientAt(
-                    image[xm1, ym1], image[x, ym1], image[xp1, ym1],
-                    image[xm1, y0],                 image[xp1, y0],
-                    image[xm1, yp1], image[x, yp1], image[xp1, yp1],
-                    w0, w1, w2, normalizedScale);
-
-                gradX[x, y] = gx;
-                gradY[x, y] = gy;
-
-                magnitude[x, y] = Math.Sqrt(gx.NormSquared() + gy.NormSquared());
+                int xm1 = EdgeHandling.Extend.ResolveIndex(x - 1, width);
+                int xp1 = EdgeHandling.Extend.ResolveIndex(x + 1, width);
+                processor.Process(x, y, xm1, xp1, ym1, yp1);
             }
         });
-
-        return (gradX, gradY, magnitude);
     }
 
     internal static (Rgb64 Gx, Rgb64 Gy) ComputeRgb8GradientAt(
@@ -176,7 +200,7 @@ public static class SpatialGradients
         {
             GradientOperator.Sobel => (1.0, 2.0, 1.0, 1.0 / 8.0),
             GradientOperator.Scharr => (3.0, 10.0, 3.0, 1.0 / 32.0),
-            _ => throw new ArgumentOutOfRangeException(nameof(gradientOperator), gradientOperator, "Unsupported gradient operator.")
+            _ => throw new ArgumentOutOfRangeException(nameof(gradientOperator), gradientOperator, $"Unsupported {nameof(GradientOperator)} value.")
         };
 
     private static (double Gx, double Gy) ComputeGradientAt(

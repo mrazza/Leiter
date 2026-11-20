@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -32,8 +33,7 @@ public class MatrixResamplerTests
         Assert.InRange(upsampled[2, 2].Value, 0.7, 0.8);
         Assert.Equal(1.0, upsampled[3, 3].Value, 9);
 
-        var rgb = new SequentialMatrix<Rgb8>(4, 4);
-        rgb.SetAll(new Rgb8(100, 150, 200));
+        SequentialMatrix<Rgb8> rgb = TestMatrices.Constant(4, 4, new Rgb8(100, 150, 200));
         Matrix<Rgb8> downsampled = rgb.ResizeBilinear(new Size(2, 2));
         Assert.Equal(new Size(2, 2), downsampled.Size);
         Assert.Equal(new Rgb8(100, 150, 200), downsampled[0, 0]);
@@ -57,7 +57,7 @@ public class MatrixResamplerTests
         Assert.True(upsampledMask[3, 3]);
 
         Matrix<bool> genericUpsampled = ((IReadOnlyMatrix<bool>)mask).ResizeNearest(new Size(4, 4));
-        Assert.True(upsampledMask.ContentEquals(genericUpsampled));
+        MatrixAssert.Equal(upsampledMask, genericUpsampled);
 
         var single = new SequentialMatrix<DoublePixel>(1, 1);
         single[0, 0] = 0.75;
@@ -258,15 +258,9 @@ public class MatrixResamplerTests
     [Fact]
     public void WarpBilinear_ShouldWarpSmoothlyAndValidateInputs()
     {
-        var image = new SequentialMatrix<DoublePixel>(4, 4);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-                image[x, y] = (x * 10.0) + y;
-        }
+        SequentialMatrix<DoublePixel> image = TestMatrices.Create(4, 4, (x, y) => new DoublePixel((x * 10.0) + y));
 
-        var field = new SequentialMatrix<Vector2D>(4, 4);
-        field.SetAll(new Vector2D(0.5, 1.0));
+        SequentialMatrix<Vector2D> field = TestMatrices.Constant(4, 4, new Vector2D(0.5, 1.0));
         field[0, 0] = new Vector2D(double.NaN, double.PositiveInfinity);
 
         Matrix<DoublePixel> warped = image.WarpBilinear(field, scale: 1.0);
@@ -302,17 +296,13 @@ public class MatrixResamplerTests
         Assert.Equal(new Rgb8(11, 21, 1), rgbSingle[0, 0]);
 
         // Non-integer downscale ratio 5x5 -> 2x2 splits axes into [0..2) and [2..5)
-        var rgbFiveByFive = new SequentialMatrix<Rgb8>(5, 5);
-        for (int y = 0; y < 5; y++)
-        {
-            for (int x = 0; x < 5; x++)
-            {
-                byte r = (byte)(x < 2 ? 10 : 40);
-                byte g = (byte)(y < 2 ? 20 : 80);
-                byte b = (byte)(x >= 2 && y >= 2 ? 90 : 30);
-                rgbFiveByFive[x, y] = new Rgb8(r, g, b);
-            }
-        }
+        SequentialMatrix<Rgb8> rgbFiveByFive = TestMatrices.Create(
+            5,
+            5,
+            (x, y) => new Rgb8(
+                (byte)(x < 2 ? 10 : 40),
+                (byte)(y < 2 ? 20 : 80),
+                (byte)(x >= 2 && y >= 2 ? 90 : 30)));
 
         Matrix<Rgb8> rgbTwoByTwo = rgbFiveByFive.ResizeBox(new Size(2, 2));
         Assert.Equal(new Rgb8(10, 20, 30), rgbTwoByTwo[0, 0]);
@@ -333,12 +323,7 @@ public class MatrixResamplerTests
         Assert.Equal(20.0f, labAvg[0, 0].B, 5);
 
         // Generic paths: DoublePixel and Rgb64
-        var dbl = new SequentialMatrix<DoublePixel>(4, 2);
-        for (int y = 0; y < 2; y++)
-        {
-            for (int x = 0; x < 4; x++)
-                dbl[x, y] = (y * 100.0) + x;
-        }
+        SequentialMatrix<DoublePixel> dbl = TestMatrices.Create(4, 2, (x, y) => new DoublePixel((y * 100.0) + x));
 
         Matrix<DoublePixel> dblMixed = dbl.ResizeBox(new Size(2, 4));
         Assert.Equal(new Size(2, 4), dblMixed.Size);
@@ -376,7 +361,7 @@ public class MatrixResamplerTests
 
         Matrix<Rgb8> identity = source.ResizeBox(source.Size);
         Assert.NotSame(source, identity);
-        Assert.True(source.ContentEquals(identity));
+        MatrixAssert.Equal(source, identity);
 
         Assert.Empty(source.ResizeBox(new Size(0, 2)));
         Assert.Empty(source.ResizeBox(new Size(2, 0)));
@@ -448,5 +433,33 @@ public class MatrixResamplerTests
         Assert.Equal(source[0, 0].Value, source.SampleNearest(-1e20, -1e20).Value, 9);
         Assert.Equal(source[2, 0].Value, source.SampleNearest(3e9, -3e9).Value, 9);
         Assert.Equal(source[0, 1].Value, source.SampleNearest(-3e9, 1e20).Value, 9);
+    }
+
+    [Fact]
+    public void ComputeBilinearSampleAxis_ShouldComputeIndicesWeightsAndClampEdges()
+    {
+        MatrixResampler.BilinearSampleAxis interior = MatrixResampler.ComputeBilinearSampleAxis(1.25, 4);
+        Assert.Equal(1, interior.LowerIndex);
+        Assert.Equal(2, interior.UpperIndex);
+        Assert.Equal(0.75, interior.LowerWeight, 12);
+        Assert.Equal(0.25, interior.UpperWeight, 12);
+
+        MatrixResampler.BilinearSampleAxis clampedLow = MatrixResampler.ComputeBilinearSampleAxis(-2.5, 4);
+        Assert.Equal(0, clampedLow.LowerIndex);
+        Assert.Equal(1, clampedLow.UpperIndex);
+        Assert.Equal(1.0, clampedLow.LowerWeight, 12);
+        Assert.Equal(0.0, clampedLow.UpperWeight, 12);
+
+        MatrixResampler.BilinearSampleAxis clampedHigh = MatrixResampler.ComputeBilinearSampleAxis(5.5, 4);
+        Assert.Equal(3, clampedHigh.LowerIndex);
+        Assert.Equal(3, clampedHigh.UpperIndex);
+        Assert.Equal(1.0, clampedHigh.LowerWeight, 12);
+        Assert.Equal(0.0, clampedHigh.UpperWeight, 12);
+
+        MatrixResampler.BilinearSampleAxis single = MatrixResampler.ComputeBilinearSampleAxis(0.3, 1);
+        Assert.Equal(0, single.LowerIndex);
+        Assert.Equal(0, single.UpperIndex);
+        Assert.Equal(1.0, single.LowerWeight, 12);
+        Assert.Equal(0.0, single.UpperWeight, 12);
     }
 }
