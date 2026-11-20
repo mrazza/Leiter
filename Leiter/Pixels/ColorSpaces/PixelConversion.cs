@@ -344,6 +344,128 @@ public static class PixelConversion
     public static Rgb8 ToRgb8(this Lab32 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
         self.ToRgb64(colorSpace, illuminant).ToRgb8();
 
+    /// <summary>
+    /// Converts a matrix of <see cref="Xyz32"/> pixels (D65 white point) to <see cref="Rgb8"/> in the specified <see cref="RgbColorSpace"/>.
+    /// </summary>
+    public static Matrix<Rgb8> ToRgb8(this IReadOnlyMatrix<Xyz32> source, RgbColorSpace colorSpace)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        return source.Map(pixel => pixel.ToRgb8(colorSpace));
+    }
+
+    /// <summary>
+    /// Converts a matrix of normalized <see cref="Rgb64"/> pixels in [0, 1] to 8-bit per channel <see cref="Rgb8"/>.
+    /// </summary>
+    public static Matrix<Rgb8> ToRgb8(this IReadOnlyMatrix<Rgb64> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return source.Map(static pixel => pixel.ToRgb8());
+    }
+
+    /// <summary>
+    /// Converts a matrix of <see cref="Lab32"/> pixels under <paramref name="illuminant"/> to <see cref="Rgb8"/> in the specified <see cref="RgbColorSpace"/>.
+    /// </summary>
+    public static Matrix<Rgb8> ToRgb8(this IReadOnlyMatrix<Lab32> source, RgbColorSpace colorSpace, Illuminant illuminant = Illuminant.D65)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        Guard.ThrowIfUndefinedEnum(illuminant);
+        return source.Map(pixel => pixel.ToRgb8(colorSpace, illuminant));
+    }
+
+    /// <summary>
+    /// Converts a matrix of <see cref="Xyz32"/> pixels (D65 white point) to <see cref="Rgb64"/> in the specified <see cref="RgbColorSpace"/>.
+    /// </summary>
+    public static Matrix<Rgb64> ToRgb64(this IReadOnlyMatrix<Xyz32> source, RgbColorSpace colorSpace)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        return source.Map(pixel => pixel.ToRgb64(colorSpace));
+    }
+
+    /// <summary>
+    /// Converts a matrix of 8-bit <see cref="Rgb8"/> pixels to normalized <see cref="Rgb64"/>.
+    /// </summary>
+    public static Matrix<Rgb64> ToRgb64(this IReadOnlyMatrix<Rgb8> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return source.Map(static pixel => pixel.ToRgb64());
+    }
+
+    /// <summary>
+    /// Converts a matrix of <see cref="Lab32"/> pixels under <paramref name="illuminant"/> to <see cref="Rgb64"/> in the specified <see cref="RgbColorSpace"/>.
+    /// </summary>
+    public static Matrix<Rgb64> ToRgb64(this IReadOnlyMatrix<Lab32> source, RgbColorSpace colorSpace, Illuminant illuminant = Illuminant.D65)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        Guard.ThrowIfUndefinedEnum(illuminant);
+        return source.Map(pixel => pixel.ToRgb64(colorSpace, illuminant));
+    }
+
+    /// <summary>
+    /// Converts a matrix of <see cref="Rgb8"/> pixels in <paramref name="colorSpace"/> to <see cref="Xyz32"/>.
+    /// </summary>
+    public static Matrix<Xyz32> ToXyz32(this IReadOnlyMatrix<Rgb8> source, RgbColorSpace colorSpace)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        return source.Map(pixel => pixel.ToXyz32(colorSpace));
+    }
+
+    /// <summary>
+    /// Converts a matrix of <see cref="Rgb64"/> pixels in <paramref name="colorSpace"/> to <see cref="Xyz32"/>.
+    /// </summary>
+    public static Matrix<Xyz32> ToXyz32(this IReadOnlyMatrix<Rgb64> source, RgbColorSpace colorSpace)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        return source.Map(pixel => pixel.ToXyz32(colorSpace));
+    }
+
+    /// <summary>
+    /// Converts a matrix of <see cref="Lab32"/> pixels under <paramref name="illuminant"/> to <see cref="Xyz32"/>.
+    /// </summary>
+    public static Matrix<Xyz32> ToXyz32(this IReadOnlyMatrix<Lab32> source, Illuminant illuminant = Illuminant.D65)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfUndefinedEnum(illuminant);
+        return source.Map(pixel => pixel.ToXyz32(illuminant));
+    }
+
+    /// <summary>
+    /// Converts a matrix of <see cref="Rgb8"/> pixels in <paramref name="colorSpace"/> to <see cref="Lab32"/> under <paramref name="illuminant"/>.
+    /// </summary>
+    public static Matrix<Lab32> ToLab32(this IReadOnlyMatrix<Rgb8> source, RgbColorSpace colorSpace, Illuminant illuminant = Illuminant.D65)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        Guard.ThrowIfUndefinedEnum(illuminant);
+        return source.Map(pixel => pixel.ToLab32(colorSpace, illuminant));
+    }
+
+    /// <summary>
+    /// Converts a matrix of <see cref="Rgb64"/> pixels in <paramref name="colorSpace"/> to <see cref="Lab32"/> under <paramref name="illuminant"/>.
+    /// </summary>
+    public static Matrix<Lab32> ToLab32(this IReadOnlyMatrix<Rgb64> source, RgbColorSpace colorSpace, Illuminant illuminant = Illuminant.D65)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        Guard.ThrowIfUndefinedEnum(illuminant);
+        return source.Map(pixel => pixel.ToLab32(colorSpace, illuminant));
+    }
+
+    /// <summary>
+    /// Converts a matrix of <see cref="Xyz32"/> pixels to <see cref="Lab32"/> under <paramref name="illuminant"/>.
+    /// </summary>
+    public static Matrix<Lab32> ToLab32(this IReadOnlyMatrix<Xyz32> source, Illuminant illuminant = Illuminant.D65)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        Guard.ThrowIfUndefinedEnum(illuminant);
+        return source.Map(pixel => pixel.ToLab32(illuminant));
+    }
+
     private const float LabEpsilon = 0.008856f; // (6/29)^3
     private const float LabKappa = 903.3f; // (29/3)^3
 

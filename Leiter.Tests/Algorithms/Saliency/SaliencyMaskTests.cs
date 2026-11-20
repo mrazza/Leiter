@@ -111,4 +111,39 @@ public class SaliencyMaskTests
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.Binarize(allZero, new SaliencyMaskOptions(RetentionPolicy: (ComponentRetentionPolicy)99)));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.Binarize(allZero, new SaliencyMaskOptions(MinAreaFraction: -0.05)));
     }
+
+    [Fact]
+    public void NonSequentialMatrixView_ShouldMatchMaterializedThresholdsAndMasks()
+    {
+        var padded = new SequentialMatrix<DoublePixel>(12, 12);
+        for (int y = 3; y <= 6; y++)
+        {
+            for (int x = 3; x <= 6; x++)
+                padded[x, y] = 0.85;
+        }
+
+        padded[8, 8] = 0.75;
+        padded[9, 8] = 0.75;
+        padded[8, 9] = 0.75;
+        padded[9, 9] = 0.75;
+
+        var view = new MatrixView<DoublePixel>(padded, 2, 2, 8, 8, EdgeHandling.Extend);
+        SequentialMatrix<DoublePixel> materialized = view.ToSequentialMatrix();
+
+        foreach (SaliencyThresholdMethod method in new[]
+        {
+            SaliencyThresholdMethod.Otsu,
+            SaliencyThresholdMethod.AdaptiveMean,
+            SaliencyThresholdMethod.Fixed
+        })
+        {
+            Assert.Equal(
+                SaliencyMask.ComputeThreshold(materialized, method, 0.5),
+                SaliencyMask.ComputeThreshold(view, method, 0.5),
+                12);
+
+            var options = new SaliencyMaskOptions(Method: method, FixedThreshold: 0.5);
+            Assert.True(SaliencyMask.Binarize(materialized, options).ContentEquals(SaliencyMask.Binarize(view, options)));
+        }
+    }
 }

@@ -2,6 +2,7 @@ namespace Leiter.Algorithms.Internal;
 
 using System;
 using Leiter.Core;
+using Leiter.Pixels;
 
 /// <summary>
 /// Provides shared geometric scaling and argument validation helpers for resolution-adaptive algorithm options.
@@ -53,13 +54,83 @@ internal static class OptionTuning
     }
 
     /// <summary>
+    /// Validates <paramref name="image"/> and <paramref name="referenceDimension"/>, analyzes canonical image statistics,
+    /// and tunes <typeparamref name="TOptions"/> using its default baseline.
+    /// </summary>
+    public static TOptions TuneForImage<TOptions>(IReadOnlyMatrix<Rgb8> image, double referenceDimension)
+        where TOptions : class, IProfileTunableOptions<TOptions> =>
+        TuneForImage(image, TOptions.Default, referenceDimension);
+
+    /// <summary>
+    /// Validates <paramref name="image"/>, <paramref name="baseline"/>, and <paramref name="referenceDimension"/>,
+    /// analyzes canonical image statistics, and tunes <typeparamref name="TOptions"/> from <paramref name="baseline"/>.
+    /// </summary>
+    public static TOptions TuneForImage<TOptions>(IReadOnlyMatrix<Rgb8> image, TOptions baseline, double referenceDimension)
+        where TOptions : class, IProfileTunableOptions<TOptions>
+    {
+        ValidateImageAndReference(image, referenceDimension);
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
+
+        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
+        return TOptions.ForProfile(in profile, baseline, referenceDimension);
+    }
+
+    /// <summary>
+    /// Validates <paramref name="labImage"/> and <paramref name="referenceDimension"/>, analyzes canonical CIELAB statistics,
+    /// and tunes <typeparamref name="TOptions"/> using its default baseline.
+    /// </summary>
+    public static TOptions TuneForLabImage<TOptions>(IReadOnlyMatrix<Lab32> labImage, double referenceDimension)
+        where TOptions : class, IProfileTunableOptions<TOptions> =>
+        TuneForLabImage(labImage, TOptions.Default, referenceDimension);
+
+    /// <summary>
+    /// Validates <paramref name="labImage"/>, <paramref name="baseline"/>, and <paramref name="referenceDimension"/>,
+    /// analyzes canonical CIELAB statistics, and tunes <typeparamref name="TOptions"/> from <paramref name="baseline"/>.
+    /// </summary>
+    public static TOptions TuneForLabImage<TOptions>(IReadOnlyMatrix<Lab32> labImage, TOptions baseline, double referenceDimension)
+        where TOptions : class, IProfileTunableOptions<TOptions>
+    {
+        ValidateImageAndReference(labImage, referenceDimension);
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
+
+        ImageTuningProfile profile = ImageTuningProfile.Analyze(labImage);
+        return TOptions.ForProfile(in profile, baseline, referenceDimension);
+    }
+
+    /// <summary>
+    /// Validates <paramref name="image"/> and <paramref name="referenceDimension"/>, and tunes size-only <typeparamref name="TOptions"/>
+    /// using its default baseline.
+    /// </summary>
+    public static TOptions TuneForSizeImage<TOptions, TPixel>(IReadOnlyMatrix<TPixel> image, double referenceDimension)
+        where TOptions : class, ISizeTunableOptions<TOptions>
+        where TPixel : struct =>
+        TuneForSizeImage(image, TOptions.Default, referenceDimension);
+
+    /// <summary>
+    /// Validates <paramref name="image"/>, <paramref name="baseline"/>, and <paramref name="referenceDimension"/>,
+    /// and tunes size-only <typeparamref name="TOptions"/> from <paramref name="baseline"/>.
+    /// </summary>
+    public static TOptions TuneForSizeImage<TOptions, TPixel>(IReadOnlyMatrix<TPixel> image, TOptions baseline, double referenceDimension)
+        where TOptions : class, ISizeTunableOptions<TOptions>
+        where TPixel : struct
+    {
+        ValidateImageAndReference(image, referenceDimension);
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
+
+        return TOptions.ForSize(image.Size, baseline, referenceDimension);
+    }
+
+    /// <summary>
     /// Validates inputs and computes aspect-neutral linear and area scale factors relative to <paramref name="referenceDimension"/>.
     /// </summary>
     public static (double LinearScale, double AreaScale, long TotalPixels) ComputeScales(Size size, double referenceDimension)
     {
         ValidateSizeAndReference(size, referenceDimension);
 
-        long totalPixels = (long)size.Width * size.Height;
+        long totalPixels = size.Area;
         if (totalPixels == 0)
         {
             return (1.0, 1.0, 0L);
@@ -111,6 +182,5 @@ internal static class OptionTuning
     /// <summary>
     /// Computes the geometric-mean linear dimension <c>sqrt(Width * Height)</c> of <paramref name="size"/>.
     /// </summary>
-    public static double GeometricMeanDimension(Size size) =>
-        Math.Sqrt((double)size.Width * size.Height);
+    public static double GeometricMeanDimension(Size size) => size.LinearDimension;
 }

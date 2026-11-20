@@ -91,6 +91,26 @@ public class BitmapExtensionsTests
         Assert.Throws<InvalidOperationException>(() => throwing.ToBitmap());
     }
 
+    [WindowsFact]
+    public void ToBitmap_NonSequentialMatrixView_AndDistinctChannels_ShouldPreserveExactBgrOrder()
+    {
+        var source = new SequentialMatrix<Rgb8>(4, 3);
+        for (int y = 0; y < source.Height; y++)
+        {
+            for (int x = 0; x < source.Width; x++)
+            {
+                source[x, y] = new Rgb8((byte)(15 + (x * 40)), (byte)(90 + (y * 30)), (byte)(225 - (x * 25)));
+            }
+        }
+
+        using System.Drawing.Bitmap seqBmp = source.ToBitmap();
+        MatrixAssert.Equal(source, seqBmp.ToSequentialMatrix());
+
+        var view = new MatrixView<Rgb8>(source, 1, 1, 2, 2, EdgeHandling.Extend);
+        using System.Drawing.Bitmap viewBmp = view.ToBitmap();
+        MatrixAssert.Equal(view.ToSequentialMatrix(), viewBmp.ToSequentialMatrix());
+    }
+
     [Fact]
     public void BitmapExtensions_NullOrEmptyDimensions_ShouldThrowExpectedExceptions()
     {

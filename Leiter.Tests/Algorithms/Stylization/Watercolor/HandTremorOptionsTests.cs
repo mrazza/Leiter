@@ -5,14 +5,32 @@ using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="HandTremorOptions"/>.
 /// </summary>
-public class HandTremorOptionsTests
+public class HandTremorOptionsTests : SizeTunableOptionsContractTestsBase<HandTremorOptions>
 {
+    /// <inheritdoc/>
+    protected override HandTremorOptions CreateValidCustomOptions() =>
+        new(
+            Amplitude: 4.5,
+            SalientAmplitudeScale: 0.5,
+            SimilarHueThresholdDegrees: 25.0,
+            OverlapDarkening: 0.6,
+            PaperColor: new Rgb8(245, 242, 236),
+            PrimaryNoise: new PerlinNoiseOptions(Seed: 55, Frequency: 0.02, Octaves: 2),
+            SecondaryNoise: new PerlinNoiseOptions(Seed: 66, Frequency: 0.03, Octaves: 2),
+            MinContrastingChroma: 0.04,
+            PaperGapBias: 0.2,
+            PaperGapOpacity: 0.8);
+
+    /// <inheritdoc/>
+    protected override HandTremorOptions CreateInvalidOptions() =>
+        new(Amplitude: -1.0);
     /// <summary>
     /// Verifies that default options match expected values and pass validation.
     /// </summary>
@@ -306,8 +324,25 @@ public class HandTremorOptionsTests
         var image = new SequentialMatrix<Rgb8>(400, 400);
         Assert.Equal(HandTremorOptions.ForSize(image.Size), HandTremorOptions.ForImage(image));
 
+        HandTremorOptions customBaseline = CreateValidCustomOptions();
+        HandTremorOptions customHalf = HandTremorOptions.ForSize(new Size(400, 400), customBaseline);
+        Assert.Equal(2.25, customHalf.Amplitude, 6);
+        Assert.Equal(0.04, customHalf.PrimaryNoise!.Frequency, 6);
+        Assert.Equal(55, customHalf.PrimaryNoise.Seed);
+        Assert.Equal(0.06, customHalf.SecondaryNoise!.Frequency, 6);
+        Assert.Equal(66, customHalf.SecondaryNoise.Seed);
+        Assert.Equal(customBaseline.PaperColor, customHalf.PaperColor);
+
+        var scalarImage = new SequentialMatrix<DoublePixel>(400, 400);
+        Assert.Equal(customHalf, HandTremorOptions.ForImage(scalarImage, customBaseline));
+
+        var rgb64Image = new SequentialMatrix<Rgb64>(400, 400);
+        Assert.Equal(HandTremorOptions.ForSize(rgb64Image.Size), HandTremorOptions.ForImage(rgb64Image));
+
         Assert.Throws<ArgumentOutOfRangeException>(() => HandTremorOptions.ForSize(new Size(-1, 10)));
         Assert.Throws<ArgumentOutOfRangeException>(() => HandTremorOptions.ForSize(new Size(10, 10), 0.0));
-        Assert.Throws<ArgumentNullException>(() => HandTremorOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => HandTremorOptions.ForImage<Rgb8>(null!));
+        Assert.Throws<ArgumentNullException>(() => HandTremorOptions.ForImage<Rgb8>(null!, customBaseline));
+        Assert.Throws<ArgumentNullException>(() => HandTremorOptions.ForImage(image, null!));
     }
 }

@@ -14,7 +14,7 @@ using Leiter.Pixels;
 public sealed record GrabCutOptions(
     int Iterations = 5,
     int MixtureComponentCount = 5,
-    double SmoothnessWeight = 50.0) : IValidatableOptions
+    double SmoothnessWeight = 50.0) : IProfileTunableOptions<GrabCutOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default smoothness weights apply unscaled.
@@ -33,18 +33,34 @@ public sealed record GrabCutOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="GrabCutOptions"/> instance tuned for <paramref name="size"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static GrabCutOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    public static GrabCutOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="GrabCutOptions"/> by scaling <paramref name="baseline"/>'s <see cref="SmoothnessWeight"/> linearly to <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline GrabCut configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="GrabCutOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static GrabCutOptions ForSize(
+        Size size,
+        GrabCutOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        GrabCutOptions defaults = Default;
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
         if (totalPixels == 0)
         {
-            return defaults;
+            return baseline;
         }
 
-        return defaults with
+        return baseline with
         {
-            SmoothnessWeight = defaults.SmoothnessWeight * s
+            SmoothnessWeight = baseline.SmoothnessWeight * s
         };
     }
 
@@ -55,25 +71,46 @@ public sealed record GrabCutOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="GrabCutOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static GrabCutOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
-        double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
-        return ForProfile(in profile, referenceDimension);
-    }
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage<GrabCutOptions>(image, referenceDimension);
 
-    internal static GrabCutOptions ForProfile(in ImageTuningProfile profile, double referenceDimension)
+    /// <summary>
+    /// Creates <see cref="GrabCutOptions"/> tuned from <paramref name="baseline"/> for the dimensions and color complexity of <paramref name="image"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image to analyze.</param>
+    /// <param name="baseline">The baseline GrabCut configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="GrabCutOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static GrabCutOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        GrabCutOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage(image, baseline, referenceDimension);
+
+    static GrabCutOptions IProfileTunableOptions<GrabCutOptions>.ForProfile(
+        in ImageTuningProfile profile,
+        GrabCutOptions baseline,
+        double referenceDimension) =>
+        ForProfile(in profile, baseline, referenceDimension);
+
+    internal static GrabCutOptions ForProfile(
+        in ImageTuningProfile profile,
+        GrabCutOptions baseline,
+        double referenceDimension)
     {
-        GrabCutOptions scaled = ForSize(profile.ImageSize, referenceDimension);
+        GrabCutOptions scaled = ForSize(profile.ImageSize, baseline, referenceDimension);
         if (profile.IsEmpty)
         {
             return scaled;
         }
 
-        int components = profile.LabDispersion < 14.0 ? 4 : profile.LabDispersion > 30.0 ? 6 : 5;
+        int componentDelta = profile.LabDispersion < 14.0 ? -1 : profile.LabDispersion > 30.0 ? 1 : 0;
+        int components = Math.Max(1, scaled.MixtureComponentCount + componentDelta);
         double smoothness = scaled.SmoothnessWeight / Math.Sqrt(Math.Clamp(profile.ColorSpreadFactor, 0.80, 1.25));
 
         return scaled with

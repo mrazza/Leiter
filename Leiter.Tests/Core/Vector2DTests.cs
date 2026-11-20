@@ -199,4 +199,24 @@ public class Vector2DTests
         Assert.Equal(a.GetHashCode(), b.GetHashCode());
         Assert.Contains("1", a.ToString());
     }
+
+    /// <summary>
+    /// Verifies that <see cref="Vector2D.DistanceSquared"/> and <see cref="Vector2D.Distance"/> compute Euclidean distances.
+    /// </summary>
+    [Fact]
+    public void DistanceAndDistanceSquared_ShouldComputeEuclideanDistance()
+    {
+        var a = new Vector2D(1.0, 2.0);
+        var b = new Vector2D(4.0, 6.0);
+
+        Assert.Equal(25.0, a.DistanceSquared(b), 12);
+        Assert.Equal(5.0, a.Distance(b), 12);
+        Assert.Equal(a.Distance(b), b.Distance(a), 12);
+        Assert.Equal(0.0, a.DistanceSquared(a));
+        Assert.Equal(0.0, a.Distance(a));
+
+        var neg = new Vector2D(-2.0, -2.0);
+        Assert.Equal(25.0, a.DistanceSquared(neg), 12);
+        Assert.Equal(5.0, a.Distance(neg), 12);
+    }
 }

@@ -58,6 +58,17 @@ public class SequentialMatrixTests
 
         ArgumentNullException nullEx = Assert.Throws<ArgumentNullException>(() => new SequentialMatrix<DoublePixel>(new Size(2, 2), null!));
         Assert.Equal("values", nullEx.ParamName);
+
+        ArgumentOutOfRangeException negW = Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(-1, 2));
+        Assert.Equal("width", negW.ParamName);
+
+        ArgumentOutOfRangeException negH = Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(2, -1));
+        Assert.Equal("height", negH.ParamName);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(new Size(-1, 2)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(new Size(2, -1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(new Size(-1, 2), values));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(new Size(2, -1), values));
     }
 
     [Fact]
@@ -235,6 +246,13 @@ public class SequentialMatrixTests
         Assert.Equal(4, span.Length);
         Assert.Equal(2.0, span[1].Value);
         Assert.Equal(3.0, span[2].Value);
+
+        Span<DoublePixel> writableSpan = original.AsSpan();
+        writableSpan[1] = 42.0;
+        Assert.Equal(42.0, original[1, 0].Value);
+        writableSpan[1] = 2.0;
+
+        Assert.True(new SequentialMatrix<DoublePixel>(0, 0).AsReadOnlySpan().IsEmpty);
 
         SequentialMatrix<DoublePixel> copied = SequentialMatrix<DoublePixel>.From(original);
         copied[0, 0] = 99.0;

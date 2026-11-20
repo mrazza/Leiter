@@ -99,10 +99,12 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
             B = ClampToByte(B - right.B)
         };
 
-    // TODO: Consider whether Rgb8.Multiply(Rgb8) should modulate channels in normalized [0, 1] space (matching ToDoubleVector()) instead of raw-byte saturation.
     /// <summary>
-    /// Multiplies this pixel by another <see cref="Rgb8"/> pixel component-wise, saturating each channel to [0, 255].
+    /// Multiplies this pixel by another <see cref="Rgb8"/> pixel component-wise, saturating each raw byte channel product to [0, 255].
     /// </summary>
+    /// <remarks>
+    /// Operates directly on raw byte channel values (without normalizing to [0, 1]).
+    /// </remarks>
     /// <param name="right">The pixel to multiply by.</param>
     /// <returns>A new <see cref="Rgb8"/> pixel with saturated channel products.</returns>
     public Rgb8 Multiply(Rgb8 right) =>
@@ -225,17 +227,8 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
     /// </summary>
     /// <returns>A double vector containing the normalized RGB channel values.</returns>
     /// <exception cref="PlatformNotSupportedException">Thrown when the vector width is less than 3.</exception>
-    public Vector<double> ToDoubleVector()
-    {
-        if (Vector<double>.Count < 3)
-            throw new PlatformNotSupportedException("This operation is not supported on this platform. Vector width is too small.");
-
-        Span<double> data = stackalloc double[Vector<double>.Count];
-        data[0] = R / 255.0;
-        data[1] = G / 255.0;
-        data[2] = B / 255.0;
-        return new(data);
-    }
+    public Vector<double> ToDoubleVector() =>
+        Internal.PixelVector.Create(R / 255.0, G / 255.0, B / 255.0);
 
     /// <summary>
     /// Creates an <see cref="Rgb8"/> pixel from a <see cref="Vector{Double}"/> by scaling normalized components by 255.0 with <see cref="MidpointRounding.AwayFromZero"/> rounding and clamping to [0, 255].

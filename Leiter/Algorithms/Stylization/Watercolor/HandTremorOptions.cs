@@ -29,7 +29,7 @@ public sealed record HandTremorOptions(
     PerlinNoiseOptions? SecondaryNoise = null,
     double MinContrastingChroma = 0.08,
     double PaperGapBias = 0.0,
-    double PaperGapOpacity = 1.0) : IValidatableOptions
+    double PaperGapOpacity = 1.0) : ISizeTunableOptions<HandTremorOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default tremor amplitude and noise frequencies apply unscaled.
@@ -63,45 +63,73 @@ public sealed record HandTremorOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="HandTremorOptions"/> instance tuned for <paramref name="size"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static HandTremorOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    public static HandTremorOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="HandTremorOptions"/> by scaling <paramref name="baseline"/> displacement amplitude and Perlin noise frequencies for <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline hand tremor configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="HandTremorOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static HandTremorOptions ForSize(
+        Size size,
+        HandTremorOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        HandTremorOptions defaults = Default;
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
         if (totalPixels == 0)
         {
-            return defaults with
-            {
-                PrimaryNoise = DefaultPrimaryNoise,
-                SecondaryNoise = DefaultSecondaryNoise
-            };
+            return baseline;
         }
 
-        return defaults with
+        PerlinNoiseOptions primaryBaseline = baseline.PrimaryNoise ?? DefaultPrimaryNoise;
+        PerlinNoiseOptions secondaryBaseline = baseline.SecondaryNoise ?? DefaultSecondaryNoise;
+
+        return baseline with
         {
-            Amplitude = defaults.Amplitude * s,
-            PrimaryNoise = PerlinNoiseOptions.ForSize(size, DefaultPrimaryNoise, referenceDimension),
-            SecondaryNoise = PerlinNoiseOptions.ForSize(size, DefaultSecondaryNoise, referenceDimension)
+            Amplitude = baseline.Amplitude * s,
+            PrimaryNoise = PerlinNoiseOptions.ForSize(size, primaryBaseline, referenceDimension),
+            SecondaryNoise = PerlinNoiseOptions.ForSize(size, secondaryBaseline, referenceDimension)
         };
     }
 
     /// <summary>
     /// Creates <see cref="HandTremorOptions"/> tuned for the dimensions of <paramref name="image"/>.
     /// </summary>
-    /// <param name="image">The input RGB image whose dimensions guide scaling.</param>
+    /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
+    /// <param name="image">The input image whose dimensions guide scaling.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="HandTremorOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static HandTremorOptions ForImage(
-        IReadOnlyMatrix<Rgb8> image,
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static HandTremorOptions ForImage<T>(
+        IReadOnlyMatrix<T> image,
         double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        return ForSize(image.Size, referenceDimension);
-    }
+        where T : struct =>
+        OptionTuning.TuneForSizeImage<HandTremorOptions, T>(image, referenceDimension);
 
-    internal static HandTremorOptions ForProfile(in ImageTuningProfile profile, double referenceDimension) =>
-        ForSize(profile.ImageSize, referenceDimension);
+    /// <summary>
+    /// Creates <see cref="HandTremorOptions"/> by scaling <paramref name="baseline"/> for the dimensions of <paramref name="image"/>.
+    /// </summary>
+    /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
+    /// <param name="image">The input image whose dimensions guide scaling.</param>
+    /// <param name="baseline">The baseline hand tremor configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="HandTremorOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static HandTremorOptions ForImage<T>(
+        IReadOnlyMatrix<T> image,
+        HandTremorOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
+        where T : struct =>
+        OptionTuning.TuneForSizeImage(image, baseline, referenceDimension);
 
     /// <summary>
     /// Validates that all configuration parameters are within their required domains.

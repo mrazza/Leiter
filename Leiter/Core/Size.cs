@@ -13,6 +13,21 @@ public readonly record struct Size(int Width, int Height)
     public int Count => Width * Height;
 
     /// <summary>
+    /// Gets the total element area (<c>(long)Width * Height</c>) without 32-bit overflow.
+    /// </summary>
+    public long Area => (long)Width * Height;
+
+    /// <summary>
+    /// Gets the geometric-mean linear dimension (<c>sqrt(Width * Height)</c>) of this size.
+    /// </summary>
+    public double LinearDimension => Width <= 0 || Height <= 0 ? 0.0 : Math.Sqrt((double)Width * Height);
+
+    /// <summary>
+    /// Gets a value indicating whether either dimension is less than or equal to zero.
+    /// </summary>
+    public bool IsEmpty => Width <= 0 || Height <= 0;
+
+    /// <summary>
     /// Computes the row-major linear index corresponding to the specified coordinates.
     /// </summary>
     /// <param name="x">The zero-based horizontal X-coordinate.</param>

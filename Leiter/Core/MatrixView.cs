@@ -19,10 +19,11 @@ public readonly struct MatrixView<T> : IReadOnlyMatrix<T>
     /// <param name="height">The height of the view.</param>
     /// <param name="edgeHandling">The border handling strategy when coordinates fall outside <paramref name="matrix"/>.</param>
     /// <exception cref="ArgumentNullException"><paramref name="matrix"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="edgeHandling"/> is not a defined <see cref="Core.EdgeHandling"/> value.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> or <paramref name="height"/> is negative, or <paramref name="edgeHandling"/> is not a defined <see cref="Core.EdgeHandling"/> value.</exception>
     public MatrixView(IReadOnlyMatrix<T> matrix, int offsetX, int offsetY, int width, int height, EdgeHandling edgeHandling)
     {
         ArgumentNullException.ThrowIfNull(matrix);
+        Guard.ThrowIfNegativeDimensions(width, height);
         Guard.ThrowIfUndefinedEnum(edgeHandling);
         Matrix = matrix;
         Width = width;

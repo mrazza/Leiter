@@ -31,10 +31,10 @@ public static class MeanShiftSegmentation
         MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options, MeanShiftOptions.Default);
 
         if (labImage.Count == 0)
-            return new SequentialMatrix<Lab32>(labImage.Width, labImage.Height);
+            return new SequentialMatrix<Lab32>(labImage.Size);
 
         (MeanShiftMode[] modes, _) = MeanShiftModeSeeker.SeekModes(labImage, resolvedOptions, LatticeRadiusThreshold);
-        return BuildFilteredLabMatrix(labImage.Width, labImage.Height, modes);
+        return BuildFilteredLabMatrix(labImage.Size, modes);
     }
 
     /// <summary>
@@ -51,11 +51,11 @@ public static class MeanShiftSegmentation
         MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options, MeanShiftOptions.Default);
 
         if (image.Count == 0)
-            return new SequentialMatrix<Rgb8>(image.Width, image.Height);
+            return new SequentialMatrix<Rgb8>(image.Size);
 
-        Matrix<Lab32> labMatrix = image.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
+        Matrix<Lab32> labMatrix = image.ToLab32(RgbColorSpace.SRgb);
         (MeanShiftMode[] modes, _) = MeanShiftModeSeeker.SeekModes(labMatrix, resolvedOptions, LatticeRadiusThreshold);
-        return BuildFilteredLabMatrix(image.Width, image.Height, modes).Map(static pixel => pixel.ToRgb8(RgbColorSpace.SRgb));
+        return BuildFilteredLabMatrix(image.Size, modes).ToRgb8(RgbColorSpace.SRgb);
     }
 
     /// <summary>
@@ -77,12 +77,12 @@ public static class MeanShiftSegmentation
         if (labImage.Count == 0)
         {
             return (
-                new SequentialMatrix<Lab32>(labImage.Width, labImage.Height),
+                new SequentialMatrix<Lab32>(labImage.Size),
                 DisjointSet.CreateSingletons(labImage));
         }
 
         (MeanShiftMode[] modes, Lab32[] sourcePixels) = MeanShiftModeSeeker.SeekModes(labImage, resolvedOptions, LatticeRadiusThreshold);
-        Matrix<Lab32> filtered = BuildFilteredLabMatrix(labImage.Width, labImage.Height, modes);
+        Matrix<Lab32> filtered = BuildFilteredLabMatrix(labImage.Size, modes);
         IDisjointSet segmentation = MeanShiftRegionClusterer.ClusterModes(labImage, sourcePixels, modes, resolvedOptions);
         return (filtered, segmentation);
     }
@@ -106,13 +106,13 @@ public static class MeanShiftSegmentation
         if (image.Count == 0)
         {
             return (
-                new SequentialMatrix<Rgb8>(image.Width, image.Height),
+                new SequentialMatrix<Rgb8>(image.Size),
                 DisjointSet.CreateSingletons(image));
         }
 
-        Matrix<Lab32> labMatrix = image.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
+        Matrix<Lab32> labMatrix = image.ToLab32(RgbColorSpace.SRgb);
         (MeanShiftMode[] modes, Lab32[] sourcePixels) = MeanShiftModeSeeker.SeekModes(labMatrix, resolvedOptions, LatticeRadiusThreshold);
-        Matrix<Rgb8> filtered = BuildFilteredLabMatrix(image.Width, image.Height, modes).Map(static pixel => pixel.ToRgb8(RgbColorSpace.SRgb));
+        Matrix<Rgb8> filtered = BuildFilteredLabMatrix(image.Size, modes).ToRgb8(RgbColorSpace.SRgb);
         IDisjointSet segmentation = MeanShiftRegionClusterer.ClusterModes(image, sourcePixels, modes, resolvedOptions);
         return (filtered, segmentation);
     }
@@ -153,12 +153,12 @@ public static class MeanShiftSegmentation
         if (image.Count == 0)
             return DisjointSet.CreateSingletons(image);
 
-        Matrix<Lab32> labMatrix = image.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
+        Matrix<Lab32> labMatrix = image.ToLab32(RgbColorSpace.SRgb);
         (MeanShiftMode[] modes, Lab32[] sourcePixels) = MeanShiftModeSeeker.SeekModes(labMatrix, resolvedOptions, LatticeRadiusThreshold);
         return MeanShiftRegionClusterer.ClusterModes(image, sourcePixels, modes, resolvedOptions);
     }
 
-    private static Matrix<Lab32> BuildFilteredLabMatrix(int width, int height, MeanShiftMode[] modes)
+    private static Matrix<Lab32> BuildFilteredLabMatrix(Size size, MeanShiftMode[] modes)
     {
         var resultData = new Lab32[modes.Length];
         for (int i = 0; i < resultData.Length; i++)
@@ -166,6 +166,6 @@ public static class MeanShiftSegmentation
             resultData[i] = modes[i].Color;
         }
 
-        return new SequentialMatrix<Lab32>(width, height, resultData);
+        return new SequentialMatrix<Lab32>(size.Width, size.Height, resultData);
     }
 }

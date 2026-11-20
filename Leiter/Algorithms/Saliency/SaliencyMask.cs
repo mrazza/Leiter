@@ -62,10 +62,18 @@ public static class SaliencyMask
     private static double ComputeAdaptiveMeanThreshold(IReadOnlyMatrix<DoublePixel> saliencyMap)
     {
         double sum = 0.0;
-        for (int y = 0; y < saliencyMap.Height; y++)
+        if (saliencyMap.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> span))
         {
-            for (int x = 0; x < saliencyMap.Width; x++)
-                sum += ScalarMath.ClampUnitOrDefault(saliencyMap[x, y].Value);
+            for (int i = 0; i < span.Length; i++)
+                sum += ScalarMath.ClampUnitOrDefault(span[i].Value);
+        }
+        else
+        {
+            for (int y = 0; y < saliencyMap.Height; y++)
+            {
+                for (int x = 0; x < saliencyMap.Width; x++)
+                    sum += ScalarMath.ClampUnitOrDefault(saliencyMap[x, y].Value);
+            }
         }
 
         double mean = sum / saliencyMap.Count;
@@ -77,13 +85,25 @@ public static class SaliencyMask
         Span<int> histogram = stackalloc int[256];
         double totalSum = 0.0;
 
-        for (int y = 0; y < saliencyMap.Height; y++)
+        if (saliencyMap.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> span))
         {
-            for (int x = 0; x < saliencyMap.Width; x++)
+            for (int i = 0; i < span.Length; i++)
             {
-                int bin = (int)Math.Round(ScalarMath.ClampUnitOrDefault(saliencyMap[x, y].Value) * 255.0);
+                int bin = ToHistogramBin(span[i].Value);
                 histogram[bin]++;
                 totalSum += bin;
+            }
+        }
+        else
+        {
+            for (int y = 0; y < saliencyMap.Height; y++)
+            {
+                for (int x = 0; x < saliencyMap.Width; x++)
+                {
+                    int bin = ToHistogramBin(saliencyMap[x, y].Value);
+                    histogram[bin]++;
+                    totalSum += bin;
+                }
             }
         }
 
@@ -135,4 +155,7 @@ public static class SaliencyMask
 
         return 0.0;
     }
+
+    private static int ToHistogramBin(double value) =>
+        (int)Math.Round(ScalarMath.ClampUnitOrDefault(value) * 255.0);
 }

@@ -58,19 +58,7 @@ public static class MatrixMath
     {
         ArgumentNullException.ThrowIfNull(self);
         Guard.ThrowIfSizeMismatch(self, right);
-
-        int width = self.Width;
-        int height = self.Height;
-        var data = new T[self.Count];
-
-        Parallel.For(0, height, y =>
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-                data[rowBase + x] = self[x, y].Multiply(right[x, y]);
-        });
-
-        return new SequentialMatrix<T>(width, height, data);
+        return self.Zip(right, static (leftPixel, rightPixel) => leftPixel.Multiply(rightPixel));
     }
 
     /// <summary>
@@ -89,19 +77,7 @@ public static class MatrixMath
     {
         ArgumentNullException.ThrowIfNull(self);
         Guard.ThrowIfSizeMismatch(self, right);
-
-        int width = self.Width;
-        int height = self.Height;
-        var data = new T[self.Count];
-
-        Parallel.For(0, height, y =>
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-                data[rowBase + x] = self[x, y].Multiply(right[x, y]);
-        });
-
-        return new SequentialMatrix<T>(width, height, data);
+        return self.Zip(right, static (leftPixel, rightScalar) => leftPixel.Multiply(rightScalar.AsDouble()));
     }
 
     /// <summary>

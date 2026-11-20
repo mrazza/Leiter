@@ -59,7 +59,7 @@ public static class WatercolorPipeline
 
         // Stage 2: Regional Contrast Saliency & Saliency Distance Field
         Matrix<Rgb8> blurred = Blur.GaussianBlur(colorTransferred, opts.EgbiBlurSigma);
-        Matrix<Lab32> labBlurred = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
+        Matrix<Lab32> labBlurred = blurred.ToLab32(RgbColorSpace.SRgb);
         EgbiOptions resolvedEgbi = opts.Egbi ?? WatercolorOptions.ResolveDefaultEgbi(image.Count);
         IDisjointSet egbiSeg = EgbiSegmentation.Segment(labBlurred, resolvedEgbi);
         Matrix<DoublePixel> saliencyMap = RegionalContrastSaliency.ComputeSaliency(colorTransferred, egbiSeg, opts.RegionalContrastSaliency);
@@ -126,12 +126,11 @@ public static class WatercolorPipeline
         }
         else
         {
-            Matrix<DoublePixel> combinedDensity = EdgeDarkening.ComputeDensityField(handTremor, edgeOpts);
+            Matrix<DoublePixel> edgeDensity = EdgeDarkening.ComputeDensityField(handTremor, edgeOpts);
             Matrix<DoublePixel> turbulenceDensity = TurbulenceFlow.ComputeDensityField(handTremor.Size, turbOpts);
-            for (int i = 0; i < combinedDensity.Count; i++)
-            {
-                combinedDensity[i] = new DoublePixel(combinedDensity[i].Value + turbulenceDensity[i].Value);
-            }
+            Matrix<DoublePixel> combinedDensity = edgeDensity.Zip(
+                turbulenceDensity,
+                static (edge, turbulence) => new DoublePixel(edge.Value + turbulence.Value));
 
             preTone = PigmentBlend.ApplyDensityField(handTremor, combinedDensity);
         }

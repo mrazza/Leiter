@@ -66,7 +66,7 @@ internal readonly record struct ImageTuningProfile(
             : labImage;
 
         LabColorStatistics labStats = ColorTransfer.ComputeStatistics(labThumb);
-        Matrix<Rgb8> rgbThumb = labThumb.Map(static p => p.ToRgb8(RgbColorSpace.SRgb));
+        Matrix<Rgb8> rgbThumb = labThumb.ToRgb8(RgbColorSpace.SRgb);
         double clutterFactor = ComputeClutterFactor(rgbThumb, labImage.Size);
         return FromStatistics(labImage.Size, labStats, clutterFactor);
     }

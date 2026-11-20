@@ -18,11 +18,58 @@ public static class ColorTransfer
     {
         ArgumentNullException.ThrowIfNull(labImage);
 
-        int width = labImage.Width;
-        int height = labImage.Height;
         int count = labImage.Count;
         if (count == 0)
             return default;
+
+        if (labImage.TryGetReadOnlySpan(out ReadOnlySpan<Lab32> span))
+        {
+            return ComputeSpanStatistics(span);
+        }
+
+        return ComputeIndexedStatistics(labImage);
+    }
+
+    private static LabColorStatistics ComputeSpanStatistics(ReadOnlySpan<Lab32> span)
+    {
+        int count = span.Length;
+        double sumL = 0.0;
+        double sumA = 0.0;
+        double sumB = 0.0;
+        for (int i = 0; i < count; i++)
+        {
+            Lab32 pixel = span[i];
+            sumL += pixel.L;
+            sumA += pixel.A;
+            sumB += pixel.B;
+        }
+
+        double meanL = sumL / count;
+        double meanA = sumA / count;
+        double meanB = sumB / count;
+
+        double sqL = 0.0;
+        double sqA = 0.0;
+        double sqB = 0.0;
+        for (int i = 0; i < count; i++)
+        {
+            Lab32 pixel = span[i];
+            double dL = pixel.L - meanL;
+            double dA = pixel.A - meanA;
+            double dB = pixel.B - meanB;
+            sqL += dL * dL;
+            sqA += dA * dA;
+            sqB += dB * dB;
+        }
+
+        return FinalizeStatistics(count, meanL, meanA, meanB, sqL, sqA, sqB);
+    }
+
+    private static LabColorStatistics ComputeIndexedStatistics(IReadOnlyMatrix<Lab32> labImage)
+    {
+        int width = labImage.Width;
+        int height = labImage.Height;
+        int count = labImage.Count;
 
         double sumL = 0.0;
         double sumA = 0.0;
@@ -59,14 +106,24 @@ public static class ColorTransfer
             }
         }
 
-        return new LabColorStatistics(
+        return FinalizeStatistics(count, meanL, meanA, meanB, sqL, sqA, sqB);
+    }
+
+    private static LabColorStatistics FinalizeStatistics(
+        int count,
+        double meanL,
+        double meanA,
+        double meanB,
+        double sqL,
+        double sqA,
+        double sqB) =>
+        new(
             meanL,
             meanA,
             meanB,
             Math.Sqrt(Math.Max(0.0, sqL / count)),
             Math.Sqrt(Math.Max(0.0, sqA / count)),
             Math.Sqrt(Math.Max(0.0, sqB / count)));
-    }
 
     /// <summary>
     /// Computes CIELAB color statistics for an <see cref="Rgb8"/> image under the specified color space and illuminant.
@@ -88,7 +145,7 @@ public static class ColorTransfer
         if (image.Count == 0)
             return default;
 
-        Matrix<Lab32> labImage = image.Map(pixel => pixel.ToLab32(colorSpace, illuminant));
+        Matrix<Lab32> labImage = image.ToLab32(colorSpace, illuminant);
         return ComputeStatistics(labImage);
     }
 
@@ -193,7 +250,7 @@ public static class ColorTransfer
             return source.Clone();
 
         LabColorStatistics targetStats = ComputeStatistics(reference, colorSpace, illuminant);
-        Matrix<Lab32> sourceLab = source.Map(pixel => pixel.ToLab32(colorSpace, illuminant));
+        Matrix<Lab32> sourceLab = source.ToLab32(colorSpace, illuminant);
         return TransferLabToRgb8(sourceLab, targetStats, colorSpace, illuminant, strength);
     }
 
@@ -206,7 +263,8 @@ public static class ColorTransfer
     /// <param name="strength">Blending strength in <c>[0, 1]</c>.</param>
     /// <returns>A recolored <see cref="Matrix{Rgb8}"/> image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="profile"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> or <paramref name="profile"/>'s illuminant is undefined, or <paramref name="strength"/> is outside <c>[0, 1]</c>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="profile"/> has an empty or whitespace name.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> is undefined, <paramref name="profile"/> contains an undefined illuminant or invalid CIELAB statistics, or <paramref name="strength"/> is outside <c>[0, 1]</c>.</exception>
     public static Matrix<Rgb8> Transfer(
         IReadOnlyMatrix<Rgb8> source,
         ColorTransferProfile profile,
@@ -216,13 +274,13 @@ public static class ColorTransfer
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(profile);
         Guard.ThrowIfUndefinedEnum(colorSpace);
-        Guard.ThrowIfUndefinedEnum(profile.Illuminant, nameof(profile));
+        profile.Validate(nameof(profile));
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         if (source.Count == 0 || strength == 0.0)
             return source.Clone();
 
-        Matrix<Lab32> sourceLab = source.Map(pixel => pixel.ToLab32(colorSpace, profile.Illuminant));
+        Matrix<Lab32> sourceLab = source.ToLab32(colorSpace, profile.Illuminant);
         return TransferLabToRgb8(sourceLab, profile.Statistics, colorSpace, profile.Illuminant, strength);
     }
 
@@ -236,8 +294,8 @@ public static class ColorTransfer
     /// <param name="strength">Blending strength in <c>[0, 1]</c>.</param>
     /// <returns>The recolored <see cref="Matrix{Rgb8}"/> image and the selected <see cref="ColorTransferProfile"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/>, <paramref name="profiles"/>, or any profile entry is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="profiles"/> is empty.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> or any profile's illuminant is undefined, <paramref name="strength"/> is outside <c>[0, 1]</c>, or any feature weight is negative.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="profiles"/> is empty or contains a profile with an empty or whitespace name.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> is undefined, any profile contains an undefined illuminant or invalid CIELAB statistics, <paramref name="strength"/> is outside <c>[0, 1]</c>, or any feature weight is negative.</exception>
     public static (Matrix<Rgb8> Result, ColorTransferProfile SelectedProfile) TransferToClosestProfile(
         IReadOnlyMatrix<Rgb8> source,
         IReadOnlyList<ColorTransferProfile> profiles,
@@ -250,12 +308,12 @@ public static class ColorTransfer
         Guard.ThrowIfUndefinedEnum(colorSpace);
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
-        Matrix<Lab32> sourceLabE = source.Map(pixel => pixel.ToLab32(colorSpace, Illuminant.E));
+        Matrix<Lab32> sourceLabE = source.ToLab32(colorSpace, Illuminant.E);
         LabColorStatistics sourceStats = ComputeStatistics(sourceLabE);
         ColorTransferProfile selected = SelectClosestProfile(sourceStats, profiles, featureWeights);
 
         for (int i = 0; i < profiles.Count; i++)
-            Guard.ThrowIfUndefinedEnum(profiles[i].Illuminant, nameof(profiles));
+            profiles[i].Validate(nameof(profiles));
 
         if (source.Count == 0 || strength == 0.0)
             return (source.Clone(), selected);
@@ -273,5 +331,5 @@ public static class ColorTransfer
         RgbColorSpace colorSpace,
         Illuminant illuminant,
         double strength) =>
-        Transfer(sourceLab, targetStatistics, strength).Map(pixel => pixel.ToRgb8(colorSpace, illuminant));
+        Transfer(sourceLab, targetStatistics, strength).ToRgb8(colorSpace, illuminant);
 }

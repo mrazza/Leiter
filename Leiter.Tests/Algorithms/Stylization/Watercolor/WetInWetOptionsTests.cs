@@ -5,14 +5,32 @@ using Leiter.Algorithms;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="WetInWetOptions"/>.
 /// </summary>
-public class WetInWetOptionsTests
+public class WetInWetOptionsTests : SizeTunableOptionsContractTestsBase<WetInWetOptions>
 {
+    /// <inheritdoc/>
+    protected override WetInWetOptions CreateValidCustomOptions() =>
+        new(
+            Mode: WetInWetMode.ExcludeSalientBoundaries,
+            ColorGradientThreshold: 0.15,
+            SalientHueThresholdDegrees: 25.0,
+            NonSalientHueThresholdDegrees: 75.0,
+            MinIntensityDifference: 0.04,
+            SalientOverlapThreshold: 0.6,
+            ScatterRadius: 6,
+            SeedProbability: 0.6,
+            EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: 8.0, MinorRadius: 3.0, SigmaScale: 0.65),
+            Seed: 99);
+
+    /// <inheritdoc/>
+    protected override WetInWetOptions CreateInvalidOptions() =>
+        new(ScatterRadius: 0);
     /// <summary>
     /// Verifies that default options match expected values and pass validation.
     /// </summary>
@@ -354,8 +372,27 @@ public class WetInWetOptionsTests
 
         Assert.True(WetInWetOptions.ForImage(busy).ColorGradientThreshold > WetInWetOptions.ForImage(flat).ColorGradientThreshold);
 
+        WetInWetOptions customBaseline = CreateValidCustomOptions();
+        WetInWetOptions customHalf = WetInWetOptions.ForSize(new Size(400, 400), customBaseline);
+        Assert.Equal(3, customHalf.ScatterRadius);
+        Assert.Equal(4.0, customHalf.EllipticalFilter!.MajorRadius, 6);
+        Assert.Equal(1.5, customHalf.EllipticalFilter!.MinorRadius, 6);
+        Assert.Equal(0.65, customHalf.EllipticalFilter!.SigmaScale, 6);
+        Assert.Equal(0.3, customHalf.ColorGradientThreshold, 6);
+        Assert.Equal(WetInWetMode.ExcludeSalientBoundaries, customHalf.Mode);
+        Assert.Equal(99, customHalf.Seed);
+
+        WetInWetOptions customBusy = WetInWetOptions.ForImage(busy, customBaseline);
+        WetInWetOptions customFlat = WetInWetOptions.ForImage(flat, customBaseline);
+        Assert.True(customBusy.ColorGradientThreshold > customFlat.ColorGradientThreshold);
+        Assert.Equal(99, customBusy.Seed);
+
+        var zeroThresholdBaseline = new WetInWetOptions(ColorGradientThreshold: 0.0);
+        Assert.Equal(0.0, WetInWetOptions.ForImage(busy, zeroThresholdBaseline).ColorGradientThreshold, 6);
+
         Assert.Throws<ArgumentOutOfRangeException>(() => WetInWetOptions.ForSize(new Size(-1, 10)));
         Assert.Throws<ArgumentOutOfRangeException>(() => WetInWetOptions.ForSize(new Size(10, 10), double.NaN));
         Assert.Throws<ArgumentNullException>(() => WetInWetOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => WetInWetOptions.ForImage(busy, null!));
     }
 }

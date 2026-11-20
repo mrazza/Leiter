@@ -10,8 +10,15 @@ using Xunit;
 /// <summary>
 /// Provides unit tests for <see cref="OrientedEllipticalFilterOptions"/>.
 /// </summary>
-public class OrientedEllipticalFilterOptionsTests
+public class OrientedEllipticalFilterOptionsTests : SizeTunableOptionsContractTestsBase<OrientedEllipticalFilterOptions>
 {
+    /// <inheritdoc/>
+    protected override OrientedEllipticalFilterOptions CreateValidCustomOptions() =>
+        new(MajorRadius: 8.0, MinorRadius: 3.0, SigmaScale: 0.7);
+
+    /// <inheritdoc/>
+    protected override OrientedEllipticalFilterOptions CreateInvalidOptions() =>
+        new(MajorRadius: 0.0);
     /// <summary>
     /// Verifies that default options match expected default values and pass validation.
     /// </summary>
@@ -103,10 +110,21 @@ public class OrientedEllipticalFilterOptionsTests
         var image = new SequentialMatrix<Rgb8>(400, 400);
         Assert.Equal(OrientedEllipticalFilterOptions.ForSize(image.Size), OrientedEllipticalFilterOptions.ForImage(image));
 
+        var customBaseline = new OrientedEllipticalFilterOptions(MajorRadius: 10.0, MinorRadius: 4.0, SigmaScale: 0.8);
+        OrientedEllipticalFilterOptions halfScaled = OrientedEllipticalFilterOptions.ForSize(new Size(400, 400), customBaseline);
+        Assert.Equal(5.0, halfScaled.MajorRadius, 6);
+        Assert.Equal(2.0, halfScaled.MinorRadius, 6);
+        Assert.Equal(0.8, halfScaled.SigmaScale, 6);
+
+        var scalarImage = new SequentialMatrix<DoublePixel>(400, 400);
+        Assert.Equal(halfScaled, OrientedEllipticalFilterOptions.ForImage(scalarImage, customBaseline));
+
         Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(-1, 100)));
         Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(100, -1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(100, 100), -5.0));
         Assert.Throws<ArgumentOutOfRangeException>(() => OrientedEllipticalFilterOptions.ForSize(new Size(100, 100), double.PositiveInfinity));
         Assert.Throws<ArgumentNullException>(() => OrientedEllipticalFilterOptions.ForImage<Rgb8>(null!));
+        Assert.Throws<ArgumentNullException>(() => OrientedEllipticalFilterOptions.ForImage<Rgb8>(null!, customBaseline));
+        Assert.Throws<ArgumentNullException>(() => OrientedEllipticalFilterOptions.ForImage(image, null!));
     }
 }

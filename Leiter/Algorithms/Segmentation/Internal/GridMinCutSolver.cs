@@ -51,10 +51,10 @@ internal sealed class GridMinCutSolver
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(size.Height, 0, nameof(size));
 
         gridSize = size;
-        pixelCount = checked(size.Width * size.Height);
+        pixelCount = checked((int)size.Area);
         neighborOffsets = new int[8];
         foreach (GridNeighbor neighbor in GridNeighborhood.All8Connected)
-            neighborOffsets[(int)neighbor.Direction] = neighbor.Offset.X + (neighbor.Offset.Y * size.Width);
+            neighborOffsets[(int)neighbor.Direction] = size.IndexOf(neighbor.Offset);
 
         validDirectionMasks = BuildValidDirectionMasks(size);
         baseNeighborCapacities = new float[pixelCount * 8];
@@ -79,11 +79,11 @@ internal sealed class GridMinCutSolver
     }
 
     public void SetUndirectedEdgeCapacity(Coord pixel, GridDirection direction, float capacity) =>
-        SetUndirectedEdgeCapacity((pixel.Y * gridSize.Width) + pixel.X, (int)direction, capacity);
+        SetUndirectedEdgeCapacity(gridSize.IndexOf(pixel), (int)direction, capacity);
 
     public bool IsSourceSide(int pixelIndex) => treeMembership[pixelIndex] == SearchTree.Source;
 
-    public bool IsSourceSide(Coord pixel) => IsSourceSide((pixel.Y * gridSize.Width) + pixel.X);
+    public bool IsSourceSide(Coord pixel) => IsSourceSide(gridSize.IndexOf(pixel));
 
     public double Solve(ReadOnlySpan<double> sourceCapacities, ReadOnlySpan<double> sinkCapacities)
     {
@@ -137,7 +137,7 @@ internal sealed class GridMinCutSolver
 
     private static byte[] BuildValidDirectionMasks(Size size)
     {
-        var masks = new byte[size.Width * size.Height];
+        var masks = new byte[size.Count];
         for (int y = 0; y < size.Height; y++)
         {
             for (int x = 0; x < size.Width; x++)
@@ -149,7 +149,7 @@ internal sealed class GridMinCutSolver
                     if (size.Contains(coord + neighbor.Offset))
                         mask |= (byte)(1 << (int)neighbor.Direction);
                 }
-                masks[(y * size.Width) + x] = mask;
+                masks[size.IndexOf(coord)] = mask;
             }
         }
         return masks;

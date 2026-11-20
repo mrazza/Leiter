@@ -4,14 +4,29 @@ using System;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="LodAbstractionOptions"/>.
 /// </summary>
-public class LodAbstractionOptionsTests
+public class LodAbstractionOptionsTests : SizeTunableOptionsContractTestsBase<LodAbstractionOptions>
 {
+    /// <inheritdoc/>
+    protected override LodAbstractionOptions CreateValidCustomOptions() =>
+        new(
+            SalientKernelSize: 7,
+            MinNonSalientKernelSize: 5,
+            MaxNonSalientKernelSize: 11,
+            DistanceKernelScale: 12.0,
+            DistanceKernelBias: 0.25,
+            CrossSegmentColorScale: 0.35,
+            SalientOverlapThreshold: 0.6);
+
+    /// <inheritdoc/>
+    protected override LodAbstractionOptions CreateInvalidOptions() =>
+        new(SalientKernelSize: 0);
     /// <summary>
     /// Verifies that default options match the Wang et al. paper specifications.
     /// </summary>
@@ -88,9 +103,7 @@ public class LodAbstractionOptionsTests
     /// </summary>
     /// <param name="bias">The non-finite distance kernel bias.</param>
     [Theory]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidNonFiniteDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidDistanceKernelBias_ShouldThrowArgumentOutOfRangeException(double bias)
     {
         var options = new LodAbstractionOptions(DistanceKernelBias: bias);
@@ -203,8 +216,19 @@ public class LodAbstractionOptionsTests
         Assert.True(vibrantOpts.CrossSegmentColorScale > flatOpts.CrossSegmentColorScale);
         Assert.InRange(vibrantOpts.CrossSegmentColorScale, 0.15, 0.50);
 
+        LodAbstractionOptions customBaseline = CreateValidCustomOptions();
+        LodAbstractionOptions customDouble = LodAbstractionOptions.ForSize(new Size(1600, 1600), customBaseline);
+        Assert.Equal(14, customDouble.SalientKernelSize);
+        Assert.Equal(10, customDouble.MinNonSalientKernelSize);
+        Assert.Equal(22, customDouble.MaxNonSalientKernelSize);
+        Assert.Equal(24.0, customDouble.DistanceKernelScale, 6);
+        Assert.Equal(0.25, customDouble.DistanceKernelBias, 6);
+        Assert.Equal(0.6, customDouble.SalientOverlapThreshold, 6);
+        Assert.True(LodAbstractionOptions.ForImage(vibrant, customBaseline).CrossSegmentColorScale > LodAbstractionOptions.ForImage(flat, customBaseline).CrossSegmentColorScale);
+
         Assert.Throws<ArgumentOutOfRangeException>(() => LodAbstractionOptions.ForSize(new Size(-1, 10)));
         Assert.Throws<ArgumentOutOfRangeException>(() => LodAbstractionOptions.ForSize(new Size(10, 10), double.NaN));
         Assert.Throws<ArgumentNullException>(() => LodAbstractionOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => LodAbstractionOptions.ForImage(flat, null!));
     }
 }

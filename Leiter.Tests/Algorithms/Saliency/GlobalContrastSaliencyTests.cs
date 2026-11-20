@@ -4,6 +4,7 @@ using System.Linq;
 using Leiter.Algorithms.Saliency;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -137,5 +138,34 @@ public class GlobalContrastSaliencyTests
         var view = new MatrixView<Rgb8>(source, 0, 0, 4, 4, EdgeHandling.Extend);
         Matrix<DoublePixel> viewSaliency = GlobalContrastSaliency.ComputeSaliency(view, enableColorSpaceSmoothing: false);
         Assert.Equal(1.0, viewSaliency[1, 1].Value, 4);
+    }
+
+    [Fact]
+    public void ComputeSaliency_OptionsOverload_ShouldMatchBooleanOverloadAndResolveNullToDefault()
+    {
+        var img = new SequentialMatrix<Rgb8>(20, 20);
+        for (int y = 0; y < 20; y++)
+        {
+            for (int x = 0; x < 20; x++)
+            {
+                img[x, y] = new Rgb8((byte)(x * 12), (byte)(y * 12), (byte)((x + y) * 6));
+            }
+        }
+
+        Matrix<DoublePixel> expectedDefault = GlobalContrastSaliency.ComputeSaliency(img);
+        Matrix<DoublePixel> fromNullOptions = GlobalContrastSaliency.ComputeSaliency(img, (GlobalContrastSaliencyOptions?)null);
+        Matrix<DoublePixel> fromTrueOptions = GlobalContrastSaliency.ComputeSaliency(img, new GlobalContrastSaliencyOptions(EnableColorSpaceSmoothing: true));
+        MatrixAssert.Equal(expectedDefault, fromNullOptions);
+        MatrixAssert.Equal(expectedDefault, fromTrueOptions);
+
+        Matrix<DoublePixel> expectedUnsmoothed = GlobalContrastSaliency.ComputeSaliency(img, enableColorSpaceSmoothing: false);
+        Matrix<DoublePixel> fromFalseOptions = GlobalContrastSaliency.ComputeSaliency(img, new GlobalContrastSaliencyOptions(EnableColorSpaceSmoothing: false));
+        MatrixAssert.Equal(expectedUnsmoothed, fromFalseOptions);
+
+        var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
+        Matrix<DoublePixel> emptyResult = GlobalContrastSaliency.ComputeSaliency(emptyImg, GlobalContrastSaliencyOptions.Default);
+        Assert.Empty(emptyResult);
+
+        Assert.Throws<ArgumentNullException>(() => GlobalContrastSaliency.ComputeSaliency(null!, GlobalContrastSaliencyOptions.Default));
     }
 }

@@ -12,7 +12,7 @@ using Leiter.Core;
 public sealed record RegionalContrastSaliencyOptions(
     bool EnableSmoothing = true,
     bool ComputeBorderRegions = true,
-    double CenterPriorWeight = 9.0) : IValidatableOptions
+    double CenterPriorWeight = 9.0) : IAlgorithmOptions<RegionalContrastSaliencyOptions>
 {
     /// <summary>
     /// Gets the default <see cref="RegionalContrastSaliencyOptions"/> instance.

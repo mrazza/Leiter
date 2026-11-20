@@ -1,5 +1,6 @@
 namespace Leiter.Algorithms.Color;
 
+using System.Numerics;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -138,21 +139,42 @@ public static class RegionColorStatistics
         ArgumentNullException.ThrowIfNull(intensitySelector);
         Guard.ThrowIfSizeMismatch(graph.Size, image.Size, nameof(image));
 
-        return graph.ComputeRegionStatistics(region =>
+        int regionCount = graph.RegionCount;
+        if (regionCount == 0)
+            return [];
+
+        Size size = graph.Size;
+        TSource[]? rawImage = image is SequentialMatrix<TSource> seqImage ? seqImage.RawData : null;
+        var results = new RegionColorStatistics<TColor>[regionCount];
+
+        Parallel.For(0, regionCount, r =>
         {
-            HashSet<Coord> pixels = region.Pixels;
-            if (pixels.Count == 0)
-                return new RegionColorStatistics<TColor>(default, 0.0, 0.0);
+            ReadOnlySpan<Coord> pixels = graph.GetRegionPixels(r);
+            if (pixels.Length == 0)
+            {
+                results[r] = new RegionColorStatistics<TColor>(default, 0.0, 0.0);
+                return;
+            }
 
-            TColor sum = default;
-            foreach (Coord coord in pixels)
-                sum = sum.Add(colorConverter(image[coord]));
+            Vector<double> sum = Vector<double>.Zero;
+            if (rawImage is not null)
+            {
+                for (int i = 0; i < pixels.Length; i++)
+                    sum += colorConverter(rawImage[size.IndexOf(pixels[i])]).ToDoubleVector();
+            }
+            else
+            {
+                for (int i = 0; i < pixels.Length; i++)
+                    sum += colorConverter(image[pixels[i]]).ToDoubleVector();
+            }
 
-            TColor meanColor = sum.Divide((double)pixels.Count);
-            return new RegionColorStatistics<TColor>(
+            TColor meanColor = TColor.FromDoubleVector(sum / (double)pixels.Length);
+            results[r] = new RegionColorStatistics<TColor>(
                 meanColor,
                 hueSelector(meanColor),
                 intensitySelector(meanColor));
         });
+
+        return results;
     }
 }

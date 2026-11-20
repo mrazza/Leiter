@@ -66,6 +66,28 @@ public static class MatrixExtensions
         SequentialMatrix<T>.From(source);
 
     /// <summary>
+    /// Attempts to obtain a zero-copy read-only span over the matrix's contiguous row-major storage.
+    /// </summary>
+    /// <typeparam name="T">The element type stored in the matrix.</typeparam>
+    /// <param name="matrix">The source matrix to inspect.</param>
+    /// <param name="span">When this method returns <see langword="true"/>, receives a contiguous row-major <see cref="ReadOnlySpan{T}"/>; otherwise, <see langword="default"/>.</param>
+    /// <returns><see langword="true"/> if <paramref name="matrix"/> exposes contiguous row-major storage; otherwise, <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    public static bool TryGetReadOnlySpan<T>(this IReadOnlyMatrix<T> matrix, out ReadOnlySpan<T> span)
+        where T : struct
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        if (matrix is SequentialMatrix<T> sequential)
+        {
+            span = sequential.AsReadOnlySpan();
+            return true;
+        }
+
+        span = default;
+        return false;
+    }
+
+    /// <summary>
     /// Copies the elements of a read-only matrix into a flat row-major array.
     /// </summary>
     /// <typeparam name="T">The element type stored in the matrix.</typeparam>
@@ -174,12 +196,102 @@ public static class MatrixExtensions
     }
 
     /// <summary>
+    /// Combines corresponding elements of two same-sized matrices in parallel, returning a new matrix of results.
+    /// </summary>
+    /// <typeparam name="TLeft">The element type of the left matrix.</typeparam>
+    /// <typeparam name="TRight">The element type of the right matrix.</typeparam>
+    /// <typeparam name="TResult">The element type of the resulting matrix.</typeparam>
+    /// <param name="left">The left source matrix.</param>
+    /// <param name="right">The right source matrix matching <paramref name="left"/> dimensions.</param>
+    /// <param name="combiner">The combination function evaluated at each corresponding coordinate.</param>
+    /// <returns>A new <see cref="Matrix{TResult}"/> containing the combined elements.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="left"/>, <paramref name="right"/>, or <paramref name="combiner"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when the dimensions of <paramref name="left"/> and <paramref name="right"/> do not match.</exception>
+    public static Matrix<TResult> Zip<TLeft, TRight, TResult>(
+        this IReadOnlyMatrix<TLeft> left,
+        IReadOnlyMatrix<TRight> right,
+        Func<TLeft, TRight, TResult> combiner)
+        where TLeft : struct
+        where TRight : struct
+        where TResult : struct
+    {
+        TResult[] data = left.ZipToArray(right, combiner);
+        return new SequentialMatrix<TResult>(left.Width, left.Height, data);
+    }
+
+    internal static TResult[] ZipToArray<TLeft, TRight, TResult>(
+        this IReadOnlyMatrix<TLeft> left,
+        IReadOnlyMatrix<TRight> right,
+        Func<TLeft, TRight, TResult> combiner)
+        where TLeft : struct
+        where TRight : struct
+        where TResult : struct
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        ArgumentNullException.ThrowIfNull(combiner);
+        Guard.ThrowIfSizeMismatch(left, right);
+
+        int count = left.Count;
+        if (count == 0)
+            return [];
+
+        var result = new TResult[count];
+        if (left is SequentialMatrix<TLeft> leftSeq && right is SequentialMatrix<TRight> rightSeq)
+        {
+            TLeft[] leftRaw = leftSeq.RawData;
+            TRight[] rightRaw = rightSeq.RawData;
+            Parallel.For(0, count, i => result[i] = combiner(leftRaw[i], rightRaw[i]));
+            return result;
+        }
+
+        int width = left.Width;
+        int height = left.Height;
+        if (left is SequentialMatrix<TLeft> leftOnly)
+        {
+            TLeft[] leftRaw = leftOnly.RawData;
+            Parallel.For(0, height, y =>
+            {
+                int rowBase = y * width;
+                for (int x = 0; x < width; x++)
+                    result[rowBase + x] = combiner(leftRaw[rowBase + x], right[x, y]);
+            });
+            return result;
+        }
+
+        if (right is SequentialMatrix<TRight> rightOnly)
+        {
+            TRight[] rightRaw = rightOnly.RawData;
+            Parallel.For(0, height, y =>
+            {
+                int rowBase = y * width;
+                for (int x = 0; x < width; x++)
+                    result[rowBase + x] = combiner(left[x, y], rightRaw[rowBase + x]);
+            });
+            return result;
+        }
+
+        Parallel.For(0, height, y =>
+        {
+            int rowBase = y * width;
+            for (int x = 0; x < width; x++)
+                result[rowBase + x] = combiner(left[x, y], right[x, y]);
+        });
+        return result;
+    }
+
+    /// <summary>
     /// Computes the 2D coordinate corresponding to a linear index in the matrix.
     /// </summary>
     /// <param name="matrix">The matrix whose dimensions determine the coordinate mapping.</param>
     /// <param name="index">The zero-based linear index.</param>
     /// <returns>The <see cref="Coord"/> corresponding to the linear index.</returns>
-    public static Coord CoordFromIndex(this IUntypedMatrix matrix, int index) => new(index % matrix.Width, index / matrix.Width);
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    public static Coord CoordFromIndex(this IUntypedMatrix matrix, int index)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        return matrix.Size.CoordOf(index);
+    }
 
     /// <summary>
     /// Computes the linear index corresponding to a 2D coordinate in the matrix.
@@ -187,7 +299,12 @@ public static class MatrixExtensions
     /// <param name="matrix">The matrix whose dimensions determine the coordinate mapping.</param>
     /// <param name="coord">The 2D coordinate.</param>
     /// <returns>The zero-based linear index corresponding to the coordinate.</returns>
-    public static int IndexFromCoord(this IUntypedMatrix matrix, Coord coord) => coord.X + coord.Y * matrix.Width;
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    public static int IndexFromCoord(this IUntypedMatrix matrix, Coord coord)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        return matrix.Size.IndexOf(coord);
+    }
 
     /// <summary>
     /// Normalizes a 2D coordinate relative to the dimensions of the matrix into the [0, 1) range.
@@ -250,6 +367,17 @@ public static class MatrixExtensions
             return false;
 
         EqualityComparer<T> comparer = EqualityComparer<T>.Default;
+        if (left.TryGetReadOnlySpan(out ReadOnlySpan<T> leftSpan) && right.TryGetReadOnlySpan(out ReadOnlySpan<T> rightSpan))
+        {
+            for (int i = 0; i < leftSpan.Length; i++)
+            {
+                if (!comparer.Equals(leftSpan[i], rightSpan[i]))
+                    return false;
+            }
+
+            return true;
+        }
+
         int width = left.Width;
         int height = left.Height;
         for (int y = 0; y < height; y++)

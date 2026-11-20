@@ -24,8 +24,10 @@ public abstract class Matrix<T> : IReadOnlyMatrix<T>
     /// </summary>
     /// <param name="width">The number of columns in the matrix.</param>
     /// <param name="height">The number of rows in the matrix.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> or <paramref name="height"/> is negative.</exception>
     protected Matrix(int width, int height)
     {
+        Guard.ThrowIfNegativeDimensions(width, height);
         Width = width;
         Height = height;
     }

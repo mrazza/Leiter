@@ -194,8 +194,77 @@ public class MatrixExtensionsTests
         Assert.False(left.ContentEquals(rightDiffSize));
         Assert.True(new MaskMatrix(0, 0).ContentEquals(new MaskMatrix(0, 0)));
 
+        var leftView = new MatrixView<bool>(left, 0, 0, 2, 2, EdgeHandling.Extend);
+        var rightViewEqual = new MatrixView<bool>(rightEqual, 0, 0, 2, 2, EdgeHandling.Extend);
+        var rightViewDiff = new MatrixView<bool>(rightDiffValue, 0, 0, 2, 2, EdgeHandling.Extend);
+        Assert.True(leftView.ContentEquals(rightEqual));
+        Assert.True(left.ContentEquals(rightViewEqual));
+        Assert.True(leftView.ContentEquals(rightViewEqual));
+        Assert.False(leftView.ContentEquals(rightViewDiff));
+
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ContentEquals(left));
         Assert.Throws<ArgumentNullException>(() => left.ContentEquals(null!));
+    }
+
+    [Fact]
+    public void TryGetReadOnlySpan_ShouldReturnSpanOnlyForSequentialMatrices()
+    {
+        var seq = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
+        Assert.True(seq.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> seqSpan));
+        Assert.Equal(4, seqSpan.Length);
+        Assert.Equal(3.0, seqSpan[2].Value);
+
+        var mask = new MaskMatrix(2, 2);
+        mask[1, 0] = true;
+        Assert.True(mask.TryGetReadOnlySpan(out ReadOnlySpan<bool> maskSpan));
+        Assert.Equal(4, maskSpan.Length);
+        Assert.True(maskSpan[1]);
+
+        var view = new MatrixView<DoublePixel>(seq, 0, 0, 2, 2, EdgeHandling.Extend);
+        Assert.False(((IReadOnlyMatrix<DoublePixel>)view).TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> viewSpan));
+        Assert.True(viewSpan.IsEmpty);
+
+        var custom = new CustomMatrix(2, 2);
+        Assert.False(custom.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> customSpan));
+        Assert.True(customSpan.IsEmpty);
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).TryGetReadOnlySpan(out _));
+    }
+
+    [Fact]
+    public void Zip_ShouldCombineAcrossSequentialAndNonSequentialMatrices()
+    {
+        var left = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
+        var right = new SequentialMatrix<LongPixel>(new Size(2, 2), [10L, 20L, 30L, 40L]);
+        var leftView = new MatrixView<DoublePixel>(left, 0, 0, 2, 2, EdgeHandling.Extend);
+        var rightView = new MatrixView<LongPixel>(right, 0, 0, 2, 2, EdgeHandling.Extend);
+
+        Matrix<DoublePixel> seqSeq = left.Zip(right, static (a, b) => new DoublePixel(a.Value + b.Value));
+        Matrix<DoublePixel> seqView = left.Zip(rightView, static (a, b) => new DoublePixel(a.Value + b.Value));
+        Matrix<DoublePixel> viewSeq = leftView.Zip(right, static (a, b) => new DoublePixel(a.Value + b.Value));
+        Matrix<DoublePixel> viewView = leftView.Zip(rightView, static (a, b) => new DoublePixel(a.Value + b.Value));
+
+        MatrixAssert.Equal(seqSeq, seqView);
+        MatrixAssert.Equal(seqSeq, viewSeq);
+        MatrixAssert.Equal(seqSeq, viewView);
+        Assert.Equal(11.0, seqSeq[0, 0].Value);
+        Assert.Equal(44.0, seqSeq[1, 1].Value);
+
+        var emptyLeft = new SequentialMatrix<DoublePixel>(0, 3);
+        var emptyRight = new SequentialMatrix<LongPixel>(0, 3);
+        bool invoked = false;
+        Matrix<DoublePixel> emptyZip = emptyLeft.Zip(emptyRight, (a, b) =>
+        {
+            invoked = true;
+            return a;
+        });
+        Assert.Equal(new Size(0, 3), emptyZip.Size);
+        Assert.False(invoked);
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).Zip(right, static (a, b) => a));
+        Assert.Throws<ArgumentNullException>(() => left.Zip<DoublePixel, LongPixel, DoublePixel>(null!, static (a, b) => a));
+        Assert.Throws<ArgumentNullException>(() => left.Zip<DoublePixel, LongPixel, DoublePixel>(right, null!));
+        Assert.Throws<ArgumentException>(() => left.Zip(new SequentialMatrix<LongPixel>(3, 2), static (a, b) => a));
     }
 
     [Fact]

@@ -105,15 +105,7 @@ public readonly record struct LongPixel(long Value) : ITypedPixel<LongPixel, lon
     public double AsDouble() => Value;
 
     /// <inheritdoc/>
-    public Vector<double> ToDoubleVector()
-    {
-        if (Vector<double>.Count < 1)
-            throw new PlatformNotSupportedException("This operation is not supported on this platform. Vector width is too small.");
-
-        Span<double> data = stackalloc double[Vector<double>.Count];
-        data[0] = Value;
-        return new(data);
-    }
+    public Vector<double> ToDoubleVector() => Internal.PixelVector.Create(Value);
 
     /// <inheritdoc/>
     public static LongPixel FromDoubleVector(Vector<double> vector) => (long)vector[0];

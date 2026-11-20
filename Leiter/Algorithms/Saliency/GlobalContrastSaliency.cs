@@ -1,7 +1,8 @@
 namespace Leiter.Algorithms.Saliency;
 
+using System;
 using System.Collections.Generic;
-using System.Linq;
+using Leiter.Algorithms.Saliency.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -20,7 +21,7 @@ public static class GlobalContrastSaliency
     /// </summary>
     /// <remarks>
     /// A value of 1 indicates a salient pixel, while a value of 0 indicates a non-salient pixel.
-    /// 
+    ///
     /// Optionally, color space smoothing can be enabled to smooth out saliency values across
     /// similar colors in the image. This helps reduce saliency noise in areas of the image with color
     /// variation near the boundary of quantized color buckets. This is enabled by default.
@@ -32,7 +33,25 @@ public static class GlobalContrastSaliency
     public static Matrix<DoublePixel> ComputeSaliency(IReadOnlyMatrix<Rgb8> image, bool enableColorSpaceSmoothing = true)
     {
         ArgumentNullException.ThrowIfNull(image);
+        return ComputeSaliencyCore(image, enableColorSpaceSmoothing);
+    }
 
+    /// <summary>
+    /// Computes the saliency map for the given image using the specified options.
+    /// </summary>
+    /// <param name="image">The input image.</param>
+    /// <param name="options">Optional global contrast post-processing parameters.</param>
+    /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    public static Matrix<DoublePixel> ComputeSaliency(IReadOnlyMatrix<Rgb8> image, GlobalContrastSaliencyOptions? options)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        GlobalContrastSaliencyOptions resolvedOptions = OptionsResolver.Resolve(options);
+        return ComputeSaliencyCore(image, resolvedOptions.EnableColorSpaceSmoothing);
+    }
+
+    private static Matrix<DoublePixel> ComputeSaliencyCore(IReadOnlyMatrix<Rgb8> image, bool enableColorSpaceSmoothing)
+    {
         if (image.Count == 0)
         {
             return new SequentialMatrix<DoublePixel>(image.Size);
@@ -40,20 +59,36 @@ public static class GlobalContrastSaliency
 
         // Quantize the image into 12 buckets per channel and truncate the histogram to the top 95% of pixels.
         var (paletteImage, truncatedHistogram, rgbToLabLookupTable) = SaliencyColorSmoother.QuantizeForSaliency(image);
+        PairwiseLabDistanceTable distanceTable = PairwiseLabDistanceTable.Build(rgbToLabLookupTable);
 
-        // Compute the saliency for each bucket based on the distance to all other buckets.
-        Dictionary<Rgb8, double> saliencyMap = [];
+        int colorCount = distanceTable.Count;
+        var counts = new int[colorCount];
         foreach (var bucket in truncatedHistogram)
         {
-            Lab32 bucketColor = rgbToLabLookupTable[bucket.Key];
-            saliencyMap[bucket.Key] =
-                truncatedHistogram.Where(targetBucket => targetBucket.Key != bucket.Key)
-                    .Sum(targetBucket => bucketColor.Distance(rgbToLabLookupTable[targetBucket.Key]) * targetBucket.Value) / image.Count;
+            counts[distanceTable.GetIndex(bucket.Key)] = bucket.Value;
+        }
+
+        // Compute the saliency for each bucket based on the distance to all other buckets.
+        double invTotalPixels = 1.0 / image.Count;
+        var saliencyMap = new Dictionary<Rgb8, double>(colorCount);
+        for (int i = 0; i < colorCount; i++)
+        {
+            ReadOnlySpan<double> distances = distanceTable.GetRow(i);
+            double weightedSum = 0.0;
+            for (int j = 0; j < colorCount; j++)
+            {
+                if (i != j)
+                {
+                    weightedSum += distances[j] * counts[j];
+                }
+            }
+
+            saliencyMap[distanceTable.GetColor(i)] = weightedSum * invTotalPixels;
         }
 
         if (enableColorSpaceSmoothing)
         {
-            SaliencyColorSmoother.SmoothColorSaliency(saliencyMap, rgbToLabLookupTable, neighborDivisor: 4);
+            SaliencyColorSmoother.SmoothColorSaliency(saliencyMap, distanceTable, neighborDivisor: 4);
         }
 
         // Map the saliency values back to the original image and normalize the values to [0, 1].

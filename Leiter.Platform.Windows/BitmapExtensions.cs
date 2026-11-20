@@ -35,14 +35,17 @@ public static class BitmapExtensions
         {
             byte* scan0 = (byte*)bitmapData.Scan0;
             int stride = bitmapData.Stride;
+            int rowByteCount = width * 3;
+            Span<Rgb8> destSpan = matrix.AsSpan();
 
             for (int y = 0; y < height; y++)
             {
-                byte* row = scan0 + ((nint)y * stride);
+                ReadOnlySpan<byte> srcRow = new(scan0 + ((nint)y * stride), rowByteCount);
+                Span<Rgb8> destRow = destSpan.Slice(y * width, width);
                 for (int x = 0; x < width; x++)
                 {
                     int offset = x * 3;
-                    matrix[x, y] = new Rgb8(row[offset + 2], row[offset + 1], row[offset]);
+                    destRow[x] = new Rgb8(srcRow[offset + 2], srcRow[offset + 1], srcRow[offset]);
                 }
             }
         }
@@ -79,17 +82,37 @@ public static class BitmapExtensions
             {
                 byte* scan0 = (byte*)bitmapData.Scan0;
                 int stride = bitmapData.Stride;
+                int rowByteCount = width * 3;
 
-                for (int y = 0; y < height; y++)
+                if (matrix.TryGetReadOnlySpan(out ReadOnlySpan<Rgb8> srcSpan))
                 {
-                    byte* row = scan0 + ((nint)y * stride);
-                    for (int x = 0; x < width; x++)
+                    for (int y = 0; y < height; y++)
                     {
-                        Rgb8 pixel = matrix[x, y];
-                        int offset = x * 3;
-                        row[offset] = pixel.B;
-                        row[offset + 1] = pixel.G;
-                        row[offset + 2] = pixel.R;
+                        ReadOnlySpan<Rgb8> srcRow = srcSpan.Slice(y * width, width);
+                        Span<byte> destRow = new(scan0 + ((nint)y * stride), rowByteCount);
+                        for (int x = 0; x < width; x++)
+                        {
+                            Rgb8 pixel = srcRow[x];
+                            int offset = x * 3;
+                            destRow[offset] = pixel.B;
+                            destRow[offset + 1] = pixel.G;
+                            destRow[offset + 2] = pixel.R;
+                        }
+                    }
+                }
+                else
+                {
+                    for (int y = 0; y < height; y++)
+                    {
+                        Span<byte> destRow = new(scan0 + ((nint)y * stride), rowByteCount);
+                        for (int x = 0; x < width; x++)
+                        {
+                            Rgb8 pixel = matrix[x, y];
+                            int offset = x * 3;
+                            destRow[offset] = pixel.B;
+                            destRow[offset + 1] = pixel.G;
+                            destRow[offset + 2] = pixel.R;
+                        }
                     }
                 }
             }

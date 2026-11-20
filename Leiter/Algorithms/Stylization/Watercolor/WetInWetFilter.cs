@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
@@ -59,18 +60,11 @@ public static class WetInWetFilter
             return CreateUnmodifiedResult(image, boundaryCount);
         }
 
-        bool[]? salientRegions;
-        if (precomputedSalientFractions is not null)
-        {
-            salientRegions = new bool[precomputedSalientFractions.Length];
-            double threshold = opts.SalientOverlapThreshold;
-            for (int r = 0; r < salientRegions.Length; r++)
-                salientRegions[r] = precomputedSalientFractions[r] >= threshold;
-        }
-        else
-        {
-            salientRegions = salientMask is null ? null : regionGraph.ComputeRegionFlags(salientMask, opts.SalientOverlapThreshold);
-        }
+        bool[]? salientRegions = precomputedSalientFractions is not null
+            ? RegionGraph.ComputeRegionFlags(precomputedSalientFractions, opts.SalientOverlapThreshold)
+            : salientMask is null
+                ? null
+                : regionGraph.ComputeRegionFlags(salientMask, opts.SalientOverlapThreshold);
         RegionColorStatistics<Rgb64>[] stats = RegionColorStatistics.Compute(regionGraph, image);
 
         var (avgGradX, avgGradY) = ComputeAverageRegionGradients(regionGraph, image);
@@ -127,8 +121,9 @@ public static class WetInWetFilter
                 qualifying);
         }
 
-        int width = image.Width;
-        int height = image.Height;
+        Size size = image.Size;
+        int width = size.Width;
+        int height = size.Height;
         var boundaryPolarity = new (int BrighterId, int DarkerId)[boundaryCount];
         for (int bi = 0; bi < boundaryCount; bi++)
         {
@@ -149,8 +144,8 @@ public static class WetInWetFilter
             boundaryIndex => qualifying[boundaryIndex],
             restrictToIncidentRegions: true);
 
-        var orientations = new SequentialMatrix<Vector2D>(width, height);
-        var seedDarkerColors = new Rgb8[width * height];
+        var orientations = new SequentialMatrix<Vector2D>(size);
+        var seedDarkerColors = new Rgb8[size.Count];
         ReadOnlySpan<GridNeighbor> graphNeighbors = GridNeighborhood.GetAll(regionGraph.Connectivity);
         ReadOnlySpan<Coord> seedPixels = band.SeedPixels.Span;
         for (int s = 0; s < seedPixels.Length; s++)
@@ -162,7 +157,7 @@ public static class WetInWetFilter
             Vector2D normal = regionGraph.ComputeBoundaryNormal(p, brighterId, darkerId);
             orientations[p] = normal == Vector2D.Zero ? new Vector2D(1.0, 0.0) : normal;
 
-            int pIdx = (p.Y * width) + p.X;
+            int pIdx = size.IndexOf(p);
             if (regionGraph.Labels[p] == darkerId)
             {
                 seedDarkerColors[pIdx] = image[p];
@@ -176,7 +171,7 @@ public static class WetInWetFilter
                 for (int n = 0; n < graphNeighbors.Length; n++)
                 {
                     Coord q = p + graphNeighbors[n].Offset;
-                    if (regionGraph.Labels.Contains(q) && regionGraph.Labels[q] == darkerId)
+                    if (size.Contains(q) && regionGraph.Labels[q] == darkerId)
                     {
                         Rgb8 qCol = image[q];
                         sumR += qCol.R;
@@ -196,7 +191,7 @@ public static class WetInWetFilter
         }
 
         Matrix<Rgb8> seeded = image.Clone();
-        var wetAreaMask = new MaskMatrix(width, height);
+        var wetAreaMask = new MaskMatrix(size);
 
         for (int y = 0; y < height; y++)
         {
@@ -240,8 +235,8 @@ public static class WetInWetFilter
             filterOpts,
             wetAreaMask);
 
-        var composited = new SequentialMatrix<Rgb8>(width, height);
-        for (int y = 0; y < height; y++)
+        var composited = new SequentialMatrix<Rgb8>(size);
+        Parallel.For(0, height, y =>
         {
             for (int x = 0; x < width; x++)
             {
@@ -273,7 +268,7 @@ public static class WetInWetFilter
                     composited[x, y] = Rgb8.Lerp(image[x, y], filtered[x, y], alpha);
                 }
             }
-        }
+        });
 
         return new WetInWetResult(composited, wetAreaMask, qualifying);
     }
@@ -360,49 +355,55 @@ public static class WetInWetFilter
         RegionGraph regionGraph,
         IReadOnlyMatrix<Rgb8> image)
     {
-        int width = image.Width;
-        int height = image.Height;
+        Size size = image.Size;
         int regionCount = regionGraph.RegionCount;
-        var sumGradX = new double[regionCount];
-        var sumGradY = new double[regionCount];
+        var avgGradX = new double[regionCount];
+        var avgGradY = new double[regionCount];
+        if (regionCount == 0)
+            return (avgGradX, avgGradY);
+
         IReadOnlyMatrix<int> labels = regionGraph.Labels;
         (double w0, double w1, double w2, double scale) = SpatialGradients.GetKernelWeights(GradientOperator.Sobel);
         double normalizedScale = scale / 255.0;
 
-        for (int y = 0; y < height; y++)
+        Parallel.For(0, regionCount, r =>
         {
-            for (int x = 0; x < width; x++)
+            ReadOnlySpan<Coord> pixels = regionGraph.GetRegionPixels(r);
+            int count = regionGraph.GetRegionPixelCount(r);
+            if (count == 0)
+                return;
+
+            double sumX = 0.0;
+            double sumY = 0.0;
+            for (int i = 0; i < pixels.Length; i++)
             {
-                int label = labels[x, y];
-                Rgb8 center = image[x, y];
+                Coord coord = pixels[i];
+                int x = coord.X;
+                int y = coord.Y;
+                Rgb8 center = image[coord];
 
                 var (gx, gy) = SpatialGradients.ComputeRgb8GradientAt(
-                    SampleRegionClamped(image, labels, x - 1, y - 1, width, height, label, center),
-                    SampleRegionClamped(image, labels, x, y - 1, width, height, label, center),
-                    SampleRegionClamped(image, labels, x + 1, y - 1, width, height, label, center),
-                    SampleRegionClamped(image, labels, x - 1, y, width, height, label, center),
-                    SampleRegionClamped(image, labels, x + 1, y, width, height, label, center),
-                    SampleRegionClamped(image, labels, x - 1, y + 1, width, height, label, center),
-                    SampleRegionClamped(image, labels, x, y + 1, width, height, label, center),
-                    SampleRegionClamped(image, labels, x + 1, y + 1, width, height, label, center),
+                    SampleRegionClamped(image, labels, size, x - 1, y - 1, r, center),
+                    SampleRegionClamped(image, labels, size, x, y - 1, r, center),
+                    SampleRegionClamped(image, labels, size, x + 1, y - 1, r, center),
+                    SampleRegionClamped(image, labels, size, x - 1, y, r, center),
+                    SampleRegionClamped(image, labels, size, x + 1, y, r, center),
+                    SampleRegionClamped(image, labels, size, x - 1, y + 1, r, center),
+                    SampleRegionClamped(image, labels, size, x, y + 1, r, center),
+                    SampleRegionClamped(image, labels, size, x + 1, y + 1, r, center),
                     w0,
                     w1,
                     w2,
                     normalizedScale);
 
-                sumGradX[label] += SpatialGradients.ChannelNorm(gx);
-                sumGradY[label] += SpatialGradients.ChannelNorm(gy);
+                sumX += SpatialGradients.ChannelNorm(gx);
+                sumY += SpatialGradients.ChannelNorm(gy);
             }
-        }
 
-        var avgGradX = new double[regionCount];
-        var avgGradY = new double[regionCount];
-        for (int r = 0; r < regionCount; r++)
-        {
-            double invCount = 1.0 / regionGraph.Regions[r].Pixels.Count;
-            avgGradX[r] = sumGradX[r] * invCount;
-            avgGradY[r] = sumGradY[r] * invCount;
-        }
+            double invCount = 1.0 / count;
+            avgGradX[r] = sumX * invCount;
+            avgGradY[r] = sumY * invCount;
+        });
 
         return (avgGradX, avgGradY);
     }
@@ -410,13 +411,12 @@ public static class WetInWetFilter
     private static Rgb8 SampleRegionClamped(
         IReadOnlyMatrix<Rgb8> image,
         IReadOnlyMatrix<int> labels,
+        Size size,
         int x,
         int y,
-        int width,
-        int height,
         int regionLabel,
         Rgb8 fallback) =>
-        ((uint)x < (uint)width && (uint)y < (uint)height && labels[x, y] == regionLabel)
+        (size.Contains(x, y) && labels[x, y] == regionLabel)
             ? image[x, y]
             : fallback;
 }

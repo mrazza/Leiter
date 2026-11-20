@@ -39,6 +39,19 @@ public class MatrixViewTests
         ArgumentOutOfRangeException enumEx = Assert.Throws<ArgumentOutOfRangeException>(() => new MatrixView<DoublePixel>(baseMat, 0, 0, 2, 2, (EdgeHandling)999));
         Assert.Equal("edgeHandling", enumEx.ParamName);
 
+        ArgumentOutOfRangeException negWidth = Assert.Throws<ArgumentOutOfRangeException>(() => new MatrixView<DoublePixel>(baseMat, 0, 0, -1, 2, EdgeHandling.Extend));
+        Assert.Equal("width", negWidth.ParamName);
+
+        ArgumentOutOfRangeException negHeight = Assert.Throws<ArgumentOutOfRangeException>(() => new MatrixView<DoublePixel>(baseMat, 0, 0, 2, -1, EdgeHandling.Extend));
+        Assert.Equal("height", negHeight.ParamName);
+
+        // Negative offsets with non-negative dimensions must remain valid
+        baseMat[0, 0] = 7.0;
+        var negativeOffsetView = new MatrixView<DoublePixel>(baseMat, -2, -3, 2, 2, EdgeHandling.Extend);
+        Assert.Equal(-2, negativeOffsetView.OffsetX);
+        Assert.Equal(-3, negativeOffsetView.OffsetY);
+        Assert.Equal(7.0, negativeOffsetView[0, 0].Value);
+
         var emptyView = new MatrixView<DoublePixel>(new SequentialMatrix<DoublePixel>(0, 0), 0, 0, 1, 1, EdgeHandling.Extend);
         Assert.Throws<ArgumentOutOfRangeException>(() => emptyView[0, 0]);
     }

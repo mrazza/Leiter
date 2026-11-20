@@ -5,14 +5,22 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="EgbiOptions"/>.
 /// </summary>
-public class EgbiOptionsTests
+public class EgbiOptionsTests : SizeTunableOptionsContractTestsBase<EgbiOptions>
 {
+    /// <inheritdoc/>
+    protected override EgbiOptions CreateValidCustomOptions() =>
+        new(KFactor: 75.0, Epsilon: 2.0, MinRegionSize: 150, Connectivity: GridConnectivity.FourConnected);
+
+    /// <inheritdoc/>
+    protected override EgbiOptions CreateInvalidOptions() =>
+        new(KFactor: -1.0);
     /// <summary>
     /// Verifies that default EGBI options match expected values and pass validation.
     /// </summary>

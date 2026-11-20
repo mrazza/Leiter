@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using Leiter.Algorithms.DistanceTransform;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -135,9 +136,43 @@ public class JumpFloodingTests
         Assert.Empty(JumpFlooding.ComputeDistanceTransform(new MaskMatrix(0, 0)));
 
         // Argument validation.
-        Assert.Throws<ArgumentOutOfRangeException>(() => JumpFlooding.ComputeNearestSeeds(new Size(-1, 3), []));
-        Assert.Throws<ArgumentOutOfRangeException>(() => JumpFlooding.ComputeNearestSeeds(new Size(3, -1), []));
+        ArgumentOutOfRangeException negW = Assert.Throws<ArgumentOutOfRangeException>(() => JumpFlooding.ComputeNearestSeeds(new Size(-1, 3), []));
+        Assert.Equal("size", negW.ParamName);
+        ArgumentOutOfRangeException negH = Assert.Throws<ArgumentOutOfRangeException>(() => JumpFlooding.ComputeNearestSeeds(new Size(3, -1), []));
+        Assert.Equal("size", negH.ParamName);
         Assert.Throws<ArgumentNullException>(() => JumpFlooding.ComputeNearestSeeds(new Size(3, 3), null!));
         Assert.Throws<ArgumentNullException>(() => JumpFlooding.ComputeNearestSeeds(null!));
+    }
+
+    [Fact]
+    public void NonSequentialMatrixView_ShouldMatchMaterializedBoundarySeedsAndDistanceTransform()
+    {
+        var source = new MaskMatrix(10, 8);
+        for (int y = 2; y <= 4; y++)
+        {
+            for (int x = 2; x <= 4; x++)
+                source[x, y] = true;
+        }
+
+        source[4, 4] = false;
+        source[7, 5] = true;
+
+        var view = new MatrixView<bool>(source, 1, 1, 7, 5, EdgeHandling.Extend);
+        MaskMatrix materialized = view.ToMaskMatrix();
+
+        Assert.Equal(
+            JumpFlooding.ExtractBoundarySeeds(materialized, eightConnectedBackground: true),
+            JumpFlooding.ExtractBoundarySeeds(view, eightConnectedBackground: true));
+        Assert.Equal(
+            JumpFlooding.ExtractBoundarySeeds(materialized, eightConnectedBackground: false),
+            JumpFlooding.ExtractBoundarySeeds(view, eightConnectedBackground: false));
+
+        MatrixAssert.Equal(JumpFlooding.ComputeNearestSeeds(materialized), JumpFlooding.ComputeNearestSeeds(view));
+        MatrixAssert.ApproxEqual(JumpFlooding.ComputeDistanceTransform(materialized), JumpFlooding.ComputeDistanceTransform(view), 1e-12);
+
+        var emptyView = new MatrixView<bool>(source, 0, 0, 0, 3, EdgeHandling.Extend);
+        Assert.Empty(JumpFlooding.ExtractBoundarySeeds(emptyView));
+        Assert.Empty(JumpFlooding.ComputeNearestSeeds(emptyView));
+        Assert.Empty(JumpFlooding.ComputeDistanceTransform(emptyView));
     }
 }

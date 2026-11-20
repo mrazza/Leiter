@@ -2,14 +2,22 @@ namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
 using Leiter.Algorithms.Saliency;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="RegionalContrastSaliencyOptions"/>.
 /// </summary>
-public class RegionalContrastSaliencyOptionsTests
+public class RegionalContrastSaliencyOptionsTests : AlgorithmOptionsContractTestsBase<RegionalContrastSaliencyOptions>
 {
+    /// <inheritdoc/>
+    protected override RegionalContrastSaliencyOptions CreateValidCustomOptions() =>
+        new(EnableSmoothing: false, ComputeBorderRegions: false, CenterPriorWeight: 4.5);
+
+    /// <inheritdoc/>
+    protected override RegionalContrastSaliencyOptions CreateInvalidOptions() =>
+        new(CenterPriorWeight: -1.0);
     [Fact]
     public void Constructor_DefaultProperties_ShouldMatchDefaultInstanceAndPassValidation()
     {

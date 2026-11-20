@@ -97,6 +97,25 @@ public readonly record struct Vector2D(double X, double Y)
     /// <returns>The scaled vector.</returns>
     public static Vector2D operator /(Vector2D vector, double scalar) => new(vector.X / scalar, vector.Y / scalar);
 
+    /// <summary>
+    /// Computes the squared Euclidean distance between this vector and <paramref name="other"/>.
+    /// </summary>
+    /// <param name="other">The target vector.</param>
+    /// <returns>The squared Euclidean distance between the two vectors.</returns>
+    public double DistanceSquared(Vector2D other)
+    {
+        double dx = X - other.X;
+        double dy = Y - other.Y;
+        return (dx * dx) + (dy * dy);
+    }
+
+    /// <summary>
+    /// Computes the Euclidean distance between this vector and <paramref name="other"/>.
+    /// </summary>
+    /// <param name="other">The target vector.</param>
+    /// <returns>The Euclidean distance between the two vectors.</returns>
+    public double Distance(Vector2D other) => Math.Sqrt(DistanceSquared(other));
+
     private bool PrintMembers(StringBuilder builder)
     {
         builder.Append($"X = {X}, Y = {Y}");

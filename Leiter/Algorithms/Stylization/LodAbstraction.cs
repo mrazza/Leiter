@@ -54,30 +54,23 @@ public static class LodAbstraction
         if (image.Count == 0)
             return new SequentialMatrix<Rgb8>(image.Size);
 
-        int width = image.Width;
-        int height = image.Height;
+        Size size = image.Size;
+        int width = size.Width;
+        int height = size.Height;
 
         Rgb64[] normalizedRgb = image.MapToArray(static pixel => pixel.ToRgb64());
 
-        bool[] isSalientRegion;
-        if (precomputedSalientFractions is not null)
-        {
-            isSalientRegion = new bool[precomputedSalientFractions.Length];
-            double threshold = resolvedOptions.SalientOverlapThreshold;
-            for (int r = 0; r < isSalientRegion.Length; r++)
-                isSalientRegion[r] = precomputedSalientFractions[r] >= threshold;
-        }
-        else
-        {
-            IReadOnlyMatrix<bool> effectiveSalientMask = salientMask ?? SaliencyDistanceField.ExtractSalientMask(distanceField);
-            isSalientRegion = regionGraph.ComputeRegionFlags(effectiveSalientMask, resolvedOptions.SalientOverlapThreshold);
-        }
+        bool[] isSalientRegion = precomputedSalientFractions is not null
+            ? RegionGraph.ComputeRegionFlags(precomputedSalientFractions, resolvedOptions.SalientOverlapThreshold)
+            : regionGraph.ComputeRegionFlags(
+                salientMask ?? SaliencyDistanceField.ExtractSalientMask(distanceField),
+                resolvedOptions.SalientOverlapThreshold);
 
-        var result = new SequentialMatrix<Rgb8>(width, height);
+        var result = new SequentialMatrix<Rgb8>(size);
 
         Parallel.For(0, height, y =>
         {
-            int rowOffset = y * width;
+            int rowOffset = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
             {
                 int centerIndex = rowOffset + x;
@@ -118,7 +111,7 @@ public static class LodAbstraction
                 for (int qy = minY; qy <= maxY; qy++)
                 {
                     double wy = hasHalfBorder && Math.Abs(qy - y) == radius ? 0.5 : 1.0;
-                    int qRowOffset = qy * width;
+                    int qRowOffset = size.IndexOf(0, qy);
 
                     for (int qx = minX; qx <= maxX; qx++)
                     {

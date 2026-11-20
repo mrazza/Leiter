@@ -6,14 +6,31 @@ using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="SaliencyCutOptions"/>.
 /// </summary>
-public class SaliencyCutOptionsTests
+public class SaliencyCutOptionsTests : SizeTunableOptionsContractTestsBase<SaliencyCutOptions>
 {
+    /// <inheritdoc/>
+    protected override SaliencyCutOptions CreateValidCustomOptions() =>
+        new(
+            MaxOuterIterations: 3,
+            TrimapBandRadius: 14,
+            GrabCut: new GrabCutOptions(Iterations: 3, MixtureComponentCount: 4, SmoothnessWeight: 40.0),
+            Mask: new SaliencyMaskOptions(
+                Method: SaliencyThresholdMethod.Otsu,
+                FixedThreshold: 0.3,
+                RetentionPolicy: ComponentRetentionPolicy.LargestComponentOnly,
+                MinAreaFraction: 0.02),
+            MaxWorkingDimension: 512);
+
+    /// <inheritdoc/>
+    protected override SaliencyCutOptions CreateInvalidOptions() =>
+        new(MaxOuterIterations: 0);
     [Fact]
     public void Constructor_DefaultProperties_ShouldMatchExpectedValues()
     {
@@ -140,9 +157,25 @@ public class SaliencyCutOptionsTests
 
         Assert.Equal(4, SaliencyCutOptions.ForImage(flat).GrabCut!.MixtureComponentCount);
         Assert.Equal(6, SaliencyCutOptions.ForImage(vibrant).GrabCut!.MixtureComponentCount);
+        Assert.Equal(SaliencyCutOptions.DefaultGrabCut.Iterations, SaliencyCutOptions.ForImage(vibrant).GrabCut!.Iterations);
+
+        SaliencyCutOptions customBaseline = CreateValidCustomOptions();
+        SaliencyCutOptions customHalf = SaliencyCutOptions.ForSize(new Size(400, 400), customBaseline);
+        Assert.Equal(7, customHalf.TrimapBandRadius);
+        Assert.Equal(3, customHalf.GrabCut!.Iterations);
+        Assert.Equal(20.0, customHalf.GrabCut.SmoothnessWeight, 6);
+        Assert.Equal(customBaseline.Mask, customHalf.Mask);
+        Assert.Equal(512, customHalf.MaxWorkingDimension);
+
+        SaliencyCutOptions customVibrant = SaliencyCutOptions.ForImage(vibrant, customBaseline);
+        Assert.Equal(3, customVibrant.GrabCut!.Iterations);
+        Assert.Equal(5, customVibrant.GrabCut.MixtureComponentCount);
+        Assert.Equal(customBaseline.Mask, customVibrant.Mask);
+        Assert.Equal(512, customVibrant.MaxWorkingDimension);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCutOptions.ForSize(new Size(-1, 100)));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCutOptions.ForSize(new Size(100, 100), double.NegativeInfinity));
         Assert.Throws<ArgumentNullException>(() => SaliencyCutOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => SaliencyCutOptions.ForImage(flat, null!));
     }
 }

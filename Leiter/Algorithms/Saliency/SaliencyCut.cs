@@ -55,8 +55,8 @@ public static class SaliencyCut
             Math.Max(1, (int)Math.Round(image.Width * scale)),
             Math.Max(1, (int)Math.Round(image.Height * scale)));
 
-        Matrix<Rgb8> smallImage = image.ResizeBilinear(workingSize);
-        Matrix<DoublePixel> smallSaliency = saliencyMap.ResizeBilinear(workingSize);
+        Matrix<Rgb8> smallImage = image.ResizeBox(workingSize);
+        Matrix<DoublePixel> smallSaliency = saliencyMap.ResizeBox(workingSize);
         int scaledBandRadius = Math.Max(1, (int)Math.Round(options.TrimapBandRadius * scale));
 
         MaskMatrix smallMask = ExtractCore(smallImage, smallSaliency, options, scaledBandRadius);

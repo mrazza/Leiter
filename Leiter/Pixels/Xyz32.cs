@@ -147,17 +147,7 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
     public Xyz32 ComponentMap(Func<float, float> func) => new() { X = func(X), Y = func(Y), Z = func(Z) };
 
     /// <inheritdoc/>
-    public Vector<double> ToDoubleVector()
-    {
-        if (Vector<double>.Count < 3)
-            throw new PlatformNotSupportedException("This operation is not supported on this platform. Vector width is too small.");
-
-        Span<double> data = stackalloc double[Vector<double>.Count];
-        data[0] = X;
-        data[1] = Y;
-        data[2] = Z;
-        return new(data);
-    }
+    public Vector<double> ToDoubleVector() => Internal.PixelVector.Create(X, Y, Z);
 
     /// <inheritdoc/>
     public static Xyz32 FromDoubleVector(Vector<double> vector) => new((float)vector[0], (float)vector[1], (float)vector[2]);

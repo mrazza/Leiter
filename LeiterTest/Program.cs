@@ -89,7 +89,7 @@ internal static class Program
             {
                 double egbiSigma = WatercolorOptions.ForSize(imageMatrix.Size).EgbiBlurSigma;
                 Matrix<Rgb8> blurred = Blur.GaussianBlur(imageMatrix, egbiSigma);
-                Matrix<Lab32> labImage = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
+                Matrix<Lab32> labImage = blurred.ToLab32(RgbColorSpace.SRgb);
                 EgbiOptions egbiOptions = EgbiOptions.ForSize(labImage.Size, WatercolorOptions.DefaultSaliencyEgbi);
                 return EgbiSegmentation.Segment(labImage, egbiOptions);
             });

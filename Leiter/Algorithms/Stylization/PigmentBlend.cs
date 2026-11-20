@@ -3,7 +3,6 @@ namespace Leiter.Algorithms.Stylization;
 using System;
 using System.Linq;
 using System.Runtime.ExceptionServices;
-using System.Threading.Tasks;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -47,7 +46,7 @@ public static class PigmentBlend
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any color channel or <paramref name="densityOffset"/> is not finite.</exception>
     public static Rgb64 AdjustDensity(Rgb64 color, double densityOffset)
     {
-        ValidateFiniteColor(color, nameof(color));
+        Guard.ThrowIfNotFinite(color);
         Guard.ThrowIfNotFinite(densityOffset);
 
         return AdjustDensityUnchecked(color, densityOffset);
@@ -91,8 +90,8 @@ public static class PigmentBlend
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any channel of <paramref name="first"/> or <paramref name="second"/> is not finite, or when <paramref name="overlapDarkening"/> is not finite or outside [0.0, 1.0].</exception>
     public static Rgb64 MixPigments(Rgb64 first, Rgb64 second, double overlapDarkening = 0.5)
     {
-        ValidateFiniteColor(first, nameof(first));
-        ValidateFiniteColor(second, nameof(second));
+        Guard.ThrowIfNotFinite(first);
+        Guard.ThrowIfNotFinite(second);
         Guard.ThrowIfNotFiniteInRange(overlapDarkening, 0.0, 1.0);
 
         return MixPigmentsUnchecked(first, second, overlapDarkening);
@@ -207,36 +206,19 @@ public static class PigmentBlend
             return image.Clone();
         }
 
-        int width = image.Width;
-        int height = image.Height;
-        var result = new SequentialMatrix<Rgb8>(width, height);
-
         try
         {
-            Parallel.For(0, height, y =>
+            return image.Zip(field, (pixel, sample) =>
             {
-                for (int x = 0; x < width; x++)
-                {
-                    double densityOffset = densityOffsetSelector(field[x, y].Value);
-                    Guard.ThrowIfNotFinite(densityOffset);
-                    result[x, y] = AdjustDensityUnchecked(image[x, y], densityOffset);
-                }
+                double densityOffset = densityOffsetSelector(sample.Value);
+                Guard.ThrowIfNotFinite(densityOffset);
+                return AdjustDensityUnchecked(pixel, densityOffset);
             });
         }
         catch (AggregateException ex) when (ex.InnerExceptions.FirstOrDefault(static e => e is ArgumentOutOfRangeException) is ArgumentOutOfRangeException inner)
         {
             ExceptionDispatchInfo.Capture(inner).Throw();
             throw;
-        }
-
-        return result;
-    }
-
-    private static void ValidateFiniteColor(Rgb64 color, string paramName)
-    {
-        if (!double.IsFinite(color.R) || !double.IsFinite(color.G) || !double.IsFinite(color.B))
-        {
-            throw new ArgumentOutOfRangeException(paramName, color, "All RGB channels must be finite.");
         }
     }
 }

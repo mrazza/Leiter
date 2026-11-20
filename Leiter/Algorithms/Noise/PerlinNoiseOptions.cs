@@ -17,7 +17,7 @@ public sealed record PerlinNoiseOptions(
     double Frequency = 0.05,
     int Octaves = 4,
     double Lacunarity = 2.0,
-    double Persistence = 0.5) : IValidatableOptions
+    double Persistence = 0.5) : ISizeTunableOptions<PerlinNoiseOptions>
 {
     /// <summary>
     /// The maximum supported number of fractal noise octaves.
@@ -58,10 +58,9 @@ public sealed record PerlinNoiseOptions(
         PerlinNoiseOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
+        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
         ArgumentNullException.ThrowIfNull(baseline);
         baseline.Validate();
-
-        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
         if (totalPixels == 0)
         {
             return baseline;
@@ -81,15 +80,12 @@ public sealed record PerlinNoiseOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="PerlinNoiseOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static PerlinNoiseOptions ForImage<T>(
         IReadOnlyMatrix<T> image,
         double referenceDimension = DefaultReferenceDimension)
-        where T : struct
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        return ForSize(image.Size, referenceDimension);
-    }
+        where T : struct =>
+        OptionTuning.TuneForSizeImage<PerlinNoiseOptions, T>(image, referenceDimension);
 
     /// <summary>
     /// Creates <see cref="PerlinNoiseOptions"/> by scaling <paramref name="baseline"/> for the dimensions of <paramref name="image"/>.
@@ -105,11 +101,8 @@ public sealed record PerlinNoiseOptions(
         IReadOnlyMatrix<T> image,
         PerlinNoiseOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
-        where T : struct
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        return ForSize(image.Size, baseline, referenceDimension);
-    }
+        where T : struct =>
+        OptionTuning.TuneForSizeImage(image, baseline, referenceDimension);
 
     /// <summary>
     /// Validates that all configuration parameters are within their required domains.

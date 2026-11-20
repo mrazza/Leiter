@@ -5,14 +5,22 @@ using Leiter.Algorithms;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="EdgeDarkeningOptions"/>.
 /// </summary>
-public class EdgeDarkeningOptionsTests
+public class EdgeDarkeningOptionsTests : SizeTunableOptionsContractTestsBase<EdgeDarkeningOptions>
 {
+    /// <inheritdoc/>
+    protected override EdgeDarkeningOptions CreateValidCustomOptions() =>
+        new(Intensity: 2.4, BlurSigma: 1.2, GradientOperator: GradientOperator.Scharr);
+
+    /// <inheritdoc/>
+    protected override EdgeDarkeningOptions CreateInvalidOptions() =>
+        new(Intensity: -1.0);
     /// <summary>
     /// Verifies that default options match expected default values and pass validation.
     /// </summary>
@@ -108,8 +116,17 @@ public class EdgeDarkeningOptionsTests
 
         Assert.True(EdgeDarkeningOptions.ForImage(flat).Intensity > EdgeDarkeningOptions.ForImage(vibrant).Intensity);
 
+        EdgeDarkeningOptions customBaseline = CreateValidCustomOptions();
+        EdgeDarkeningOptions customHalf = EdgeDarkeningOptions.ForSize(new Size(400, 400), customBaseline);
+        Assert.Equal(0.6, customHalf.BlurSigma, 6);
+        Assert.Equal(GradientOperator.Scharr, customHalf.GradientOperator);
+        Assert.True(customHalf.Intensity < customBaseline.Intensity);
+        Assert.Equal(GradientOperator.Scharr, EdgeDarkeningOptions.ForImage(vibrant, customBaseline).GradientOperator);
+        Assert.True(EdgeDarkeningOptions.ForImage(flat, customBaseline).Intensity > EdgeDarkeningOptions.ForImage(vibrant, customBaseline).Intensity);
+
         Assert.Throws<ArgumentOutOfRangeException>(() => EdgeDarkeningOptions.ForSize(new Size(10, -1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => EdgeDarkeningOptions.ForSize(new Size(10, 10), double.PositiveInfinity));
         Assert.Throws<ArgumentNullException>(() => EdgeDarkeningOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>(() => EdgeDarkeningOptions.ForImage(flat, null!));
     }
 }

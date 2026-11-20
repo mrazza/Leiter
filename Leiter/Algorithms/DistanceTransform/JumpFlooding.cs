@@ -27,28 +27,54 @@ public static class JumpFlooding
         ArgumentNullException.ThrowIfNull(binaryMask);
 
         var seeds = new List<Coord>();
-        int width = binaryMask.Width;
-        int height = binaryMask.Height;
-        if (width == 0 || height == 0)
+        Size size = binaryMask.Size;
+        if (size.IsEmpty)
             return seeds;
 
         ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(eightConnectedBackground ? GridConnectivity.EightConnected : GridConnectivity.FourConnected);
+        int width = size.Width;
+        int height = size.Height;
 
-        for (int y = 0; y < height; y++)
+        if (binaryMask.TryGetReadOnlySpan(out ReadOnlySpan<bool> maskSpan))
         {
-            for (int x = 0; x < width; x++)
+            for (int y = 0; y < height; y++)
             {
-                if (!binaryMask[x, y])
-                    continue;
-
-                var coord = new Coord(x, y);
-                foreach (GridNeighbor neighbor in neighbors)
+                for (int x = 0; x < width; x++)
                 {
-                    Coord neighborCoord = coord + neighbor.Offset;
-                    if (binaryMask.Contains(neighborCoord) && !binaryMask[neighborCoord])
+                    if (!maskSpan[size.IndexOf(x, y)])
+                        continue;
+
+                    var coord = new Coord(x, y);
+                    foreach (GridNeighbor neighbor in neighbors)
                     {
-                        seeds.Add(coord);
-                        break;
+                        Coord neighborCoord = coord + neighbor.Offset;
+                        if (size.Contains(neighborCoord) && !maskSpan[size.IndexOf(neighborCoord)])
+                        {
+                            seeds.Add(coord);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (!binaryMask[x, y])
+                        continue;
+
+                    var coord = new Coord(x, y);
+                    foreach (GridNeighbor neighbor in neighbors)
+                    {
+                        Coord neighborCoord = coord + neighbor.Offset;
+                        if (size.Contains(neighborCoord) && !binaryMask[neighborCoord])
+                        {
+                            seeds.Add(coord);
+                            break;
+                        }
                     }
                 }
             }
@@ -69,22 +95,21 @@ public static class JumpFlooding
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="seeds"/> is <see langword="null"/>.</exception>
     public static Matrix<NearestSeed> ComputeNearestSeeds(Size size, IEnumerable<Coord> seeds)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
-        ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
+        Guard.ThrowIfNegative(size);
         ArgumentNullException.ThrowIfNull(seeds);
 
-        if (size.Width == 0 || size.Height == 0)
+        if (size.IsEmpty)
             return new SequentialMatrix<NearestSeed>(size);
 
-        var seedGrid = new int[size.Width * size.Height];
+        var seedGrid = new int[size.Count];
         Array.Fill(seedGrid, -1);
 
         bool hasAnySeed = false;
         foreach (Coord seed in seeds)
         {
-            if ((uint)seed.X < (uint)size.Width && (uint)seed.Y < (uint)size.Height)
+            if (size.Contains(seed))
             {
-                int index = (seed.Y * size.Width) + seed.X;
+                int index = size.IndexOf(seed);
                 seedGrid[index] = index;
                 hasAnySeed = true;
             }
@@ -105,33 +130,51 @@ public static class JumpFlooding
     {
         ArgumentNullException.ThrowIfNull(seedMask);
 
-        if (seedMask.Count == 0)
-            return new SequentialMatrix<NearestSeed>(seedMask.Size);
+        Size size = seedMask.Size;
+        if (size.IsEmpty)
+            return new SequentialMatrix<NearestSeed>(size);
 
-        int width = seedMask.Width;
-        int height = seedMask.Height;
         var seedGrid = new int[seedMask.Count];
         bool hasAnySeed = false;
 
-        for (int y = 0; y < height; y++)
+        if (seedMask.TryGetReadOnlySpan(out ReadOnlySpan<bool> maskSpan))
         {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
+            for (int i = 0; i < maskSpan.Length; i++)
             {
-                int index = rowBase + x;
-                if (seedMask[x, y])
+                if (maskSpan[i])
                 {
-                    seedGrid[index] = index;
+                    seedGrid[i] = i;
                     hasAnySeed = true;
                 }
                 else
                 {
-                    seedGrid[index] = -1;
+                    seedGrid[i] = -1;
+                }
+            }
+        }
+        else
+        {
+            int width = size.Width;
+            int height = size.Height;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int index = size.IndexOf(x, y);
+                    if (seedMask[x, y])
+                    {
+                        seedGrid[index] = index;
+                        hasAnySeed = true;
+                    }
+                    else
+                    {
+                        seedGrid[index] = -1;
+                    }
                 }
             }
         }
 
-        return RunJumpFlooding(seedMask.Size, seedGrid, hasAnySeed);
+        return RunJumpFlooding(size, seedGrid, hasAnySeed);
     }
 
     /// <summary>
@@ -153,9 +196,7 @@ public static class JumpFlooding
 
     private static Matrix<NearestSeed> RunJumpFlooding(Size size, int[] currentSeeds, bool hasAnySeed)
     {
-        int width = size.Width;
-        int height = size.Height;
-        var result = new SequentialMatrix<NearestSeed>(width, height);
+        var result = new SequentialMatrix<NearestSeed>(size);
 
         if (!hasAnySeed)
         {
@@ -163,47 +204,45 @@ public static class JumpFlooding
             return result;
         }
 
-        int maxDimension = Math.Max(width, height);
+        int maxDimension = Math.Max(size.Width, size.Height);
         if (maxDimension > 1)
         {
             var nextSeeds = new int[currentSeeds.Length];
 
-            ExecuteJumpPass(currentSeeds, nextSeeds, width, height, 1);
+            ExecuteJumpPass(currentSeeds, nextSeeds, size, 1);
             (currentSeeds, nextSeeds) = (nextSeeds, currentSeeds);
 
             int largestStep = 1 << BitOperations.Log2((uint)(maxDimension - 1));
             for (int step = largestStep; step >= 1; step >>= 1)
             {
-                ExecuteJumpPass(currentSeeds, nextSeeds, width, height, step);
+                ExecuteJumpPass(currentSeeds, nextSeeds, size, step);
                 (currentSeeds, nextSeeds) = (nextSeeds, currentSeeds);
             }
         }
 
-        for (int y = 0; y < height; y++)
+        Span<NearestSeed> resultSpan = result.AsSpan();
+        for (int i = 0; i < currentSeeds.Length; i++)
         {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-            {
-                int seedIndex = currentSeeds[rowBase + x];
-                result[x, y] = NearestSeed.FromCoord(new Coord(seedIndex % width, seedIndex / width));
-            }
+            resultSpan[i] = NearestSeed.FromCoord(size.CoordOf(currentSeeds[i]));
         }
 
         return result;
     }
 
-    private static void ExecuteJumpPass(int[] source, int[] destination, int width, int height, int step)
+    private static void ExecuteJumpPass(int[] source, int[] destination, Size size, int step)
     {
+        int width = size.Width;
+        int height = size.Height;
+
         Parallel.For(0, height, y =>
         {
-            int rowBase = y * width;
-
             for (int x = 0; x < width; x++)
             {
-                int currentIndex = rowBase + x;
+                var current = new Coord(x, y);
+                int currentIndex = size.IndexOf(current);
                 int bestSeed = source[currentIndex];
                 long bestDistSq = bestSeed >= 0
-                    ? DistanceSquared(x, y, bestSeed % width, bestSeed / width)
+                    ? current.DistanceSquared(size.CoordOf(bestSeed))
                     : long.MaxValue;
 
                 for (int dy = -step; dy <= step; dy += step)
@@ -212,7 +251,6 @@ public static class JumpFlooding
                     if ((uint)ny >= (uint)height)
                         continue;
 
-                    int neighborRowBase = ny * width;
                     for (int dx = -step; dx <= step; dx += step)
                     {
                         if (dx == 0 && dy == 0)
@@ -222,11 +260,11 @@ public static class JumpFlooding
                         if ((uint)nx >= (uint)width)
                             continue;
 
-                        int candidateSeed = source[neighborRowBase + nx];
+                        int candidateSeed = source[size.IndexOf(nx, ny)];
                         if (candidateSeed < 0)
                             continue;
 
-                        long distSq = DistanceSquared(x, y, candidateSeed % width, candidateSeed / width);
+                        long distSq = current.DistanceSquared(size.CoordOf(candidateSeed));
                         if (distSq < bestDistSq || (distSq == bestDistSq && candidateSeed < bestSeed))
                         {
                             bestDistSq = distSq;
@@ -242,31 +280,45 @@ public static class JumpFlooding
 
     private static Matrix<DoublePixel> ComputeDistancesFromNearestSeeds(Matrix<NearestSeed> nearestSeeds)
     {
-        int width = nearestSeeds.Width;
-        int height = nearestSeeds.Height;
-        var distances = new SequentialMatrix<DoublePixel>(width, height);
+        Size size = nearestSeeds.Size;
+        var distances = new SequentialMatrix<DoublePixel>(size);
 
-        if (nearestSeeds.Count == 0)
+        if (size.IsEmpty)
             return distances;
 
-        Parallel.For(0, height, y =>
+        int width = size.Width;
+        int height = size.Height;
+        DoublePixel[] distRaw = distances.RawData;
+
+        if (nearestSeeds is SequentialMatrix<NearestSeed> seqSeeds)
         {
-            for (int x = 0; x < width; x++)
+            NearestSeed[] seedRaw = seqSeeds.RawData;
+            Parallel.For(0, height, y =>
             {
-                NearestSeed entry = nearestSeeds[x, y];
-                distances[x, y] = entry.HasSeed
-                    ? Math.Sqrt(DistanceSquared(x, y, entry.Seed.X, entry.Seed.Y))
-                    : double.PositiveInfinity;
-            }
-        });
+                for (int x = 0; x < width; x++)
+                {
+                    int index = size.IndexOf(x, y);
+                    NearestSeed entry = seedRaw[index];
+                    distRaw[index] = entry.HasSeed
+                        ? entry.Seed.Distance(new Coord(x, y))
+                        : double.PositiveInfinity;
+                }
+            });
+        }
+        else
+        {
+            Parallel.For(0, height, y =>
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    NearestSeed entry = nearestSeeds[x, y];
+                    distRaw[size.IndexOf(x, y)] = entry.HasSeed
+                        ? entry.Seed.Distance(new Coord(x, y))
+                        : double.PositiveInfinity;
+                }
+            });
+        }
 
         return distances;
-    }
-
-    private static long DistanceSquared(int x0, int y0, int x1, int y1)
-    {
-        long dx = x0 - x1;
-        long dy = y0 - y1;
-        return (dx * dx) + (dy * dy);
     }
 }

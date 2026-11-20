@@ -20,6 +20,26 @@ public class MatrixTests
         Assert.Equal(2, matrix.Height);
         Assert.Equal(new Size(3, 2), matrix.Size);
         Assert.Equal(6, matrix.Count);
+
+        var empty00 = new MinimalMatrix(0, 0);
+        var empty03 = new MinimalMatrix(0, 3);
+        var empty30 = new MinimalMatrix(3, 0);
+        Assert.Empty(empty00);
+        Assert.Empty(empty03);
+        Assert.Empty(empty30);
+    }
+
+    [Fact]
+    public void Constructor_NegativeDimensions_ShouldThrowArgumentOutOfRangeException()
+    {
+        ArgumentOutOfRangeException negWidth = Assert.Throws<ArgumentOutOfRangeException>(() => new MinimalMatrix(-1, 2));
+        Assert.Equal("width", negWidth.ParamName);
+
+        ArgumentOutOfRangeException negHeight = Assert.Throws<ArgumentOutOfRangeException>(() => new MinimalMatrix(2, -1));
+        Assert.Equal("height", negHeight.ParamName);
+
+        ArgumentOutOfRangeException bothNeg = Assert.Throws<ArgumentOutOfRangeException>(() => new MinimalMatrix(-3, -4));
+        Assert.Equal("width", bothNeg.ParamName);
     }
 
     [Fact]

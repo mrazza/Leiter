@@ -20,7 +20,7 @@ public sealed record SaliencyCutOptions(
     int TrimapBandRadius = 10,
     GrabCutOptions? GrabCut = null,
     SaliencyMaskOptions? Mask = null,
-    int? MaxWorkingDimension = null) : IValidatableOptions
+    int? MaxWorkingDimension = null) : IProfileTunableOptions<SaliencyCutOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default band radii and smoothness weights apply unscaled.
@@ -53,28 +53,40 @@ public sealed record SaliencyCutOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="SaliencyCutOptions"/> instance tuned for <paramref name="size"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static SaliencyCutOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension)
+    public static SaliencyCutOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="SaliencyCutOptions"/> by scaling <paramref name="baseline"/> trimap band radius and inner GrabCut smoothness for <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline SaliencyCut configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="SaliencyCutOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static SaliencyCutOptions ForSize(
+        Size size,
+        SaliencyCutOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        SaliencyCutOptions defaults = Default;
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
         if (totalPixels == 0)
         {
-            return defaults with
-            {
-                GrabCut = DefaultGrabCut,
-                Mask = DefaultMask
-            };
+            return baseline;
         }
 
         int maxBand = Math.Max(1, Math.Min(size.Width, size.Height) / 3);
-        int bandRadius = Math.Clamp(OptionTuning.RoundPositiveInt(defaults.TrimapBandRadius * s), 1, maxBand);
+        int bandRadius = Math.Clamp(OptionTuning.RoundPositiveInt(baseline.TrimapBandRadius * s), 1, maxBand);
+        GrabCutOptions grabCutBaseline = baseline.GrabCut ?? DefaultGrabCut;
 
-        return defaults with
+        return baseline with
         {
             TrimapBandRadius = bandRadius,
-            GrabCut = GrabCutOptions.ForSize(size, referenceDimension) with { Iterations = DefaultGrabCut.Iterations },
-            Mask = DefaultMask,
-            MaxWorkingDimension = null
+            GrabCut = GrabCutOptions.ForSize(size, grabCutBaseline, referenceDimension),
+            Mask = baseline.Mask ?? DefaultMask
         };
     }
 
@@ -85,27 +97,48 @@ public sealed record SaliencyCutOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="SaliencyCutOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static SaliencyCutOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
-        double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        ImageTuningProfile profile = ImageTuningProfile.Analyze(image);
-        return ForProfile(in profile, referenceDimension);
-    }
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage<SaliencyCutOptions>(image, referenceDimension);
 
-    internal static SaliencyCutOptions ForProfile(in ImageTuningProfile profile, double referenceDimension)
+    /// <summary>
+    /// Creates <see cref="SaliencyCutOptions"/> tuned from <paramref name="baseline"/> for the dimensions and color complexity of <paramref name="image"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image to analyze.</param>
+    /// <param name="baseline">The baseline SaliencyCut configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="SaliencyCutOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static SaliencyCutOptions ForImage(
+        IReadOnlyMatrix<Rgb8> image,
+        SaliencyCutOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForImage(image, baseline, referenceDimension);
+
+    static SaliencyCutOptions IProfileTunableOptions<SaliencyCutOptions>.ForProfile(
+        in ImageTuningProfile profile,
+        SaliencyCutOptions baseline,
+        double referenceDimension) =>
+        ForProfile(in profile, baseline, referenceDimension);
+
+    internal static SaliencyCutOptions ForProfile(
+        in ImageTuningProfile profile,
+        SaliencyCutOptions baseline,
+        double referenceDimension)
     {
-        SaliencyCutOptions scaled = ForSize(profile.ImageSize, referenceDimension);
+        SaliencyCutOptions scaled = ForSize(profile.ImageSize, baseline, referenceDimension);
         if (profile.IsEmpty)
         {
             return scaled;
         }
 
+        GrabCutOptions grabCutBaseline = baseline.GrabCut ?? DefaultGrabCut;
         return scaled with
         {
-            GrabCut = GrabCutOptions.ForProfile(in profile, referenceDimension) with { Iterations = DefaultGrabCut.Iterations }
+            GrabCut = GrabCutOptions.ForProfile(in profile, grabCutBaseline, referenceDimension)
         };
     }
 

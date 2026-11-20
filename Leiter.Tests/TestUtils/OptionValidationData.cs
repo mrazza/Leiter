@@ -52,4 +52,10 @@ public static class OptionValidationData
     /// </summary>
     public static TheoryData<double> InvalidSignedUnitDoubles =>
         [-1.01, 1.01, double.NaN, double.PositiveInfinity, double.NegativeInfinity];
+
+    /// <summary>
+    /// Invalid non-finite values for unconstrained finite <see cref="double"/> parameters.
+    /// </summary>
+    public static TheoryData<double> InvalidNonFiniteDoubles =>
+        [double.NaN, double.PositiveInfinity, double.NegativeInfinity];
 }

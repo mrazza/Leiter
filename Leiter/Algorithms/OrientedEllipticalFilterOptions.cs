@@ -13,7 +13,7 @@ using Leiter.Core;
 public sealed record OrientedEllipticalFilterOptions(
     double MajorRadius = 6.0,
     double MinorRadius = 1.5,
-    double SigmaScale = 0.5) : IValidatableOptions
+    double SigmaScale = 0.5) : ISizeTunableOptions<OrientedEllipticalFilterOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default radii apply unscaled.
@@ -34,19 +34,35 @@ public sealed record OrientedEllipticalFilterOptions(
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static OrientedEllipticalFilterOptions ForSize(
         Size size,
+        double referenceDimension = DefaultReferenceDimension) =>
+        ForSize(size, Default, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="OrientedEllipticalFilterOptions"/> by scaling <paramref name="baseline"/> semi-axes linearly to <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The target image dimensions.</param>
+    /// <param name="baseline">The baseline elliptical filter configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="OrientedEllipticalFilterOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static OrientedEllipticalFilterOptions ForSize(
+        Size size,
+        OrientedEllipticalFilterOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
         var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        OrientedEllipticalFilterOptions defaults = Default;
+        ArgumentNullException.ThrowIfNull(baseline);
+        baseline.Validate();
         if (totalPixels == 0)
         {
-            return defaults;
+            return baseline;
         }
 
-        return defaults with
+        return baseline with
         {
-            MajorRadius = Math.Max(0.25, defaults.MajorRadius * s),
-            MinorRadius = Math.Max(0.25, defaults.MinorRadius * s)
+            MajorRadius = Math.Max(0.25, baseline.MajorRadius * s),
+            MinorRadius = Math.Max(0.25, baseline.MinorRadius * s)
         };
     }
 
@@ -58,15 +74,29 @@ public sealed record OrientedEllipticalFilterOptions(
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
     /// <returns>A validated <see cref="OrientedEllipticalFilterOptions"/> instance tuned for <paramref name="image"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static OrientedEllipticalFilterOptions ForImage<T>(
         IReadOnlyMatrix<T> image,
         double referenceDimension = DefaultReferenceDimension)
-        where T : struct
-    {
-        OptionTuning.ValidateImageAndReference(image, referenceDimension);
-        return ForSize(image.Size, referenceDimension);
-    }
+        where T : struct =>
+        OptionTuning.TuneForSizeImage<OrientedEllipticalFilterOptions, T>(image, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="OrientedEllipticalFilterOptions"/> by scaling <paramref name="baseline"/> for the dimensions of <paramref name="image"/>.
+    /// </summary>
+    /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
+    /// <param name="image">The target image matrix whose dimensions guide scaling.</param>
+    /// <param name="baseline">The baseline elliptical filter configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>A validated <see cref="OrientedEllipticalFilterOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static OrientedEllipticalFilterOptions ForImage<T>(
+        IReadOnlyMatrix<T> image,
+        OrientedEllipticalFilterOptions baseline,
+        double referenceDimension = DefaultReferenceDimension)
+        where T : struct =>
+        OptionTuning.TuneForSizeImage(image, baseline, referenceDimension);
 
     /// <summary>
     /// Validates that all configuration parameters are within their required domains.

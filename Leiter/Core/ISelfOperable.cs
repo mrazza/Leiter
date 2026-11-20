@@ -6,7 +6,6 @@ namespace Leiter.Core;
 /// <typeparam name="T">The type that implements this interface.</typeparam>
 public interface ISelfOperable<T>
 {
-    // TODO: Does this belong here or somewhere else?
     /// <summary>
     /// Gets the additive identity value (zero) for the type.
     /// </summary>

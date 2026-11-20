@@ -129,4 +129,40 @@ public class MaskExtensionsTests
         Assert.Throws<ArgumentException>(() => small.Except(differentSize));
         Assert.Throws<ArgumentException>(() => image.ApplyMask(differentSize));
     }
+
+    [Fact]
+    public void NonSequentialMatrixViews_ShouldMatchMaskOperationsAndApplyMask()
+    {
+        var leftMask = new MaskMatrix(3, 3);
+        leftMask[1, 1] = true;
+        leftMask[2, 1] = true;
+
+        var rightMask = new MaskMatrix(3, 3);
+        rightMask[2, 1] = true;
+        rightMask[1, 2] = true;
+
+        var leftView = new MatrixView<bool>(leftMask, 1, 1, 2, 2, EdgeHandling.Extend);
+        var rightView = new MatrixView<bool>(rightMask, 1, 1, 2, 2, EdgeHandling.Extend);
+        MaskMatrix leftMat = leftView.ToMaskMatrix();
+        MaskMatrix rightMat = rightView.ToMaskMatrix();
+
+        Assert.Equal(leftMat.CountTrue(), leftView.CountTrue());
+        Assert.Equal(leftMat.CountFalse(), leftView.CountFalse());
+        Assert.True(leftMat.Invert().ContentEquals(leftView.Invert()));
+        Assert.True(leftMat.And(rightMat).ContentEquals(leftView.And(rightView)));
+        Assert.True(leftMat.Or(rightMat).ContentEquals(leftView.Or(rightMat)));
+        Assert.True(leftMat.Except(rightMat).ContentEquals(leftMat.Except(rightView)));
+
+        var image = new SequentialMatrix<Rgb8>(3, 3);
+        image[1, 1] = new Rgb8(10, 20, 30);
+        image[2, 1] = new Rgb8(40, 50, 60);
+        image[1, 2] = new Rgb8(70, 80, 90);
+        image[2, 2] = new Rgb8(100, 110, 120);
+
+        var imageView = new MatrixView<Rgb8>(image, 1, 1, 2, 2, EdgeHandling.Extend);
+        var fallback = new Rgb8(5, 5, 5);
+        Matrix<Rgb8> expected = imageView.ToSequentialMatrix().ApplyMask(leftMat, fallback);
+        Matrix<Rgb8> actual = imageView.ApplyMask(leftView, fallback);
+        Assert.True(expected.ContentEquals(actual));
+    }
 }

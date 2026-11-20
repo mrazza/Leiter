@@ -236,4 +236,73 @@ public class SegmentationVisualizerTests
         Assert.Equal(new Size(0, 0), emptyFromDsuAssigner.Size);
         Assert.False(assignerCalled);
     }
+
+    [Fact]
+    public void AverageColorAssigner_Generic_ShouldSupportRgb8Rgb64Lab32AndEmptyRegions()
+    {
+        // Rgb8 generic assigner: accurate over >10 pixels (sum > 255) and returns default on empty region
+        var rgb8Img = new SequentialMatrix<Rgb8>(4, 4);
+        var allCoords = new List<Coord>();
+        for (int y = 0; y < 4; y++)
+        {
+            for (int x = 0; x < 4; x++)
+            {
+                rgb8Img[x, y] = ((x + y) % 2 == 0) ? new Rgb8(180, 200, 220) : new Rgb8(220, 240, 240);
+                allCoords.Add(new Coord(x, y));
+            }
+        }
+
+        var fullRegion = new Region<Coord>(allCoords) { Id = 0 };
+        var emptyRegion = new Region<Coord>() { Id = 1 };
+
+        SegmentationVisualizer.ColorAssigner<Rgb8> rgb8Assigner = SegmentationVisualizer.AverageColorAssigner<Rgb8>();
+        Assert.Equal(new Rgb8(200, 220, 230), rgb8Assigner(rgb8Img, fullRegion));
+        Assert.Equal(default, rgb8Assigner(rgb8Img, emptyRegion));
+        Assert.Throws<ArgumentNullException>(() => rgb8Assigner(null!, fullRegion));
+        Assert.Throws<ArgumentNullException>(() => rgb8Assigner(rgb8Img, null!));
+
+        Matrix<Rgb8> rgb8Colored = SegmentationVisualizer.ColorRegions(rgb8Img, [fullRegion], rgb8Assigner);
+        Assert.Equal(new Rgb8(200, 220, 230), rgb8Colored[0, 0]);
+        Assert.Equal(new Rgb8(200, 220, 230), rgb8Colored[3, 3]);
+
+        // Rgb64 generic assigner
+        var rgb64Img = new SequentialMatrix<Rgb64>(2, 1);
+        rgb64Img[0, 0] = new Rgb64(0.2, 0.4, 0.6);
+        rgb64Img[1, 0] = new Rgb64(0.6, 0.8, 1.0);
+        var twoPixelRegion = new Region<Coord>([new Coord(0, 0), new Coord(1, 0)]) { Id = 0 };
+
+        SegmentationVisualizer.ColorAssigner<Rgb64> rgb64Assigner = SegmentationVisualizer.AverageColorAssigner<Rgb64>();
+        Rgb64 meanRgb64 = rgb64Assigner(rgb64Img, twoPixelRegion);
+        Assert.Equal(0.4, meanRgb64.R, 10);
+        Assert.Equal(0.6, meanRgb64.G, 10);
+        Assert.Equal(0.8, meanRgb64.B, 10);
+        Assert.Equal(default, rgb64Assigner(rgb64Img, emptyRegion));
+
+        Matrix<Rgb64> rgb64Colored = SegmentationVisualizer.ColorRegions(rgb64Img, [twoPixelRegion], rgb64Assigner);
+        Assert.Equal(0.4, rgb64Colored[1, 0].R, 10);
+
+        // Lab32 generic assigner across >10 pixels including negative chromaticity channels
+        var labImg = new SequentialMatrix<Lab32>(4, 4);
+        for (int y = 0; y < 4; y++)
+        {
+            for (int x = 0; x < 4; x++)
+            {
+                labImg[x, y] = ((x + y) % 2 == 0)
+                    ? new Lab32(30.0f, -30.0f, 15.0f)
+                    : new Lab32(70.0f, 10.0f, -5.0f);
+            }
+        }
+
+        SegmentationVisualizer.ColorAssigner<Lab32> labAssigner = SegmentationVisualizer.AverageColorAssigner<Lab32>();
+        Lab32 meanLab = labAssigner(labImg, fullRegion);
+        Assert.Equal(50.0f, meanLab.L, 5);
+        Assert.Equal(-10.0f, meanLab.A, 5);
+        Assert.Equal(5.0f, meanLab.B, 5);
+        Assert.Equal(default, labAssigner(labImg, emptyRegion));
+
+        Matrix<Lab32> labColored = SegmentationVisualizer.ColorRegions(labImg, [fullRegion], labAssigner);
+        Assert.Equal(50.0f, labColored[2, 3].L, 5);
+        Assert.Equal(-10.0f, labColored[2, 3].A, 5);
+        Assert.Equal(5.0f, labColored[2, 3].B, 5);
+    }
 }

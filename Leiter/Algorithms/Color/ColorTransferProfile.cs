@@ -1,5 +1,6 @@
 namespace Leiter.Algorithms.Color;
 
+using Leiter.Core;
 using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
@@ -11,4 +12,25 @@ using Leiter.Pixels.ColorSpaces;
 public sealed record ColorTransferProfile(
     string Name,
     LabColorStatistics Statistics,
-    Illuminant Illuminant = Illuminant.E);
+    Illuminant Illuminant = Illuminant.E) : IValidatableOptions
+{
+    /// <summary>
+    /// Validates that <see cref="Name"/>, <see cref="Illuminant"/>, and <see cref="Statistics"/> are valid and finite.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">Thrown when <see cref="Name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <see cref="Name"/> is empty or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <see cref="Illuminant"/> is undefined, any mean is non-finite, or any standard deviation is negative or non-finite.</exception>
+    public void Validate() => Validate(paramName: null);
+
+    internal void Validate(string? paramName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(Name, paramName ?? nameof(Name));
+        Guard.ThrowIfUndefinedEnum(Illuminant, paramName ?? nameof(Illuminant));
+        Guard.ThrowIfNotFinite(Statistics.MeanL, paramName ?? nameof(Statistics));
+        Guard.ThrowIfNotFinite(Statistics.MeanA, paramName ?? nameof(Statistics));
+        Guard.ThrowIfNotFinite(Statistics.MeanB, paramName ?? nameof(Statistics));
+        Guard.ThrowIfNotFiniteNonNegative(Statistics.StdDevL, paramName ?? nameof(Statistics));
+        Guard.ThrowIfNotFiniteNonNegative(Statistics.StdDevA, paramName ?? nameof(Statistics));
+        Guard.ThrowIfNotFiniteNonNegative(Statistics.StdDevB, paramName ?? nameof(Statistics));
+    }
+}

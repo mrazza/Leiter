@@ -3,6 +3,7 @@ namespace Leiter.Tests.Algorithms.Morphology;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Morphology;
 using Leiter.Core;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -246,5 +247,53 @@ public class BinaryMorphologyTests
         Assert.False(BinaryMorphology.Erode(singleTrue, 1, StructuringElementShape.Square, borderIsBackground: true)[0, 0]);
         Assert.True(BinaryMorphology.Erode(singleTrue, 0, StructuringElementShape.Disk, borderIsBackground: true)[0, 0]);
         Assert.False(BinaryMorphology.Erode(singleFalse, 1, StructuringElementShape.Disk, borderIsBackground: false)[0, 0]);
+    }
+
+    [Fact]
+    public void NonSequentialMatrixView_ShouldMatchMaterializedMorphologyAndConnectedComponents()
+    {
+        var source = new MaskMatrix(12, 12);
+        for (int y = 2; y <= 5; y++)
+        {
+            for (int x = 2; x <= 5; x++)
+                source[x, y] = true;
+        }
+
+        source[3, 3] = false;
+        source[8, 8] = true;
+        source[9, 8] = true;
+        source[8, 9] = true;
+        source[1, 10] = true;
+
+        var view = new MatrixView<bool>(source, 1, 1, 10, 10, EdgeHandling.Extend);
+        MaskMatrix materialized = view.ToMaskMatrix();
+
+        foreach (StructuringElementShape shape in new[] { StructuringElementShape.Disk, StructuringElementShape.Square })
+        {
+            MatrixAssert.Equal(BinaryMorphology.Dilate(materialized, 2, shape), BinaryMorphology.Dilate(view, 2, shape));
+            MatrixAssert.Equal(BinaryMorphology.Erode(materialized, 1, shape, borderIsBackground: false), BinaryMorphology.Erode(view, 1, shape, borderIsBackground: false));
+            MatrixAssert.Equal(BinaryMorphology.Erode(materialized, 1, shape, borderIsBackground: true), BinaryMorphology.Erode(view, 1, shape, borderIsBackground: true));
+            MatrixAssert.Equal(BinaryMorphology.Open(materialized, 1, shape), BinaryMorphology.Open(view, 1, shape));
+            MatrixAssert.Equal(BinaryMorphology.Close(materialized, 1, shape), BinaryMorphology.Close(view, 1, shape));
+        }
+
+        foreach (ComponentRetentionPolicy policy in new[]
+        {
+            ComponentRetentionPolicy.MinimumAreaFraction,
+            ComponentRetentionPolicy.LargestComponentOnly,
+            ComponentRetentionPolicy.KeepAll
+        })
+        {
+            MatrixAssert.Equal(
+                BinaryMorphology.FilterConnectedComponents(materialized, policy, 0.02, GridConnectivity.EightConnected),
+                BinaryMorphology.FilterConnectedComponents(view, policy, 0.02, GridConnectivity.EightConnected));
+            MatrixAssert.Equal(
+                BinaryMorphology.FilterConnectedComponents(materialized, policy, 0.02, GridConnectivity.FourConnected),
+                BinaryMorphology.FilterConnectedComponents(view, policy, 0.02, GridConnectivity.FourConnected));
+        }
+
+        var emptyMask = new MaskMatrix(4, 4);
+        var allFalseView = new MatrixView<bool>(emptyMask, 0, 0, 3, 3, EdgeHandling.Extend);
+        MatrixAssert.Equal(new MaskMatrix(3, 3), BinaryMorphology.FilterConnectedComponents(allFalseView));
     }
 }

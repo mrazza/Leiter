@@ -591,4 +591,58 @@ public class WetInWetFilterTests
         Assert.True(result.WetAreaMask[width - 1, height / 2]);
         Assert.False(result.WetAreaMask[0, height / 2]);
     }
+
+    /// <summary>
+    /// Verifies that <see cref="WetInWetFilter.ApplyDetailedCore"/> with precomputed salient fractions matches
+    /// <see cref="WetInWetFilter.ApplyDetailed(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{bool}?, WetInWetOptions?)"/>
+    /// and executes deterministically across multiple gradient-bearing regions.
+    /// </summary>
+    [Fact]
+    public void ApplyDetailedCore_PrecomputedSalientFractionsAndMultiRegionParallelism_ShouldMatchAndBeDeterministic()
+    {
+        const int width = 12;
+        const int height = 10;
+        var image = new SequentialMatrix<Rgb8>(width, height);
+        var labels = new SequentialMatrix<int>(width, height);
+        var salientMask = new MaskMatrix(width, height);
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int regionId = (x / 4) + ((y / 5) * 3);
+                labels[x, y] = regionId;
+                byte r = (byte)Math.Clamp(30 + (regionId * 35) + (x * 4), 0, 255);
+                byte g = (byte)Math.Clamp(20 + (regionId * 25) + (y * 6), 0, 255);
+                byte b = (byte)Math.Clamp(40 + ((5 - regionId) * 30), 0, 255);
+                image[x, y] = new Rgb8(r, g, b);
+
+                // Region 0 gets exact 50% salience (matching default threshold 0.5), Region 1 gets 100%, others 0%
+                if (regionId == 0 && y < 2)
+                    salientMask[x, y] = true;
+                else if (regionId == 0 && y == 2 && x < 2)
+                    salientMask[x, y] = true;
+                else if (regionId == 1)
+                    salientMask[x, y] = true;
+            }
+        }
+
+        var graph = RegionGraph.FromLabels(labels);
+        var options = new WetInWetOptions(
+            Mode: WetInWetMode.ExcludeSalientBoundaries,
+            MinIntensityDifference: 0.01,
+            SalientOverlapThreshold: 0.5,
+            Seed: 2026);
+
+        WetInWetResult fromMask = WetInWetFilter.ApplyDetailed(image, graph, salientMask, options);
+        double[] fractions = graph.ComputeRegionFractions(salientMask);
+        WetInWetResult fromFractions = WetInWetFilter.ApplyDetailedCore(image, graph, salientMask: null, fractions, options);
+        WetInWetResult repeated = WetInWetFilter.ApplyDetailedCore(image, graph, salientMask: null, fractions, options);
+
+        MatrixAssert.Equal(fromMask.Image, fromFractions.Image);
+        MatrixAssert.Equal(fromMask.WetAreaMask, fromFractions.WetAreaMask);
+        Assert.Equal(fromMask.QualifyingBoundaries, fromFractions.QualifyingBoundaries);
+        MatrixAssert.Equal(fromFractions.Image, repeated.Image);
+        MatrixAssert.Equal(fromFractions.WetAreaMask, repeated.WetAreaMask);
+    }
 }

@@ -2,14 +2,22 @@ namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
 using Leiter.Algorithms.Saliency;
+using Leiter.Tests.Algorithms;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
 /// Provides unit tests for <see cref="SaliencyDistanceFieldOptions"/>.
 /// </summary>
-public class SaliencyDistanceFieldOptionsTests
+public class SaliencyDistanceFieldOptionsTests : AlgorithmOptionsContractTestsBase<SaliencyDistanceFieldOptions>
 {
+    /// <inheritdoc/>
+    protected override SaliencyDistanceFieldOptions CreateValidCustomOptions() =>
+        new(SmoothingSigma: 1.5, DefaultSigmaScale: 0.05);
+
+    /// <inheritdoc/>
+    protected override SaliencyDistanceFieldOptions CreateInvalidOptions() =>
+        new(DefaultSigmaScale: -0.1);
     [Fact]
     public void Constructor_DefaultProperties_ShouldMatchDefaultInstanceAndPassValidation()
     {

@@ -75,4 +75,19 @@ public class Rgb64Tests : PixelContractTestsBase<Rgb64, double>
         Assert.Equal(0.3, mid.G, 10);
         Assert.Equal(0.85, mid.B, 10);
     }
+
+    [Fact]
+    public void NormAndNormSquared_ShouldComputeEuclideanChannelMagnitude()
+    {
+        var positive = new Rgb64(2.0, 3.0, 6.0);
+        Assert.Equal(49.0, positive.NormSquared(), 12);
+        Assert.Equal(7.0, positive.Norm(), 12);
+
+        var negative = new Rgb64(-2.0, -3.0, -6.0);
+        Assert.Equal(49.0, negative.NormSquared(), 12);
+        Assert.Equal(7.0, negative.Norm(), 12);
+
+        Assert.Equal(0.0, Rgb64.Zero.NormSquared());
+        Assert.Equal(0.0, Rgb64.Zero.Norm());
+    }
 }
