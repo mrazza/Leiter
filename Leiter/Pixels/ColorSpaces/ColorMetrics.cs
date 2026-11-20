@@ -95,6 +95,30 @@ public static class ColorMetrics
     public static double GetSaturation(this Rgb8 pixel) => pixel.ToRgb64().GetSaturation();
 
     /// <summary>
+    /// Computes the HSV/HSL chroma (<c>max(R, G, B) - min(R, G, B)</c>) for an <see cref="Rgb64"/> pixel.
+    /// </summary>
+    /// <param name="pixel">The pixel to evaluate.</param>
+    /// <returns>The non-negative channel range (chroma).</returns>
+    public static double GetChroma(this Rgb64 pixel)
+    {
+        double max = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B));
+        double min = Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
+        return max - min;
+    }
+
+    /// <summary>
+    /// Computes the normalized HSV/HSL chroma in <c>[0, 1]</c> (<c>(max(R, G, B) - min(R, G, B)) / 255</c>) for an <see cref="Rgb8"/> pixel.
+    /// </summary>
+    /// <param name="pixel">The pixel to evaluate.</param>
+    /// <returns>The normalized chroma in <c>[0, 1]</c>.</returns>
+    public static double GetChroma(this Rgb8 pixel)
+    {
+        int max = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B));
+        int min = Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
+        return (max - min) / 255.0;
+    }
+
+    /// <summary>
     /// Computes the CIELCh chroma <c>C* = sqrt(a*² + b*²)</c> for a <see cref="Lab32"/> pixel.
     /// </summary>
     /// <param name="pixel">The CIELAB pixel to evaluate.</param>

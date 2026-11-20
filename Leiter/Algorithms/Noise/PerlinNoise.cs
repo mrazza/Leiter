@@ -72,10 +72,8 @@ public sealed class PerlinNoise
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="x"/> or <paramref name="y"/> is non-finite.</exception>
     public double Sample(double x, double y)
     {
-        if (!double.IsFinite(x))
-            throw new ArgumentOutOfRangeException(nameof(x), x, "Coordinate x must be finite.");
-        if (!double.IsFinite(y))
-            throw new ArgumentOutOfRangeException(nameof(y), y, "Coordinate y must be finite.");
+        Guard.ThrowIfNotFinite(x);
+        Guard.ThrowIfNotFinite(y);
 
         return SampleUnchecked(x, y);
     }
@@ -105,9 +103,9 @@ public sealed class PerlinNoise
         double n01 = Grad(g01, fx, fy - 1.0);
         double n11 = Grad(g11, fx - 1.0, fy - 1.0);
 
-        double nx0 = Lerp(n00, n10, u);
-        double nx1 = Lerp(n01, n11, u);
-        double n = Lerp(nx0, nx1, v);
+        double nx0 = ScalarMath.Lerp(n00, n10, u);
+        double nx1 = ScalarMath.Lerp(n01, n11, u);
+        double n = ScalarMath.Lerp(nx0, nx1, v);
 
         return Math.Clamp(n * Sqrt2, -1.0, 1.0);
     }
@@ -261,9 +259,7 @@ public sealed class PerlinNoise
     {
         ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
         ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
-
-        if (!double.IsFinite(amplitude) || amplitude < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(amplitude), amplitude, "Amplitude must be finite and non-negative.");
+        Guard.ThrowIfNotFiniteNonNegative(amplitude);
 
         PerlinNoiseOptions opts = options ?? PerlinNoiseOptions.Default;
         opts.Validate();
@@ -292,8 +288,6 @@ public sealed class PerlinNoise
 
     private static double Fade(double t) => t * t * t * ((t * ((t * 6.0) - 15.0)) + 10.0);
 
-    private static double Lerp(double a, double b, double t) => a + (t * (b - a));
-
     private static double Grad(int hash, double dx, double dy)
     {
         var (gx, gy) = Gradients[hash & 7];
@@ -302,15 +296,11 @@ public sealed class PerlinNoise
 
     private static void ValidateOctaveParameters(double x, double y, int octaves, double lacunarity, double persistence)
     {
-        if (!double.IsFinite(x))
-            throw new ArgumentOutOfRangeException(nameof(x), x, "Coordinate x must be finite.");
-        if (!double.IsFinite(y))
-            throw new ArgumentOutOfRangeException(nameof(y), y, "Coordinate y must be finite.");
+        Guard.ThrowIfNotFinite(x);
+        Guard.ThrowIfNotFinite(y);
         if (octaves is < 1 or > 16)
             throw new ArgumentOutOfRangeException(nameof(octaves), octaves, "Octaves must be between 1 and 16 inclusive.");
-        if (!double.IsFinite(lacunarity) || lacunarity <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(lacunarity), lacunarity, "Lacunarity must be finite and greater than 0.0.");
-        if (!double.IsFinite(persistence) || persistence < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(persistence), persistence, "Persistence must be finite and non-negative.");
+        Guard.ThrowIfNotFinitePositive(lacunarity);
+        Guard.ThrowIfNotFiniteNonNegative(persistence);
     }
 }

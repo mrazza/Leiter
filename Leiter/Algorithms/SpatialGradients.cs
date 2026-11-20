@@ -108,6 +108,7 @@ public static class SpatialGradients
         if (width == 0 || height == 0)
             return (gradX, gradY, magnitude);
 
+        double normalizedScale = scale / 255.0;
         Parallel.For(0, height, y =>
         {
             int ym1 = Math.Clamp(y - 1, 0, height - 1);
@@ -119,45 +120,63 @@ public static class SpatialGradients
                 int xm1 = Math.Clamp(x - 1, 0, width - 1);
                 int xp1 = Math.Clamp(x + 1, 0, width - 1);
 
-                Rgb8 p_m1_m1 = image[xm1, ym1];
-                Rgb8 p_0_m1 = image[x, ym1];
-                Rgb8 p_p1_m1 = image[xp1, ym1];
+                var (gx, gy) = ComputeRgb8GradientAt(
+                    image[xm1, ym1], image[x, ym1], image[xp1, ym1],
+                    image[xm1, y0],                 image[xp1, y0],
+                    image[xm1, yp1], image[x, yp1], image[xp1, yp1],
+                    w0, w1, w2, normalizedScale);
 
-                Rgb8 p_m1_0 = image[xm1, y0];
-                Rgb8 p_p1_0 = image[xp1, y0];
+                gradX[x, y] = gx;
+                gradY[x, y] = gy;
 
-                Rgb8 p_m1_p1 = image[xm1, yp1];
-                Rgb8 p_0_p1 = image[x, yp1];
-                Rgb8 p_p1_p1 = image[xp1, yp1];
-
-                var (gxR, gyR) = ComputeGradientAt(
-                    p_m1_m1.R / 255.0, p_0_m1.R / 255.0, p_p1_m1.R / 255.0,
-                    p_m1_0.R / 255.0, p_p1_0.R / 255.0,
-                    p_m1_p1.R / 255.0, p_0_p1.R / 255.0, p_p1_p1.R / 255.0,
-                    w0, w1, w2, scale);
-
-                var (gxG, gyG) = ComputeGradientAt(
-                    p_m1_m1.G / 255.0, p_0_m1.G / 255.0, p_p1_m1.G / 255.0,
-                    p_m1_0.G / 255.0, p_p1_0.G / 255.0,
-                    p_m1_p1.G / 255.0, p_0_p1.G / 255.0, p_p1_p1.G / 255.0,
-                    w0, w1, w2, scale);
-
-                var (gxB, gyB) = ComputeGradientAt(
-                    p_m1_m1.B / 255.0, p_0_m1.B / 255.0, p_p1_m1.B / 255.0,
-                    p_m1_0.B / 255.0, p_p1_0.B / 255.0,
-                    p_m1_p1.B / 255.0, p_0_p1.B / 255.0, p_p1_p1.B / 255.0,
-                    w0, w1, w2, scale);
-
-                gradX[x, y] = new Rgb64(gxR, gxG, gxB);
-                gradY[x, y] = new Rgb64(gyR, gyG, gyB);
-
-                double frobeniusSq = (gxR * gxR) + (gxG * gxG) + (gxB * gxB) +
-                                     (gyR * gyR) + (gyG * gyG) + (gyB * gyB);
+                double frobeniusSq = (gx.R * gx.R) + (gx.G * gx.G) + (gx.B * gx.B) +
+                                     (gy.R * gy.R) + (gy.G * gy.G) + (gy.B * gy.B);
                 magnitude[x, y] = Math.Sqrt(frobeniusSq);
             }
         });
 
         return (gradX, gradY, magnitude);
+    }
+
+    internal static (Rgb64 Gx, Rgb64 Gy) ComputeRgb8GradientAt(
+        Rgb8 vM1M1, Rgb8 v0M1, Rgb8 vP1M1,
+        Rgb8 vM10,            Rgb8 vP10,
+        Rgb8 vM1P1, Rgb8 v0P1, Rgb8 vP1P1,
+        GradientOperator gradientOperator = GradientOperator.Sobel)
+    {
+        var (w0, w1, w2, scale) = GetKernelWeights(gradientOperator);
+        return ComputeRgb8GradientAt(
+            vM1M1, v0M1, vP1M1,
+            vM10,        vP10,
+            vM1P1, v0P1, vP1P1,
+            w0, w1, w2, scale / 255.0);
+    }
+
+    private static (Rgb64 Gx, Rgb64 Gy) ComputeRgb8GradientAt(
+        Rgb8 vM1M1, Rgb8 v0M1, Rgb8 vP1M1,
+        Rgb8 vM10,            Rgb8 vP10,
+        Rgb8 vM1P1, Rgb8 v0P1, Rgb8 vP1P1,
+        double w0, double w1, double w2, double normalizedScale)
+    {
+        var (gxR, gyR) = ComputeGradientAt(
+            vM1M1.R, v0M1.R, vP1M1.R,
+            vM10.R,          vP10.R,
+            vM1P1.R, v0P1.R, vP1P1.R,
+            w0, w1, w2, normalizedScale);
+
+        var (gxG, gyG) = ComputeGradientAt(
+            vM1M1.G, v0M1.G, vP1M1.G,
+            vM10.G,          vP10.G,
+            vM1P1.G, v0P1.G, vP1P1.G,
+            w0, w1, w2, normalizedScale);
+
+        var (gxB, gyB) = ComputeGradientAt(
+            vM1M1.B, v0M1.B, vP1M1.B,
+            vM10.B,          vP10.B,
+            vM1P1.B, v0P1.B, vP1P1.B,
+            w0, w1, w2, normalizedScale);
+
+        return (new Rgb64(gxR, gxG, gxB), new Rgb64(gyR, gyG, gyB));
     }
 
     /// <summary>

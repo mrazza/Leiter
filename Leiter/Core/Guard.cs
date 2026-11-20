@@ -79,4 +79,29 @@ internal static class Guard
         if (expected.Size != actual.Size)
             throw new ArgumentException($"Matrix dimensions {actual.Size} must match expected dimensions {expected.Size}.", paramName);
     }
+
+    /// <summary>
+    /// Throws <see cref="ArgumentException"/> if <paramref name="expected"/> and <paramref name="actual"/> dimensions differ.
+    /// </summary>
+    public static void ThrowIfSizeMismatch(
+        Size expected,
+        Size actual,
+        [CallerArgumentExpression(nameof(actual))] string? paramName = null)
+    {
+        if (expected != actual)
+            throw new ArgumentException($"Dimensions {actual} must match expected dimensions {expected}.", paramName);
+    }
+
+    /// <summary>
+    /// Throws if <paramref name="expected"/> is <see langword="null"/>, or if non-null <paramref name="actual"/> has different dimensions.
+    /// </summary>
+    public static void ThrowIfSizeMismatchIfNotNull(
+        IUntypedMatrix expected,
+        IUntypedMatrix? actual,
+        [CallerArgumentExpression(nameof(actual))] string? paramName = null)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        if (actual is not null && expected.Size != actual.Size)
+            throw new ArgumentException($"Matrix dimensions {actual.Size} must match expected dimensions {expected.Size}.", paramName);
+    }
 }

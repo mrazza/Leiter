@@ -61,15 +61,8 @@ public static class GlobalContrastSaliency
             SaliencyColorSmoother.SmoothColorSaliency(saliencyMap, rgbToLabLookupTable, neighborDivisor: 4);
         }
 
-        if (saliencyMap.Count == 0)
-        {
-            return new SequentialMatrix<DoublePixel>(image.Size);
-        }
-
         // Map the saliency values back to the original image and normalize the values to [0, 1].
-        double minSaliency = saliencyMap.Values.Min();
-        double saliencyRange = saliencyMap.Values.Max() - minSaliency;
-        if (saliencyRange <= 0.0)
+        if (!SaliencyColorSmoother.TryGetMinMaxRange(saliencyMap.Values, out double minSaliency, out double saliencyRange))
         {
             return new SequentialMatrix<DoublePixel>(image.Size);
         }

@@ -36,11 +36,7 @@ public static class WatercolorPipeline
 
         WatercolorOptions opts = options ?? WatercolorOptions.Default;
         opts.Validate();
-
-        if (paperHeightMap is not null && paperHeightMap.Size != image.Size)
-        {
-            throw new ArgumentException("The paper height map dimensions must match the image dimensions.", nameof(paperHeightMap));
-        }
+        Guard.ThrowIfSizeMismatchIfNotNull(image, paperHeightMap);
 
         if (image.Count == 0)
         {
@@ -57,11 +53,7 @@ public static class WatercolorPipeline
                 strength: opts.ColorTransferStrength);
 
         // Stage 2: Regional Contrast Saliency & Saliency Distance Field
-        Matrix<Rgb8> blurred = opts.EgbiBlurSigma <= 0.0
-            ? colorTransferred
-            : opts.EgbiBlurSigma <= 2.0
-                ? Blur.GaussianBlur(colorTransferred, opts.EgbiBlurSigma, Math.Max(1, (int)Math.Ceiling(2.5 * opts.EgbiBlurSigma)))
-                : Blur.GaussianBlurRecursive(colorTransferred, opts.EgbiBlurSigma);
+        Matrix<Rgb8> blurred = Blur.GaussianBlur(colorTransferred, opts.EgbiBlurSigma);
         Matrix<Lab32> labBlurred = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
         EgbiOptions resolvedEgbi = opts.Egbi ??
             new EgbiOptions(

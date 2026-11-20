@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Leiter.Core;
 using Leiter.Pixels;
 
 /// <summary>
@@ -30,13 +31,11 @@ internal sealed class MeanShiftSpatialLattice
     private readonly record struct ColorBucket(int CellL, int CellA, int CellB, int PointOffset, int PointCount);
 
     [StructLayout(LayoutKind.Sequential)]
-    private readonly struct PackedPoint(int x, int y, float l, float a, float b)
+    private readonly struct PackedPoint(int x, int y, Lab32 color)
     {
         public readonly int X = x;
         public readonly int Y = y;
-        public readonly float L = l;
-        public readonly float A = a;
-        public readonly float B = b;
+        public readonly Lab32 Color = color;
     }
 
     private readonly record struct ColorCellWindow(int MinL, int MaxL, int MinA, int MaxA, int MinB, int MaxB)
@@ -44,39 +43,6 @@ internal sealed class MeanShiftSpatialLattice
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ContainsChroma(int cellA, int cellB) =>
             cellA >= MinA && cellA <= MaxA && cellB >= MinB && cellB <= MaxB;
-    }
-
-    private struct MeanStepAccumulator
-    {
-        public double SumX;
-        public double SumY;
-        public double SumL;
-        public double SumA;
-        public double SumB;
-        public int Count;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Add(in PackedPoint point)
-        {
-            SumX += point.X;
-            SumY += point.Y;
-            SumL += point.L;
-            SumA += point.A;
-            SumB += point.B;
-            Count++;
-        }
-
-        public readonly MeanShiftMode ToModeOrFallback(MeanShiftMode fallback)
-        {
-            if (Count == 0)
-                return fallback;
-
-            double invCount = 1.0 / Count;
-            return new MeanShiftMode(
-                SumX * invCount,
-                SumY * invCount,
-                new Lab32((float)(SumL * invCount), (float)(SumA * invCount), (float)(SumB * invCount)));
-        }
     }
 
     private sealed class CellBuildScratch
@@ -233,7 +199,7 @@ internal sealed class MeanShiftSpatialLattice
             centerColorCell.B - 1,
             centerColorCell.B + 1);
 
-        var accumulator = default(MeanStepAccumulator);
+        var accumulator = default(MeanShiftModeAccumulator);
         for (int cellY = minSpatialCellY; cellY <= maxSpatialCellY; cellY++)
         {
             int cellRowOffset = cellY * gridWidth;
@@ -263,16 +229,12 @@ internal sealed class MeanShiftSpatialLattice
         in ColorCellWindow colorWindow,
         double spatialRadiusSq,
         double rangeRadiusSq,
-        ref MeanStepAccumulator accumulator)
+        ref MeanShiftModeAccumulator accumulator)
     {
         int bucketStart = spatialCellOffsets[cellIndex];
         int bucketEnd = spatialCellOffsets[cellIndex + 1];
         if (bucketStart >= bucketEnd)
             return;
-
-        float queryL = queryColor.L;
-        float queryA = queryColor.A;
-        float queryB = queryColor.B;
 
         int firstBucket = FindFirstBucketAtOrAboveLightness(colorBuckets, bucketStart, bucketEnd, colorWindow.MinL);
         for (int bucketIndex = firstBucket; bucketIndex < bucketEnd; bucketIndex++)
@@ -292,12 +254,9 @@ internal sealed class MeanShiftSpatialLattice
                 if ((deltaX * deltaX) + (deltaY * deltaY) > spatialRadiusSq)
                     continue;
 
-                double deltaL = point.L - queryL;
-                double deltaA = point.A - queryA;
-                double deltaB = point.B - queryB;
-                if ((deltaL * deltaL) + (deltaA * deltaA) + (deltaB * deltaB) <= rangeRadiusSq)
+                if (point.Color.EuclideanDistanceSquared(queryColor) <= rangeRadiusSq)
                 {
-                    accumulator.Add(in point);
+                    accumulator.Add(point.X, point.Y, point.Color);
                 }
             }
         }
@@ -312,10 +271,8 @@ internal sealed class MeanShiftSpatialLattice
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(width, 0);
         ArgumentOutOfRangeException.ThrowIfLessThan(height, 0);
-        if (!double.IsFinite(spatialCellWidth) || spatialCellWidth <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(spatialCellWidth), spatialCellWidth, "Spatial cell width must be a finite positive number.");
-        if (!double.IsFinite(rangeCellWidth) || rangeCellWidth <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(rangeCellWidth), rangeCellWidth, "Range cell width must be a finite positive number.");
+        Guard.ThrowIfNotFinitePositive(spatialCellWidth);
+        Guard.ThrowIfNotFinitePositive(rangeCellWidth);
         ArgumentOutOfRangeException.ThrowIfLessThan(sampleStride, 1);
     }
 
@@ -573,7 +530,7 @@ internal sealed class MeanShiftSpatialLattice
                 ColorKey3D colorKey = QuantizeColor(color, rangeCellWidth);
                 int destinationIndex = writeOffsets[colorKey];
                 writeOffsets[colorKey] = destinationIndex + 1;
-                points[destinationIndex] = new PackedPoint(x, y, color.L, color.A, color.B);
+                points[destinationIndex] = new PackedPoint(x, y, color);
             }
         }
     }

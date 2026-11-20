@@ -232,8 +232,7 @@ public sealed class RegionGraph
     public double[] ComputeRegionFractions(IReadOnlyMatrix<bool> mask)
     {
         ArgumentNullException.ThrowIfNull(mask);
-        if (mask.Size != Size)
-            throw new ArgumentException($"Mask dimensions {mask.Size} must match RegionGraph dimensions {Size}.", nameof(mask));
+        Guard.ThrowIfSizeMismatch(Size, mask.Size, nameof(mask));
 
         return ComputeRegionStatistics(region =>
         {
@@ -250,6 +249,32 @@ public sealed class RegionGraph
 
             return (double)trueCount / pixels.Count;
         });
+    }
+
+    /// <summary>
+    /// Classifies each region in this graph as <see langword="true"/> when the fraction of <see langword="true"/> pixels
+    /// inside that region meets or exceeds <paramref name="minOverlapFraction"/>.
+    /// </summary>
+    /// <param name="mask">A boolean mask matrix whose dimensions match this graph.</param>
+    /// <param name="minOverlapFraction">The inclusive minimum fraction in <c>[0.0, 1.0]</c> required for a region to be flagged.</param>
+    /// <returns>A boolean array indexed by dense region identifier.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="mask"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="mask"/> dimensions do not match this graph.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="minOverlapFraction"/> is non-finite or outside <c>[0.0, 1.0]</c>.</exception>
+    public bool[] ComputeRegionFlags(IReadOnlyMatrix<bool> mask, double minOverlapFraction)
+    {
+        ArgumentNullException.ThrowIfNull(mask);
+        Guard.ThrowIfSizeMismatch(Size, mask.Size, nameof(mask));
+        Guard.ThrowIfNotFiniteInRange(minOverlapFraction, 0.0, 1.0);
+
+        double[] fractions = ComputeRegionFractions(mask);
+        var flags = new bool[fractions.Length];
+        for (int i = 0; i < fractions.Length; i++)
+        {
+            flags[i] = fractions[i] >= minOverlapFraction;
+        }
+
+        return flags;
     }
 
     /// <summary>
@@ -502,7 +527,7 @@ public sealed class RegionGraph
                         highPixelIndex = firstIndex;
                     }
 
-                    ulong pairKey = ((ulong)(uint)lowRegion << 32) | (uint)highRegion;
+                    ulong pairKey = ScalarMath.PackUnorderedPairKey(lowRegion, highRegion);
                     if (!pairToBoundaryBuilder.TryGetValue(pairKey, out var lists))
                     {
                         lists = (new List<int>(), new List<int>());
@@ -617,11 +642,8 @@ public sealed class RegionGraph
         return result;
     }
 
-    private static void ValidateConnectivity(GridConnectivity connectivity)
-    {
-        if (!Enum.IsDefined(connectivity))
-            throw new ArgumentOutOfRangeException(nameof(connectivity), connectivity, "Unsupported grid connectivity.");
-    }
+    private static void ValidateConnectivity(GridConnectivity connectivity) =>
+        Guard.ThrowIfUndefinedEnum(connectivity);
 
     private void ValidateRegionId(int regionId, string paramName)
     {

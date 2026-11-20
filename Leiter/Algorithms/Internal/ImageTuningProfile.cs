@@ -188,9 +188,9 @@ internal readonly record struct ImageTuningProfile(
 
         public readonly Rgb8 ToAverage(double invCount) =>
             new(
-                (byte)Math.Round(sumR * invCount, MidpointRounding.AwayFromZero),
-                (byte)Math.Round(sumG * invCount, MidpointRounding.AwayFromZero),
-                (byte)Math.Round(sumB * invCount, MidpointRounding.AwayFromZero));
+                Rgb8.ClampRoundedByte(sumR * invCount),
+                Rgb8.ClampRoundedByte(sumG * invCount),
+                Rgb8.ClampRoundedByte(sumB * invCount));
     }
 
     private struct Lab32BoxAccumulator : IBoxAccumulator<Lab32>

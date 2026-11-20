@@ -14,6 +14,16 @@ public static class MatrixResampler
         double LowerWeight,
         double UpperWeight);
 
+    private readonly record struct BilinearFootprint(
+        int X0,
+        int X1,
+        int Y0,
+        int Y1,
+        double W00,
+        double W10,
+        double W01,
+        double W11);
+
     /// <summary>
     /// Resizes a numeric pixel matrix to <paramref name="targetSize"/> using pixel-center bilinear interpolation.
     /// </summary>
@@ -128,27 +138,13 @@ public static class MatrixResampler
     private static T SampleBilinearUnchecked<T>(IReadOnlyMatrix<T> source, double x, double y)
         where T : struct, IPixel<T>
     {
-        double cx = Math.Clamp(x, 0.0, source.Width - 1.0);
-        double cy = Math.Clamp(y, 0.0, source.Height - 1.0);
-
-        int x0 = (int)Math.Floor(cx);
-        int x1 = Math.Min(source.Width - 1, x0 + 1);
-        double wx = cx - x0;
-
-        int y0 = (int)Math.Floor(cy);
-        int y1 = Math.Min(source.Height - 1, y0 + 1);
-        double wy = cy - y0;
-
-        double w00 = (1.0 - wx) * (1.0 - wy);
-        double w10 = wx * (1.0 - wy);
-        double w01 = (1.0 - wx) * wy;
-        double w11 = wx * wy;
+        BilinearFootprint fp = ComputeBilinearFootprint(source.Width, source.Height, x, y);
 
         Vector<double> interpolatedPixel =
-            (source[x0, y0].ToDoubleVector() * w00) +
-            (source[x1, y0].ToDoubleVector() * w10) +
-            (source[x0, y1].ToDoubleVector() * w01) +
-            (source[x1, y1].ToDoubleVector() * w11);
+            (source[fp.X0, fp.Y0].ToDoubleVector() * fp.W00) +
+            (source[fp.X1, fp.Y0].ToDoubleVector() * fp.W10) +
+            (source[fp.X0, fp.Y1].ToDoubleVector() * fp.W01) +
+            (source[fp.X1, fp.Y1].ToDoubleVector() * fp.W11);
 
         return T.FromDoubleVector(interpolatedPixel);
     }
@@ -183,47 +179,33 @@ public static class MatrixResampler
         ArgumentNullException.ThrowIfNull(predicate);
         ValidateSampleInputs(source, x, y, edgeHandling);
 
-        double cx = Math.Clamp(x, 0.0, source.Width - 1.0);
-        double cy = Math.Clamp(y, 0.0, source.Height - 1.0);
-
-        int x0 = (int)Math.Floor(cx);
-        int x1 = Math.Min(source.Width - 1, x0 + 1);
-        double wx = cx - x0;
-
-        int y0 = (int)Math.Floor(cy);
-        int y1 = Math.Min(source.Height - 1, y0 + 1);
-        double wy = cy - y0;
-
-        double w00 = (1.0 - wx) * (1.0 - wy);
-        double w10 = wx * (1.0 - wy);
-        double w01 = (1.0 - wx) * wy;
-        double w11 = wx * wy;
+        BilinearFootprint fp = ComputeBilinearFootprint(source.Width, source.Height, x, y);
 
         Vector<double> sum = Vector<double>.Zero;
         double weightSum = 0.0;
 
-        if (predicate(x0, y0, state))
+        if (predicate(fp.X0, fp.Y0, state))
         {
-            sum += source[x0, y0].ToDoubleVector() * w00;
-            weightSum += w00;
+            sum += source[fp.X0, fp.Y0].ToDoubleVector() * fp.W00;
+            weightSum += fp.W00;
         }
 
-        if (predicate(x1, y0, state))
+        if (predicate(fp.X1, fp.Y0, state))
         {
-            sum += source[x1, y0].ToDoubleVector() * w10;
-            weightSum += w10;
+            sum += source[fp.X1, fp.Y0].ToDoubleVector() * fp.W10;
+            weightSum += fp.W10;
         }
 
-        if (predicate(x0, y1, state))
+        if (predicate(fp.X0, fp.Y1, state))
         {
-            sum += source[x0, y1].ToDoubleVector() * w01;
-            weightSum += w01;
+            sum += source[fp.X0, fp.Y1].ToDoubleVector() * fp.W01;
+            weightSum += fp.W01;
         }
 
-        if (predicate(x1, y1, state))
+        if (predicate(fp.X1, fp.Y1, state))
         {
-            sum += source[x1, y1].ToDoubleVector() * w11;
-            weightSum += w11;
+            sum += source[fp.X1, fp.Y1].ToDoubleVector() * fp.W11;
+            weightSum += fp.W11;
         }
 
         return weightSum > 0.0
@@ -378,18 +360,37 @@ public static class MatrixResampler
         EdgeHandling edgeHandling)
     {
         ArgumentNullException.ThrowIfNull(source);
-
-        if (!Enum.IsDefined(edgeHandling))
-            throw new ArgumentOutOfRangeException(nameof(edgeHandling), edgeHandling, "Unsupported edge handling mode.");
+        Guard.ThrowIfUndefinedEnum(edgeHandling);
 
         if (source.Count == 0)
             throw new ArgumentException("Cannot sample from an empty matrix.", nameof(source));
 
-        if (!double.IsFinite(x))
-            throw new ArgumentOutOfRangeException(nameof(x), x, "Coordinate X must be finite.");
+        Guard.ThrowIfNotFinite(x);
+        Guard.ThrowIfNotFinite(y);
+    }
 
-        if (!double.IsFinite(y))
-            throw new ArgumentOutOfRangeException(nameof(y), y, "Coordinate Y must be finite.");
+    private static BilinearFootprint ComputeBilinearFootprint(int width, int height, double x, double y)
+    {
+        double cx = Math.Clamp(x, 0.0, width - 1.0);
+        double cy = Math.Clamp(y, 0.0, height - 1.0);
+
+        int x0 = (int)Math.Floor(cx);
+        int x1 = Math.Min(width - 1, x0 + 1);
+        double wx = cx - x0;
+
+        int y0 = (int)Math.Floor(cy);
+        int y1 = Math.Min(height - 1, y0 + 1);
+        double wy = cy - y0;
+
+        return new BilinearFootprint(
+            x0,
+            x1,
+            y0,
+            y1,
+            (1.0 - wx) * (1.0 - wy),
+            wx * (1.0 - wy),
+            (1.0 - wx) * wy,
+            wx * wy);
     }
 
     private static bool ValidateResampleInputs(IUntypedMatrix source, Size targetSize)

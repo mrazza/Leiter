@@ -337,7 +337,7 @@ internal static class MeanShiftRegionClusterer
                         continue;
 
                     (int firstRoot, int secondRoot) = rootP < rootQ ? (rootP, rootQ) : (rootQ, rootP);
-                    ulong pairKey = PackOrderedPairKey(firstRoot, secondRoot);
+                    ulong pairKey = ScalarMath.PackUnorderedPairKey(firstRoot, secondRoot);
                     if (!seenPairs.Add(pairKey))
                         continue;
 
@@ -389,9 +389,6 @@ internal static class MeanShiftRegionClusterer
 
         return mergedInPass;
     }
-
-    private static ulong PackOrderedPairKey(int firstRoot, int secondRoot) =>
-        ((ulong)(uint)firstRoot << 32) | (ulong)(uint)secondRoot;
 
     private static int CompareRegionEdges(UndirectedGraphEdge<int> a, UndirectedGraphEdge<int> b)
     {

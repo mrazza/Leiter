@@ -58,4 +58,19 @@ public class Rgb64Tests : PixelContractTestsBase<Rgb64, double>
         var p2 = new Rgb64(4.0, 6.0, 3.0);
         Assert.Equal(25.0, p1.DistanceSquared(p2));
     }
+
+    [Fact]
+    public void Lerp_ShouldInterpolateChannels()
+    {
+        var from = new Rgb64(0.2, 0.4, 0.8);
+        var to = new Rgb64(0.6, 0.0, 1.0);
+
+        Assert.Equal(from, Rgb64.Lerp(from, to, 0.0));
+        Assert.Equal(to, Rgb64.Lerp(from, to, 1.0));
+
+        Rgb64 mid = Rgb64.Lerp(from, to, 0.25);
+        Assert.Equal(0.3, mid.R, 10);
+        Assert.Equal(0.3, mid.G, 10);
+        Assert.Equal(0.85, mid.B, 10);
+    }
 }

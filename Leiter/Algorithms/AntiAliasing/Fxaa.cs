@@ -103,7 +103,7 @@ public static class Fxaa
                 // Subpixel blend factor
                 double lumaSubpixelAvg = ((2.0 * (lumaN + lumaS + lumaW + lumaE)) + lumaNW + lumaNE + lumaSW + lumaSE) / 12.0;
                 double subpixelFilter = Math.Clamp(Math.Abs(lumaSubpixelAvg - lumaM) / range, 0.0, 1.0);
-                double s = subpixelFilter * subpixelFilter * (3.0 - (2.0 * subpixelFilter));
+                double s = ScalarMath.Smoothstep(subpixelFilter);
                 double subpixelOffset = s * s * opts.SubpixelBlendStrength;
 
                 // Bilateral span search along the edge tangent

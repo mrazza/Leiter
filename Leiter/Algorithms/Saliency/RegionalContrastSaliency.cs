@@ -251,29 +251,7 @@ public static class RegionalContrastSaliency
             finalSaliency = rawSaliency;
         }
 
-        if (finalSaliency.Length == 0)
-        {
-            return new SequentialMatrix<DoublePixel>(image.Size);
-        }
-
-        double minSaliency = finalSaliency[0];
-        double maxSaliency = finalSaliency[0];
-        for (int i = 1; i < finalSaliency.Length; i++)
-        {
-            double val = finalSaliency[i];
-            if (val < minSaliency)
-            {
-                minSaliency = val;
-            }
-
-            if (val > maxSaliency)
-            {
-                maxSaliency = val;
-            }
-        }
-
-        double saliencyRange = maxSaliency - minSaliency;
-        if (saliencyRange <= 0.0)
+        if (!SaliencyColorSmoother.TryGetMinMaxRange(finalSaliency, out double minSaliency, out double saliencyRange))
         {
             return new SequentialMatrix<DoublePixel>(image.Size);
         }
