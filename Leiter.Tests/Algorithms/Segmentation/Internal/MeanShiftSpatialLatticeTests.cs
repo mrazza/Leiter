@@ -102,7 +102,7 @@ public class MeanShiftSpatialLatticeTests
     }
 
     [Fact]
-    public void Constructor_InvalidArguments_ShouldThrowArgumentOutOfRangeException()
+    public void Constructor_InvalidArguments_ShouldThrowExpectedExceptions()
     {
         Lab32[] sample = [new(50f, 0f, 0f)];
 
@@ -114,6 +114,16 @@ public class MeanShiftSpatialLatticeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftSpatialLattice(sample, 1, 1, 5.0, 0.0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftSpatialLattice(sample, 1, 1, 5.0, -1.0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftSpatialLattice(sample, 1, 1, 5.0, double.NaN));
+
+        // M1b: pixel buffer length must equal width * height
+        ArgumentException emptyMismatchEx = Assert.Throws<ArgumentException>(() => new MeanShiftSpatialLattice([], 2, 2, 5.0, 5.0));
+        Assert.Equal("pixels", emptyMismatchEx.ParamName);
+        ArgumentException tooShortEx = Assert.Throws<ArgumentException>(() => new MeanShiftSpatialLattice(sample, 2, 2, 5.0, 5.0));
+        Assert.Equal("pixels", tooShortEx.ParamName);
+        ArgumentException zeroAreaMismatchEx = Assert.Throws<ArgumentException>(() => new MeanShiftSpatialLattice(sample, 0, 2, 5.0, 5.0));
+        Assert.Equal("pixels", zeroAreaMismatchEx.ParamName);
+        Assert.Throws<ArgumentNullException>("pixels", () => MeanShiftSpatialLattice.Create(null!, 1, 1, 5.0, 5.0));
+        Assert.Throws<ArgumentException>("pixels", () => MeanShiftSpatialLattice.Create(sample, 2, 2, 5.0, 5.0));
     }
 
     [Fact]

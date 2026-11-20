@@ -2,6 +2,7 @@ namespace Leiter.Algorithms.Segmentation.Internal;
 
 using System;
 using System.Collections.Generic;
+using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -16,37 +17,25 @@ internal static class MeanShiftRegionClusterer
     private const double GradientBucketScale = 4.0;
     private const double SeedColorBoundMultiplier = 1.5;
 
-    private readonly struct RegionColorAccumulator(Vector3D[] sums)
-    {
-        public static RegionColorAccumulator Build(DisjointSet<byte> disjointSet, ReadOnlySpan<Lab32> sourcePixels)
-        {
-            int pixelCount = sourcePixels.Length;
-            var sums = new Vector3D[pixelCount];
-
-            for (int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
-            {
-                int rootIndex = disjointSet.GetPartition(pixelIndex).RootIndex;
-                sums[rootIndex] += ToColorVector(sourcePixels[pixelIndex]);
-            }
-
-            return new RegionColorAccumulator(sums);
-        }
-
-        public Lab32 GetMeanColor(int rootIndex, int regionSize) =>
-            ComputeMeanColor(sums[rootIndex], regionSize);
-
-        public void Absorb(int targetRoot, int absorbedRoot) =>
-            sums[targetRoot] += sums[absorbedRoot];
-    }
-
     public static IDisjointSet ClusterModes(
         IUntypedMatrix targetImage,
-        ReadOnlySpan<Lab32> sourcePixels,
+        Lab32[] sourcePixels,
         MeanShiftMode[] modes,
         MeanShiftOptions options)
     {
+        ArgumentNullException.ThrowIfNull(targetImage);
+        ArgumentNullException.ThrowIfNull(sourcePixels);
+        ArgumentNullException.ThrowIfNull(modes);
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+
         Size size = targetImage.Size;
         int pixelCount = size.Count;
+        if (sourcePixels.Length != pixelCount)
+            throw new ArgumentException($"Source pixel count ({sourcePixels.Length}) must match image pixel count ({pixelCount}).", nameof(sourcePixels));
+        if (modes.Length != pixelCount)
+            throw new ArgumentException($"Mode array length ({modes.Length}) must match image pixel count ({pixelCount}).", nameof(modes));
+
         var disjointSet = DisjointSet.CreateSingletons(targetImage);
 
         if (pixelCount <= 1)
@@ -94,35 +83,19 @@ internal static class MeanShiftRegionClusterer
 
     private static double[] ComputeMaxCardinalGradientSquared(MeanShiftMode[] modes, Size size)
     {
-        int width = size.Width;
-        int height = size.Height;
-        ReadOnlySpan<GridNeighbor> cardinalNeighbors = GridNeighborhood.All4Connected;
         var gradientSquared = new double[size.Count];
-
-        for (int y = 0; y < height; y++)
-        {
-            int rowStart = size.IndexOf(0, y);
-            for (int x = 0; x < width; x++)
+        GridNeighborhood.ForEachForwardPair(
+            size,
+            GridConnectivity.FourConnected,
+            (modes, gradientSquared),
+            static (firstIndex, secondIndex, state) =>
             {
-                int pixelIndex = rowStart + x;
-                Lab32 centerColor = modes[pixelIndex].Color;
-                double maxDifferenceSquared = 0.0;
-
-                for (int n = 0; n < cardinalNeighbors.Length; n++)
-                {
-                    int nx = x + cardinalNeighbors[n].Offset.X;
-                    int ny = y + cardinalNeighbors[n].Offset.Y;
-                    if (!size.Contains(nx, ny))
-                        continue;
-
-                    double differenceSquared = centerColor.EuclideanDistanceSquared(modes[size.IndexOf(nx, ny)].Color);
-                    if (differenceSquared > maxDifferenceSquared)
-                        maxDifferenceSquared = differenceSquared;
-                }
-
-                gradientSquared[pixelIndex] = maxDifferenceSquared;
-            }
-        }
+                double differenceSquared = state.modes[firstIndex].Color.EuclideanDistanceSquared(state.modes[secondIndex].Color);
+                if (differenceSquared > state.gradientSquared[firstIndex])
+                    state.gradientSquared[firstIndex] = differenceSquared;
+                if (differenceSquared > state.gradientSquared[secondIndex])
+                    state.gradientSquared[secondIndex] = differenceSquared;
+            });
 
         return gradientSquared;
     }
@@ -186,7 +159,7 @@ internal static class MeanShiftRegionClusterer
 
         var regionPartition = disjointSet.GetPartition(seedPixel);
         Lab32 seedColor = modes[seedPixel].Color;
-        Vector3D colorSum = ToColorVector(seedColor);
+        Vector3D colorSum = seedColor.ToVector3D();
         int memberCount = 1;
 
         while (frontierQueue.Count > 0)
@@ -221,15 +194,13 @@ internal static class MeanShiftRegionClusterer
 
                 visited[neighborPixel] = true;
                 regionPartition = disjointSet.Union(regionPartition, disjointSet.GetPartition(neighborPixel), 0);
-                colorSum += ToColorVector(neighborMode.Color);
+                colorSum += neighborMode.Color.ToVector3D();
                 memberCount++;
                 regionMeanColor = ComputeMeanColor(colorSum, memberCount);
                 frontierQueue.Enqueue(neighborPixel);
             }
         }
     }
-
-    private static Vector3D ToColorVector(Lab32 color) => new(color.L, color.A, color.B);
 
     private static Lab32 ComputeMeanColor(Vector3D colorSum, int memberCount)
     {
@@ -252,121 +223,138 @@ internal static class MeanShiftRegionClusterer
 
     private static void PruneSmallRegions(
         DisjointSet<byte> disjointSet,
-        ReadOnlySpan<Lab32> sourcePixels,
+        Lab32[] sourcePixels,
         Size size,
         MeanShiftOptions options)
     {
+        RegionGraph regionGraph = disjointSet.ToRegionGraph(options.Connectivity);
+        int regionCount = regionGraph.RegionCount;
+        if (regionCount <= 1 || regionGraph.Boundaries.Count == 0)
+            return;
+
+        var sourceMatrix = new SequentialMatrix<Lab32>(size.Width, size.Height, sourcePixels);
+        RegionColorStatistics<Lab32>[] initialStats = RegionColorStatistics.Compute(regionGraph, sourceMatrix);
+
+        var regionParent = new int[regionCount];
+        var regionSizes = new int[regionCount];
+        var regionColorSums = new Vector3D[regionCount];
+        var regionMeanColors = new Lab32[regionCount];
+        var representativePixels = new int[regionCount];
+
+        for (int r = 0; r < regionCount; r++)
+        {
+            regionParent[r] = r;
+            Region<Coord> region = regionGraph.Regions[r];
+            int pixelCount = region.Pixels.Count;
+            regionSizes[r] = pixelCount;
+            Lab32 meanColor = initialStats[r].MeanColor;
+            regionMeanColors[r] = meanColor;
+            regionColorSums[r] = meanColor.ToVector3D() * pixelCount;
+
+            foreach (Coord coord in region.Pixels)
+            {
+                representativePixels[r] = size.IndexOf(coord);
+                break;
+            }
+        }
+
         int minRegionSize = options.MinRegionSize;
-        ReadOnlySpan<GridNeighbor> forwardNeighbors = GridNeighborhood.GetForward(options.Connectivity);
-        RegionColorAccumulator colorAccumulator = RegionColorAccumulator.Build(disjointSet, sourcePixels);
+        IReadOnlyList<RegionBoundary> initialBoundaries = regionGraph.Boundaries;
+        var activeEdges = new List<(int First, int Second)>(initialBoundaries.Count);
+        for (int i = 0; i < initialBoundaries.Count; i++)
+        {
+            RegionBoundary boundary = initialBoundaries[i];
+            if (regionSizes[boundary.First] < minRegionSize || regionSizes[boundary.Second] < minRegionSize)
+                activeEdges.Add((boundary.First, boundary.Second));
+        }
+
+        if (activeEdges.Count == 0)
+            return;
 
         var seenPairs = new HashSet<ulong>();
-        var candidateEdges = new List<UndirectedGraphEdge<int>>();
+        var candidateEdges = new List<UndirectedGraphEdge<int>>(activeEdges.Count);
 
-        while (true)
+        while (activeEdges.Count > 0)
         {
-            CollectSmallRegionBoundaryEdges(
-                disjointSet,
-                in colorAccumulator,
-                size,
-                minRegionSize,
-                forwardNeighbors,
-                seenPairs,
-                candidateEdges);
+            seenPairs.Clear();
+            candidateEdges.Clear();
+
+            for (int i = 0; i < activeEdges.Count; i++)
+            {
+                (int rawFirst, int rawSecond) = activeEdges[i];
+                int rootA = FindRegionRoot(regionParent, rawFirst);
+                int rootB = FindRegionRoot(regionParent, rawSecond);
+                if (rootA == rootB)
+                    continue;
+
+                ulong pairKey = GridNeighborhood.PackUnorderedPairKey(rootA, rootB);
+                if (!seenPairs.Add(pairKey))
+                    continue;
+
+                int firstRoot = (int)(pairKey >> 32);
+                int secondRoot = (int)(uint)pairKey;
+                if (regionSizes[firstRoot] >= minRegionSize && regionSizes[secondRoot] >= minRegionSize)
+                    continue;
+
+                double weight = regionMeanColors[firstRoot].EuclideanDistance(regionMeanColors[secondRoot]);
+                candidateEdges.Add(new UndirectedGraphEdge<int>(firstRoot, secondRoot, weight));
+            }
 
             if (candidateEdges.Count == 0)
                 break;
 
-            if (!MergeSmallRegionEdges(disjointSet, in colorAccumulator, minRegionSize, candidateEdges))
-                break;
-        }
-    }
+            candidateEdges.Sort(CompareRegionEdges);
 
-    private static void CollectSmallRegionBoundaryEdges(
-        DisjointSet<byte> disjointSet,
-        in RegionColorAccumulator colorAccumulator,
-        Size size,
-        int minRegionSize,
-        ReadOnlySpan<GridNeighbor> forwardNeighbors,
-        HashSet<ulong> seenPairs,
-        List<UndirectedGraphEdge<int>> candidateEdges)
-    {
-        seenPairs.Clear();
-        candidateEdges.Clear();
-
-        int width = size.Width;
-        int height = size.Height;
-
-        for (int y = 0; y < height; y++)
-        {
-            int rowStart = size.IndexOf(0, y);
-            for (int x = 0; x < width; x++)
+            bool mergedInPass = false;
+            activeEdges.Clear();
+            for (int i = 0; i < candidateEdges.Count; i++)
             {
-                int rootP = disjointSet.GetPartition(rowStart + x).RootIndex;
+                UndirectedGraphEdge<int> edge = candidateEdges[i];
+                int r1 = FindRegionRoot(regionParent, edge.First);
+                int r2 = FindRegionRoot(regionParent, edge.Second);
+                if (r1 == r2 || (regionSizes[r1] >= minRegionSize && regionSizes[r2] >= minRegionSize))
+                    continue;
 
-                for (int n = 0; n < forwardNeighbors.Length; n++)
-                {
-                    int nx = x + forwardNeighbors[n].Offset.X;
-                    int ny = y + forwardNeighbors[n].Offset.Y;
-                    if (!size.Contains(nx, ny))
-                        continue;
+                (int survivor, int absorbed) = regionSizes[r1] >= regionSizes[r2] ? (r1, r2) : (r2, r1);
+                regionParent[absorbed] = survivor;
+                int combinedSize = regionSizes[survivor] + regionSizes[absorbed];
+                regionSizes[survivor] = combinedSize;
+                regionColorSums[survivor] += regionColorSums[absorbed];
+                regionMeanColors[survivor] = ComputeMeanColor(regionColorSums[survivor], combinedSize);
 
-                    int rootQ = disjointSet.GetPartition(size.IndexOf(nx, ny)).RootIndex;
-                    if (rootP == rootQ)
-                        continue;
-
-                    (int firstRoot, int secondRoot) = rootP < rootQ ? (rootP, rootQ) : (rootQ, rootP);
-                    ulong pairKey = ScalarMath.PackUnorderedPairKey(firstRoot, secondRoot);
-                    if (!seenPairs.Add(pairKey))
-                        continue;
-
-                    var part1 = disjointSet.GetPartition(firstRoot);
-                    var part2 = disjointSet.GetPartition(secondRoot);
-                    if (part1.Size >= minRegionSize && part2.Size >= minRegionSize)
-                        continue;
-
-                    Lab32 mean1 = colorAccumulator.GetMeanColor(firstRoot, part1.Size);
-                    Lab32 mean2 = colorAccumulator.GetMeanColor(secondRoot, part2.Size);
-                    candidateEdges.Add(new UndirectedGraphEdge<int>
-                    {
-                        First = firstRoot,
-                        Second = secondRoot,
-                        Weight = mean1.EuclideanDistance(mean2)
-                    });
-                }
-            }
-        }
-    }
-
-    private static bool MergeSmallRegionEdges(
-        DisjointSet<byte> disjointSet,
-        in RegionColorAccumulator colorAccumulator,
-        int minRegionSize,
-        List<UndirectedGraphEdge<int>> candidateEdges)
-    {
-        var sortedEdges = candidateEdges.ToArray();
-        Array.Sort(sortedEdges, CompareRegionEdges);
-
-        bool mergedInPass = false;
-        for (int i = 0; i < sortedEdges.Length; i++)
-        {
-            UndirectedGraphEdge<int> edge = sortedEdges[i];
-            var p1 = disjointSet.GetPartition(edge.First);
-            var p2 = disjointSet.GetPartition(edge.Second);
-
-            if (p1.RootIndex != p2.RootIndex && (p1.Size < minRegionSize || p2.Size < minRegionSize))
-            {
-                int oldRoot1 = p1.RootIndex;
-                int oldRoot2 = p2.RootIndex;
-                var merged = disjointSet.Union(p1, p2, 0);
-                int newRoot = merged.RootIndex;
-                int absorbedRoot = newRoot == oldRoot1 ? oldRoot2 : oldRoot1;
-                colorAccumulator.Absorb(newRoot, absorbedRoot);
+                disjointSet.TryUnion(representativePixels[survivor], representativePixels[absorbed], 0, out _);
                 mergedInPass = true;
             }
+
+            if (!mergedInPass)
+                break;
+
+            for (int i = 0; i < candidateEdges.Count; i++)
+            {
+                UndirectedGraphEdge<int> edge = candidateEdges[i];
+                int r1 = FindRegionRoot(regionParent, edge.First);
+                int r2 = FindRegionRoot(regionParent, edge.Second);
+                if (r1 != r2 && (regionSizes[r1] < minRegionSize || regionSizes[r2] < minRegionSize))
+                    activeEdges.Add((r1, r2));
+            }
+        }
+    }
+
+    private static int FindRegionRoot(int[] regionParent, int regionId)
+    {
+        int root = regionId;
+        while (regionParent[root] != root)
+            root = regionParent[root];
+
+        int current = regionId;
+        while (current != root)
+        {
+            int next = regionParent[current];
+            regionParent[current] = root;
+            current = next;
         }
 
-        return mergedInPass;
+        return root;
     }
 
     private static int CompareRegionEdges(UndirectedGraphEdge<int> a, UndirectedGraphEdge<int> b)

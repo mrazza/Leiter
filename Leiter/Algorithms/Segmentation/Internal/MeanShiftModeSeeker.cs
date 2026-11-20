@@ -11,6 +11,8 @@ using Leiter.Pixels;
 /// </summary>
 internal sealed class MeanShiftModeSeeker
 {
+    internal const int LatticeRadiusThreshold = 16;
+
     private const int CoarseGridMinSpatialRadius = 12;
     private const int CoarseGridMinImageDimension = 8;
     private const int StridedLatticeMinSpatialRadius = 20;
@@ -48,7 +50,7 @@ internal sealed class MeanShiftModeSeeker
 
     private readonly record struct CoarseAxisBracket(int Lower, int Upper, double Fraction, bool IsOnCoarseGrid);
 
-    private readonly record struct CoarseCornerSample(Lab32 SourceColor, MeanShiftMode Mode, double BilinearWeight);
+    internal readonly record struct CoarseCornerSample(Lab32 SourceColor, MeanShiftMode Mode, double BilinearWeight);
 
     private struct MatchingCornerAccumulator
     {
@@ -104,8 +106,12 @@ internal sealed class MeanShiftModeSeeker
     public static (MeanShiftMode[] Modes, Lab32[] SourcePixels) SeekModes(
         IReadOnlyMatrix<Lab32> labImage,
         MeanShiftOptions options,
-        int latticeRadiusThreshold)
+        int latticeRadiusThreshold = LatticeRadiusThreshold)
     {
+        ArgumentNullException.ThrowIfNull(labImage);
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+
         Size size = labImage.Size;
         int pixelCount = size.Count;
         Lab32[] sourcePixels = labImage.ToArray();
@@ -167,10 +173,10 @@ internal sealed class MeanShiftModeSeeker
 
     private MeanShiftMode ComputeDirectMeanStep(MeanShiftMode currentMode)
     {
-        int width = size.Width;
-        int height = size.Height;
-        int minY = Math.Max(0, (int)Math.Floor(currentMode.Y - spatialRadius));
-        int maxY = Math.Min(height - 1, (int)Math.Ceiling(currentMode.Y + spatialRadius));
+        (int minX, int maxX, int minY, int maxY) = size.ClampWindow(
+            (int)Math.Floor(currentMode.X),
+            (int)Math.Floor(currentMode.Y),
+            spatialRadius);
 
         var accumulator = default(MeanShiftModeAccumulator);
 
@@ -182,8 +188,8 @@ internal sealed class MeanShiftModeSeeker
                 continue;
 
             double horizontalSpan = Math.Sqrt(spatialRadiusSquared - deltaYSquared);
-            int rowMinX = Math.Max(0, (int)Math.Floor(currentMode.X - horizontalSpan));
-            int rowMaxX = Math.Min(width - 1, (int)Math.Ceiling(currentMode.X + horizontalSpan));
+            int rowMinX = Math.Max(minX, (int)Math.Floor(currentMode.X - horizontalSpan));
+            int rowMaxX = Math.Min(maxX, (int)Math.Ceiling(currentMode.X + horizontalSpan));
             int rowOffset = size.IndexOf(0, y);
 
             for (int x = rowMinX; x <= rowMaxX; x++)
@@ -322,15 +328,17 @@ internal sealed class MeanShiftModeSeeker
         Lab32 pixelColor = sourcePixels[size.IndexOf(x, y)];
 
         if (CoarseCornersAgree(
-            corner00.Mode,
-            corner10.Mode,
-            corner01.Mode,
-            corner11.Mode,
+            in corner00,
+            in corner10,
+            in corner01,
+            in corner11,
             modeColorToleranceSquared,
-            spatialRadiusSquared))
+            spatialRadiusSquared,
+            out MeanShiftMode referenceMode))
         {
             return TryInterpolateAllFourCorners(
                 pixelColor,
+                referenceMode,
                 in corner00,
                 in corner10,
                 in corner01,
@@ -359,22 +367,49 @@ internal sealed class MeanShiftModeSeeker
         return false;
     }
 
-    private static bool CoarseCornersAgree(
-        MeanShiftMode mode00,
-        MeanShiftMode mode10,
-        MeanShiftMode mode01,
-        MeanShiftMode mode11,
+    internal static bool CoarseCornersAgree(
+        in CoarseCornerSample corner00,
+        in CoarseCornerSample corner10,
+        in CoarseCornerSample corner01,
+        in CoarseCornerSample corner11,
         double modeColorToleranceSquared,
-        double spatialRadiusSquared) =>
-        mode00.Color.EuclideanDistanceSquared(mode10.Color) <= modeColorToleranceSquared &&
-        mode00.Color.EuclideanDistanceSquared(mode01.Color) <= modeColorToleranceSquared &&
-        mode00.Color.EuclideanDistanceSquared(mode11.Color) <= modeColorToleranceSquared &&
-        mode00.SpatialDistanceSquared(mode10) <= spatialRadiusSquared &&
-        mode00.SpatialDistanceSquared(mode01) <= spatialRadiusSquared &&
-        mode00.SpatialDistanceSquared(mode11) <= spatialRadiusSquared;
+        double spatialRadiusSquared,
+        out MeanShiftMode referenceMode)
+    {
+        referenceMode = default;
+        bool hasReference = false;
 
-    private static bool TryInterpolateAllFourCorners(
+        return CheckCornerAgreement(in corner00, ref hasReference, ref referenceMode, modeColorToleranceSquared, spatialRadiusSquared) &&
+               CheckCornerAgreement(in corner10, ref hasReference, ref referenceMode, modeColorToleranceSquared, spatialRadiusSquared) &&
+               CheckCornerAgreement(in corner01, ref hasReference, ref referenceMode, modeColorToleranceSquared, spatialRadiusSquared) &&
+               CheckCornerAgreement(in corner11, ref hasReference, ref referenceMode, modeColorToleranceSquared, spatialRadiusSquared) &&
+               hasReference;
+    }
+
+    private static bool CheckCornerAgreement(
+        in CoarseCornerSample corner,
+        ref bool hasReference,
+        ref MeanShiftMode referenceMode,
+        double modeColorToleranceSquared,
+        double spatialRadiusSquared)
+    {
+        if (corner.BilinearWeight <= 0.0)
+            return true;
+
+        if (!hasReference)
+        {
+            referenceMode = corner.Mode;
+            hasReference = true;
+            return true;
+        }
+
+        return corner.Mode.Color.EuclideanDistanceSquared(referenceMode.Color) <= modeColorToleranceSquared &&
+               corner.Mode.SpatialDistanceSquared(referenceMode) <= spatialRadiusSquared;
+    }
+
+    internal static bool TryInterpolateAllFourCorners(
         Lab32 pixelColor,
+        MeanShiftMode referenceMode,
         in CoarseCornerSample corner00,
         in CoarseCornerSample corner10,
         in CoarseCornerSample corner01,
@@ -383,45 +418,35 @@ internal sealed class MeanShiftModeSeeker
         double rangeRadiusSquared,
         out MeanShiftMode interpolatedMode)
     {
-        Lab32 interpolatedSource = BlendWeightedLab(
-            corner00.SourceColor,
-            corner10.SourceColor,
-            corner01.SourceColor,
-            corner11.SourceColor,
-            corner00.BilinearWeight,
-            corner10.BilinearWeight,
-            corner01.BilinearWeight,
-            corner11.BilinearWeight);
+        var sourceAccumulator = default(MeanShiftModeAccumulator);
+        var modeAccumulator = default(MeanShiftModeAccumulator);
 
-        if (pixelColor.EuclideanDistanceSquared(interpolatedSource) > sourceColorToleranceSquared ||
-            pixelColor.EuclideanDistanceSquared(corner00.Mode.Color) > rangeRadiusSquared)
+        AccumulatePositiveWeightCorner(in corner00, ref sourceAccumulator, ref modeAccumulator);
+        AccumulatePositiveWeightCorner(in corner10, ref sourceAccumulator, ref modeAccumulator);
+        AccumulatePositiveWeightCorner(in corner01, ref sourceAccumulator, ref modeAccumulator);
+        AccumulatePositiveWeightCorner(in corner11, ref sourceAccumulator, ref modeAccumulator);
+
+        if (!sourceAccumulator.TryGetMode(out MeanShiftMode interpolatedSource) ||
+            pixelColor.EuclideanDistanceSquared(interpolatedSource.Color) > sourceColorToleranceSquared ||
+            pixelColor.EuclideanDistanceSquared(referenceMode.Color) > rangeRadiusSquared)
         {
             interpolatedMode = default;
             return false;
         }
 
-        double interpolatedX =
-            (corner00.BilinearWeight * corner00.Mode.X) +
-            (corner10.BilinearWeight * corner10.Mode.X) +
-            (corner01.BilinearWeight * corner01.Mode.X) +
-            (corner11.BilinearWeight * corner11.Mode.X);
-        double interpolatedY =
-            (corner00.BilinearWeight * corner00.Mode.Y) +
-            (corner10.BilinearWeight * corner10.Mode.Y) +
-            (corner01.BilinearWeight * corner01.Mode.Y) +
-            (corner11.BilinearWeight * corner11.Mode.Y);
-        Lab32 interpolatedColor = BlendWeightedLab(
-            corner00.Mode.Color,
-            corner10.Mode.Color,
-            corner01.Mode.Color,
-            corner11.Mode.Color,
-            corner00.BilinearWeight,
-            corner10.BilinearWeight,
-            corner01.BilinearWeight,
-            corner11.BilinearWeight);
+        return modeAccumulator.TryGetMode(out interpolatedMode);
+    }
 
-        interpolatedMode = new MeanShiftMode(interpolatedX, interpolatedY, interpolatedColor);
-        return true;
+    private static void AccumulatePositiveWeightCorner(
+        in CoarseCornerSample corner,
+        ref MeanShiftModeAccumulator sourceAccumulator,
+        ref MeanShiftModeAccumulator modeAccumulator)
+    {
+        if (corner.BilinearWeight <= 0.0)
+            return;
+
+        sourceAccumulator.AddWeighted(new MeanShiftMode(0.0, 0.0, corner.SourceColor), corner.BilinearWeight);
+        modeAccumulator.AddWeighted(corner.Mode, corner.BilinearWeight);
     }
 
     private static bool TryInterpolateMatchingCornerSubset(
@@ -443,20 +468,6 @@ internal sealed class MeanShiftModeSeeker
         accumulator.TryAdd(in corner11, pixelColor, cornerMatchToleranceSquared, rangeRadiusSquared, modeColorToleranceSquared, spatialRadiusSquared);
         return accumulator.TryBuildAverageMode(out interpolatedMode);
     }
-
-    private static Lab32 BlendWeightedLab(
-        Lab32 c00,
-        Lab32 c10,
-        Lab32 c01,
-        Lab32 c11,
-        double w00,
-        double w10,
-        double w01,
-        double w11) =>
-        new(
-            (float)((w00 * c00.L) + (w10 * c10.L) + (w01 * c01.L) + (w11 * c11.L)),
-            (float)((w00 * c00.A) + (w10 * c10.A) + (w01 * c01.A) + (w11 * c11.A)),
-            (float)((w00 * c00.B) + (w10 * c10.B) + (w01 * c01.B) + (w11 * c11.B)));
 
     private static int[] BuildCoarseAxisCoordinates(int axisLength, int coarseStride)
     {

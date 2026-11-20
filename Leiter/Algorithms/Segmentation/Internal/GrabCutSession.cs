@@ -1,14 +1,14 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
+using System.Diagnostics;
 using Leiter.Algorithms.DataStructures;
-using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
 
 /// <summary>
 /// Reusable per-image GrabCut graph and GMM state so multi-round pipelines such as
-/// <see cref="SaliencyCut"/> compute pairwise smoothness capacities only once.
+/// <see cref="Leiter.Algorithms.Saliency.SaliencyCut"/> compute pairwise smoothness capacities only once.
 /// </summary>
 internal sealed class GrabCutSession
 {
@@ -16,6 +16,21 @@ internal sealed class GrabCutSession
         int ForegroundCount,
         int BackgroundCount,
         int HardBackgroundCount);
+
+    private readonly record struct ForwardSmoothnessPair(
+        int PixelIndex,
+        GridDirection Direction,
+        double InverseDistance,
+        double DistanceSquared);
+
+    private sealed class SmoothnessScanState(Size size, Rgb8[] pixels, ForwardSmoothnessPair[] pairs)
+    {
+        public readonly Size Size = size;
+        public readonly Rgb8[] Pixels = pixels;
+        public readonly ForwardSmoothnessPair[] Pairs = pairs;
+        public double SumSquaredDiff;
+        public int Count;
+    }
 
     private readonly Size imageSize;
     private readonly int pixelCount;
@@ -33,24 +48,22 @@ internal sealed class GrabCutSession
     private readonly double[] sourceCapacities;
     private readonly double[] sinkCapacities;
 
-    public GrabCutSession(IReadOnlyMatrix<Rgb8> image, GrabCutOptions? options = null)
+    public GrabCutSession(IReadOnlyMatrix<Rgb8> image, GrabCutOptions options)
     {
         ArgumentNullException.ThrowIfNull(image);
-        GrabCutOptions resolvedOptions = OptionsResolver.Resolve(options, GrabCutOptions.Default);
+        ArgumentNullException.ThrowIfNull(options);
 
         imageSize = image.Size;
         pixelCount = image.Count;
-        smoothnessWeight = resolvedOptions.SmoothnessWeight;
-        defaultIterations = resolvedOptions.Iterations;
+        smoothnessWeight = options.SmoothnessWeight;
+        defaultIterations = options.Iterations;
 
         pixels = image.ToArray();
-        double beta = ComputeContrastParameterBeta(image);
+        solver = new GridMinCutSolver(imageSize);
+        InitializeSmoothnessEdges(solver, imageSize, pixels, smoothnessWeight);
 
-        solver = new GridMinCutSolver(image.Size);
-        PopulateSmoothnessEdges(solver, image, smoothnessWeight, beta);
-
-        foregroundGmm = new GaussianMixtureModel(resolvedOptions.MixtureComponentCount);
-        backgroundGmm = new GaussianMixtureModel(resolvedOptions.MixtureComponentCount);
+        foregroundGmm = new GaussianMixtureModel(options.MixtureComponentCount);
+        backgroundGmm = new GaussianMixtureModel(options.MixtureComponentCount);
 
         trimapLabels = new TrimapLabel[pixelCount];
         isForeground = new bool[pixelCount];
@@ -233,59 +246,51 @@ internal sealed class GrabCutSession
 
     private MaskMatrix BuildMaskFromState() => new(imageSize, isForeground);
 
-    private static double ComputeContrastParameterBeta(IReadOnlyMatrix<Rgb8> image)
-    {
-        double sumSquaredDiff = 0.0;
-        long pairCount = 0;
-
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                var self = new Coord(x, y);
-                Rgb8 selfPixel = image[self];
-                foreach (GridNeighbor neighbor in GridNeighborhood.Forward8Connected)
-                {
-                    Coord other = self + neighbor.Offset;
-                    if (!image.Contains(other))
-                        continue;
-
-                    sumSquaredDiff += selfPixel.DistanceSquared(image[other]);
-                    pairCount++;
-                }
-            }
-        }
-
-        if (pairCount == 0)
-            return 0.0;
-
-        double meanDiffSq = sumSquaredDiff / pairCount;
-        return meanDiffSq > 1e-12 ? 1.0 / (2.0 * meanDiffSq) : 0.0;
-    }
-
-    private static void PopulateSmoothnessEdges(
+    private static void InitializeSmoothnessEdges(
         GridMinCutSolver solver,
-        IReadOnlyMatrix<Rgb8> image,
-        double smoothnessWeight,
-        double beta)
+        Size imageSize,
+        Rgb8[] pixels,
+        double smoothnessWeight)
     {
-        Parallel.For(0, image.Height, y =>
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                var self = new Coord(x, y);
-                Rgb8 selfPixel = image[self];
-                foreach (GridNeighbor neighbor in GridNeighborhood.Forward8Connected)
-                {
-                    Coord other = self + neighbor.Offset;
-                    if (!image.Contains(other))
-                        continue;
+        if (smoothnessWeight == 0.0)
+            return;
 
-                    double diffSq = selfPixel.DistanceSquared(image[other]);
-                    double capacity = smoothnessWeight * neighbor.InverseDistance * Math.Exp(-beta * diffSq);
-                    solver.SetUndirectedEdgeCapacity(self, neighbor.Direction, (float)capacity);
-                }
-            }
-        });
+        int pairCapacity =
+            ((imageSize.Width - 1) * imageSize.Height) +
+            (imageSize.Width * (imageSize.Height - 1)) +
+            (2 * (imageSize.Width - 1) * (imageSize.Height - 1));
+        if (pairCapacity == 0)
+            return;
+
+        var state = new SmoothnessScanState(imageSize, pixels, new ForwardSmoothnessPair[pairCapacity]);
+        GridNeighborhood.ForEachForwardPair(
+            imageSize,
+            GridConnectivity.EightConnected,
+            state,
+            static (first, second, neighbor, s) =>
+            {
+                int firstIndex = s.Size.IndexOf(first);
+                int secondIndex = s.Size.IndexOf(second);
+                double diffSq = s.Pixels[firstIndex].DistanceSquared(s.Pixels[secondIndex]);
+                s.SumSquaredDiff += diffSq;
+                s.Pairs[s.Count++] = new ForwardSmoothnessPair(
+                    firstIndex,
+                    neighbor.Direction,
+                    neighbor.InverseDistance,
+                    diffSq);
+            });
+
+        Debug.Assert(state.Count == pairCapacity);
+
+        double meanDiffSq = state.SumSquaredDiff / state.Count;
+        double beta = meanDiffSq > 1e-12 ? 1.0 / (2.0 * meanDiffSq) : 0.0;
+
+        ForwardSmoothnessPair[] pairs = state.Pairs;
+        for (int i = 0; i < state.Count; i++)
+        {
+            ref readonly ForwardSmoothnessPair pair = ref pairs[i];
+            double capacity = smoothnessWeight * pair.InverseDistance * Math.Exp(-beta * pair.DistanceSquared);
+            solver.SetUndirectedEdgeCapacity(pair.PixelIndex, (int)pair.Direction, (float)capacity);
+        }
     }
 }

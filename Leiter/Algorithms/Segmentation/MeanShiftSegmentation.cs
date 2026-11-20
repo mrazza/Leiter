@@ -13,11 +13,6 @@ using Leiter.Pixels.ColorSpaces;
 public static class MeanShiftSegmentation
 {
     /// <summary>
-    /// The spatial radius threshold above which the spatial-color lattice is used for mode seeking.
-    /// </summary>
-    internal const int LatticeRadiusThreshold = 16;
-
-    /// <summary>
     /// Performs edge-preserving Mean-Shift smoothing on a CIELAB image.
     /// </summary>
     /// <param name="labImage">The input CIELAB image to filter.</param>
@@ -28,13 +23,8 @@ public static class MeanShiftSegmentation
     public static Matrix<Lab32> Filter(IReadOnlyMatrix<Lab32> labImage, MeanShiftOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(labImage);
-        MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options, MeanShiftOptions.Default);
-
-        if (labImage.Count == 0)
-            return new SequentialMatrix<Lab32>(labImage.Size);
-
-        (MeanShiftMode[] modes, _) = MeanShiftModeSeeker.SeekModes(labImage, resolvedOptions, LatticeRadiusThreshold);
-        return BuildFilteredLabMatrix(labImage.Size, modes);
+        MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options);
+        return Run(labImage, resolvedOptions, wantFilter: true, wantSegments: false).Filtered!;
     }
 
     /// <summary>
@@ -45,18 +35,8 @@ public static class MeanShiftSegmentation
     /// <returns>A filtered <see cref="Matrix{Rgb8}"/> containing the converged mode color at each pixel converted to sRGB.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any option in <paramref name="options"/> is invalid.</exception>
-    public static Matrix<Rgb8> Filter(IReadOnlyMatrix<Rgb8> image, MeanShiftOptions? options = null)
-    {
-        ArgumentNullException.ThrowIfNull(image);
-        MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options, MeanShiftOptions.Default);
-
-        if (image.Count == 0)
-            return new SequentialMatrix<Rgb8>(image.Size);
-
-        Matrix<Lab32> labMatrix = image.ToLab32(RgbColorSpace.SRgb);
-        (MeanShiftMode[] modes, _) = MeanShiftModeSeeker.SeekModes(labMatrix, resolvedOptions, LatticeRadiusThreshold);
-        return BuildFilteredLabMatrix(image.Size, modes).ToRgb8(RgbColorSpace.SRgb);
-    }
+    public static Matrix<Rgb8> Filter(IReadOnlyMatrix<Rgb8> image, MeanShiftOptions? options = null) =>
+        RunRgb(image, options, wantFilter: true, wantSegments: false).Filtered!;
 
     /// <summary>
     /// Simultaneously performs edge-preserving Mean-Shift smoothing and region segmentation on a CIELAB image,
@@ -72,19 +52,9 @@ public static class MeanShiftSegmentation
         MeanShiftOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(labImage);
-        MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options, MeanShiftOptions.Default);
-
-        if (labImage.Count == 0)
-        {
-            return (
-                new SequentialMatrix<Lab32>(labImage.Size),
-                DisjointSet.CreateSingletons(labImage));
-        }
-
-        (MeanShiftMode[] modes, Lab32[] sourcePixels) = MeanShiftModeSeeker.SeekModes(labImage, resolvedOptions, LatticeRadiusThreshold);
-        Matrix<Lab32> filtered = BuildFilteredLabMatrix(labImage.Size, modes);
-        IDisjointSet segmentation = MeanShiftRegionClusterer.ClusterModes(labImage, sourcePixels, modes, resolvedOptions);
-        return (filtered, segmentation);
+        MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options);
+        (Matrix<Lab32>? filtered, IDisjointSet? segmentation) = Run(labImage, resolvedOptions, wantFilter: true, wantSegments: true);
+        return (filtered!, segmentation!);
     }
 
     /// <summary>
@@ -100,21 +70,8 @@ public static class MeanShiftSegmentation
         IReadOnlyMatrix<Rgb8> image,
         MeanShiftOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(image);
-        MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options, MeanShiftOptions.Default);
-
-        if (image.Count == 0)
-        {
-            return (
-                new SequentialMatrix<Rgb8>(image.Size),
-                DisjointSet.CreateSingletons(image));
-        }
-
-        Matrix<Lab32> labMatrix = image.ToLab32(RgbColorSpace.SRgb);
-        (MeanShiftMode[] modes, Lab32[] sourcePixels) = MeanShiftModeSeeker.SeekModes(labMatrix, resolvedOptions, LatticeRadiusThreshold);
-        Matrix<Rgb8> filtered = BuildFilteredLabMatrix(image.Size, modes).ToRgb8(RgbColorSpace.SRgb);
-        IDisjointSet segmentation = MeanShiftRegionClusterer.ClusterModes(image, sourcePixels, modes, resolvedOptions);
-        return (filtered, segmentation);
+        (Matrix<Rgb8>? filtered, IDisjointSet? segmentation) = RunRgb(image, options, wantFilter: true, wantSegments: true);
+        return (filtered!, segmentation!);
     }
 
     /// <summary>
@@ -128,13 +85,8 @@ public static class MeanShiftSegmentation
     public static IDisjointSet Segment(IReadOnlyMatrix<Lab32> labImage, MeanShiftOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(labImage);
-        MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options, MeanShiftOptions.Default);
-
-        if (labImage.Count == 0)
-            return DisjointSet.CreateSingletons(labImage);
-
-        (MeanShiftMode[] modes, Lab32[] sourcePixels) = MeanShiftModeSeeker.SeekModes(labImage, resolvedOptions, LatticeRadiusThreshold);
-        return MeanShiftRegionClusterer.ClusterModes(labImage, sourcePixels, modes, resolvedOptions);
+        MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options);
+        return Run(labImage, resolvedOptions, wantFilter: false, wantSegments: true).Segmentation!;
     }
 
     /// <summary>
@@ -145,17 +97,49 @@ public static class MeanShiftSegmentation
     /// <returns>An <see cref="IDisjointSet"/> representing the partitioned regions of the image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any option in <paramref name="options"/> is invalid.</exception>
-    public static IDisjointSet Segment(IReadOnlyMatrix<Rgb8> image, MeanShiftOptions? options = null)
+    public static IDisjointSet Segment(IReadOnlyMatrix<Rgb8> image, MeanShiftOptions? options = null) =>
+        RunRgb(image, options, wantFilter: false, wantSegments: true).Segmentation!;
+
+    private static (Matrix<Rgb8>? Filtered, IDisjointSet? Segmentation) RunRgb(
+        IReadOnlyMatrix<Rgb8> image,
+        MeanShiftOptions? options,
+        bool wantFilter,
+        bool wantSegments)
     {
         ArgumentNullException.ThrowIfNull(image);
-        MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options, MeanShiftOptions.Default);
+        MeanShiftOptions resolvedOptions = OptionsResolver.Resolve(options);
 
         if (image.Count == 0)
-            return DisjointSet.CreateSingletons(image);
+        {
+            return (
+                wantFilter ? new SequentialMatrix<Rgb8>(image.Size) : null,
+                wantSegments ? DisjointSet.CreateSingletons(image) : null);
+        }
 
         Matrix<Lab32> labMatrix = image.ToLab32(RgbColorSpace.SRgb);
-        (MeanShiftMode[] modes, Lab32[] sourcePixels) = MeanShiftModeSeeker.SeekModes(labMatrix, resolvedOptions, LatticeRadiusThreshold);
-        return MeanShiftRegionClusterer.ClusterModes(image, sourcePixels, modes, resolvedOptions);
+        (Matrix<Lab32>? labFiltered, IDisjointSet? segmentation) = Run(labMatrix, resolvedOptions, wantFilter, wantSegments);
+        return (labFiltered?.ToRgb8(RgbColorSpace.SRgb), segmentation);
+    }
+
+    private static (Matrix<Lab32>? Filtered, IDisjointSet? Segmentation) Run(
+        IReadOnlyMatrix<Lab32> lab,
+        MeanShiftOptions opts,
+        bool wantFilter,
+        bool wantSegments)
+    {
+        if (lab.Count == 0)
+        {
+            return (
+                wantFilter ? new SequentialMatrix<Lab32>(lab.Size) : null,
+                wantSegments ? DisjointSet.CreateSingletons(lab) : null);
+        }
+
+        (MeanShiftMode[] modes, Lab32[] sourcePixels) = MeanShiftModeSeeker.SeekModes(lab, opts);
+        Matrix<Lab32>? filtered = wantFilter ? BuildFilteredLabMatrix(lab.Size, modes) : null;
+        IDisjointSet? segmentation = wantSegments
+            ? MeanShiftRegionClusterer.ClusterModes(lab, sourcePixels, modes, opts)
+            : null;
+        return (filtered, segmentation);
     }
 
     private static Matrix<Lab32> BuildFilteredLabMatrix(Size size, MeanShiftMode[] modes)

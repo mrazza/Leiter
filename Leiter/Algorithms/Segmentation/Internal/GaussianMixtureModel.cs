@@ -12,6 +12,7 @@ internal sealed class GaussianMixtureModel
 {
     private const double CovarianceRegularization = 0.01;
     private const double EmptyModelPenalty = 1e4;
+    private const int StackAllocComponentThreshold = 256;
 
     private readonly record struct GaussianComponent(
         double Weight,
@@ -130,7 +131,12 @@ internal sealed class GaussianMixtureModel
 
     public double EvaluateNegativeLogLikelihood(Rgb8 pixel)
     {
+        Span<double> energies = componentCount <= StackAllocComponentThreshold
+            ? stackalloc double[componentCount]
+            : new double[componentCount];
+
         double minEnergy = double.PositiveInfinity;
+        int activeCount = 0;
 
         for (int k = 0; k < componentCount; k++)
         {
@@ -139,22 +145,18 @@ internal sealed class GaussianMixtureModel
                 continue;
 
             double energy = ComputeComponentEnergy(in component, pixel);
+            energies[activeCount++] = energy;
             if (energy < minEnergy)
                 minEnergy = energy;
         }
 
-        if (double.IsPositiveInfinity(minEnergy))
+        if (activeCount == 0 || double.IsPositiveInfinity(minEnergy))
             return EmptyModelPenalty;
 
         double expSum = 0.0;
-        for (int k = 0; k < componentCount; k++)
+        for (int i = 0; i < activeCount; i++)
         {
-            ref readonly GaussianComponent component = ref components[k];
-            if (component.Weight <= 0.0)
-                continue;
-
-            double energy = ComputeComponentEnergy(in component, pixel);
-            expSum += Math.Exp(-(energy - minEnergy));
+            expSum += Math.Exp(-(energies[i] - minEnergy));
         }
 
         return minEnergy - Math.Log(expSum);
@@ -267,5 +269,5 @@ internal sealed class GaussianMixtureModel
     }
 
     // GrabCut GMM parameters and regularization are defined in unnormalized [0, 255] RGB units.
-    private static Vector3D ToColorVector(Rgb8 pixel) => new(pixel.R, pixel.G, pixel.B);
+    private static Vector3D ToColorVector(Rgb8 pixel) => pixel.ToRawVector3D();
 }

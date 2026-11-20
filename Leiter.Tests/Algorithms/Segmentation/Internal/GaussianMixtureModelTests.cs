@@ -45,6 +45,14 @@ public class GaussianMixtureModelTests
         gmm.FitFromAssignedComponents(uniform, [true, true], targetForeground: false, [0, 0], totalMemberCount: 0);
         Assert.True(gmm.EvaluateNegativeLogLikelihood(new Rgb8(50, 60, 70)) > 100.0);
 
+        // Component counts above the stackalloc threshold (256) exercise the heap fallback safely.
+        var largeGmm = new GaussianMixtureModel(componentCount: 300);
+        largeGmm.InitializeAndFit(rgb, [0, 1, 2, 3, 4, 5]);
+        double largeInlierNll = largeGmm.EvaluateNegativeLogLikelihood(new Rgb8(14, 16, 14));
+        double largeOutlierNll = largeGmm.EvaluateNegativeLogLikelihood(new Rgb8(20, 250, 10));
+        Assert.True(double.IsFinite(largeInlierNll));
+        Assert.True(largeOutlierNll > largeInlierNll);
+
         Assert.Throws<ArgumentOutOfRangeException>(() => new GaussianMixtureModel(0));
     }
 }

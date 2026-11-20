@@ -1,5 +1,6 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Internal;
@@ -73,6 +74,10 @@ internal sealed class GridMinCutSolver
 
     public void SetUndirectedEdgeCapacity(int pixelIndex, int direction, float capacity)
     {
+        Debug.Assert((uint)pixelIndex < (uint)pixelCount);
+        Debug.Assert((uint)direction < 8);
+        Debug.Assert((validDirectionMasks[pixelIndex] & (1 << direction)) != 0, $"Direction {direction} is out of grid bounds for pixel {pixelIndex}.");
+
         int neighborIndex = pixelIndex + neighborOffsets[direction];
         baseNeighborCapacities[DirectedEdgeIndex(pixelIndex, direction)] = capacity;
         baseNeighborCapacities[DirectedEdgeIndex(neighborIndex, OppositeDirection(direction))] = capacity;
@@ -137,6 +142,8 @@ internal sealed class GridMinCutSolver
 
     private static byte[] BuildValidDirectionMasks(Size size)
     {
+        Debug.Assert(GridNeighborhood.All8Connected.Length == 8);
+
         var masks = new byte[size.Count];
         for (int y = 0; y < size.Height; y++)
         {
@@ -367,6 +374,10 @@ internal sealed class GridMinCutSolver
 
     private void AdoptOrphans()
     {
+        if (orphanQueue.Count == 0)
+            return;
+
+        currentTimestamp++;
         while (orphanQueue.Count > 0)
         {
             int orphan = orphanQueue.Dequeue();
@@ -378,7 +389,6 @@ internal sealed class GridMinCutSolver
     private bool TryFindReplacementParent(int orphan)
     {
         SearchTree tree = treeMembership[orphan];
-        currentTimestamp++;
 
         int bestParent = -1;
         byte bestDir = 0;

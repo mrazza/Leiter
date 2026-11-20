@@ -28,18 +28,37 @@ internal sealed partial class MeanShiftSpatialLattice
 
     private const int ParallelBuildPixelThreshold = 65536;
 
+    private static Lab32[] ValidateAndCopyPixels(
+        ReadOnlySpan<Lab32> pixels,
+        int width,
+        int height,
+        double spatialCellWidth,
+        double rangeCellWidth)
+    {
+        ValidateArguments(pixels.Length, width, height, spatialCellWidth, rangeCellWidth, sampleStride: 1);
+        return pixels.IsEmpty ? [] : pixels.ToArray();
+    }
+
     private static void ValidateArguments(
+        int pixelLength,
         int width,
         int height,
         double spatialCellWidth,
         double rangeCellWidth,
         int sampleStride)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(width, 0);
-        ArgumentOutOfRangeException.ThrowIfLessThan(height, 0);
+        Guard.ThrowIfNegativeDimensions(width, height);
         Guard.ThrowIfNotFinitePositive(spatialCellWidth);
         Guard.ThrowIfNotFinitePositive(rangeCellWidth);
         ArgumentOutOfRangeException.ThrowIfLessThan(sampleStride, 1);
+
+        long expectedLength = (long)width * height;
+        if (pixelLength != expectedLength)
+        {
+            throw new ArgumentException(
+                $"Pixel span length ({pixelLength}) must equal width * height ({expectedLength}).",
+                "pixels");
+        }
     }
 
     private static AxisCellSpan[] ComputeAxisCellSpans(int axisLength, double cellWidth, int sampleStride)
@@ -78,17 +97,18 @@ internal sealed partial class MeanShiftSpatialLattice
     private static int[] ComputeCellPointOffsets(
         AxisCellSpan[] xSpans,
         AxisCellSpan[] ySpans,
+        Size gridSize,
         out int totalPointCount)
     {
-        int gridWidth = xSpans.Length;
-        int gridHeight = ySpans.Length;
-        var offsets = new int[gridWidth * gridHeight];
+        int gridWidth = gridSize.Width;
+        int gridHeight = gridSize.Height;
+        var offsets = new int[gridSize.Count];
         totalPointCount = 0;
 
         for (int cellY = 0; cellY < gridHeight; cellY++)
         {
             int rowSampleCount = ySpans[cellY].SampleCount;
-            int rowBase = cellY * gridWidth;
+            int rowBase = gridSize.IndexOf(0, cellY);
             for (int cellX = 0; cellX < gridWidth; cellX++)
             {
                 int cellIndex = rowBase + cellX;
@@ -102,17 +122,17 @@ internal sealed partial class MeanShiftSpatialLattice
 
     private static ColorBucket[][] BuildAllSpatialCells(
         Lab32[] sourcePixels,
-        int width,
+        Size imageSize,
         double rangeCellWidth,
         int sampleStride,
+        Size gridSize,
         AxisCellSpan[] xSpans,
         AxisCellSpan[] ySpans,
         int[] cellPointStartOffsets,
         PackedPoint[] points,
         bool buildInParallel)
     {
-        int gridWidth = xSpans.Length;
-        int spatialCellCount = gridWidth * ySpans.Length;
+        int spatialCellCount = gridSize.Count;
         var perCellBuckets = new ColorBucket[spatialCellCount][];
 
         if (buildInParallel)
@@ -125,10 +145,10 @@ internal sealed partial class MeanShiftSpatialLattice
                 {
                     perCellBuckets[cellIndex] = BuildCellAtIndex(
                         sourcePixels,
-                        width,
+                        imageSize,
                         rangeCellWidth,
                         sampleStride,
-                        gridWidth,
+                        gridSize,
                         xSpans,
                         ySpans,
                         cellPointStartOffsets,
@@ -146,10 +166,10 @@ internal sealed partial class MeanShiftSpatialLattice
             {
                 perCellBuckets[cellIndex] = BuildCellAtIndex(
                     sourcePixels,
-                    width,
+                    imageSize,
                     rangeCellWidth,
                     sampleStride,
-                    gridWidth,
+                    gridSize,
                     xSpans,
                     ySpans,
                     cellPointStartOffsets,
@@ -164,10 +184,10 @@ internal sealed partial class MeanShiftSpatialLattice
 
     private static ColorBucket[] BuildCellAtIndex(
         Lab32[] sourcePixels,
-        int width,
+        Size imageSize,
         double rangeCellWidth,
         int sampleStride,
-        int gridWidth,
+        Size gridSize,
         AxisCellSpan[] xSpans,
         AxisCellSpan[] ySpans,
         int[] cellPointStartOffsets,
@@ -175,14 +195,15 @@ internal sealed partial class MeanShiftSpatialLattice
         int cellIndex,
         CellBuildScratch scratch)
     {
-        AxisCellSpan xSpan = xSpans[cellIndex % gridWidth];
-        AxisCellSpan ySpan = ySpans[cellIndex / gridWidth];
+        Coord cellCoord = gridSize.CoordOf(cellIndex);
+        AxisCellSpan xSpan = xSpans[cellCoord.X];
+        AxisCellSpan ySpan = ySpans[cellCoord.Y];
         if (xSpan.SampleCount == 0 || ySpan.SampleCount == 0)
             return [];
 
         return BuildSpatialCell(
             sourcePixels,
-            width,
+            imageSize,
             rangeCellWidth,
             xSpan,
             ySpan,
@@ -194,7 +215,7 @@ internal sealed partial class MeanShiftSpatialLattice
 
     private static ColorBucket[] BuildSpatialCell(
         Lab32[] sourcePixels,
-        int width,
+        Size imageSize,
         double rangeCellWidth,
         AxisCellSpan xSpan,
         AxisCellSpan ySpan,
@@ -208,7 +229,7 @@ internal sealed partial class MeanShiftSpatialLattice
         List<ColorKey3D> sortedKeys = scratch.SortedKeys;
         List<(int X, int Y, Lab32 Color, ColorKey3D Key)> cellSamples = scratch.CellSamples;
 
-        CountCellColors(sourcePixels, width, rangeCellWidth, xSpan, ySpan, sampleStride, colorCounts, sortedKeys, cellSamples);
+        CountCellColors(sourcePixels, imageSize, rangeCellWidth, xSpan, ySpan, sampleStride, colorCounts, sortedKeys, cellSamples);
         if (sortedKeys.Count == 0)
             return [];
 
@@ -222,7 +243,7 @@ internal sealed partial class MeanShiftSpatialLattice
 
     private static void CountCellColors(
         Lab32[] sourcePixels,
-        int width,
+        Size imageSize,
         double rangeCellWidth,
         AxisCellSpan xSpan,
         AxisCellSpan ySpan,
@@ -233,13 +254,10 @@ internal sealed partial class MeanShiftSpatialLattice
     {
         for (int y = ySpan.FirstSample; y < ySpan.ExclusiveEnd; y += sampleStride)
         {
-            int rowStart = y * width;
+            int rowStart = imageSize.IndexOf(0, y);
             for (int x = xSpan.FirstSample; x < xSpan.ExclusiveEnd; x += sampleStride)
             {
                 int pixelIndex = rowStart + x;
-                if ((uint)pixelIndex >= (uint)sourcePixels.Length)
-                    continue;
-
                 Lab32 color = sourcePixels[pixelIndex];
                 ColorKey3D colorKey = QuantizeColor(color, rangeCellWidth);
                 cellSamples.Add((x, y, color, colorKey));
@@ -269,7 +287,7 @@ internal sealed partial class MeanShiftSpatialLattice
         {
             ColorKey3D key = sortedKeys[i];
             int count = colorCounts[key];
-            cellBuckets[i] = new ColorBucket(key.L, key.A, key.B, runningOffset, count);
+            cellBuckets[i] = new ColorBucket(key, runningOffset, count);
             writeOffsets[key] = runningOffset;
             runningOffset += count;
         }

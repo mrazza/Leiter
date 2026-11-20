@@ -3,6 +3,7 @@ namespace Leiter.Algorithms.Segmentation.Internal;
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Leiter.Core;
 using Leiter.Pixels;
 
 /// <summary>
@@ -23,7 +24,7 @@ internal sealed partial class MeanShiftSpatialLattice
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private readonly record struct ColorBucket(int CellL, int CellA, int CellB, int PointOffset, int PointCount);
+    private readonly record struct ColorBucket(ColorKey3D Key, int PointOffset, int PointCount);
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct PackedPoint(int x, int y, Lab32 color)
@@ -42,8 +43,7 @@ internal sealed partial class MeanShiftSpatialLattice
 
     private readonly double spatialCellWidth;
     private readonly double rangeCellWidth;
-    private readonly int gridWidth;
-    private readonly int gridHeight;
+    private readonly Size gridSize;
     private readonly int[] spatialCellOffsets;
     private readonly ColorBucket[] colorBuckets;
     private readonly PackedPoint[] points;
@@ -56,7 +56,8 @@ internal sealed partial class MeanShiftSpatialLattice
     /// <param name="height">The height of the image lattice in pixels.</param>
     /// <param name="spatialCellWidth">The width of each spatial lattice cell.</param>
     /// <param name="rangeCellWidth">The width of each color range lattice cell.</param>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when any dimension or cell width is non-positive or non-finite.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any dimension is negative, or any cell width is non-positive or non-finite.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="pixels"/> length does not equal <paramref name="width"/> * <paramref name="height"/>.</exception>
     public MeanShiftSpatialLattice(
         ReadOnlySpan<Lab32> pixels,
         int width,
@@ -64,12 +65,13 @@ internal sealed partial class MeanShiftSpatialLattice
         double spatialCellWidth,
         double rangeCellWidth)
         : this(
-            pixels.Length == 0 || width <= 0 || height <= 0 ? [] : pixels.ToArray(),
+            ValidateAndCopyPixels(pixels, width, height, spatialCellWidth, rangeCellWidth),
             width,
             height,
             spatialCellWidth,
             rangeCellWidth,
-            buildInParallel: pixels.Length >= ParallelBuildPixelThreshold)
+            buildInParallel: pixels.Length >= ParallelBuildPixelThreshold,
+            skipValidation: true)
     {
     }
 
@@ -99,17 +101,18 @@ internal sealed partial class MeanShiftSpatialLattice
         double spatialCellWidth,
         double rangeCellWidth,
         bool buildInParallel,
-        int sampleStride = 1)
+        int sampleStride = 1,
+        bool skipValidation = false)
     {
-        ValidateArguments(width, height, spatialCellWidth, rangeCellWidth, sampleStride);
+        if (!skipValidation)
+            ValidateArguments(sourcePixels.Length, width, height, spatialCellWidth, rangeCellWidth, sampleStride);
 
         this.spatialCellWidth = spatialCellWidth;
         this.rangeCellWidth = rangeCellWidth;
 
         if (sourcePixels.Length == 0 || width == 0 || height == 0)
         {
-            gridWidth = 0;
-            gridHeight = 0;
+            gridSize = new Size(0, 0);
             spatialCellOffsets = [];
             colorBuckets = [];
             points = [];
@@ -118,17 +121,17 @@ internal sealed partial class MeanShiftSpatialLattice
 
         AxisCellSpan[] xSpans = ComputeAxisCellSpans(width, spatialCellWidth, sampleStride);
         AxisCellSpan[] ySpans = ComputeAxisCellSpans(height, spatialCellWidth, sampleStride);
-        gridWidth = xSpans.Length;
-        gridHeight = ySpans.Length;
+        gridSize = new Size(xSpans.Length, ySpans.Length);
 
-        int[] cellPointStartOffsets = ComputeCellPointOffsets(xSpans, ySpans, out int totalPointCount);
+        int[] cellPointStartOffsets = ComputeCellPointOffsets(xSpans, ySpans, gridSize, out int totalPointCount);
         points = new PackedPoint[totalPointCount];
 
         ColorBucket[][] perCellBuckets = BuildAllSpatialCells(
             sourcePixels,
-            width,
+            new Size(width, height),
             rangeCellWidth,
             sampleStride,
+            gridSize,
             xSpans,
             ySpans,
             cellPointStartOffsets,
@@ -160,9 +163,9 @@ internal sealed partial class MeanShiftSpatialLattice
         int centerCellX = (int)Math.Floor(queryX / spatialCellWidth);
         int centerCellY = (int)Math.Floor(queryY / spatialCellWidth);
         int minSpatialCellX = Math.Max(0, centerCellX - 1);
-        int maxSpatialCellX = Math.Min(gridWidth - 1, centerCellX + 1);
+        int maxSpatialCellX = Math.Min(gridSize.Width - 1, centerCellX + 1);
         int minSpatialCellY = Math.Max(0, centerCellY - 1);
-        int maxSpatialCellY = Math.Min(gridHeight - 1, centerCellY + 1);
+        int maxSpatialCellY = Math.Min(gridSize.Height - 1, centerCellY + 1);
         if (minSpatialCellX > maxSpatialCellX || minSpatialCellY > maxSpatialCellY)
             return current;
 
@@ -178,7 +181,7 @@ internal sealed partial class MeanShiftSpatialLattice
         var accumulator = default(MeanShiftModeAccumulator);
         for (int cellY = minSpatialCellY; cellY <= maxSpatialCellY; cellY++)
         {
-            int cellRowOffset = cellY * gridWidth;
+            int cellRowOffset = gridSize.IndexOf(0, cellY);
             for (int cellX = minSpatialCellX; cellX <= maxSpatialCellX; cellX++)
             {
                 AccumulateSpatialCell(
@@ -216,9 +219,9 @@ internal sealed partial class MeanShiftSpatialLattice
         for (int bucketIndex = firstBucket; bucketIndex < bucketEnd; bucketIndex++)
         {
             ColorBucket bucket = colorBuckets[bucketIndex];
-            if (bucket.CellL > colorWindow.MaxL)
+            if (bucket.Key.L > colorWindow.MaxL)
                 break;
-            if (!colorWindow.ContainsChroma(bucket.CellA, bucket.CellB))
+            if (!colorWindow.ContainsChroma(bucket.Key.A, bucket.Key.B))
                 continue;
 
             int pointEnd = bucket.PointOffset + bucket.PointCount;
@@ -260,7 +263,7 @@ internal sealed partial class MeanShiftSpatialLattice
         while (low < high)
         {
             int midpoint = low + ((high - low) >> 1);
-            if (buckets[midpoint].CellL < minLightnessCell)
+            if (buckets[midpoint].Key.L < minLightnessCell)
                 low = midpoint + 1;
             else
                 high = midpoint;
