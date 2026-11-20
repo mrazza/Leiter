@@ -29,19 +29,37 @@ public sealed record SaliencyCutOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default inner GrabCut options used when <c>GrabCut</c> is omitted or <see langword="null"/>.
+    /// </summary>
+    public static GrabCutOptions DefaultGrabCut { get; } = GrabCutOptions.Default with { Iterations = 2 };
+
+    /// <summary>
+    /// Gets the default initial binarization and component retention options used when <c>Mask</c> is omitted or <see langword="null"/>.
+    /// </summary>
+    public static SaliencyMaskOptions DefaultMask { get; } = SaliencyMaskOptions.Default with { Method = SaliencyThresholdMethod.Fixed };
+
+    /// <summary>
     /// Gets the default <see cref="SaliencyCutOptions"/> instance.
     /// </summary>
     public static SaliencyCutOptions Default { get; } = new();
 
     /// <summary>
-    /// Gets the default inner GrabCut options used when <see cref="GrabCut"/> is <see langword="null"/>.
+    /// Gets the inner GrabCut solver parameters (defaults to <see cref="DefaultGrabCut"/>).
     /// </summary>
-    public static GrabCutOptions DefaultGrabCut { get; } = GrabCutOptions.Default with { Iterations = 2 };
+    public GrabCutOptions GrabCut
+    {
+        get;
+        init => field = value ?? DefaultGrabCut;
+    } = GrabCut ?? DefaultGrabCut;
 
     /// <summary>
-    /// Gets the default initial binarization and component retention options used when <see cref="Mask"/> is <see langword="null"/>.
+    /// Gets the initial binarization and connected-component retention parameters (defaults to <see cref="DefaultMask"/>).
     /// </summary>
-    public static SaliencyMaskOptions DefaultMask { get; } = SaliencyMaskOptions.Default with { Method = SaliencyThresholdMethod.Fixed };
+    public SaliencyMaskOptions Mask
+    {
+        get;
+        init => field = value ?? DefaultMask;
+    } = Mask ?? DefaultMask;
 
     /// <summary>
     /// Creates <see cref="SaliencyCutOptions"/> with trimap band radius and inner GrabCut smoothness scaled linearly for full-resolution execution on <paramref name="size"/>.
@@ -80,12 +98,10 @@ public sealed record SaliencyCutOptions(
             return baseline;
         }
 
-        GrabCutOptions grabCutBaseline = baseline.GrabCut ?? DefaultGrabCut;
         return baseline with
         {
             TrimapBandRadius = ScaleTrimapBandRadius(size, baseline.TrimapBandRadius, s),
-            GrabCut = GrabCutOptions.ForSize(size, grabCutBaseline, referenceDimension),
-            Mask = baseline.Mask ?? DefaultMask
+            GrabCut = GrabCutOptions.ForSize(size, baseline.GrabCut, referenceDimension)
         };
     }
 
@@ -162,12 +178,10 @@ public sealed record SaliencyCutOptions(
             return baseline;
         }
 
-        GrabCutOptions grabCutBaseline = baseline.GrabCut ?? DefaultGrabCut;
         return baseline with
         {
             TrimapBandRadius = ScaleTrimapBandRadius(profile.ImageSize, baseline.TrimapBandRadius, s),
-            GrabCut = GrabCutOptions.ForProfile(in profile, grabCutBaseline, referenceDimension),
-            Mask = baseline.Mask ?? DefaultMask
+            GrabCut = GrabCutOptions.ForProfile(in profile, baseline.GrabCut, referenceDimension)
         };
     }
 
@@ -185,8 +199,8 @@ public sealed record SaliencyCutOptions(
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxOuterIterations, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(TrimapBandRadius, 1);
-        GrabCut?.Validate();
-        Mask?.Validate();
+        GrabCut.Validate();
+        Mask.Validate();
         if (MaxWorkingDimension is int maxDim)
             ArgumentOutOfRangeException.ThrowIfLessThan(maxDim, 2, nameof(MaxWorkingDimension));
     }

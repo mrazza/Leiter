@@ -47,9 +47,15 @@ public class WetInWetOptionsTests : SizeTunableOptionsContractTestsBase<WetInWet
         Assert.Equal(0.5, options.SalientOverlapThreshold, 6);
         Assert.Equal(4, options.ScatterRadius);
         Assert.Equal(0.45, options.SeedProbability, 6);
-        Assert.Null(options.EllipticalFilter);
+        Assert.Equal(WetInWetOptions.DefaultEllipticalFilter, options.EllipticalFilter);
         Assert.Equal(1337, options.Seed);
         Assert.Equal(WetInWetOptions.Default, options);
+
+        var explicitDefaults = new WetInWetOptions(EllipticalFilter: WetInWetOptions.DefaultEllipticalFilter);
+        Assert.Equal(options, explicitDefaults);
+
+        WetInWetOptions resetViaWith = CreateValidCustomOptions() with { EllipticalFilter = null! };
+        Assert.Equal(WetInWetOptions.DefaultEllipticalFilter, resetViaWith.EllipticalFilter);
 
         options.Validate();
     }

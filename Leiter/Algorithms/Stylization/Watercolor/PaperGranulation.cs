@@ -100,7 +100,7 @@ public static class PaperGranulation
             return image.Clone();
         }
 
-        PerlinNoiseOptions grainOpts = opts.GrainNoise ?? PaperGranulationOptions.DefaultGrainNoise;
+        PerlinNoiseOptions grainOpts = opts.GrainNoise;
         bool isProcedural = paperHeightMap is null;
         IReadOnlyMatrix<DoublePixel> heightMap = paperHeightMap ?? GeneratePaperHeightMap(image.Size, grainOpts, cancellationToken);
 
@@ -121,7 +121,7 @@ public static class PaperGranulation
             return image.Clone();
         }
 
-        PerlinNoiseOptions grainOpts = opts.GrainNoise ?? PaperGranulationOptions.DefaultGrainNoise;
+        PerlinNoiseOptions grainOpts = opts.GrainNoise;
         double warpScale = Math.Clamp(PaperGranulationOptions.DefaultGrainNoise.Frequency / grainOpts.Frequency, 0.25, 16.0);
         double effectiveWarpAmplitude = isProcedural
             ? (opts.WarpAmplitude > double.MaxValue / warpScale ? double.MaxValue : opts.WarpAmplitude * warpScale)

@@ -42,12 +42,22 @@ public class SaliencyCutOptionsTests : SizeTunableOptionsContractTestsBase<Salie
 
         Assert.Equal(4, options.MaxOuterIterations);
         Assert.Equal(10, options.TrimapBandRadius);
-        Assert.Null(options.GrabCut);
-        Assert.Null(options.Mask);
+        Assert.Equal(SaliencyCutOptions.DefaultGrabCut, options.GrabCut);
+        Assert.Equal(SaliencyCutOptions.DefaultMask, options.Mask);
         Assert.Null(options.MaxWorkingDimension);
         Assert.Equal(SaliencyCutOptions.Default, options);
         Assert.Equal(GrabCutOptions.Default with { Iterations = 2 }, SaliencyCutOptions.DefaultGrabCut);
         Assert.Equal(SaliencyMaskOptions.Default with { Method = SaliencyThresholdMethod.Fixed }, SaliencyCutOptions.DefaultMask);
+
+        var explicitDefaults = new SaliencyCutOptions(
+            GrabCut: SaliencyCutOptions.DefaultGrabCut,
+            Mask: SaliencyCutOptions.DefaultMask);
+        Assert.Equal(options, explicitDefaults);
+
+        SaliencyCutOptions custom = CreateValidCustomOptions();
+        SaliencyCutOptions resetViaWith = custom with { GrabCut = null!, Mask = null! };
+        Assert.Equal(SaliencyCutOptions.DefaultGrabCut, resetViaWith.GrabCut);
+        Assert.Equal(SaliencyCutOptions.DefaultMask, resetViaWith.Mask);
     }
 
     [Theory]

@@ -14,6 +14,7 @@ using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Segmentation.Internal;
 using Leiter.Algorithms.Stylization;
+using Leiter.Algorithms.Stylization.Watercolor.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -43,112 +44,15 @@ public sealed class WatercolorPipelineSession
         $"Concurrent or re-entrant operations on {nameof(WatercolorPipelineSession)} are not supported.";
 
     private readonly IReadOnlyMatrix<DoublePixel>? _customPaperHeightMap;
+    private readonly CacheSlot<(bool Active, ColorTransferProfile? Palette, double Strength), (Matrix<Rgb8> Image, ColorTransferProfile Palette)> _colorTransfer = new();
+    private readonly SaliencyCache _saliency = new();
+    private readonly SegmentationCache _segmentation = new();
+    private readonly StylizationCache _stylization = new();
+    private readonly FinishingCache _finishing = new();
+    private readonly ICacheSlot[] _allSlots;
+
     private int _isBusy;
     private long _nextVersion;
-
-    // Stage 1: ColorTransfer
-    private ColorTransferKey _colorTransferKey;
-    private Matrix<Rgb8>? _colorTransferred;
-    private ColorTransferProfile? _selectedPalette;
-    private long _colorTransferVersion;
-
-    // Stage 2a: EgbiPreBlur
-    private EgbiPreBlurKey _egbiPreBlurKey;
-    private Matrix<Rgb8>? _egbiPreBlurred;
-    private Matrix<Lab32>? _egbiLabBlurred;
-    private long _egbiPreBlurVersion;
-
-    // Stage 2b: EgbiSegmentation
-    private EgbiKey _egbiKey;
-    private RegionGraph? _egbiGraph;
-    private long _egbiVersion;
-
-    // Stage 2c: RegionalContrastSaliency
-    private RegionalContrastSaliencyKey _rcSaliencyKey;
-    private Matrix<DoublePixel>? _saliencyMap;
-    private long _rcSaliencyVersion;
-
-    // Stage 2d: SaliencyCut
-    private SaliencyCutKey _saliencyCutKey;
-    private MaskMatrix? _salientMask;
-    private long _saliencyCutVersion;
-
-    // Stage 2e-2f: SaliencyDistanceField (raw 1+JFA + smoothed)
-    private long _rawDistanceFieldSalientMaskVersion;
-    private Matrix<DoublePixel>? _rawDistanceField;
-    private long _rawDistanceFieldVersion;
-
-    private SaliencyDistanceFieldKey _distanceFieldKey;
-    private Matrix<DoublePixel>? _distanceField;
-    private long _distanceFieldVersion;
-
-    // Stage 3a-i: MeanShiftFiltering (modes + source Lab + filtered RGB)
-    private MeanShiftFilterKey _meanShiftFilterKey;
-    private MeanShiftMode[]? _meanShiftModes;
-    private Lab32[]? _meanShiftSourcePixels;
-    private Matrix<Rgb8>? _meanShiftFiltered;
-    private long _meanShiftFilterVersion;
-
-    // Stage 3a-ii: MeanShiftClustering (RegionGraph)
-    private MeanShiftClusterKey _meanShiftClusterKey;
-    private RegionGraph? _segmentationGraph;
-    private long _meanShiftClusterVersion;
-
-    // Internal join intermediate: SalientFractions (MeanShiftClustering + SaliencyCut)
-    private SalientFractionsKey _salientFractionsKey;
-    private double[]? _salientFractions;
-
-    // Stage 3b: LodAbstraction
-    private LodAbstractionKey _lodKey;
-    private Matrix<Rgb8>? _lodAbstracted;
-    private long _lodVersion;
-
-    // Stage 4: WetInWet
-    private WetInWetKey _wetInWetKey;
-    private WetInWetResult? _wetInWet;
-    private long _wetInWetVersion;
-
-    // Stage 5: HandTremor
-    private HandTremorKey _handTremorKey;
-    private Matrix<Rgb8>? _handTremor;
-    private long _handTremorVersion;
-
-    // Stage 6a-i: EdgeDarkening (density field)
-    private EdgeDarkeningKey _edgeDarkeningKey;
-    private bool _hasEdgeDensity;
-    private Matrix<DoublePixel>? _edgeDensityField;
-    private long _edgeDensityVersion;
-
-    // Stage 6a-ii: TurbulenceFlow (density field)
-    private TurbulenceFlowKey _turbulenceFlowKey;
-    private bool _hasTurbulenceDensity;
-    private Matrix<DoublePixel>? _turbulenceDensityField;
-    private long _turbulenceDensityVersion;
-
-    // Stage 6a-iii: PigmentCombine
-    private PigmentCombineKey _pigmentCombineKey;
-    private Matrix<Rgb8>? _densityAdjusted;
-    private long _pigmentCombineVersion;
-
-    // Stage 6b: ToneCurve
-    private ToneCurveKey _toneCurveKey;
-    private Matrix<Rgb8>? _toneAdjusted;
-    private long _toneCurveVersion;
-
-    // Stage 6c-i: PaperHeightMap
-    private PaperHeightMapKey _paperHeightMapKey;
-    private bool _hasPaperHeightMap;
-    private IReadOnlyMatrix<DoublePixel>? _paperHeightMap;
-    private long _paperHeightMapVersion;
-
-    // Stage 6c-ii: PaperGranulation
-    private PaperGranulationKey _paperGranulationKey;
-    private Matrix<Rgb8>? _granulated;
-    private long _paperGranulationVersion;
-
-    // Stage 6d: Fxaa
-    private FxaaKey _fxaaKey;
-    private Matrix<Rgb8>? _output;
 
     /// <summary>
     /// Initializes a new <see cref="WatercolorPipelineSession"/> bound to <paramref name="sourceImage"/>
@@ -168,6 +72,30 @@ public sealed class WatercolorPipelineSession
         SourceImage = sourceImage;
         _customPaperHeightMap = paperHeightMap;
         ImageSize = sourceImage.Size;
+
+        _allSlots =
+        [
+            _colorTransfer,
+            _saliency.PreBlur,
+            _saliency.EgbiGraph,
+            _saliency.SaliencyMap,
+            _saliency.SalientMask,
+            _saliency.RawDistanceField,
+            _saliency.DistanceField,
+            _segmentation.Filtering,
+            _segmentation.Clustering,
+            _segmentation.SalientFractions,
+            _stylization.Lod,
+            _stylization.WetInWet,
+            _stylization.HandTremor,
+            _finishing.EdgeDensity,
+            _finishing.TurbulenceDensity,
+            _finishing.PigmentCombine,
+            _finishing.ToneCurve,
+            _finishing.PaperHeightMap,
+            _finishing.PaperGranulation,
+            _finishing.Fxaa
+        ];
     }
 
     /// <summary>
@@ -271,876 +199,441 @@ public sealed class WatercolorPipelineSession
             return emptyResult;
         }
 
-        // Resolve every nullable sub-option canonically before DAG key diffing so switching
-        // between null and an explicit default record never triggers false cache misses.
-        EgbiOptions resolvedEgbi = opts.Egbi ?? WatercolorOptions.DefaultSaliencyEgbi;
-        RegionalContrastSaliencyOptions resolvedRc = opts.RegionalContrastSaliency ?? RegionalContrastSaliencyOptions.Default;
+        var ctx = new RenderContext(onStepCompleted, onStageCompleted, cancellationToken);
 
-        SaliencyCutOptions rawCut = opts.SaliencyCut ?? SaliencyCutOptions.Default;
-        SaliencyCutOptions resolvedCut = rawCut with
-        {
-            GrabCut = rawCut.GrabCut ?? SaliencyCutOptions.DefaultGrabCut,
-            Mask = rawCut.Mask ?? SaliencyCutOptions.DefaultMask
-        };
+        RunColorTransfer(opts, ctx);
+        RunSaliencyStage(opts, ctx);
+        RunSegmentationStage(opts, ctx);
+        RunLodAbstraction(opts, ctx);
+        RunWetInWet(opts, ctx);
+        RunHandTremor(opts, ctx);
+        RunFinishingStage(opts, ctx);
 
-        SaliencyDistanceFieldOptions resolvedDist = opts.SaliencyDistanceField ?? SaliencyDistanceFieldOptions.Default;
-        double effectiveDistanceSigma = resolvedDist.SmoothingSigma
-            ?? (resolvedDist.DefaultSigmaScale * Math.Min(ImageSize.Width, ImageSize.Height));
+        return BuildResult(opts, ctx.StepTimings);
+    }
 
-        MeanShiftOptions resolvedMeanShift = opts.MeanShift ?? MeanShiftOptions.Default;
-        LodAbstractionOptions resolvedLod = opts.LodAbstraction ?? LodAbstractionOptions.Default;
+    private void RunColorTransfer(WatercolorOptions opts, RenderContext ctx)
+    {
+        bool enableColorTransfer = opts.EnableColorTransfer;
+        bool active = enableColorTransfer && opts.ColorTransferStrength > 0.0;
+        ColorTransferProfile? targetPalette = opts.TargetPalette;
+        double transferStrength = opts.ColorTransferStrength;
 
-        WetInWetOptions rawWet = opts.WetInWet ?? WetInWetOptions.Default;
-        WetInWetOptions resolvedWet = rawWet with
-        {
-            EllipticalFilter = rawWet.EllipticalFilter ?? WetInWetOptions.DefaultEllipticalFilter
-        };
-
-        HandTremorOptions rawTremor = opts.HandTremor ?? HandTremorOptions.Default;
-        HandTremorOptions resolvedTremor = rawTremor with
-        {
-            PaperColor = rawTremor.PaperColor ?? HandTremorOptions.DefaultPaperColor,
-            PrimaryNoise = rawTremor.PrimaryNoise ?? HandTremorOptions.DefaultPrimaryNoise,
-            SecondaryNoise = rawTremor.SecondaryNoise ?? HandTremorOptions.DefaultSecondaryNoise
-        };
-
-        EdgeDarkeningOptions resolvedEdge = opts.EdgeDarkening ?? EdgeDarkeningOptions.Default;
-
-        TurbulenceFlowOptions rawTurb = opts.TurbulenceFlow ?? TurbulenceFlowOptions.Default;
-        TurbulenceFlowOptions resolvedTurb = rawTurb with
-        {
-            Noise = rawTurb.Noise ?? TurbulenceFlowOptions.DefaultNoise
-        };
-
-        PiecewiseToneCurveOptions resolvedTone = opts.ToneCurve ?? PiecewiseToneCurveOptions.Default;
-
-        PaperGranulationOptions rawGran = opts.PaperGranulation ?? PaperGranulationOptions.Default;
-        PerlinNoiseOptions resolvedGrainNoise = rawGran.GrainNoise ?? PaperGranulationOptions.DefaultGrainNoise;
-        PaperGranulationOptions resolvedGran = rawGran with
-        {
-            GrainNoise = resolvedGrainNoise
-        };
-
-        FxaaOptions resolvedFxaa = opts.Fxaa ?? FxaaOptions.Default;
-
-        var stepTimings = new Dictionary<WatercolorStep, WatercolorStepTiming>(TotalStepCount);
-        long stageStart = onStageCompleted is not null ? Stopwatch.GetTimestamp() : 0;
-
-        // =========================================================================
-        // Stage 1: Reinhard Color Transfer
-        // =========================================================================
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            bool colorTransferActive = opts.EnableColorTransfer && opts.ColorTransferStrength > 0.0;
-            bool colorTransferBypassed = !colorTransferActive;
-            var key = new ColorTransferKey(
-                colorTransferActive,
-                opts.TargetPalette,
-                colorTransferActive ? opts.ColorTransferStrength : 0.0);
-
-            bool fromCache = _colorTransferred is not null &&
-                             _selectedPalette is not null &&
-                             _colorTransferKey == key;
-
-            if (!fromCache)
+        RunStep(
+            _colorTransfer,
+            default,
+            (active, targetPalette, active ? transferStrength : 0.0),
+            WatercolorStep.ColorTransfer,
+            WatercolorStage.ColorTransfer,
+            bypassed: !active,
+            ctx,
+            () =>
             {
-                InvalidateFromColorTransfer();
-
-                Matrix<Rgb8> colorTransferred;
-                ColorTransferProfile selectedPalette;
-                if (!opts.EnableColorTransfer)
+                if (!enableColorTransfer)
                 {
-                    colorTransferred = SourceImage.Clone();
-                    selectedPalette = opts.TargetPalette ?? ColorTransfer.SelectClosestProfile(
+                    ColorTransferProfile palette = targetPalette ?? ColorTransfer.SelectClosestProfile(
                         ColorTransfer.ComputeStatistics(SourceImage, RgbColorSpace.SRgb, Illuminant.E),
                         WatercolorPalettes.Defaults,
                         WatercolorPalettes.DefaultFeatureWeights);
+                    return (SourceImage.Clone(), palette);
                 }
-                else if (opts.TargetPalette is not null)
+
+                if (targetPalette is not null)
                 {
-                    colorTransferred = ColorTransfer.Transfer(SourceImage, opts.TargetPalette, strength: opts.ColorTransferStrength);
-                    selectedPalette = opts.TargetPalette;
-                }
-                else
-                {
-                    (colorTransferred, selectedPalette) = ColorTransfer.TransferToClosestProfile(
-                        SourceImage,
-                        WatercolorPalettes.Defaults,
-                        featureWeights: WatercolorPalettes.DefaultFeatureWeights,
-                        strength: opts.ColorTransferStrength);
+                    return (ColorTransfer.Transfer(SourceImage, targetPalette, strength: transferStrength), targetPalette);
                 }
 
-                _colorTransferred = colorTransferred;
-                _selectedPalette = selectedPalette;
-                _colorTransferKey = key;
-                _colorTransferVersion = NextVersion();
-            }
+                return ColorTransfer.TransferToClosestProfile(
+                    SourceImage,
+                    WatercolorPalettes.Defaults,
+                    featureWeights: WatercolorPalettes.DefaultFeatureWeights,
+                    strength: transferStrength);
+            });
 
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.ColorTransfer,
-                WatercolorStage.ColorTransfer,
-                stepStart,
-                fromCache,
-                colorTransferBypassed,
-                onStepCompleted);
-            CompleteStage(onStageCompleted, WatercolorStage.ColorTransfer, ref stageStart);
-        }
+        ctx.CompleteStage(WatercolorStage.ColorTransfer);
+    }
 
-        // =========================================================================
-        // Stage 2: Regional Contrast Saliency & Saliency Distance Field
-        // =========================================================================
-        // 2a: EgbiPreBlur
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
+    private void RunSaliencyStage(WatercolorOptions opts, RenderContext ctx)
+    {
+        double egbiBlurSigma = opts.EgbiBlurSigma;
+        EgbiOptions egbiOptions = opts.Egbi;
+        RegionalContrastSaliencyOptions rcOptions = opts.RegionalContrastSaliency;
+        SaliencyCutOptions cutOptions = opts.SaliencyCut;
+        SaliencyDistanceFieldOptions distOptions = opts.SaliencyDistanceField;
+        double effectiveDistanceSigma = distOptions.SmoothingSigma
+            ?? (distOptions.DefaultSigmaScale * Math.Min(ImageSize.Width, ImageSize.Height));
 
-            bool bypassed = opts.EgbiBlurSigma == 0.0;
-            var key = new EgbiPreBlurKey(_colorTransferVersion, opts.EgbiBlurSigma);
-            bool fromCache = _egbiPreBlurred is not null &&
-                             _egbiLabBlurred is not null &&
-                             _egbiPreBlurKey == key;
-
-            if (!fromCache)
+        RunStep(
+            _saliency.PreBlur,
+            new UpstreamVersions(_colorTransfer.Version),
+            egbiBlurSigma,
+            WatercolorStep.EgbiPreBlur,
+            WatercolorStage.Saliency,
+            bypassed: egbiBlurSigma == 0.0,
+            ctx,
+            () =>
             {
-                InvalidateFromEgbiPreBlur();
+                Matrix<Rgb8> preBlurred = Blur.GaussianBlur(_colorTransfer.Value.Image, egbiBlurSigma);
+                ctx.CancellationToken.ThrowIfCancellationRequested();
+                Matrix<Lab32> labBlurred = preBlurred.ToLab32(RgbColorSpace.SRgb);
+                return (preBlurred, labBlurred);
+            });
 
-                Matrix<Rgb8> egbiPreBlurred = Blur.GaussianBlur(_colorTransferred!, opts.EgbiBlurSigma);
-                cancellationToken.ThrowIfCancellationRequested();
-                Matrix<Lab32> labBlurred = egbiPreBlurred.ToLab32(RgbColorSpace.SRgb);
-
-                _egbiPreBlurred = egbiPreBlurred;
-                _egbiLabBlurred = labBlurred;
-                _egbiPreBlurKey = key;
-                _egbiPreBlurVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.EgbiPreBlur,
-                WatercolorStage.Saliency,
-                stepStart,
-                fromCache,
-                bypassed,
-                onStepCompleted);
-        }
-
-        // 2b: EgbiSegmentation
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            var key = new EgbiKey(_egbiPreBlurVersion, resolvedEgbi);
-            bool fromCache = _egbiGraph is not null && _egbiKey == key;
-
-            if (!fromCache)
+        RunStep(
+            _saliency.EgbiGraph,
+            new UpstreamVersions(_saliency.PreBlur.Version),
+            egbiOptions,
+            WatercolorStep.EgbiSegmentation,
+            WatercolorStage.Saliency,
+            bypassed: false,
+            ctx,
+            () =>
             {
-                InvalidateFromEgbiSegmentation();
+                IDisjointSet egbiSeg = EgbiSegmentation.Segment(_saliency.PreBlur.Value.Lab, egbiOptions, ctx.CancellationToken);
+                ctx.CancellationToken.ThrowIfCancellationRequested();
+                return egbiSeg.ToRegionGraph(egbiOptions.Connectivity);
+            });
 
-                IDisjointSet egbiSeg = EgbiSegmentation.Segment(_egbiLabBlurred!, resolvedEgbi, cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-                RegionGraph egbiGraph = egbiSeg.ToRegionGraph(resolvedEgbi.Connectivity);
+        RunStep(
+            _saliency.SaliencyMap,
+            new UpstreamVersions(_colorTransfer.Version, _saliency.EgbiGraph.Version),
+            rcOptions,
+            WatercolorStep.RegionalContrastSaliency,
+            WatercolorStage.Saliency,
+            bypassed: false,
+            ctx,
+            () => RegionalContrastSaliency.ComputeSaliency(
+                _colorTransfer.Value.Image,
+                _saliency.EgbiGraph.Value,
+                rcOptions,
+                ctx.CancellationToken));
 
-                _egbiGraph = egbiGraph;
-                _egbiKey = key;
-                _egbiVersion = NextVersion();
-            }
+        RunStep(
+            _saliency.SalientMask,
+            new UpstreamVersions(_colorTransfer.Version, _saliency.SaliencyMap.Version),
+            cutOptions,
+            WatercolorStep.SaliencyCut,
+            WatercolorStage.Saliency,
+            bypassed: false,
+            ctx,
+            () => SaliencyCut.Extract(
+                _colorTransfer.Value.Image,
+                _saliency.SaliencyMap.Value,
+                cutOptions,
+                ctx.CancellationToken));
 
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.EgbiSegmentation,
-                WatercolorStage.Saliency,
-                stepStart,
-                fromCache,
-                bypassed: false,
-                onStepCompleted);
-        }
+        ctx.CancellationToken.ThrowIfCancellationRequested();
+        long stepStart = Stopwatch.GetTimestamp();
 
-        // 2c: RegionalContrastSaliency
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
+        bool rawFromCache = EnsureSlot(
+            _saliency.RawDistanceField,
+            new UpstreamVersions(_saliency.SalientMask.Version),
+            options: false,
+            ctx.CancellationToken,
+            () => SaliencyDistanceField.ComputeNormalizedField(_saliency.SalientMask.Value, ctx.CancellationToken));
 
-            var key = new RegionalContrastSaliencyKey(_colorTransferVersion, _egbiVersion, resolvedRc);
-            bool fromCache = _saliencyMap is not null && _rcSaliencyKey == key;
+        bool smoothFromCache = EnsureSlot(
+            _saliency.DistanceField,
+            new UpstreamVersions(_saliency.RawDistanceField.Version),
+            effectiveDistanceSigma,
+            ctx.CancellationToken,
+            () => SaliencyDistanceField.SmoothNormalizedField(
+                _saliency.RawDistanceField.Value,
+                _saliency.SalientMask.Value,
+                distOptions,
+                ctx.CancellationToken));
 
-            if (!fromCache)
+        ctx.CompleteStep(
+            WatercolorStep.SaliencyDistanceField,
+            WatercolorStage.Saliency,
+            stepStart,
+            fromCache: rawFromCache && smoothFromCache,
+            bypassed: false);
+        ctx.CompleteStage(WatercolorStage.Saliency);
+    }
+
+    private void RunSegmentationStage(WatercolorOptions opts, RenderContext ctx)
+    {
+        MeanShiftOptions meanShiftOptions = opts.MeanShift;
+
+        RunStep(
+            _segmentation.Filtering,
+            new UpstreamVersions(_colorTransfer.Version),
+            (meanShiftOptions.SpatialRadius, meanShiftOptions.RangeRadius, meanShiftOptions.MaxIterations, meanShiftOptions.ConvergenceEpsilon),
+            WatercolorStep.MeanShiftFiltering,
+            WatercolorStage.Segmentation,
+            bypassed: false,
+            ctx,
+            () => MeanShiftSegmentation.SeekModesAndFilter(_colorTransfer.Value.Image, meanShiftOptions, ctx.CancellationToken));
+
+        RunStep(
+            _segmentation.Clustering,
+            new UpstreamVersions(_segmentation.Filtering.Version),
+            (meanShiftOptions.MinRegionSize, meanShiftOptions.Connectivity),
+            WatercolorStep.MeanShiftClustering,
+            WatercolorStage.Segmentation,
+            bypassed: false,
+            ctx,
+            () =>
             {
-                InvalidateFromRegionalContrastSaliency();
-
-                Matrix<DoublePixel> saliencyMap = RegionalContrastSaliency.ComputeSaliency(
-                    _colorTransferred!,
-                    _egbiGraph!,
-                    resolvedRc,
-                    cancellationToken);
-
-                _saliencyMap = saliencyMap;
-                _rcSaliencyKey = key;
-                _rcSaliencyVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.RegionalContrastSaliency,
-                WatercolorStage.Saliency,
-                stepStart,
-                fromCache,
-                bypassed: false,
-                onStepCompleted);
-        }
-
-        // 2d: SaliencyCut
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            var key = new SaliencyCutKey(_colorTransferVersion, _rcSaliencyVersion, resolvedCut);
-            bool fromCache = _salientMask is not null && _saliencyCutKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromSaliencyCut();
-
-                MaskMatrix salientMask = SaliencyCut.Extract(
-                    _colorTransferred!,
-                    _saliencyMap!,
-                    resolvedCut,
-                    cancellationToken);
-
-                _salientMask = salientMask;
-                _saliencyCutKey = key;
-                _saliencyCutVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.SaliencyCut,
-                WatercolorStage.Saliency,
-                stepStart,
-                fromCache,
-                bypassed: false,
-                onStepCompleted);
-        }
-
-        // 2e-2f: SaliencyDistanceField (Raw 1+JFA cached separately from Gaussian smoothing)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            bool rawFromCache = _rawDistanceField is not null &&
-                                _rawDistanceFieldSalientMaskVersion == _saliencyCutVersion;
-            if (!rawFromCache)
-            {
-                InvalidateFromRawDistanceField();
-
-                Matrix<DoublePixel> rawDistanceField = SaliencyDistanceField.ComputeNormalizedField(
-                    _salientMask!,
-                    cancellationToken);
-
-                _rawDistanceField = rawDistanceField;
-                _rawDistanceFieldSalientMaskVersion = _saliencyCutVersion;
-                _rawDistanceFieldVersion = NextVersion();
-            }
-
-            var smoothKey = new SaliencyDistanceFieldKey(_rawDistanceFieldVersion, effectiveDistanceSigma);
-            bool smoothFromCache = _distanceField is not null && _distanceFieldKey == smoothKey;
-            if (!smoothFromCache)
-            {
-                InvalidateFromDistanceField();
-
-                Matrix<DoublePixel> distanceField = SaliencyDistanceField.SmoothNormalizedField(
-                    _rawDistanceField!,
-                    _salientMask!,
-                    resolvedDist,
-                    cancellationToken);
-
-                _distanceField = distanceField;
-                _distanceFieldKey = smoothKey;
-                _distanceFieldVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.SaliencyDistanceField,
-                WatercolorStage.Saliency,
-                stepStart,
-                fromCache: rawFromCache && smoothFromCache,
-                bypassed: false,
-                onStepCompleted);
-            CompleteStage(onStageCompleted, WatercolorStage.Saliency, ref stageStart);
-        }
-
-        // =========================================================================
-        // Stage 3a: Mean-Shift Segmentation (independent branch off ColorTransfer)
-        // =========================================================================
-        // 3a-i: MeanShiftFiltering (5D mode seeking + RGB filtering)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            var key = new MeanShiftFilterKey(
-                _colorTransferVersion,
-                resolvedMeanShift.SpatialRadius,
-                resolvedMeanShift.RangeRadius,
-                resolvedMeanShift.MaxIterations,
-                resolvedMeanShift.ConvergenceEpsilon);
-            bool fromCache = _meanShiftModes is not null &&
-                             _meanShiftSourcePixels is not null &&
-                             _meanShiftFiltered is not null &&
-                             _meanShiftFilterKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromMeanShiftFiltering();
-
-                (MeanShiftMode[] modes, Lab32[] sourcePixels, Matrix<Rgb8> filteredImage) =
-                    MeanShiftSegmentation.SeekModesAndFilter(_colorTransferred!, resolvedMeanShift, cancellationToken);
-
-                _meanShiftModes = modes;
-                _meanShiftSourcePixels = sourcePixels;
-                _meanShiftFiltered = filteredImage;
-                _meanShiftFilterKey = key;
-                _meanShiftFilterVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.MeanShiftFiltering,
-                WatercolorStage.Segmentation,
-                stepStart,
-                fromCache,
-                bypassed: false,
-                onStepCompleted);
-        }
-
-        // 3a-ii: MeanShiftClustering (mode clustering + region graph)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            var key = new MeanShiftClusterKey(
-                _meanShiftFilterVersion,
-                resolvedMeanShift.MinRegionSize,
-                resolvedMeanShift.Connectivity);
-            bool fromCache = _segmentationGraph is not null && _meanShiftClusterKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromMeanShiftClustering();
-
+                var (modes, sourcePixels, filtered) = _segmentation.Filtering.Value;
                 IDisjointSet meanShiftSeg = MeanShiftSegmentation.ClusterModes(
-                    _meanShiftFiltered!,
-                    _meanShiftSourcePixels!,
-                    _meanShiftModes!,
-                    resolvedMeanShift,
-                    cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-                RegionGraph regionGraph = meanShiftSeg.ToRegionGraph(resolvedMeanShift.Connectivity);
+                    filtered,
+                    sourcePixels,
+                    modes,
+                    meanShiftOptions,
+                    ctx.CancellationToken);
+                ctx.CancellationToken.ThrowIfCancellationRequested();
+                return meanShiftSeg.ToRegionGraph(meanShiftOptions.Connectivity);
+            });
 
-                _segmentationGraph = regionGraph;
-                _meanShiftClusterKey = key;
-                _meanShiftClusterVersion = NextVersion();
-            }
+        ctx.CompleteStage(WatercolorStage.Segmentation);
+    }
 
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.MeanShiftClustering,
-                WatercolorStage.Segmentation,
-                stepStart,
-                fromCache,
-                bypassed: false,
-                onStepCompleted);
-            CompleteStage(onStageCompleted, WatercolorStage.Segmentation, ref stageStart);
-        }
+    private void RunLodAbstraction(WatercolorOptions opts, RenderContext ctx)
+    {
+        bool enabled = opts.EnableLodAbstraction;
+        LodAbstractionOptions lodOptions = opts.LodAbstraction;
 
-        // =========================================================================
-        // Stage 3b: Saliency-Guided LOD Abstraction
-        // =========================================================================
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
+        RunStep(
+            _stylization.Lod,
+            enabled
+                ? new UpstreamVersions(_segmentation.Filtering.Version, _segmentation.Clustering.Version, _saliency.DistanceField.Version, _saliency.SalientMask.Version)
+                : new UpstreamVersions(_segmentation.Filtering.Version),
+            enabled ? lodOptions : null,
+            WatercolorStep.LodAbstraction,
+            WatercolorStage.LodAbstraction,
+            bypassed: !enabled,
+            ctx,
+            () => enabled
+                ? LodAbstraction.ApplyCore(
+                    _segmentation.Filtering.Value.Filtered,
+                    _segmentation.Clustering.Value,
+                    _saliency.DistanceField.Value,
+                    salientMask: null,
+                    EnsureSalientFractions(ctx.CancellationToken),
+                    lodOptions,
+                    ctx.CancellationToken)
+                : _segmentation.Filtering.Value.Filtered);
 
-            bool enabled = opts.EnableLodAbstraction;
-            var key = enabled
-                ? new LodAbstractionKey(
-                    Enabled: true,
-                    MeanShiftFilterVersion: _meanShiftFilterVersion,
-                    MeanShiftClusterVersion: _meanShiftClusterVersion,
-                    DistanceFieldVersion: _distanceFieldVersion,
-                    SaliencyCutVersion: _saliencyCutVersion,
-                    Options: resolvedLod)
-                : new LodAbstractionKey(
-                    Enabled: false,
-                    MeanShiftFilterVersion: _meanShiftFilterVersion,
-                    MeanShiftClusterVersion: 0,
-                    DistanceFieldVersion: 0,
-                    SaliencyCutVersion: 0,
-                    Options: null);
+        ctx.CompleteStage(WatercolorStage.LodAbstraction);
+    }
 
-            bool fromCache = _lodAbstracted is not null && _lodKey == key;
+    private void RunWetInWet(WatercolorOptions opts, RenderContext ctx)
+    {
+        WetInWetOptions wetOptions = opts.WetInWet;
+        bool wetActive = opts.EnableWetInWet && wetOptions.Mode != WetInWetMode.Disabled;
 
-            if (!fromCache)
+        RunStep(
+            _stylization.WetInWet,
+            wetActive
+                ? new UpstreamVersions(_stylization.Lod.Version, _segmentation.Clustering.Version, _saliency.SalientMask.Version)
+                : new UpstreamVersions(_stylization.Lod.Version, _segmentation.Clustering.Version),
+            wetActive ? wetOptions : null,
+            WatercolorStep.WetInWet,
+            WatercolorStage.WetInWet,
+            bypassed: !wetActive,
+            ctx,
+            () => wetActive
+                ? WetInWet.ApplyDetailedCore(
+                    _stylization.Lod.Value,
+                    _segmentation.Clustering.Value,
+                    salientMask: null,
+                    EnsureSalientFractions(ctx.CancellationToken),
+                    wetOptions,
+                    cancellationToken: ctx.CancellationToken)
+                : new WetInWetResult(
+                    _stylization.Lod.Value,
+                    new MaskMatrix(ImageSize),
+                    new bool[_segmentation.Clustering.Value.Boundaries.Count]));
+
+        ctx.CompleteStage(WatercolorStage.WetInWet);
+    }
+
+    private void RunHandTremor(WatercolorOptions opts, RenderContext ctx)
+    {
+        HandTremorOptions tremorOptions = opts.HandTremor;
+        bool tremorActive = opts.EnableHandTremor && tremorOptions.Amplitude > 0.0;
+
+        RunStep(
+            _stylization.HandTremor,
+            tremorActive
+                ? new UpstreamVersions(_stylization.WetInWet.Version, _segmentation.Clustering.Version, _saliency.DistanceField.Version)
+                : new UpstreamVersions(_stylization.WetInWet.Version),
+            tremorActive ? tremorOptions : null,
+            WatercolorStep.HandTremor,
+            WatercolorStage.HandTremor,
+            bypassed: !tremorActive,
+            ctx,
+            () => tremorActive
+                ? HandTremor.ApplyCore(
+                    _stylization.WetInWet.Value.Image,
+                    _segmentation.Clustering.Value,
+                    _saliency.DistanceField.Value,
+                    _stylization.WetInWet.Value,
+                    tremorOptions,
+                    ctx.CancellationToken)
+                : _stylization.WetInWet.Value.Image);
+
+        ctx.CompleteStage(WatercolorStage.HandTremor);
+    }
+
+    private void RunFinishingStage(WatercolorOptions opts, RenderContext ctx)
+    {
+        EdgeDarkeningOptions edgeOptions = opts.EdgeDarkening;
+        bool edgeActive = opts.EnableEdgeDarkening && edgeOptions.Intensity > 0.0;
+        RunStep(
+            _finishing.EdgeDensity,
+            edgeActive ? new UpstreamVersions(_stylization.HandTremor.Version) : default,
+            edgeActive ? edgeOptions : null,
+            WatercolorStep.EdgeDarkening,
+            WatercolorStage.Finishing,
+            bypassed: !edgeActive,
+            ctx,
+            () => edgeActive
+                ? EdgeDarkening.ComputeDensityField(_stylization.HandTremor.Value, edgeOptions, ctx.CancellationToken)
+                : null);
+
+        TurbulenceFlowOptions turbOptions = opts.TurbulenceFlow;
+        bool turbulenceActive = opts.EnableTurbulenceFlow && turbOptions.Intensity > 0.0;
+        RunStep(
+            _finishing.TurbulenceDensity,
+            default,
+            turbulenceActive ? turbOptions : null,
+            WatercolorStep.TurbulenceFlow,
+            WatercolorStage.Finishing,
+            bypassed: !turbulenceActive,
+            ctx,
+            () => turbulenceActive
+                ? TurbulenceFlow.ComputeDensityField(ImageSize, turbOptions, ctx.CancellationToken)
+                : null);
+
+        Matrix<DoublePixel>? edgeDensity = _finishing.EdgeDensity.Value;
+        Matrix<DoublePixel>? turbulenceDensity = _finishing.TurbulenceDensity.Value;
+        bool pigmentBypassed = edgeDensity is null && turbulenceDensity is null;
+        RunStep(
+            _finishing.PigmentCombine,
+            new UpstreamVersions(_stylization.HandTremor.Version, _finishing.EdgeDensity.Version, _finishing.TurbulenceDensity.Version),
+            options: false,
+            WatercolorStep.PigmentCombine,
+            WatercolorStage.Finishing,
+            bypassed: pigmentBypassed,
+            ctx,
+            () =>
             {
-                InvalidateFromLodAbstraction();
-
-                Matrix<Rgb8> lodAbstracted;
-                if (enabled)
-                {
-                    double[] salientFractions = EnsureSalientFractions(cancellationToken);
-                    lodAbstracted = LodAbstraction.ApplyCore(
-                        _meanShiftFiltered!,
-                        _segmentationGraph!,
-                        _distanceField!,
-                        salientMask: null,
-                        salientFractions,
-                        resolvedLod,
-                        cancellationToken);
-                }
-                else
-                {
-                    lodAbstracted = _meanShiftFiltered!;
-                }
-
-                _lodAbstracted = lodAbstracted;
-                _lodKey = key;
-                _lodVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.LodAbstraction,
-                WatercolorStage.LodAbstraction,
-                stepStart,
-                fromCache,
-                bypassed: !enabled,
-                onStepCompleted);
-            CompleteStage(onStageCompleted, WatercolorStage.LodAbstraction, ref stageStart);
-        }
-
-        // =========================================================================
-        // Stage 4: Wet-in-Wet Bleeding
-        // =========================================================================
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            bool wetActive = opts.EnableWetInWet && resolvedWet.Mode != WetInWetMode.Disabled;
-            var key = wetActive
-                ? new WetInWetKey(
-                    Active: true,
-                    LodVersion: _lodVersion,
-                    MeanShiftClusterVersion: _meanShiftClusterVersion,
-                    SaliencyCutVersion: _saliencyCutVersion,
-                    Options: resolvedWet)
-                : new WetInWetKey(
-                    Active: false,
-                    LodVersion: _lodVersion,
-                    MeanShiftClusterVersion: _meanShiftClusterVersion,
-                    SaliencyCutVersion: 0,
-                    Options: null);
-
-            bool fromCache = _wetInWet is not null && _wetInWetKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromWetInWet();
-
-                WetInWetResult wetInWet;
-                if (wetActive)
-                {
-                    double[] salientFractions = EnsureSalientFractions(cancellationToken);
-                    wetInWet = WetInWet.ApplyDetailedCore(
-                        _lodAbstracted!,
-                        _segmentationGraph!,
-                        salientMask: null,
-                        salientFractions,
-                        resolvedWet,
-                        cancellationToken: cancellationToken);
-                }
-                else
-                {
-                    wetInWet = new WetInWetResult(
-                        _lodAbstracted!,
-                        new MaskMatrix(ImageSize),
-                        new bool[_segmentationGraph!.Boundaries.Count]);
-                }
-
-                _wetInWet = wetInWet;
-                _wetInWetKey = key;
-                _wetInWetVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.WetInWet,
-                WatercolorStage.WetInWet,
-                stepStart,
-                fromCache,
-                bypassed: !wetActive,
-                onStepCompleted);
-            CompleteStage(onStageCompleted, WatercolorStage.WetInWet, ref stageStart);
-        }
-
-        // =========================================================================
-        // Stage 5: Hand Tremor Distortion
-        // =========================================================================
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            bool tremorActive = opts.EnableHandTremor && resolvedTremor.Amplitude > 0.0;
-            var key = tremorActive
-                ? new HandTremorKey(
-                    Active: true,
-                    WetInWetVersion: _wetInWetVersion,
-                    MeanShiftClusterVersion: _meanShiftClusterVersion,
-                    DistanceFieldVersion: _distanceFieldVersion,
-                    Options: resolvedTremor)
-                : new HandTremorKey(
-                    Active: false,
-                    WetInWetVersion: _wetInWetVersion,
-                    MeanShiftClusterVersion: 0,
-                    DistanceFieldVersion: 0,
-                    Options: null);
-
-            bool fromCache = _handTremor is not null && _handTremorKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromHandTremor();
-
-                Matrix<Rgb8> handTremor = tremorActive
-                    ? HandTremor.ApplyCore(
-                        _wetInWet!.Image,
-                        _segmentationGraph!,
-                        _distanceField!,
-                        _wetInWet,
-                        resolvedTremor,
-                        cancellationToken)
-                    : _wetInWet!.Image;
-
-                _handTremor = handTremor;
-                _handTremorKey = key;
-                _handTremorVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.HandTremor,
-                WatercolorStage.HandTremor,
-                stepStart,
-                fromCache,
-                bypassed: !tremorActive,
-                onStepCompleted);
-            CompleteStage(onStageCompleted, WatercolorStage.HandTremor, ref stageStart);
-        }
-
-        // =========================================================================
-        // Stage 6: Secondary Watercolor Effects & FXAA
-        // =========================================================================
-        // 6a-i: EdgeDarkening (density field)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            bool edgeActive = opts.EnableEdgeDarkening && resolvedEdge.Intensity > 0.0;
-            var key = edgeActive
-                ? new EdgeDarkeningKey(Active: true, HandTremorVersion: _handTremorVersion, Options: resolvedEdge)
-                : new EdgeDarkeningKey(Active: false, HandTremorVersion: 0, Options: null);
-
-            bool fromCache = _hasEdgeDensity && _edgeDarkeningKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromEdgeDarkening();
-
-                Matrix<DoublePixel>? edgeDensityField = edgeActive
-                    ? EdgeDarkening.ComputeDensityField(_handTremor!, resolvedEdge, cancellationToken)
-                    : null;
-
-                _edgeDensityField = edgeDensityField;
-                _hasEdgeDensity = true;
-                _edgeDarkeningKey = key;
-                _edgeDensityVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.EdgeDarkening,
-                WatercolorStage.Finishing,
-                stepStart,
-                fromCache,
-                bypassed: !edgeActive,
-                onStepCompleted);
-        }
-
-        // 6a-ii: TurbulenceFlow (density field — independent of Stages 1–5)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            bool turbulenceActive = opts.EnableTurbulenceFlow && resolvedTurb.Intensity > 0.0;
-            var key = turbulenceActive
-                ? new TurbulenceFlowKey(Active: true, Options: resolvedTurb)
-                : new TurbulenceFlowKey(Active: false, Options: null);
-
-            bool fromCache = _hasTurbulenceDensity && _turbulenceFlowKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromTurbulenceFlow();
-
-                Matrix<DoublePixel>? turbulenceDensityField = turbulenceActive
-                    ? TurbulenceFlow.ComputeDensityField(ImageSize, resolvedTurb, cancellationToken)
-                    : null;
-
-                _turbulenceDensityField = turbulenceDensityField;
-                _hasTurbulenceDensity = true;
-                _turbulenceFlowKey = key;
-                _turbulenceDensityVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.TurbulenceFlow,
-                WatercolorStage.Finishing,
-                stepStart,
-                fromCache,
-                bypassed: !turbulenceActive,
-                onStepCompleted);
-        }
-
-        // 6a-iii: PigmentCombine (never mutates cached EdgeDensityField or TurbulenceDensityField)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            bool pigmentBypassed = _edgeDensityField is null && _turbulenceDensityField is null;
-            var key = new PigmentCombineKey(_handTremorVersion, _edgeDensityVersion, _turbulenceDensityVersion);
-            bool fromCache = _densityAdjusted is not null && _pigmentCombineKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromPigmentCombine();
-
-                Matrix<Rgb8> densityAdjusted;
                 if (pigmentBypassed)
                 {
-                    densityAdjusted = _handTremor!;
-                }
-                else
-                {
-                    IReadOnlyMatrix<DoublePixel> combinedDensity = _edgeDensityField is not null && _turbulenceDensityField is not null
-                        ? SumDensityFields(_edgeDensityField, _turbulenceDensityField, ImageSize, cancellationToken)
-                        : (_edgeDensityField ?? _turbulenceDensityField!);
-
-                    densityAdjusted = PigmentBlend.ApplyDensityField(
-                        _handTremor!,
-                        combinedDensity,
-                        cancellationToken: cancellationToken);
+                    return _stylization.HandTremor.Value;
                 }
 
-                _densityAdjusted = densityAdjusted;
-                _pigmentCombineKey = key;
-                _pigmentCombineVersion = NextVersion();
-            }
+                // Never mutate cached EdgeDensityField or TurbulenceDensityField when combining them.
+                IReadOnlyMatrix<DoublePixel> combinedDensity = edgeDensity is not null && turbulenceDensity is not null
+                    ? SumDensityFields(edgeDensity, turbulenceDensity, ImageSize, ctx.CancellationToken)
+                    : (edgeDensity ?? turbulenceDensity!);
 
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.PigmentCombine,
-                WatercolorStage.Finishing,
-                stepStart,
-                fromCache,
-                bypassed: pigmentBypassed,
-                onStepCompleted);
-        }
+                return PigmentBlend.ApplyDensityField(
+                    _stylization.HandTremor.Value,
+                    combinedDensity,
+                    cancellationToken: ctx.CancellationToken);
+            });
 
-        // 6b: ToneCurve
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
+        bool toneEnabled = opts.EnableToneCurve;
+        PiecewiseToneCurveOptions toneOptions = opts.ToneCurve;
+        RunStep(
+            _finishing.ToneCurve,
+            new UpstreamVersions(_finishing.PigmentCombine.Version),
+            toneEnabled ? toneOptions : null,
+            WatercolorStep.ToneCurve,
+            WatercolorStage.Finishing,
+            bypassed: !toneEnabled,
+            ctx,
+            () => toneEnabled
+                ? PiecewiseToneCurve.Apply(_finishing.PigmentCombine.Value, toneOptions, ctx.CancellationToken)
+                : _finishing.PigmentCombine.Value);
 
-            bool toneEnabled = opts.EnableToneCurve;
-            var key = toneEnabled
-                ? new ToneCurveKey(Enabled: true, PigmentCombineVersion: _pigmentCombineVersion, Options: resolvedTone)
-                : new ToneCurveKey(Enabled: false, PigmentCombineVersion: _pigmentCombineVersion, Options: null);
-
-            bool fromCache = _toneAdjusted is not null && _toneCurveKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromToneCurve();
-
-                Matrix<Rgb8> toneAdjusted = toneEnabled
-                    ? PiecewiseToneCurve.Apply(_densityAdjusted!, resolvedTone, cancellationToken)
-                    : _densityAdjusted!;
-
-                _toneAdjusted = toneAdjusted;
-                _toneCurveKey = key;
-                _toneCurveVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.ToneCurve,
-                WatercolorStage.Finishing,
-                stepStart,
-                fromCache,
-                bypassed: !toneEnabled,
-                onStepCompleted);
-        }
-
-        // 6c-i: PaperHeightMap (independent of Stages 1–5 and DensityStrength/WarpAmplitude)
-        bool granActive = opts.EnablePaperGranulation &&
-                          (resolvedGran.DensityStrength > 0.0 || resolvedGran.WarpAmplitude > 0.0);
+        PaperGranulationOptions granOptions = opts.PaperGranulation;
+        bool granActive = opts.EnablePaperGranulation && (granOptions.DensityStrength > 0.0 || granOptions.WarpAmplitude > 0.0);
         bool isProceduralPaper = _customPaperHeightMap is null;
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
+        bool generateProcedural = granActive && isProceduralPaper;
+        PerlinNoiseOptions grainNoise = granOptions.GrainNoise;
+        RunStep(
+            _finishing.PaperHeightMap,
+            default,
+            (granActive, generateProcedural ? grainNoise : null),
+            WatercolorStep.PaperHeightMap,
+            WatercolorStage.Finishing,
+            bypassed: !generateProcedural,
+            ctx,
+            () => !granActive
+                ? null
+                : _customPaperHeightMap ?? PaperGranulation.GeneratePaperHeightMap(
+                    ImageSize,
+                    grainNoise,
+                    ctx.CancellationToken));
 
-            bool generateProceduralHeightMap = granActive && isProceduralPaper;
-            var key = new PaperHeightMapKey(
-                granActive,
-                generateProceduralHeightMap ? resolvedGrainNoise : null);
+        RunStep(
+            _finishing.PaperGranulation,
+            granActive
+                ? new UpstreamVersions(_finishing.ToneCurve.Version, _finishing.PaperHeightMap.Version)
+                : new UpstreamVersions(_finishing.ToneCurve.Version),
+            granActive
+                ? (true, granOptions.DensityStrength, granOptions.WarpAmplitude, isProceduralPaper ? grainNoise.Frequency : 0.0)
+                : (false, 0.0, 0.0, 0.0),
+            WatercolorStep.PaperGranulation,
+            WatercolorStage.Finishing,
+            bypassed: !granActive,
+            ctx,
+            () => granActive
+                ? PaperGranulation.ApplyCore(
+                    _finishing.ToneCurve.Value,
+                    _finishing.PaperHeightMap.Value!,
+                    isProcedural: isProceduralPaper,
+                    granOptions,
+                    ctx.CancellationToken)
+                : _finishing.ToneCurve.Value);
 
-            bool fromCache = _hasPaperHeightMap && _paperHeightMapKey == key;
+        bool fxaaEnabled = opts.EnableFxaa;
+        FxaaOptions fxaaOptions = opts.Fxaa;
+        RunStep(
+            _finishing.Fxaa,
+            new UpstreamVersions(_finishing.PaperGranulation.Version),
+            fxaaEnabled ? fxaaOptions : null,
+            WatercolorStep.Fxaa,
+            WatercolorStage.Finishing,
+            bypassed: !fxaaEnabled,
+            ctx,
+            () => fxaaEnabled
+                ? Fxaa.Apply(_finishing.PaperGranulation.Value, fxaaOptions, ctx.CancellationToken)
+                : _finishing.PaperGranulation.Value);
 
-            if (!fromCache)
-            {
-                InvalidateFromPaperHeightMap();
+        ctx.CompleteStage(WatercolorStage.Finishing);
+    }
 
-                IReadOnlyMatrix<DoublePixel>? paperHeightMap = !granActive
-                    ? null
-                    : _customPaperHeightMap ?? PaperGranulation.GeneratePaperHeightMap(
-                        ImageSize,
-                        resolvedGrainNoise,
-                        cancellationToken);
-
-                _paperHeightMap = paperHeightMap;
-                _hasPaperHeightMap = true;
-                _paperHeightMapKey = key;
-                _paperHeightMapVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.PaperHeightMap,
-                WatercolorStage.Finishing,
-                stepStart,
-                fromCache,
-                bypassed: !generateProceduralHeightMap,
-                onStepCompleted);
-        }
-
-        // 6c-ii: PaperGranulation (uses ApplyCore with explicit isProcedural to preserve warpScale parity)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            var key = granActive
-                ? new PaperGranulationKey(
-                    Active: true,
-                    ToneCurveVersion: _toneCurveVersion,
-                    PaperHeightMapVersion: _paperHeightMapVersion,
-                    DensityStrength: resolvedGran.DensityStrength,
-                    WarpAmplitude: resolvedGran.WarpAmplitude,
-                    ProceduralFrequency: isProceduralPaper ? resolvedGrainNoise.Frequency : 0.0)
-                : new PaperGranulationKey(
-                    Active: false,
-                    ToneCurveVersion: _toneCurveVersion,
-                    PaperHeightMapVersion: 0,
-                    DensityStrength: 0.0,
-                    WarpAmplitude: 0.0,
-                    ProceduralFrequency: 0.0);
-
-            bool fromCache = _granulated is not null && _paperGranulationKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromPaperGranulation();
-
-                Matrix<Rgb8> granulated = granActive
-                    ? PaperGranulation.ApplyCore(
-                        _toneAdjusted!,
-                        _paperHeightMap!,
-                        isProcedural: isProceduralPaper,
-                        resolvedGran,
-                        cancellationToken)
-                    : _toneAdjusted!;
-
-                _granulated = granulated;
-                _paperGranulationKey = key;
-                _paperGranulationVersion = NextVersion();
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.PaperGranulation,
-                WatercolorStage.Finishing,
-                stepStart,
-                fromCache,
-                bypassed: !granActive,
-                onStepCompleted);
-        }
-
-        // 6d: Fxaa
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            long stepStart = Stopwatch.GetTimestamp();
-
-            bool fxaaEnabled = opts.EnableFxaa;
-            var key = fxaaEnabled
-                ? new FxaaKey(Enabled: true, PaperGranulationVersion: _paperGranulationVersion, Options: resolvedFxaa)
-                : new FxaaKey(Enabled: false, PaperGranulationVersion: _paperGranulationVersion, Options: null);
-
-            bool fromCache = _output is not null && _fxaaKey == key;
-
-            if (!fromCache)
-            {
-                InvalidateFromFxaa();
-
-                Matrix<Rgb8> output = fxaaEnabled
-                    ? Fxaa.Apply(_granulated!, resolvedFxaa, cancellationToken)
-                    : _granulated!;
-
-                _output = output;
-                _fxaaKey = key;
-            }
-
-            CompleteStep(
-                stepTimings,
-                WatercolorStep.Fxaa,
-                WatercolorStage.Finishing,
-                stepStart,
-                fromCache,
-                bypassed: !fxaaEnabled,
-                onStepCompleted);
-            CompleteStage(onStageCompleted, WatercolorStage.Finishing, ref stageStart);
-        }
-
+    private WatercolorResult BuildResult(
+        WatercolorOptions opts,
+        Dictionary<WatercolorStep, WatercolorStepTiming> stepTimings)
+    {
         var result = new WatercolorResult(
-            _output!,
-            _colorTransferred!,
-            _selectedPalette!,
-            _egbiPreBlurred!,
-            _egbiGraph!,
-            _saliencyMap!,
-            _salientMask!,
-            _rawDistanceField!,
-            _distanceField!,
-            _meanShiftFiltered!,
-            _segmentationGraph!,
-            _lodAbstracted!,
-            _wetInWet!,
-            _handTremor!,
-            _edgeDensityField,
-            _turbulenceDensityField,
-            _densityAdjusted!,
-            _toneAdjusted!,
-            _paperHeightMap,
-            _granulated!,
+            _finishing.Fxaa.Value,
+            _colorTransfer.Value.Image,
+            _colorTransfer.Value.Palette,
+            _saliency.PreBlur.Value.Rgb,
+            _saliency.EgbiGraph.Value,
+            _saliency.SaliencyMap.Value,
+            _saliency.SalientMask.Value,
+            _saliency.RawDistanceField.Value,
+            _saliency.DistanceField.Value,
+            _segmentation.Filtering.Value.Filtered,
+            _segmentation.Clustering.Value,
+            _stylization.Lod.Value,
+            _stylization.WetInWet.Value,
+            _stylization.HandTremor.Value,
+            _finishing.EdgeDensity.Value,
+            _finishing.TurbulenceDensity.Value,
+            _finishing.PigmentCombine.Value,
+            _finishing.ToneCurve.Value,
+            _finishing.PaperHeightMap.Value,
+            _finishing.PaperGranulation.Value,
             stepTimings);
 
         LastOptions = opts;
@@ -1150,19 +643,50 @@ public sealed class WatercolorPipelineSession
 
     private double[] EnsureSalientFractions(CancellationToken cancellationToken)
     {
-        var key = new SalientFractionsKey(_meanShiftClusterVersion, _saliencyCutVersion);
-        if (_salientFractions is not null && _salientFractionsKey == key)
+        EnsureSlot(
+            _segmentation.SalientFractions,
+            new UpstreamVersions(_segmentation.Clustering.Version, _saliency.SalientMask.Version),
+            options: false,
+            cancellationToken,
+            () => _segmentation.Clustering.Value.ComputeRegionFractions(_saliency.SalientMask.Value));
+
+        return _segmentation.SalientFractions.Value;
+    }
+
+    private TValue RunStep<TOptions, TValue>(
+        CacheSlot<TOptions, TValue> slot,
+        in UpstreamVersions upstream,
+        TOptions? options,
+        WatercolorStep step,
+        WatercolorStage stage,
+        bool bypassed,
+        RenderContext ctx,
+        Func<TValue> compute)
+    {
+        ctx.CancellationToken.ThrowIfCancellationRequested();
+        long stepStart = Stopwatch.GetTimestamp();
+        bool fromCache = EnsureSlot(slot, in upstream, options, ctx.CancellationToken, compute);
+        ctx.CompleteStep(step, stage, stepStart, fromCache, bypassed);
+        return slot.Value;
+    }
+
+    private bool EnsureSlot<TOptions, TValue>(
+        CacheSlot<TOptions, TValue> slot,
+        in UpstreamVersions upstream,
+        TOptions? options,
+        CancellationToken cancellationToken,
+        Func<TValue> compute)
+    {
+        if (slot.Matches(in upstream, options))
         {
-            return _salientFractions;
+            return true;
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        _salientFractions = null;
-
-        double[] fractions = _segmentationGraph!.ComputeRegionFractions(_salientMask!);
-        _salientFractions = fractions;
-        _salientFractionsKey = key;
-        return fractions;
+        slot.Clear();
+        TValue computed = compute();
+        slot.Set(in upstream, options, computed, NextVersion());
+        return false;
     }
 
     private static SequentialMatrix<DoublePixel> SumDensityFields(
@@ -1206,42 +730,14 @@ public sealed class WatercolorPipelineSession
         return summed;
     }
 
-    private static void CompleteStep(
-        Dictionary<WatercolorStep, WatercolorStepTiming> stepTimings,
-        WatercolorStep step,
-        WatercolorStage stage,
-        long stepStart,
-        bool fromCache,
-        bool bypassed,
-        Action<WatercolorStepProgress>? onStepCompleted)
-    {
-        TimeSpan elapsed = Stopwatch.GetElapsedTime(stepStart);
-        stepTimings[step] = new WatercolorStepTiming(elapsed, FromCache: fromCache, Bypassed: bypassed);
-        onStepCompleted?.Invoke(new WatercolorStepProgress(step, stage, elapsed, FromCache: fromCache, Bypassed: bypassed));
-    }
-
-    private static void CompleteStage(
-        Action<WatercolorStageProgress>? callback,
-        WatercolorStage stage,
-        ref long stageStart)
-    {
-        if (callback is null)
-        {
-            return;
-        }
-
-        callback(new WatercolorStageProgress(stage, Stopwatch.GetElapsedTime(stageStart)));
-        stageStart = Stopwatch.GetTimestamp();
-    }
-
     private static WatercolorResult CreateEmptyResult(Size size, WatercolorOptions options)
     {
         var emptyRgb = new SequentialMatrix<Rgb8>(size);
         var emptyDouble = new SequentialMatrix<DoublePixel>(size);
         var emptyMask = new MaskMatrix(size);
-        GridConnectivity egbiConnectivity = (options.Egbi ?? WatercolorOptions.DefaultSaliencyEgbi).Connectivity;
+        GridConnectivity egbiConnectivity = options.Egbi.Connectivity;
         var emptyEgbiGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(size), egbiConnectivity);
-        GridConnectivity meanShiftConnectivity = (options.MeanShift ?? MeanShiftOptions.Default).Connectivity;
+        GridConnectivity meanShiftConnectivity = options.MeanShift.Connectivity;
         RegionGraph emptyGraph = meanShiftConnectivity == egbiConnectivity
             ? emptyEgbiGraph
             : RegionGraph.FromLabels(new SequentialMatrix<int>(size), meanShiftConnectivity);
@@ -1285,283 +781,82 @@ public sealed class WatercolorPipelineSession
 
     private void ClearAllCacheState()
     {
-        _colorTransferred = null;
-        _selectedPalette = null;
-        _egbiPreBlurred = null;
-        _egbiLabBlurred = null;
-        _egbiGraph = null;
-        _saliencyMap = null;
-        _salientMask = null;
-        _rawDistanceField = null;
-        _distanceField = null;
-        _meanShiftModes = null;
-        _meanShiftSourcePixels = null;
-        _meanShiftFiltered = null;
-        _segmentationGraph = null;
-        _salientFractions = null;
-        _lodAbstracted = null;
-        _wetInWet = null;
-        _handTremor = null;
-        _hasEdgeDensity = false;
-        _edgeDensityField = null;
-        _hasTurbulenceDensity = false;
-        _turbulenceDensityField = null;
-        _densityAdjusted = null;
-        _toneAdjusted = null;
-        _hasPaperHeightMap = false;
-        _paperHeightMap = null;
-        _granulated = null;
-        _output = null;
+        foreach (ICacheSlot slot in _allSlots)
+        {
+            slot.Clear();
+        }
 
         LastOptions = null;
         LastResult = null;
     }
 
-    private void InvalidateFromColorTransfer()
+    private sealed class SaliencyCache
     {
-        _colorTransferred = null;
-        _selectedPalette = null;
-        InvalidateFromEgbiPreBlur();
-        InvalidateFromMeanShiftFiltering();
+        public CacheSlot<double, (Matrix<Rgb8> Rgb, Matrix<Lab32> Lab)> PreBlur { get; } = new();
+        public CacheSlot<EgbiOptions, RegionGraph> EgbiGraph { get; } = new();
+        public CacheSlot<RegionalContrastSaliencyOptions, Matrix<DoublePixel>> SaliencyMap { get; } = new();
+        public CacheSlot<SaliencyCutOptions, MaskMatrix> SalientMask { get; } = new();
+        public CacheSlot<bool, Matrix<DoublePixel>> RawDistanceField { get; } = new();
+        public CacheSlot<double, Matrix<DoublePixel>> DistanceField { get; } = new();
     }
 
-    private void InvalidateFromEgbiPreBlur()
+    private sealed class SegmentationCache
     {
-        _egbiPreBlurred = null;
-        _egbiLabBlurred = null;
-        InvalidateFromEgbiSegmentation();
+        public CacheSlot<(int SpatialRadius, double RangeRadius, int MaxIterations, double ConvergenceEpsilon), (MeanShiftMode[] Modes, Lab32[] SourcePixels, Matrix<Rgb8> Filtered)> Filtering { get; } = new();
+        public CacheSlot<(int MinRegionSize, GridConnectivity Connectivity), RegionGraph> Clustering { get; } = new();
+        public CacheSlot<bool, double[]> SalientFractions { get; } = new();
     }
 
-    private void InvalidateFromEgbiSegmentation()
+    private sealed class StylizationCache
     {
-        _egbiGraph = null;
-        InvalidateFromRegionalContrastSaliency();
+        public CacheSlot<LodAbstractionOptions?, Matrix<Rgb8>> Lod { get; } = new();
+        public CacheSlot<WetInWetOptions?, WetInWetResult> WetInWet { get; } = new();
+        public CacheSlot<HandTremorOptions?, Matrix<Rgb8>> HandTremor { get; } = new();
     }
 
-    private void InvalidateFromRegionalContrastSaliency()
+    private sealed class FinishingCache
     {
-        _saliencyMap = null;
-        InvalidateFromSaliencyCut();
+        public CacheSlot<EdgeDarkeningOptions?, Matrix<DoublePixel>?> EdgeDensity { get; } = new();
+        public CacheSlot<TurbulenceFlowOptions?, Matrix<DoublePixel>?> TurbulenceDensity { get; } = new();
+        public CacheSlot<bool, Matrix<Rgb8>> PigmentCombine { get; } = new();
+        public CacheSlot<PiecewiseToneCurveOptions?, Matrix<Rgb8>> ToneCurve { get; } = new();
+        public CacheSlot<(bool GranActive, PerlinNoiseOptions? ProceduralGrainNoise), IReadOnlyMatrix<DoublePixel>?> PaperHeightMap { get; } = new();
+        public CacheSlot<(bool Active, double DensityStrength, double WarpAmplitude, double ProceduralFrequency), Matrix<Rgb8>> PaperGranulation { get; } = new();
+        public CacheSlot<FxaaOptions?, Matrix<Rgb8>> Fxaa { get; } = new();
     }
 
-    private void InvalidateFromSaliencyCut()
+    private sealed class RenderContext(
+        Action<WatercolorStepProgress>? onStepCompleted,
+        Action<WatercolorStageProgress>? onStageCompleted,
+        CancellationToken cancellationToken)
     {
-        _salientMask = null;
-        _salientFractions = null;
-        InvalidateFromRawDistanceField();
-        if (_wetInWet is not null && _wetInWetKey.Active)
+        private long _stageStart = onStageCompleted is not null ? Stopwatch.GetTimestamp() : 0;
+
+        public Dictionary<WatercolorStep, WatercolorStepTiming> StepTimings { get; } = new(TotalStepCount);
+
+        public CancellationToken CancellationToken { get; } = cancellationToken;
+
+        public void CompleteStep(
+            WatercolorStep step,
+            WatercolorStage stage,
+            long stepStart,
+            bool fromCache,
+            bool bypassed)
         {
-            InvalidateFromWetInWet();
-        }
-    }
-
-    private void InvalidateFromRawDistanceField()
-    {
-        _rawDistanceField = null;
-        InvalidateFromDistanceField();
-    }
-
-    private void InvalidateFromDistanceField()
-    {
-        _distanceField = null;
-        if (_lodAbstracted is not null && _lodKey.Enabled)
-        {
-            InvalidateFromLodAbstraction();
-        }
-        else if (_handTremor is not null && _handTremorKey.Active)
-        {
-            InvalidateFromHandTremor();
-        }
-    }
-
-    private void InvalidateFromMeanShiftFiltering()
-    {
-        _meanShiftModes = null;
-        _meanShiftSourcePixels = null;
-        _meanShiftFiltered = null;
-        InvalidateFromMeanShiftClustering();
-        InvalidateFromLodAbstraction();
-    }
-
-    private void InvalidateFromMeanShiftClustering()
-    {
-        _segmentationGraph = null;
-        _salientFractions = null;
-        if (_lodAbstracted is not null && _lodKey.Enabled)
-        {
-            InvalidateFromLodAbstraction();
-        }
-        else
-        {
-            InvalidateFromWetInWet();
-        }
-    }
-
-    private void InvalidateFromLodAbstraction()
-    {
-        _lodAbstracted = null;
-        InvalidateFromWetInWet();
-    }
-
-    private void InvalidateFromWetInWet()
-    {
-        _wetInWet = null;
-        InvalidateFromHandTremor();
-    }
-
-    private void InvalidateFromHandTremor()
-    {
-        _handTremor = null;
-        if (_hasEdgeDensity && _edgeDarkeningKey.Active)
-        {
-            InvalidateFromEdgeDarkening();
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(stepStart);
+            StepTimings[step] = new WatercolorStepTiming(elapsed, FromCache: fromCache, Bypassed: bypassed);
+            onStepCompleted?.Invoke(new WatercolorStepProgress(step, stage, elapsed, FromCache: fromCache, Bypassed: bypassed));
         }
 
-        InvalidateFromPigmentCombine();
-    }
-
-    private void InvalidateFromEdgeDarkening()
-    {
-        _hasEdgeDensity = false;
-        _edgeDensityField = null;
-        InvalidateFromPigmentCombine();
-    }
-
-    private void InvalidateFromTurbulenceFlow()
-    {
-        _hasTurbulenceDensity = false;
-        _turbulenceDensityField = null;
-        InvalidateFromPigmentCombine();
-    }
-
-    private void InvalidateFromPigmentCombine()
-    {
-        _densityAdjusted = null;
-        InvalidateFromToneCurve();
-    }
-
-    private void InvalidateFromToneCurve()
-    {
-        _toneAdjusted = null;
-        InvalidateFromPaperGranulation();
-    }
-
-    private void InvalidateFromPaperHeightMap()
-    {
-        _hasPaperHeightMap = false;
-        _paperHeightMap = null;
-        if (_granulated is not null && _paperGranulationKey.Active)
+        public void CompleteStage(WatercolorStage stage)
         {
-            InvalidateFromPaperGranulation();
+            if (onStageCompleted is null)
+            {
+                return;
+            }
+
+            onStageCompleted(new WatercolorStageProgress(stage, Stopwatch.GetElapsedTime(_stageStart)));
+            _stageStart = Stopwatch.GetTimestamp();
         }
     }
-
-    private void InvalidateFromPaperGranulation()
-    {
-        _granulated = null;
-        InvalidateFromFxaa();
-    }
-
-    private void InvalidateFromFxaa() => _output = null;
-
-    private readonly record struct ColorTransferKey(
-        bool Active,
-        ColorTransferProfile? TargetPalette,
-        double EffectiveStrength);
-
-    private readonly record struct EgbiPreBlurKey(
-        long ColorTransferVersion,
-        double EgbiBlurSigma);
-
-    private readonly record struct EgbiKey(
-        long EgbiPreBlurVersion,
-        EgbiOptions Options);
-
-    private readonly record struct RegionalContrastSaliencyKey(
-        long ColorTransferVersion,
-        long EgbiVersion,
-        RegionalContrastSaliencyOptions Options);
-
-    private readonly record struct SaliencyCutKey(
-        long ColorTransferVersion,
-        long RcSaliencyVersion,
-        SaliencyCutOptions Options);
-
-    private readonly record struct SaliencyDistanceFieldKey(
-        long RawDistanceFieldVersion,
-        double EffectiveSmoothingSigma);
-
-    private readonly record struct MeanShiftFilterKey(
-        long ColorTransferVersion,
-        int SpatialRadius,
-        double RangeRadius,
-        int MaxIterations,
-        double ConvergenceEpsilon);
-
-    private readonly record struct MeanShiftClusterKey(
-        long MeanShiftFilterVersion,
-        int MinRegionSize,
-        GridConnectivity Connectivity);
-
-    private readonly record struct SalientFractionsKey(
-        long MeanShiftClusterVersion,
-        long SaliencyCutVersion);
-
-    private readonly record struct LodAbstractionKey(
-        bool Enabled,
-        long MeanShiftFilterVersion,
-        long MeanShiftClusterVersion,
-        long DistanceFieldVersion,
-        long SaliencyCutVersion,
-        LodAbstractionOptions? Options);
-
-    private readonly record struct WetInWetKey(
-        bool Active,
-        long LodVersion,
-        long MeanShiftClusterVersion,
-        long SaliencyCutVersion,
-        WetInWetOptions? Options);
-
-    private readonly record struct HandTremorKey(
-        bool Active,
-        long WetInWetVersion,
-        long MeanShiftClusterVersion,
-        long DistanceFieldVersion,
-        HandTremorOptions? Options);
-
-    private readonly record struct EdgeDarkeningKey(
-        bool Active,
-        long HandTremorVersion,
-        EdgeDarkeningOptions? Options);
-
-    private readonly record struct TurbulenceFlowKey(
-        bool Active,
-        TurbulenceFlowOptions? Options);
-
-    private readonly record struct PigmentCombineKey(
-        long HandTremorVersion,
-        long EdgeDensityVersion,
-        long TurbulenceDensityVersion);
-
-    private readonly record struct ToneCurveKey(
-        bool Enabled,
-        long PigmentCombineVersion,
-        PiecewiseToneCurveOptions? Options);
-
-    private readonly record struct PaperHeightMapKey(
-        bool GranActive,
-        PerlinNoiseOptions? ProceduralGrainNoise);
-
-    private readonly record struct PaperGranulationKey(
-        bool Active,
-        long ToneCurveVersion,
-        long PaperHeightMapVersion,
-        double DensityStrength,
-        double WarpAmplitude,
-        double ProceduralFrequency);
-
-    private readonly record struct FxaaKey(
-        bool Enabled,
-        long PaperGranulationVersion,
-        FxaaOptions? Options);
 }

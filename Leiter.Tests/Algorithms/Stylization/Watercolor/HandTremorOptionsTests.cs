@@ -44,12 +44,27 @@ public class HandTremorOptionsTests : SizeTunableOptionsContractTestsBase<HandTr
         Assert.Equal(0.65, options.SalientAmplitudeScale, 6);
         Assert.Equal(30.0, options.SimilarHueThresholdDegrees, 6);
         Assert.Equal(0.5, options.OverlapDarkening, 6);
-        Assert.Null(options.PaperColor);
-        Assert.Null(options.PrimaryNoise);
-        Assert.Null(options.SecondaryNoise);
+        Assert.Equal(HandTremorOptions.DefaultPaperColor, options.PaperColor);
+        Assert.Equal(HandTremorOptions.DefaultPrimaryNoise, options.PrimaryNoise);
+        Assert.Equal(HandTremorOptions.DefaultSecondaryNoise, options.SecondaryNoise);
         Assert.Equal(0.08, options.MinContrastingChroma, 6);
         Assert.Equal(0.0, options.PaperGapBias, 6);
         Assert.Equal(1.0, options.PaperGapOpacity, 6);
+        Assert.Equal(HandTremorOptions.Default, options);
+
+        var explicitDefaults = new HandTremorOptions(
+            PaperColor: HandTremorOptions.DefaultPaperColor,
+            PrimaryNoise: HandTremorOptions.DefaultPrimaryNoise,
+            SecondaryNoise: HandTremorOptions.DefaultSecondaryNoise);
+        Assert.Equal(options, explicitDefaults);
+
+        HandTremorOptions resetViaWith = CreateValidCustomOptions() with
+        {
+            PrimaryNoise = null!,
+            SecondaryNoise = null!
+        };
+        Assert.Equal(HandTremorOptions.DefaultPrimaryNoise, resetViaWith.PrimaryNoise);
+        Assert.Equal(HandTremorOptions.DefaultSecondaryNoise, resetViaWith.SecondaryNoise);
 
         options.Validate();
     }

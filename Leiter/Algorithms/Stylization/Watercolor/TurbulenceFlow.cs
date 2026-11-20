@@ -79,7 +79,7 @@ public static class TurbulenceFlow
         TurbulenceFlowOptions opts,
         CancellationToken cancellationToken)
     {
-        PerlinNoiseOptions noiseOpts = opts.Noise ?? TurbulenceFlowOptions.DefaultNoise;
+        PerlinNoiseOptions noiseOpts = opts.Noise;
         var noise = new PerlinNoise(noiseOpts.Seed);
         var result = new SequentialMatrix<DoublePixel>(size);
         double intensity = opts.Intensity;

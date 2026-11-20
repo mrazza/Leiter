@@ -10,27 +10,7 @@ using Leiter.Pixels;
 /// <summary>
 /// Configures parameters for the hand tremor perturbation filter in watercolor stylization.
 /// </summary>
-/// <param name="Amplitude">The maximum displacement amplitude in pixels (default 3.0; must be finite and non-negative).</param>
-/// <param name="SalientAmplitudeScale">The minimum displacement amplitude scale applied inside salient regions (default 0.65; must be finite and within [0.0, 1.0]).</param>
-/// <param name="SimilarHueThresholdDegrees">The maximum hue difference in degrees for boundaries to be classified as similar hue (Group 2) rather than contrasting (Group 3) (default 30.0; must be finite and within [0.0, 180.0]).</param>
-/// <param name="OverlapDarkening">The blend factor for pigment darkening in stroke overlap regions (default 0.5; must be finite and within [0.0, 1.0]).</param>
-/// <param name="PaperColor">The paper background color revealed in gap regions between contrasting strokes (default null; resolves to (250, 248, 242) if null).</param>
-/// <param name="PrimaryNoise">Optional configuration for the primary Perlin noise displacement field.</param>
-/// <param name="SecondaryNoise">Optional configuration for the secondary Perlin noise displacement field.</param>
-/// <param name="MinContrastingChroma">The minimum normalized RGB chroma (<c>max(R,G,B) - min(R,G,B)</c> in [0.0, 1.0]) required on both adjacent regions to emit contrasting-hue paper gaps and overlaps (default 0.08; set to 0.0 to allow gaps on neutral/achromatic boundaries).</param>
-/// <param name="PaperGapBias">The normalized boundary-normal bias in [-1.0, 1.0] controlling white paper-gap coverage on contrasting boundaries (default 0.0; positive values pull washes apart to widen gaps, negative values push washes together to suppress gaps and increase overlaps).</param>
-/// <param name="PaperGapOpacity">The opacity in [0.0, 1.0] used to blend <see cref="PaperColor"/> inside contrasting paper gaps (default 1.0; 0.0 leaves underlying image pixels unchanged).</param>
-public sealed record HandTremorOptions(
-    double Amplitude = 3.0,
-    double SalientAmplitudeScale = 0.65,
-    double SimilarHueThresholdDegrees = 30.0,
-    double OverlapDarkening = 0.5,
-    Rgb8? PaperColor = null,
-    PerlinNoiseOptions? PrimaryNoise = null,
-    PerlinNoiseOptions? SecondaryNoise = null,
-    double MinContrastingChroma = 0.08,
-    double PaperGapBias = 0.0,
-    double PaperGapOpacity = 1.0) : ISizeTunableOptions<HandTremorOptions>
+public sealed record HandTremorOptions : ISizeTunableOptions<HandTremorOptions>
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default tremor amplitude and noise frequencies apply unscaled.
@@ -38,24 +18,119 @@ public sealed record HandTremorOptions(
     public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
 
     /// <summary>
+    /// Gets the default paper background color (<c>(250, 248, 242)</c>) used when <c>PaperColor</c> is omitted or <see langword="null"/>.
+    /// </summary>
+    public static Rgb8 DefaultPaperColor => new(250, 248, 242);
+
+    /// <summary>
+    /// Gets the default primary Perlin noise options used when <c>PrimaryNoise</c> is omitted or <see langword="null"/>.
+    /// </summary>
+    public static PerlinNoiseOptions DefaultPrimaryNoise { get; } = new(Seed: 101, Frequency: 0.04, Octaves: 3);
+
+    /// <summary>
+    /// Gets the default secondary Perlin noise options used when <c>SecondaryNoise</c> is omitted or <see langword="null"/>.
+    /// </summary>
+    public static PerlinNoiseOptions DefaultSecondaryNoise { get; } = new(Seed: 202, Frequency: 0.04, Octaves: 3);
+
+    /// <summary>
     /// Gets the default <see cref="HandTremorOptions"/> instance.
     /// </summary>
     public static HandTremorOptions Default { get; } = new();
 
     /// <summary>
-    /// Gets the default paper background color (<c>(250, 248, 242)</c>) used when <see cref="PaperColor"/> is <see langword="null"/>.
+    /// Initializes a new <see cref="HandTremorOptions"/> instance with the specified configuration parameters.
     /// </summary>
-    public static Rgb8 DefaultPaperColor => new(250, 248, 242);
+    /// <param name="Amplitude">The maximum displacement amplitude in pixels (default 3.0; must be finite and non-negative).</param>
+    /// <param name="SalientAmplitudeScale">The minimum displacement amplitude scale applied inside salient regions (default 0.65; must be finite and within [0.0, 1.0]).</param>
+    /// <param name="SimilarHueThresholdDegrees">The maximum hue difference in degrees for boundaries to be classified as similar hue (Group 2) rather than contrasting (Group 3) (default 30.0; must be finite and within [0.0, 180.0]).</param>
+    /// <param name="OverlapDarkening">The blend factor for pigment darkening in stroke overlap regions (default 0.5; must be finite and within [0.0, 1.0]).</param>
+    /// <param name="PaperColor">The paper background color revealed in gap regions between contrasting strokes (default null; resolves to (250, 248, 242) if null).</param>
+    /// <param name="PrimaryNoise">Optional configuration for the primary Perlin noise displacement field.</param>
+    /// <param name="SecondaryNoise">Optional configuration for the secondary Perlin noise displacement field.</param>
+    /// <param name="MinContrastingChroma">The minimum normalized RGB chroma (<c>max(R,G,B) - min(R,G,B)</c> in [0.0, 1.0]) required on both adjacent regions to emit contrasting-hue paper gaps and overlaps (default 0.08; set to 0.0 to allow gaps on neutral/achromatic boundaries).</param>
+    /// <param name="PaperGapBias">The normalized boundary-normal bias in [-1.0, 1.0] controlling white paper-gap coverage on contrasting boundaries (default 0.0; positive values pull washes apart to widen gaps, negative values push washes together to suppress gaps and increase overlaps).</param>
+    /// <param name="PaperGapOpacity">The opacity in [0.0, 1.0] used to blend <see cref="PaperColor"/> inside contrasting paper gaps (default 1.0; 0.0 leaves underlying image pixels unchanged).</param>
+    public HandTremorOptions(
+        double Amplitude = 3.0,
+        double SalientAmplitudeScale = 0.65,
+        double SimilarHueThresholdDegrees = 30.0,
+        double OverlapDarkening = 0.5,
+        Rgb8? PaperColor = null,
+        PerlinNoiseOptions? PrimaryNoise = null,
+        PerlinNoiseOptions? SecondaryNoise = null,
+        double MinContrastingChroma = 0.08,
+        double PaperGapBias = 0.0,
+        double PaperGapOpacity = 1.0)
+    {
+        this.Amplitude = Amplitude;
+        this.SalientAmplitudeScale = SalientAmplitudeScale;
+        this.SimilarHueThresholdDegrees = SimilarHueThresholdDegrees;
+        this.OverlapDarkening = OverlapDarkening;
+        this.PaperColor = PaperColor ?? DefaultPaperColor;
+        this.PrimaryNoise = PrimaryNoise ?? DefaultPrimaryNoise;
+        this.SecondaryNoise = SecondaryNoise ?? DefaultSecondaryNoise;
+        this.MinContrastingChroma = MinContrastingChroma;
+        this.PaperGapBias = PaperGapBias;
+        this.PaperGapOpacity = PaperGapOpacity;
+    }
 
     /// <summary>
-    /// Gets the default primary Perlin noise options used when <see cref="PrimaryNoise"/> is <see langword="null"/>.
+    /// Gets the maximum displacement amplitude in pixels (default 3.0; must be finite and non-negative).
     /// </summary>
-    public static PerlinNoiseOptions DefaultPrimaryNoise { get; } = new(Seed: 101, Frequency: 0.04, Octaves: 3);
+    public double Amplitude { get; init; }
 
     /// <summary>
-    /// Gets the default secondary Perlin noise options used when <see cref="SecondaryNoise"/> is <see langword="null"/>.
+    /// Gets the minimum displacement amplitude scale applied inside salient regions (default 0.65; must be finite and within [0.0, 1.0]).
     /// </summary>
-    public static PerlinNoiseOptions DefaultSecondaryNoise { get; } = new(Seed: 202, Frequency: 0.04, Octaves: 3);
+    public double SalientAmplitudeScale { get; init; }
+
+    /// <summary>
+    /// Gets the maximum hue difference in degrees for boundaries to be classified as similar hue rather than contrasting (default 30.0; must be finite and within [0.0, 180.0]).
+    /// </summary>
+    public double SimilarHueThresholdDegrees { get; init; }
+
+    /// <summary>
+    /// Gets the blend factor for pigment darkening in stroke overlap regions (default 0.5; must be finite and within [0.0, 1.0]).
+    /// </summary>
+    public double OverlapDarkening { get; init; }
+
+    /// <summary>
+    /// Gets the paper background color revealed in gap regions between contrasting strokes (defaults to <see cref="DefaultPaperColor"/>).
+    /// </summary>
+    public Rgb8 PaperColor { get; init; }
+
+    /// <summary>
+    /// Gets the primary Perlin noise displacement field configuration (defaults to <see cref="DefaultPrimaryNoise"/>).
+    /// </summary>
+    public PerlinNoiseOptions PrimaryNoise
+    {
+        get;
+        init => field = value ?? DefaultPrimaryNoise;
+    } = DefaultPrimaryNoise;
+
+    /// <summary>
+    /// Gets the secondary Perlin noise displacement field configuration (defaults to <see cref="DefaultSecondaryNoise"/>).
+    /// </summary>
+    public PerlinNoiseOptions SecondaryNoise
+    {
+        get;
+        init => field = value ?? DefaultSecondaryNoise;
+    } = DefaultSecondaryNoise;
+
+    /// <summary>
+    /// Gets the minimum normalized RGB chroma required on both adjacent regions to emit contrasting-hue paper gaps and overlaps (default 0.08).
+    /// </summary>
+    public double MinContrastingChroma { get; init; }
+
+    /// <summary>
+    /// Gets the normalized boundary-normal bias in [-1.0, 1.0] controlling white paper-gap coverage on contrasting boundaries (default 0.0).
+    /// </summary>
+    public double PaperGapBias { get; init; }
+
+    /// <summary>
+    /// Gets the opacity in [0.0, 1.0] used to blend <see cref="PaperColor"/> inside contrasting paper gaps (default 1.0).
+    /// </summary>
+    public double PaperGapOpacity { get; init; }
 
     /// <summary>
     /// Creates <see cref="HandTremorOptions"/> with displacement amplitude and Perlin noise frequencies scaled for <paramref name="size"/>.
@@ -100,14 +175,11 @@ public sealed record HandTremorOptions(
             return baseline;
         }
 
-        PerlinNoiseOptions primaryBaseline = baseline.PrimaryNoise ?? DefaultPrimaryNoise;
-        PerlinNoiseOptions secondaryBaseline = baseline.SecondaryNoise ?? DefaultSecondaryNoise;
-
         return baseline with
         {
             Amplitude = baseline.Amplitude == 0.0 ? 0.0 : OptionTuning.ScaleFiniteNonNegative(baseline.Amplitude * s),
-            PrimaryNoise = PerlinNoiseOptions.ForSize(size, primaryBaseline, referenceDimension),
-            SecondaryNoise = PerlinNoiseOptions.ForSize(size, secondaryBaseline, referenceDimension)
+            PrimaryNoise = PerlinNoiseOptions.ForSize(size, baseline.PrimaryNoise, referenceDimension),
+            SecondaryNoise = PerlinNoiseOptions.ForSize(size, baseline.SecondaryNoise, referenceDimension)
         };
     }
 
@@ -193,7 +265,7 @@ public sealed record HandTremorOptions(
         Guard.ThrowIfNotFiniteInRange(PaperGapBias, -1.0, 1.0);
         Guard.ThrowIfNotFiniteInRange(PaperGapOpacity, 0.0, 1.0);
 
-        PrimaryNoise?.Validate();
-        SecondaryNoise?.Validate();
+        PrimaryNoise.Validate();
+        SecondaryNoise.Validate();
     }
 }

@@ -35,7 +35,14 @@ public class PaperGranulationOptionsTests : SizeTunableOptionsContractTestsBase<
 
         Assert.Equal(0.3, options.DensityStrength);
         Assert.Equal(0.6, options.WarpAmplitude);
-        Assert.Null(options.GrainNoise);
+        Assert.Equal(PaperGranulationOptions.DefaultGrainNoise, options.GrainNoise);
+        Assert.Equal(PaperGranulationOptions.Default, options);
+
+        var explicitDefaults = new PaperGranulationOptions(GrainNoise: PaperGranulationOptions.DefaultGrainNoise);
+        Assert.Equal(options, explicitDefaults);
+
+        PaperGranulationOptions resetViaWith = CreateValidCustomOptions() with { GrainNoise = null! };
+        Assert.Equal(PaperGranulationOptions.DefaultGrainNoise, resetViaWith.GrainNoise);
 
         options.Validate();
     }
