@@ -20,6 +20,19 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     /// <inheritdoc/>
     public static Lab32 Zero => default;
 
+    /// <summary>
+    /// Linearly interpolates component-wise between <paramref name="from"/> and <paramref name="to"/> by <paramref name="amount"/>.
+    /// </summary>
+    /// <param name="from">The starting color returned when <paramref name="amount"/> is <c>0.0</c>.</param>
+    /// <param name="to">The target color returned when <paramref name="amount"/> is <c>1.0</c>.</param>
+    /// <param name="amount">The interpolation factor, typically in <c>[0.0, 1.0]</c>.</param>
+    /// <returns>The component-wise linearly interpolated <see cref="Lab32"/> color.</returns>
+    public static Lab32 Lerp(Lab32 from, Lab32 to, double amount) =>
+        new(
+            (float)ScalarMath.Lerp(from.L, to.L, amount),
+            (float)ScalarMath.Lerp(from.A, to.A, amount),
+            (float)ScalarMath.Lerp(from.B, to.B, amount));
+
     /// <inheritdoc/>
     public Lab32 Add(Lab32 right) =>
         new()

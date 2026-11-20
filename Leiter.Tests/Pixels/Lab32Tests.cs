@@ -41,6 +41,8 @@ public class Lab32Tests : PixelContractTestsBase<Lab32, float>
 
     protected override double ExpectedDistance => 1.7550397986383963;
 
+    protected override Lab32 ExpectedLerpMidpoint => new(6.0f, 11.0f, 16.0f);
+
     [Fact]
     public void Properties_ShouldWork()
     {

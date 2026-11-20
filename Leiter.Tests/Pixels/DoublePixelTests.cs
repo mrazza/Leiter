@@ -41,6 +41,8 @@ public class DoublePixelTests : PixelContractTestsBase<DoublePixel, double>
 
     protected override double ExpectedDistance => 2.5;
 
+    protected override DoublePixel ExpectedLerpMidpoint => new(6.0);
+
     [Fact]
     public void Properties_AndImplicitOperators_ShouldWork()
     {

@@ -157,9 +157,9 @@ public static class ColorTransfer
             double transferredB = ((pixel.B - srcStats.MeanB) * scaleB) + targetStatistics.MeanB;
 
             return new Lab32(
-                (float)(pixel.L + (strength * (transferredL - pixel.L))),
-                (float)(pixel.A + (strength * (transferredA - pixel.A))),
-                (float)(pixel.B + (strength * (transferredB - pixel.B))));
+                (float)ScalarMath.Lerp(pixel.L, transferredL, strength),
+                (float)ScalarMath.Lerp(pixel.A, transferredA, strength),
+                (float)ScalarMath.Lerp(pixel.B, transferredB, strength));
         });
     }
 

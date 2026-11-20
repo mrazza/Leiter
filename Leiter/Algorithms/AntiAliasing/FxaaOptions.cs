@@ -76,7 +76,7 @@ public sealed record FxaaOptions(
         }
 
         double t = Math.Clamp(profile.LabStats.MeanL / 35.0, 0.0, 1.0);
-        double absThreshold = 0.0312 + (t * (scaled.AbsoluteContrastThreshold - 0.0312));
+        double absThreshold = ScalarMath.Lerp(0.0312, scaled.AbsoluteContrastThreshold, t);
         return scaled with { AbsoluteContrastThreshold = absThreshold };
     }
 

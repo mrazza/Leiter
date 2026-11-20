@@ -137,10 +137,7 @@ public static class MaskExtensions
         where T : struct
     {
         ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(mask);
-
-        if (source.Size != mask.Size)
-            throw new ArgumentException("Source matrix and mask dimensions must match.", nameof(mask));
+        Guard.ThrowIfSizeMismatch(source, mask);
 
         int width = source.Width;
         int height = source.Height;
@@ -161,10 +158,7 @@ public static class MaskExtensions
         Func<bool, bool, bool> combiner)
     {
         ArgumentNullException.ThrowIfNull(left);
-        ArgumentNullException.ThrowIfNull(right);
-
-        if (left.Size != right.Size)
-            throw new ArgumentException("Mask dimensions must match.", nameof(right));
+        Guard.ThrowIfSizeMismatch(left, right);
 
         int width = left.Width;
         int height = left.Height;

@@ -26,6 +26,22 @@ public readonly record struct LabColorStatistics(
     public static LabColorStatistics UnitWeights => new(1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
 
     /// <summary>
+    /// Linearly interpolates each component between <paramref name="from"/> and <paramref name="to"/> by <paramref name="amount"/>.
+    /// </summary>
+    /// <param name="from">The starting statistics returned when <paramref name="amount"/> is <c>0.0</c>.</param>
+    /// <param name="to">The target statistics returned when <paramref name="amount"/> is <c>1.0</c>.</param>
+    /// <param name="amount">The interpolation factor, typically in <c>[0.0, 1.0]</c>.</param>
+    /// <returns>The component-wise linearly interpolated <see cref="LabColorStatistics"/>.</returns>
+    public static LabColorStatistics Lerp(LabColorStatistics from, LabColorStatistics to, double amount) =>
+        new(
+            ScalarMath.Lerp(from.MeanL, to.MeanL, amount),
+            ScalarMath.Lerp(from.MeanA, to.MeanA, amount),
+            ScalarMath.Lerp(from.MeanB, to.MeanB, amount),
+            ScalarMath.Lerp(from.StdDevL, to.StdDevL, amount),
+            ScalarMath.Lerp(from.StdDevA, to.StdDevA, amount),
+            ScalarMath.Lerp(from.StdDevB, to.StdDevB, amount));
+
+    /// <summary>
     /// Computes the unweighted Euclidean distance between this 6D feature vector and <paramref name="other"/>.
     /// </summary>
     /// <param name="other">The target statistics to compare against.</param>

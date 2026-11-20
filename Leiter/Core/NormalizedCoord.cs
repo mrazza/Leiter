@@ -30,4 +30,28 @@ public readonly record struct NormalizedCoord(double X, double Y)
     /// <param name="right">The scalar value to subtract from each component.</param>
     /// <returns>A new <see cref="NormalizedCoord"/> with the scalar subtracted from each component.</returns>
     public static NormalizedCoord operator -(NormalizedCoord left, double right) => new(left.X - right, left.Y - right);
+
+    /// <summary>
+    /// Multiplies a normalized coordinate by a scalar value component-wise.
+    /// </summary>
+    /// <param name="coord">The normalized coordinate operand.</param>
+    /// <param name="scalar">The scalar multiplier.</param>
+    /// <returns>The scaled <see cref="NormalizedCoord"/>.</returns>
+    public static NormalizedCoord operator *(NormalizedCoord coord, double scalar) => new(coord.X * scalar, coord.Y * scalar);
+
+    /// <summary>
+    /// Multiplies a scalar value by a normalized coordinate component-wise.
+    /// </summary>
+    /// <param name="scalar">The scalar multiplier.</param>
+    /// <param name="coord">The normalized coordinate operand.</param>
+    /// <returns>The scaled <see cref="NormalizedCoord"/>.</returns>
+    public static NormalizedCoord operator *(double scalar, NormalizedCoord coord) => new(coord.X * scalar, coord.Y * scalar);
+
+    /// <summary>
+    /// Divides a normalized coordinate by a scalar value component-wise.
+    /// </summary>
+    /// <param name="coord">The normalized coordinate operand.</param>
+    /// <param name="scalar">The scalar divisor.</param>
+    /// <returns>The scaled <see cref="NormalizedCoord"/>.</returns>
+    public static NormalizedCoord operator /(NormalizedCoord coord, double scalar) => new(coord.X / scalar, coord.Y / scalar);
 }

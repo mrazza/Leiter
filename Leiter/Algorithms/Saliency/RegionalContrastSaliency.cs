@@ -86,7 +86,7 @@ public static class RegionalContrastSaliency
             }
 
             double invCount = 1.0 / region.Pixels.Count;
-            regionCentroids[r] = new NormalizedCoord(sum.X * invCount, sum.Y * invCount);
+            regionCentroids[r] = sum * invCount;
             avgRegionDistances[r] = sumDist * invCount;
         }
 

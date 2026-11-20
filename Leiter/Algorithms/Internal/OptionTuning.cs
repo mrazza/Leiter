@@ -108,4 +108,10 @@ internal static class OptionTuning
     /// </summary>
     public static int RoundPositiveInt(double value, int minValue = 1) =>
         Math.Max(minValue, (int)Math.Round(value, MidpointRounding.AwayFromZero));
+
+    /// <summary>
+    /// Computes the geometric-mean linear dimension <c>sqrt(Width * Height)</c> of <paramref name="size"/>.
+    /// </summary>
+    public static double GeometricMeanDimension(Size size) =>
+        Math.Sqrt((double)size.Width * size.Height);
 }

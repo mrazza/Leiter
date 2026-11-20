@@ -237,11 +237,8 @@ internal static class MeanShiftRegionClusterer
 
     private static Lab32 ComputeMeanColor(Vector3D colorSum, int memberCount)
     {
-        double invCount = 1.0 / memberCount;
-        return new Lab32(
-            (float)(colorSum.X * invCount),
-            (float)(colorSum.Y * invCount),
-            (float)(colorSum.Z * invCount));
+        Vector3D mean = colorSum * (1.0 / memberCount);
+        return new Lab32((float)mean.X, (float)mean.Y, (float)mean.Z);
     }
 
     private static bool CanMergeNeighborMode(

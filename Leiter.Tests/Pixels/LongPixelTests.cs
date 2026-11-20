@@ -41,6 +41,8 @@ public class LongPixelTests : PixelContractTestsBase<LongPixel, long>
 
     protected override double ExpectedDistance => 50.0;
 
+    protected override LongPixel ExpectedLerpMidpoint => new(6L);
+
     [Fact]
     public void Properties_AndImplicitOperators_ShouldWork()
     {
@@ -54,5 +56,15 @@ public class LongPixelTests : PixelContractTestsBase<LongPixel, long>
 
         LongPixel p2 = 456L;
         Assert.Equal(456L, p2.Value);
+    }
+
+    [Fact]
+    public void Lerp_HalfStepRounding_ShouldRoundAwayFromZero()
+    {
+        Assert.Equal(new LongPixel(1L), LongPixel.Lerp(new LongPixel(0L), new LongPixel(1L), 0.5));
+        Assert.Equal(new LongPixel(3L), LongPixel.Lerp(new LongPixel(2L), new LongPixel(3L), 0.5));
+        Assert.Equal(new LongPixel(-1L), LongPixel.Lerp(new LongPixel(0L), new LongPixel(-1L), 0.5));
+        Assert.Equal(new LongPixel(-3L), LongPixel.Lerp(new LongPixel(-2L), new LongPixel(-3L), 0.5));
+        Assert.Equal(new LongPixel(25L), LongPixel.Lerp(new LongPixel(10L), new LongPixel(20L), 1.5));
     }
 }
