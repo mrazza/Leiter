@@ -1,9 +1,11 @@
 namespace Leiter.Platform.ImageSharp;
 
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using Leiter.Core;
 using Leiter.Pixels;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.PixelFormats;
 
 /// <summary>
@@ -105,17 +107,50 @@ public static class ImageExtensions
     /// <summary>
     /// Saves an <see cref="IReadOnlyMatrix{Rgb8}"/> to disk at <paramref name="path"/>, inferring the image encoder from the file extension.
     /// </summary>
+    /// <remarks>
+    /// Supported extensions are determined by <see cref="Configuration.Default"/> (<see cref="Configuration.ImageFormatsManager"/>).
+    /// </remarks>
     /// <param name="matrix">The image matrix to save.</param>
     /// <param name="path">The destination file path.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="path"/> is empty or contains only white-space characters.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="matrix"/> has a width or height less than or equal to zero.</exception>
+    /// <exception cref="NotSupportedException">Thrown when <paramref name="path"/> does not have a supported image file extension.</exception>
     public static void SaveImage(this IReadOnlyMatrix<Rgb8> matrix, string path)
     {
         ArgumentNullException.ThrowIfNull(matrix);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(matrix.Width, 0, nameof(matrix));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(matrix.Height, 0, nameof(matrix));
+
+        string extension = Path.GetExtension(path);
+        ImageFormatManager formatManager = Configuration.Default.ImageFormatsManager;
+        if (string.IsNullOrEmpty(extension) ||
+            !formatManager.TryFindFormatByFileExtension(extension, out IImageFormat? format) ||
+            !TryGetEncoder(formatManager, format, out IImageEncoder? encoder))
+        {
+            throw new NotSupportedException(
+                $"Unsupported image file extension '{extension}'.");
+        }
 
         using Image<Rgb24> image = matrix.ToImage();
-        image.Save(path);
+        image.Save(path, encoder);
+    }
+
+    private static bool TryGetEncoder(
+        ImageFormatManager formatManager,
+        IImageFormat format,
+        [NotNullWhen(true)] out IImageEncoder? encoder)
+    {
+        try
+        {
+            encoder = formatManager.GetEncoder(format);
+            return true;
+        }
+        catch (UnknownImageFormatException)
+        {
+            encoder = null;
+            return false;
+        }
     }
 }

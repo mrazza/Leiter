@@ -11,7 +11,9 @@ using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
 using Leiter.Platform.ImageSharp;
+#if WINDOWS
 using Leiter.Platform.Windows;
+#endif
 
 /// <summary>
 /// Command-line harness for running Leiter image-processing demos and the end-to-end watercolor pipeline on an input photo.
@@ -196,17 +198,23 @@ internal static class Program
     }
 
     private static Matrix<Rgb8> LoadImage(string path) =>
+#if WINDOWS
         OperatingSystem.IsWindows()
             ? BitmapExtensions.LoadRgb8(path)
             : ImageExtensions.LoadRgb8(path);
+#else
+        ImageExtensions.LoadRgb8(path);
+#endif
 
     private static void SaveImage(IReadOnlyMatrix<Rgb8> matrix, string path)
     {
+#if WINDOWS
         if (OperatingSystem.IsWindows())
         {
             BitmapExtensions.SaveBitmap(matrix, path);
             return;
         }
+#endif
 
         ImageExtensions.SaveImage(matrix, path);
     }

@@ -1,8 +1,6 @@
 namespace Leiter.Tests.Platform.ImageSharp;
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.IO;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -123,20 +121,52 @@ public class ImageExtensionsTests
         MatrixAssert.Equal(view.ToSequentialMatrix(), viewImage.ToSequentialMatrix());
     }
 
-    private sealed class ThrowingReadOnlyMatrix(int width, int height) : IReadOnlyMatrix<Rgb8>
+    [Theory]
+    [InlineData("out.unknown")]
+    [InlineData("out.xyz")]
+    [InlineData("out")]
+    [InlineData("out.")]
+    public void SaveImage_UnsupportedOrMissingExtension_ShouldThrowNotSupportedBeforeAllocation(string fileName)
     {
-        public int Width => width;
-        public int Height => height;
-        public Leiter.Core.Size Size => new(Width, Height);
-        public int Count => Width * Height;
-        public Rgb8 this[int index] => throw new InvalidOperationException("Simulated read failure.");
-        public Rgb8 this[int x, int y] => (x == Width - 1 && y == Height - 1)
-            ? throw new InvalidOperationException("Simulated read failure.")
-            : new Rgb8(10, 20, 30);
-        public Rgb8 this[Coord coord] => this[coord.X, coord.Y];
-        public Rgb8 GetElement(int index) => this[index];
-        public Rgb8 GetElement(int x, int y) => this[x, y];
-        public IEnumerator<Rgb8> GetEnumerator() { yield break; }
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        string path = Path.Combine(Path.GetTempPath(), $"leiter_imgsharp_{Guid.NewGuid():N}_{fileName}");
+        var throwing = new ThrowingReadOnlyMatrix(2, 2);
+
+        try
+        {
+            // ThrowingReadOnlyMatrix throws InvalidOperationException if ToImage() reads pixels,
+            // so NotSupportedException proves the extension is rejected before allocating an image.
+            Assert.Throws<NotSupportedException>(() => throwing.SaveImage(path));
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
+    public void SaveImage_UnsupportedExtensionWithExistingFile_ShouldThrowAndNotCorruptFile()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"leiter_imgsharp_{Guid.NewGuid():N}.unknown");
+        byte[] sentinel = [1, 2, 3, 4];
+        File.WriteAllBytes(path, sentinel);
+        var matrix = new SequentialMatrix<Rgb8>(2, 2);
+
+        try
+        {
+            Assert.Throws<NotSupportedException>(() => matrix.SaveImage(path));
+            Assert.Throws<NotSupportedException>(() => matrix.SaveImage("dir.png/no_extension"));
+            Assert.Equal(sentinel, File.ReadAllBytes(path));
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
     }
 }

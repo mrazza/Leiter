@@ -1,8 +1,6 @@
 namespace Leiter.Tests.Platform.Windows;
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Versioning;
 using Leiter.Core;
@@ -19,11 +17,6 @@ public class BitmapExtensionsTests
 {
     [WindowsFact]
     public void BitmapExtensions_ShouldConvertCorrectly()
-    {
-        RunBitmapExtensionsTest();
-    }
-
-    private void RunBitmapExtensionsTest()
     {
         using var bmp = new System.Drawing.Bitmap(5, 5);
         for (int y = 0; y < 5; y++)
@@ -51,8 +44,6 @@ public class BitmapExtensionsTests
         string pngPath = Path.Combine(Path.GetTempPath(), $"{prefix}.png");
         string bmpPath = Path.Combine(Path.GetTempPath(), $"{prefix}.bmp");
         string jpgPath = Path.Combine(Path.GetTempPath(), $"{prefix}.jpg");
-        string webpPath = Path.Combine(Path.GetTempPath(), $"{prefix}.webp");
-        string noExtPath = Path.Combine(Path.GetTempPath(), prefix);
 
         try
         {
@@ -68,13 +59,10 @@ public class BitmapExtensionsTests
             Assert.True(File.Exists(jpgPath));
             SequentialMatrix<Rgb8> loadedJpg = BitmapExtensions.LoadRgb8(jpgPath);
             Assert.Equal(matrix.Size, loadedJpg.Size);
-
-            Assert.Throws<NotSupportedException>(() => matrix.SaveBitmap(webpPath));
-            Assert.Throws<NotSupportedException>(() => matrix.SaveBitmap(noExtPath));
         }
         finally
         {
-            foreach (string path in new[] { pngPath, bmpPath, jpgPath, webpPath, noExtPath })
+            foreach (string path in new[] { pngPath, bmpPath, jpgPath })
             {
                 if (File.Exists(path))
                 {
@@ -131,20 +119,27 @@ public class BitmapExtensionsTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 0).SaveBitmap("out.png"));
     }
 
-    private sealed class ThrowingReadOnlyMatrix(int width, int height) : IReadOnlyMatrix<Rgb8>
+    [Theory]
+    [InlineData("out.webp")]
+    [InlineData("out.unknown")]
+    [InlineData("out")]
+    [InlineData("out.")]
+    public void SaveBitmap_UnsupportedOrMissingExtension_ShouldThrowNotSupportedBeforeAllocation(string fileName)
     {
-        public int Width => width;
-        public int Height => height;
-        public Size Size => new(Width, Height);
-        public int Count => Width * Height;
-        public Rgb8 this[int index] => throw new InvalidOperationException("Simulated read failure.");
-        public Rgb8 this[int x, int y] => (x == Width - 1 && y == Height - 1)
-            ? throw new InvalidOperationException("Simulated read failure.")
-            : new Rgb8(10, 20, 30);
-        public Rgb8 this[Coord coord] => this[coord.X, coord.Y];
-        public Rgb8 GetElement(int index) => this[index];
-        public Rgb8 GetElement(int x, int y) => this[x, y];
-        public IEnumerator<Rgb8> GetEnumerator() { yield break; }
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        string path = Path.Combine(Path.GetTempPath(), $"leiter_win_{Guid.NewGuid():N}_{fileName}");
+        var throwing = new ThrowingReadOnlyMatrix(2, 2);
+
+        try
+        {
+            Assert.Throws<NotSupportedException>(() => throwing.SaveBitmap(path));
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
     }
 }
