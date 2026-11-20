@@ -3,12 +3,15 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TargetFramework Condition="$([MSBuild]::IsOSPlatform('Windows'))">net10.0-windows</TargetFramework>
+    <DefineConstants Condition="'$(TargetFramework)' == 'net10.0-windows'">$(DefineConstants);WINDOWS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Leiter\Leiter.csproj" />
     <ProjectReference Include="..\Leiter.Platform.ImageSharp\Leiter.Platform.ImageSharp.csproj" />
-    <ProjectReference Include="..\Leiter.Platform.Windows\Leiter.Platform.Windows.csproj" />
+    <ProjectReference Include="..\Leiter.Platform.Windows\Leiter.Platform.Windows.csproj" Condition="'$(TargetFramework)' == 'net10.0-windows'" />
   </ItemGroup>
 
 </Project>

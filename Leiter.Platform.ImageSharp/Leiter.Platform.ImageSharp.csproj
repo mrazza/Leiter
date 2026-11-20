@@ -4,10 +4,6 @@
     <ProjectReference Include="..\Leiter\Leiter.csproj" />
   </ItemGroup>
 
-  <PropertyGroup>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-  </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>

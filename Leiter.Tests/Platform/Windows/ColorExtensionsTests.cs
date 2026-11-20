@@ -1,6 +1,5 @@
 namespace Leiter.Tests.Platform.Windows;
 
-using System;
 using System.Runtime.Versioning;
 using Leiter.Platform.Windows;
 using Leiter.Tests.TestUtils;
@@ -14,11 +13,6 @@ public class ColorExtensionsTests
 {
     [WindowsFact]
     public void ColorExtensions_ShouldConvertCorrectly()
-    {
-        RunColorExtensionsTest();
-    }
-
-    private void RunColorExtensionsTest()
     {
         var original = System.Drawing.Color.FromArgb(10, 20, 30);
         var leiterPixel = original.ToRgb8();
