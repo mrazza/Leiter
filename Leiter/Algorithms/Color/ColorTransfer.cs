@@ -156,25 +156,32 @@ public static class ColorTransfer
     /// <param name="profiles">The candidate color transfer profiles to evaluate.</param>
     /// <param name="featureWeights">Optional weights for comparing the 6D feature components (defaults to unit weights).</param>
     /// <returns>The closest matching <see cref="ColorTransferProfile"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="profiles"/> or any entry in <paramref name="profiles"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="profiles"/> is empty.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when any weight in <paramref name="featureWeights"/> is negative.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="profiles"/>, any entry in <paramref name="profiles"/>, or any profile's <see cref="ColorTransferProfile.Name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="profiles"/> is empty or contains a profile with an empty or whitespace name.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any profile contains an undefined illuminant or invalid CIELAB statistics, or when any weight in <paramref name="featureWeights"/> is negative or non-finite.</exception>
     public static ColorTransferProfile SelectClosestProfile(
         LabColorStatistics sourceStatistics,
         IReadOnlyList<ColorTransferProfile> profiles,
         LabColorStatistics? featureWeights = null)
     {
-        ArgumentNullException.ThrowIfNull(profiles);
-        if (profiles.Count == 0)
-            throw new ArgumentException("At least one candidate profile must be provided.", nameof(profiles));
-
+        ValidateProfiles(profiles);
         LabColorStatistics weights = featureWeights ?? LabColorStatistics.UnitWeights;
-        ColorTransferProfile best = profiles[0] ?? throw new ArgumentNullException(nameof(profiles), "Profile entries cannot be null.");
+        ValidateFeatureWeights(weights);
+
+        return SelectClosestProfileUnchecked(sourceStatistics, profiles, weights);
+    }
+
+    private static ColorTransferProfile SelectClosestProfileUnchecked(
+        LabColorStatistics sourceStatistics,
+        IReadOnlyList<ColorTransferProfile> profiles,
+        LabColorStatistics weights)
+    {
+        ColorTransferProfile best = profiles[0];
         double bestDistance = sourceStatistics.FeatureDistance(best.Statistics, weights);
 
         for (int i = 1; i < profiles.Count; i++)
         {
-            ColorTransferProfile candidate = profiles[i] ?? throw new ArgumentNullException(nameof(profiles), "Profile entries cannot be null.");
+            ColorTransferProfile candidate = profiles[i];
             double distance = sourceStatistics.FeatureDistance(candidate.Statistics, weights);
             if (distance < bestDistance)
             {
@@ -184,6 +191,30 @@ public static class ColorTransfer
         }
 
         return best;
+    }
+
+    private static void ValidateProfiles(IReadOnlyList<ColorTransferProfile> profiles)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        if (profiles.Count == 0)
+            throw new ArgumentException("At least one candidate profile must be provided.", nameof(profiles));
+
+        for (int i = 0; i < profiles.Count; i++)
+        {
+            ColorTransferProfile profile = profiles[i]
+                ?? throw new ArgumentNullException(nameof(profiles), "Profile entries cannot be null.");
+            profile.Validate(nameof(profiles));
+        }
+    }
+
+    private static void ValidateFeatureWeights(LabColorStatistics featureWeights)
+    {
+        Guard.ThrowIfNotFiniteNonNegative(featureWeights.MeanL, nameof(featureWeights));
+        Guard.ThrowIfNotFiniteNonNegative(featureWeights.MeanA, nameof(featureWeights));
+        Guard.ThrowIfNotFiniteNonNegative(featureWeights.MeanB, nameof(featureWeights));
+        Guard.ThrowIfNotFiniteNonNegative(featureWeights.StdDevL, nameof(featureWeights));
+        Guard.ThrowIfNotFiniteNonNegative(featureWeights.StdDevA, nameof(featureWeights));
+        Guard.ThrowIfNotFiniteNonNegative(featureWeights.StdDevB, nameof(featureWeights));
     }
 
     /// <summary>
@@ -293,9 +324,9 @@ public static class ColorTransfer
     /// <param name="featureWeights">Optional weights for comparing the 6D feature components (defaults to unit weights).</param>
     /// <param name="strength">Blending strength in <c>[0, 1]</c>.</param>
     /// <returns>The recolored <see cref="Matrix{Rgb8}"/> image and the selected <see cref="ColorTransferProfile"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/>, <paramref name="profiles"/>, or any profile entry is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/>, <paramref name="profiles"/>, any profile entry, or any profile's <see cref="ColorTransferProfile.Name"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="profiles"/> is empty or contains a profile with an empty or whitespace name.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> is undefined, any profile contains an undefined illuminant or invalid CIELAB statistics, <paramref name="strength"/> is outside <c>[0, 1]</c>, or any feature weight is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> is undefined, any profile contains an undefined illuminant or invalid CIELAB statistics, <paramref name="strength"/> is outside <c>[0, 1]</c>, or any feature weight is negative or non-finite.</exception>
     public static (Matrix<Rgb8> Result, ColorTransferProfile SelectedProfile) TransferToClosestProfile(
         IReadOnlyMatrix<Rgb8> source,
         IReadOnlyList<ColorTransferProfile> profiles,
@@ -304,19 +335,31 @@ public static class ColorTransfer
         double strength = 1.0)
     {
         ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(profiles);
+        ValidateProfiles(profiles);
         Guard.ThrowIfUndefinedEnum(colorSpace);
+        LabColorStatistics weights = featureWeights ?? LabColorStatistics.UnitWeights;
+        ValidateFeatureWeights(weights);
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
+
+        if (source.Count == 0)
+        {
+            ColorTransferProfile emptySelected = SelectClosestProfileUnchecked(default, profiles, weights);
+            return (source.Clone(), emptySelected);
+        }
+
+        if (strength == 0.0 && profiles.Count == 1)
+        {
+            return (source.Clone(), profiles[0]);
+        }
 
         Matrix<Lab32> sourceLabE = source.ToLab32(colorSpace, Illuminant.E);
         LabColorStatistics sourceStats = ComputeStatistics(sourceLabE);
-        ColorTransferProfile selected = SelectClosestProfile(sourceStats, profiles, featureWeights);
+        ColorTransferProfile selected = SelectClosestProfileUnchecked(sourceStats, profiles, weights);
 
-        for (int i = 0; i < profiles.Count; i++)
-            profiles[i].Validate(nameof(profiles));
-
-        if (source.Count == 0 || strength == 0.0)
+        if (strength == 0.0)
+        {
             return (source.Clone(), selected);
+        }
 
         Matrix<Rgb8> result = selected.Illuminant == Illuminant.E
             ? TransferLabToRgb8(sourceLabE, selected.Statistics, colorSpace, Illuminant.E, strength)

@@ -1,6 +1,8 @@
 namespace Leiter.Tests.Algorithms.Color;
 
+using System;
 using Leiter.Algorithms.Color;
+using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Pixels.ColorSpaces;
 using Xunit;
 
@@ -45,5 +47,32 @@ public class ColorTransferProfileTests
         Assert.NotEqual(pal1, pal3);
         Assert.NotEqual(pal1, pal4);
         Assert.Equal(pal1.GetHashCode(), pal2.GetHashCode());
+    }
+
+    [Fact]
+    public void Validate_InvalidProfiles_ShouldThrowWithExpectedParamNames()
+    {
+        foreach (ColorTransferProfile preset in WatercolorPalettes.Defaults)
+        {
+            preset.Validate();
+        }
+
+        Assert.Throws<ArgumentNullException>(nameof(ColorTransferProfile.Name), () =>
+            new ColorTransferProfile(null!, WatercolorPalettes.BalancedWash.Statistics).Validate());
+
+        Assert.Throws<ArgumentNullException>("customParam", () =>
+            new ColorTransferProfile(null!, WatercolorPalettes.BalancedWash.Statistics).Validate("customParam"));
+
+        Assert.Throws<ArgumentException>(nameof(ColorTransferProfile.Name), () =>
+            new ColorTransferProfile("   ", WatercolorPalettes.BalancedWash.Statistics).Validate());
+
+        Assert.Throws<ArgumentOutOfRangeException>(nameof(ColorTransferProfile.Illuminant), () =>
+            new ColorTransferProfile("Bad", WatercolorPalettes.BalancedWash.Statistics, (Illuminant)999).Validate());
+
+        Assert.Throws<ArgumentOutOfRangeException>("customParam", () =>
+            new ColorTransferProfile("Bad", new LabColorStatistics(double.NaN, 0, 0, 1, 1, 1)).Validate("customParam"));
+
+        Assert.Throws<ArgumentOutOfRangeException>(nameof(ColorTransferProfile.Statistics), () =>
+            new ColorTransferProfile("Bad", new LabColorStatistics(50, 0, 0, -0.1, 1, 1)).Validate());
     }
 }

@@ -1,6 +1,8 @@
 namespace Leiter.Tests.Algorithms.Color;
 
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
@@ -370,5 +372,94 @@ public class ColorTransferTests
         Matrix<Lab32> viewTransferred = ColorTransfer.Transfer(view, target);
         Matrix<Lab32> seqTransferred = ColorTransfer.Transfer(materialized, target);
         Assert.True(viewTransferred.ContentEquals(seqTransferred));
+    }
+
+    [Fact]
+    public void SelectClosestProfile_WithInvalidProfilesOrFeatureWeights_ShouldThrowUpfrontAndNeverSilentlyWin()
+    {
+        LabColorStatistics sourceStats = WatercolorPalettes.BalancedWash.Statistics;
+        ColorTransferProfile valid = WatercolorPalettes.BalancedWash;
+
+        // An invalid profile with NaN stats at index 0 must throw rather than causing NaN distance comparisons
+        // (where candidate < NaN is false) and silently winning selection.
+        var nanMeanProfile = new ColorTransferProfile("NaN", new LabColorStatistics(double.NaN, 0, 0, 10, 5, 5));
+        var badStdProfile = new ColorTransferProfile("NegStd", new LabColorStatistics(50, 0, 0, -1.0, 5, 5));
+        var badIlluminantProfile = new ColorTransferProfile("BadIllum", valid.Statistics, (Illuminant)999);
+        var emptyNameProfile = new ColorTransferProfile("   ", valid.Statistics);
+        var nullNameProfile = new ColorTransferProfile(null!, valid.Statistics);
+
+        Assert.Throws<ArgumentOutOfRangeException>("profiles", () =>
+            ColorTransfer.SelectClosestProfile(sourceStats, [nanMeanProfile, valid]));
+        Assert.Throws<ArgumentOutOfRangeException>("profiles", () =>
+            ColorTransfer.SelectClosestProfile(sourceStats, [valid, nanMeanProfile]));
+        Assert.Throws<ArgumentOutOfRangeException>("profiles", () =>
+            ColorTransfer.SelectClosestProfile(sourceStats, [valid, badStdProfile]));
+        Assert.Throws<ArgumentOutOfRangeException>("profiles", () =>
+            ColorTransfer.SelectClosestProfile(sourceStats, [valid, badIlluminantProfile]));
+        Assert.Throws<ArgumentException>("profiles", () =>
+            ColorTransfer.SelectClosestProfile(sourceStats, [valid, emptyNameProfile]));
+        Assert.Throws<ArgumentNullException>("profiles", () =>
+            ColorTransfer.SelectClosestProfile(sourceStats, [valid, nullNameProfile]));
+
+        Assert.Throws<ArgumentOutOfRangeException>("featureWeights", () =>
+            ColorTransfer.SelectClosestProfile(sourceStats, [valid], new LabColorStatistics(-1, 1, 1, 1, 1, 1)));
+        Assert.Throws<ArgumentOutOfRangeException>("featureWeights", () =>
+            ColorTransfer.SelectClosestProfile(sourceStats, [valid], new LabColorStatistics(1, 1, 1, double.NaN, 1, 1)));
+    }
+
+    [Fact]
+    public void TransferToClosestProfile_InvalidProfilesOrWeights_ShouldThrowBeforeImageConversionEvenWhenEmptyOrZeroStrength()
+    {
+        var nonEmptySpy = new ThrowingPixelsRgb8Matrix(4, 4);
+        var emptyRgb = new SequentialMatrix<Rgb8>(0, 0);
+        ColorTransferProfile valid = WatercolorPalettes.BalancedWash;
+
+        var nanProfile = new ColorTransferProfile("NaN", new LabColorStatistics(double.NaN, 0, 0, 10, 5, 5));
+        var badIlluminant = new ColorTransferProfile("BadIllum", valid.Statistics, (Illuminant)999);
+        var emptyName = new ColorTransferProfile("", valid.Statistics);
+        var nullName = new ColorTransferProfile(null!, valid.Statistics);
+
+        // Must fail before reading any pixels from nonEmptySpy (no InvalidOperationException from ToLab32).
+        Assert.Throws<ArgumentNullException>("profiles", () =>
+            ColorTransfer.TransferToClosestProfile(nonEmptySpy, null!));
+        Assert.Throws<ArgumentException>("profiles", () =>
+            ColorTransfer.TransferToClosestProfile(nonEmptySpy, Array.Empty<ColorTransferProfile>()));
+        Assert.Throws<ArgumentNullException>("profiles", () =>
+            ColorTransfer.TransferToClosestProfile(nonEmptySpy, new ColorTransferProfile[] { valid, null! }));
+        Assert.Throws<ArgumentNullException>("profiles", () =>
+            ColorTransfer.TransferToClosestProfile(nonEmptySpy, [valid, nullName]));
+        Assert.Throws<ArgumentException>("profiles", () =>
+            ColorTransfer.TransferToClosestProfile(nonEmptySpy, [valid, emptyName]));
+        Assert.Throws<ArgumentOutOfRangeException>("profiles", () =>
+            ColorTransfer.TransferToClosestProfile(nonEmptySpy, [nanProfile, valid]));
+        Assert.Throws<ArgumentOutOfRangeException>("profiles", () =>
+            ColorTransfer.TransferToClosestProfile(nonEmptySpy, [valid, badIlluminant]));
+        Assert.Throws<ArgumentOutOfRangeException>("profiles", () =>
+            ColorTransfer.TransferToClosestProfile(nonEmptySpy, [valid, nanProfile], strength: 0.0));
+        Assert.Throws<ArgumentOutOfRangeException>("featureWeights", () =>
+            ColorTransfer.TransferToClosestProfile(nonEmptySpy, [valid], featureWeights: new LabColorStatistics(1, -0.5, 1, 1, 1, 1)));
+
+        // Must also validate profiles and featureWeights even when source is empty.
+        Assert.Throws<ArgumentException>("profiles", () =>
+            ColorTransfer.TransferToClosestProfile(emptyRgb, [valid, emptyName]));
+        Assert.Throws<ArgumentOutOfRangeException>("profiles", () =>
+            ColorTransfer.TransferToClosestProfile(emptyRgb, [nanProfile, valid]));
+        Assert.Throws<ArgumentOutOfRangeException>("featureWeights", () =>
+            ColorTransfer.TransferToClosestProfile(emptyRgb, [valid], featureWeights: new LabColorStatistics(1, 1, double.PositiveInfinity, 1, 1, 1)));
+    }
+
+    private sealed class ThrowingPixelsRgb8Matrix(int width, int height) : IReadOnlyMatrix<Rgb8>
+    {
+        public int Width => width;
+        public int Height => height;
+        public Size Size => new(width, height);
+        public int Count => width * height;
+        public Rgb8 this[int index] => throw new InvalidOperationException("Pixels should not be accessed before profile validation.");
+        public Rgb8 this[int x, int y] => throw new InvalidOperationException("Pixels should not be accessed before profile validation.");
+        public Rgb8 this[Coord coord] => throw new InvalidOperationException("Pixels should not be accessed before profile validation.");
+        public Rgb8 GetElement(int index) => this[index];
+        public Rgb8 GetElement(int x, int y) => this[x, y];
+        public IEnumerator<Rgb8> GetEnumerator() { yield break; }
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
