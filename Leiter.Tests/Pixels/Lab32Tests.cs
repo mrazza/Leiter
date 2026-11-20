@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Pixels;
 
 using System;
+using Leiter.Core;
 using Leiter.Pixels;
 using Xunit;
 
@@ -109,5 +110,22 @@ public class Lab32Tests : PixelContractTestsBase<Lab32, float>
         double d34 = lowHue2.Distance(highHue2);
         Assert.True(d34 > 0);
         Assert.Equal(d34, highHue2.Distance(lowHue2), 10);
+    }
+
+    [Fact]
+    public void DeltaE2000_DistanceSquared_ToVector3D_AndExtremeEuclidean_ShouldWork()
+    {
+        var a = new Lab32(50f, 10f, 20f);
+        var b = new Lab32(53f, 14f, 32f);
+
+        Assert.Equal(a.Distance(b), a.DeltaE2000(b));
+        Assert.Equal(a.EuclideanDistanceSquared(b), a.DistanceSquared(b));
+        Assert.Equal(new Vector3D(50.0, 10.0, 20.0), a.ToVector3D());
+
+        var posExtreme = new Lab32(3e38f, 0.0f, 0.0f);
+        var negExtreme = new Lab32(-3e38f, 0.0f, 0.0f);
+        double extremeDistance = posExtreme.EuclideanDistance(negExtreme);
+        Assert.True(double.IsFinite(extremeDistance));
+        Assert.Equal((double)posExtreme.L - negExtreme.L, extremeDistance, 1e25);
     }
 }

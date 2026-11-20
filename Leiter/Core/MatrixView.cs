@@ -93,7 +93,8 @@ public readonly struct MatrixView<T> : IReadOnlyMatrix<T>
     /// <summary>
     /// Gets the total number of elements in the view.
     /// </summary>
-    public int Count => Height * Width;
+    /// <exception cref="OverflowException">Thrown when <c>Width * Height</c> overflows <see cref="int"/>.</exception>
+    public int Count => checked(Height * Width);
 
     /// <summary>
     /// Gets the element at the specified linear index within the view.

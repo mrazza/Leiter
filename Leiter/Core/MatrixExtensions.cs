@@ -101,6 +101,9 @@ public static class MatrixExtensions
     /// <summary>
     /// Applies a transformation function to each element of a read-only matrix in parallel, returning a flat row-major array.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="selector"/> is invoked concurrently from multiple threads and must be thread-safe.
+    /// </remarks>
     /// <typeparam name="T">The element type of the source matrix.</typeparam>
     /// <typeparam name="R">The element type of the resulting array.</typeparam>
     /// <param name="matrix">The source matrix to transform.</param>
@@ -141,6 +144,9 @@ public static class MatrixExtensions
     /// <summary>
     /// Applies a transformation function to each element of a read-only matrix, returning a new matrix of the mapped type.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="selector"/> is invoked concurrently from multiple threads and must be thread-safe.
+    /// </remarks>
     /// <typeparam name="T">The element type of the source matrix.</typeparam>
     /// <typeparam name="R">The element type of the resulting matrix.</typeparam>
     /// <param name="matrix">The source matrix to transform.</param>
@@ -182,22 +188,43 @@ public static class MatrixExtensions
 
         int width = matrix.Width;
         int height = matrix.Height;
-        var result = new SequentialMatrix<R>(width, height);
-        if (matrix.Count == 0)
-            return result;
+        long area = matrix.Size.Area;
+        if (area == 0)
+            return new SequentialMatrix<R>(width, height);
+
+        if (area > Array.MaxLength)
+            throw new ArgumentOutOfRangeException(nameof(matrix), matrix.Size, $"Matrix element count {area} exceeds the maximum supported array length ({Array.MaxLength}).");
+
+        int count = (int)area;
+        var mappedData = new R[count];
+        if (matrix is SequentialMatrix<T> sequential)
+        {
+            T[] raw = sequential.RawData;
+            Parallel.For(0, height, y =>
+            {
+                int rowBase = y * width;
+                for (int x = 0; x < width; x++)
+                    mappedData[rowBase + x] = selector(x, y, raw[rowBase + x]);
+            });
+            return new SequentialMatrix<R>(width, height, mappedData);
+        }
 
         Parallel.For(0, height, y =>
         {
+            int rowBase = y * width;
             for (int x = 0; x < width; x++)
-                result[x, y] = selector(x, y, matrix[x, y]);
+                mappedData[rowBase + x] = selector(x, y, matrix[x, y]);
         });
 
-        return result;
+        return new SequentialMatrix<R>(width, height, mappedData);
     }
 
     /// <summary>
     /// Combines corresponding elements of two same-sized matrices in parallel, returning a new matrix of results.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="combiner"/> is invoked concurrently from multiple threads and must be thread-safe.
+    /// </remarks>
     /// <typeparam name="TLeft">The element type of the left matrix.</typeparam>
     /// <typeparam name="TRight">The element type of the right matrix.</typeparam>
     /// <typeparam name="TResult">The element type of the resulting matrix.</typeparam>
@@ -312,7 +339,12 @@ public static class MatrixExtensions
     /// <param name="matrix">The matrix whose dimensions are used for normalization.</param>
     /// <param name="coord">The integer coordinate to normalize.</param>
     /// <returns>A <see cref="NormalizedCoord"/> with components in the normalized range.</returns>
-    public static NormalizedCoord NormalizeCoord(this IUntypedMatrix matrix, Coord coord) => new(coord.X / (double)matrix.Width, coord.Y / (double)matrix.Height);
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    public static NormalizedCoord NormalizeCoord(this IUntypedMatrix matrix, Coord coord)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        return new(coord.X / (double)matrix.Width, coord.Y / (double)matrix.Height);
+    }
 
     /// <summary>
     /// Denormalizes a normalized coordinate back to integer pixel coordinates based on the matrix dimensions.
@@ -320,7 +352,12 @@ public static class MatrixExtensions
     /// <param name="matrix">The matrix whose dimensions are used for denormalization.</param>
     /// <param name="normalizedCoord">The normalized coordinate to denormalize.</param>
     /// <returns>A <see cref="Coord"/> in integer matrix coordinates.</returns>
-    public static Coord DenormalizeCoord(this IUntypedMatrix matrix, NormalizedCoord normalizedCoord) => new((int)(normalizedCoord.X * matrix.Width), (int)(normalizedCoord.Y * matrix.Height));
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    public static Coord DenormalizeCoord(this IUntypedMatrix matrix, NormalizedCoord normalizedCoord)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        return new((int)(normalizedCoord.X * matrix.Width), (int)(normalizedCoord.Y * matrix.Height));
+    }
 
     /// <summary>
     /// Determines whether the specified integer coordinates lie within the bounds of the matrix.
@@ -366,18 +403,10 @@ public static class MatrixExtensions
         if (left.Size != right.Size)
             return false;
 
-        EqualityComparer<T> comparer = EqualityComparer<T>.Default;
         if (left.TryGetReadOnlySpan(out ReadOnlySpan<T> leftSpan) && right.TryGetReadOnlySpan(out ReadOnlySpan<T> rightSpan))
-        {
-            for (int i = 0; i < leftSpan.Length; i++)
-            {
-                if (!comparer.Equals(leftSpan[i], rightSpan[i]))
-                    return false;
-            }
+            return MemoryExtensions.SequenceEqual(leftSpan, rightSpan, comparer: null);
 
-            return true;
-        }
-
+        EqualityComparer<T> comparer = EqualityComparer<T>.Default;
         int width = left.Width;
         int height = left.Height;
         for (int y = 0; y < height; y++)
@@ -410,7 +439,9 @@ public static class MatrixExtensions
         if (matrix.Count == 0)
             throw new ArgumentException("Cannot read from an empty matrix.", nameof(matrix));
 
-        return matrix[Math.Clamp(x, 0, matrix.Width - 1), Math.Clamp(y, 0, matrix.Height - 1)];
+        return matrix[
+            EdgeHandling.Extend.ResolveIndex(x, matrix.Width),
+            EdgeHandling.Extend.ResolveIndex(y, matrix.Height)];
     }
 
     /// <summary>

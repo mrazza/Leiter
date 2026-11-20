@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Pixels;
 
 using System;
+using Leiter.Core;
 using Leiter.Pixels;
 using Xunit;
 
@@ -87,5 +88,12 @@ public class Rgb64Tests : PixelContractTestsBase<Rgb64, double>
 
         Assert.Equal(0.0, Rgb64.Zero.NormSquared());
         Assert.Equal(0.0, Rgb64.Zero.Norm());
+    }
+
+    [Fact]
+    public void ToVector3D_ShouldReturnChannelVector()
+    {
+        var pixel = new Rgb64(0.25, 0.5, 0.75);
+        Assert.Equal(new Vector3D(0.25, 0.5, 0.75), pixel.ToVector3D());
     }
 }

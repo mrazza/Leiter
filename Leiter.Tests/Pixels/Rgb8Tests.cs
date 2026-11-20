@@ -102,8 +102,17 @@ public class Rgb8Tests : PixelContractTestsBase<Rgb8, byte>
         Assert.Equal(new Rgb8(255, 255, 255), p.Add(largeScalar));
         Assert.Equal(new Rgb8(0, 0, 0), p.Subtract(largeScalar));
         Assert.Equal(new Rgb8(255, 255, 255), p.Multiply(largeScalar));
-        Assert.Equal(new Rgb8(0, 0, 0), p.Divide(largeScalar));
+        Assert.Equal(new Rgb8(0, 0, 1), p.Divide(largeScalar));
         Assert.Equal(new Rgb8(20, 200, 255), p.Divide(smallScalar));
+
+        // Double and IScalar fractional operations round away from zero and clamp
+        Assert.Equal(new Rgb8(11, 101, 241), p.Add(0.5));
+        Assert.Equal(new Rgb8(10, 100, 240), p.Subtract(0.5));
+        Assert.Equal(new Rgb8(9, 99, 239), p.Subtract(0.6));
+        Assert.Equal(new Rgb8(1, 2, 3), new Rgb8(1, 3, 5).Multiply(0.5));
+        Assert.Equal(new Rgb8(1, 2, 3), new Rgb8(1, 3, 5).Divide(2.0));
+        Assert.Equal(new Rgb8(1, 2, 3), new Rgb8(1, 3, 5).Multiply(smallScalar));
+        Assert.Equal(new Rgb8(1, 2, 3), new Rgb8(1, 3, 5).Divide(new DummyScalar(2.0)));
 
         // Out-of-range FromDoubleVector
         Assert.Equal(new Rgb8(0, 255, 0), Rgb8.FromDoubleVector(Vector256.Create(-0.5, 1.5, double.NaN, 0.0)));
@@ -157,6 +166,13 @@ public class Rgb8Tests : PixelContractTestsBase<Rgb8, byte>
         Assert.Equal(new Rgb8(11, 150, 100), Rgb8.Lerp(from, to, 0.5));
         Assert.Equal(new Rgb8(8, 255, 0), Rgb8.Lerp(from, to, -2.0));
         Assert.Equal(new Rgb8(13, 0, 255), Rgb8.Lerp(from, to, 2.5));
+    }
+
+    [Fact]
+    public void ToRawVector3D_ShouldReturnUnnormalizedByteChannels()
+    {
+        var pixel = new Rgb8(12, 128, 255);
+        Assert.Equal(new Vector3D(12.0, 128.0, 255.0), pixel.ToRawVector3D());
     }
 
     private readonly record struct MinimalScalarOperable(double Value) : IScalarOperable<MinimalScalarOperable>

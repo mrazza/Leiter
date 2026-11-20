@@ -2,6 +2,7 @@ namespace Leiter.Tests.Pixels;
 
 using System;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -64,5 +65,40 @@ public class LongPixelTests : PixelContractTestsBase<LongPixel, long>
         Assert.Equal(new LongPixel(-1L), LongPixel.Lerp(new LongPixel(0L), new LongPixel(-1L), 0.5));
         Assert.Equal(new LongPixel(-3L), LongPixel.Lerp(new LongPixel(-2L), new LongPixel(-3L), 0.5));
         Assert.Equal(new LongPixel(25L), LongPixel.Lerp(new LongPixel(10L), new LongPixel(20L), 1.5));
+    }
+
+    [Fact]
+    public void MultiplyAndDivide_FractionalHalf_ShouldRoundAwayFromZero()
+    {
+        Assert.Equal(new LongPixel(3L), new LongPixel(5L).Multiply(0.5));
+        Assert.Equal(new LongPixel(-3L), new LongPixel(-5L).Multiply(0.5));
+        Assert.Equal(new LongPixel(2L), new LongPixel(4L).Multiply(0.5));
+
+        Assert.Equal(new LongPixel(3L), new LongPixel(5L).Multiply(0.5m));
+        Assert.Equal(new LongPixel(-3L), new LongPixel(-5L).Multiply(0.5m));
+        Assert.Equal(new LongPixel(2L), new LongPixel(4L).Multiply(0.5m));
+
+        Assert.Equal(new LongPixel(3L), new LongPixel(5L).Divide(2.0));
+        Assert.Equal(new LongPixel(-3L), new LongPixel(-5L).Divide(2.0));
+        Assert.Equal(new LongPixel(6L), new LongPixel(3L).Divide(0.5));
+
+        Assert.Equal(new LongPixel(3L), new LongPixel(5L).Divide(2.0m));
+        Assert.Equal(new LongPixel(-3L), new LongPixel(-5L).Divide(2.0m));
+        Assert.Equal(new LongPixel(6L), new LongPixel(3L).Divide(0.5m));
+
+        var halfScalar = new DummyScalar(0.5);
+        Assert.Equal(new LongPixel(3L), new LongPixel(5L).Multiply(halfScalar));
+        Assert.Equal(new LongPixel(6L), new LongPixel(3L).Divide(halfScalar));
+    }
+
+    [Fact]
+    public void DistanceSquared_ShouldComputeSquaredDifferenceWithoutLongOverflow()
+    {
+        Assert.Equal(2500.0, new LongPixel(100L).DistanceSquared(new LongPixel(150L)));
+        Assert.Equal(0.0, new LongPixel(42L).DistanceSquared(new LongPixel(42L)));
+
+        double extremeDistSq = new LongPixel(long.MaxValue).DistanceSquared(new LongPixel(long.MinValue));
+        Assert.True(double.IsFinite(extremeDistSq));
+        Assert.True(extremeDistSq > 0.0);
     }
 }

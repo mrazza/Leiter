@@ -353,5 +353,27 @@ public class PixelConversionTests
         Assert.Throws<ArgumentOutOfRangeException>(() => emptyRgb64.ToLab32(invalidColorSpace));
         Assert.Throws<ArgumentOutOfRangeException>(() => emptyRgb64.ToLab32(RgbColorSpace.SRgb, invalidIlluminant));
         Assert.Throws<ArgumentOutOfRangeException>(() => emptyXyz.ToLab32(invalidIlluminant));
+
+        ArgumentOutOfRangeException colorSpaceParamEx = Assert.Throws<ArgumentOutOfRangeException>(() => emptyLab.ToRgb8(invalidColorSpace));
+        Assert.Equal("colorSpace", colorSpaceParamEx.ParamName);
+
+        ArgumentOutOfRangeException illuminantParamEx = Assert.Throws<ArgumentOutOfRangeException>(() => emptyLab.ToRgb8(RgbColorSpace.SRgb, invalidIlluminant));
+        Assert.Equal("illuminant", illuminantParamEx.ParamName);
+    }
+
+    [Fact]
+    public void RgbVsXyzToLab32_ShouldApplyAdaptationForRgbOnly()
+    {
+        var neutralRgb = new Rgb64(0.5, 0.5, 0.5);
+        Xyz32 neutralXyzD65 = neutralRgb.ToXyz32(RgbColorSpace.SRgb);
+
+        // Rgb64 -> Lab32 under Illuminant E adapts from D65 to E so neutral gray stays achromatic.
+        Lab32 adaptedLab = neutralRgb.ToLab32(RgbColorSpace.SRgb, Illuminant.E);
+        Assert.True(Math.Abs(adaptedLab.A) < 1e-3f);
+        Assert.True(Math.Abs(adaptedLab.B) < 1e-3f);
+
+        // Xyz32 -> Lab32 under Illuminant E treats input XYZ as already under E (no Bradford adaptation).
+        Lab32 unadaptedLab = neutralXyzD65.ToLab32(Illuminant.E);
+        Assert.True(Math.Abs(unadaptedLab.A) > 1.0f || Math.Abs(unadaptedLab.B) > 1.0f);
     }
 }

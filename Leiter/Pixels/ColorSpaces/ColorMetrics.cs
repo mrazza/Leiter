@@ -101,6 +101,10 @@ public static class ColorMetrics
     /// <summary>
     /// Computes the HSV/HSL chroma (<c>max(R, G, B) - min(R, G, B)</c>) for an <see cref="Rgb64"/> pixel.
     /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="GetChroma(Lab32)"/>, which computes cylindrical CIELCh chroma <c>sqrt(a*² + b*²)</c>,
+    /// this method returns the RGB channel range in normalized <c>[0, 1]</c> units for in-gamut pixels.
+    /// </remarks>
     /// <param name="pixel">The pixel to evaluate.</param>
     /// <returns>The non-negative channel range (chroma).</returns>
     public static double GetChroma(this Rgb64 pixel)
@@ -113,18 +117,21 @@ public static class ColorMetrics
     /// <summary>
     /// Computes the normalized HSV/HSL chroma in <c>[0, 1]</c> (<c>(max(R, G, B) - min(R, G, B)) / 255</c>) for an <see cref="Rgb8"/> pixel.
     /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="GetChroma(Lab32)"/>, which computes cylindrical CIELCh chroma <c>sqrt(a*² + b*²)</c>,
+    /// this method returns the normalized RGB channel range in <c>[0, 1]</c>.
+    /// </remarks>
     /// <param name="pixel">The pixel to evaluate.</param>
     /// <returns>The normalized chroma in <c>[0, 1]</c>.</returns>
-    public static double GetChroma(this Rgb8 pixel)
-    {
-        int max = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B));
-        int min = Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
-        return (max - min) / 255.0;
-    }
+    public static double GetChroma(this Rgb8 pixel) => pixel.ToRgb64().GetChroma();
 
     /// <summary>
     /// Computes the CIELCh chroma <c>C* = sqrt(a*² + b*²)</c> for a <see cref="Lab32"/> pixel.
     /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="GetChroma(Rgb64)"/> and <see cref="GetChroma(Rgb8)"/>, which return normalized RGB channel range in <c>[0, 1]</c>,
+    /// CIELCh chroma is unbounded above and expressed in perceptual CIELAB units.
+    /// </remarks>
     /// <param name="pixel">The CIELAB pixel to evaluate.</param>
     /// <returns>The non-negative chroma magnitude.</returns>
     public static double GetChroma(this Lab32 pixel) =>

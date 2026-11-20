@@ -6,6 +6,7 @@ using System.Runtime.ExceptionServices;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
+using Leiter.Pixels.Internal;
 
 /// <summary>
 /// Provides pigment density adjustments and subtractive-like pigment blending operations for watercolor stylization (Bousseau et al. 2006).
@@ -46,7 +47,7 @@ public static class PigmentBlend
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any color channel or <paramref name="densityOffset"/> is not finite.</exception>
     public static Rgb64 AdjustDensity(Rgb64 color, double densityOffset)
     {
-        Guard.ThrowIfNotFinite(color);
+        PixelGuard.ThrowIfNotFinite(color);
         Guard.ThrowIfNotFinite(densityOffset);
 
         return AdjustDensityUnchecked(color, densityOffset);
@@ -90,8 +91,8 @@ public static class PigmentBlend
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any channel of <paramref name="first"/> or <paramref name="second"/> is not finite, or when <paramref name="overlapDarkening"/> is not finite or outside [0.0, 1.0].</exception>
     public static Rgb64 MixPigments(Rgb64 first, Rgb64 second, double overlapDarkening = 0.5)
     {
-        Guard.ThrowIfNotFinite(first);
-        Guard.ThrowIfNotFinite(second);
+        PixelGuard.ThrowIfNotFinite(first);
+        PixelGuard.ThrowIfNotFinite(second);
         Guard.ThrowIfNotFiniteInRange(overlapDarkening, 0.0, 1.0);
 
         return MixPigmentsUnchecked(first, second, overlapDarkening);

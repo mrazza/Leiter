@@ -69,7 +69,8 @@ public abstract class Matrix<T> : IReadOnlyMatrix<T>
     /// <summary>
     /// Gets the total number of elements in the matrix.
     /// </summary>
-    public int Count => Width * Height;
+    /// <exception cref="OverflowException">Thrown when <c>Width * Height</c> overflows <see cref="int"/>.</exception>
+    public int Count => checked(Width * Height);
 
     /// <summary>
     /// Gets the dimensions of the matrix as a <see cref="Core.Size"/>.

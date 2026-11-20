@@ -69,6 +69,13 @@ public class SequentialMatrixTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(new Size(2, -1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(new Size(-1, 2), values));
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(new Size(2, -1), values));
+
+        // Dimensions whose product wraps 32-bit int (65536 * 65536 == 0 in int) or exceeds Array.MaxLength must throw cleanly.
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(65536, 65536));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(int.MaxValue, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(new Size(65536, 65536)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(new Size(65536, 65536), Array.Empty<DoublePixel>()));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<DoublePixel>(65536, 65536, Array.Empty<DoublePixel>()));
     }
 
     [Fact]
@@ -127,6 +134,9 @@ public class SequentialMatrixTests
         var result = m.Map(p => new DoublePixel(p.Value * 2));
         Assert.Equal(4.0, result[0].Value);
         Assert.Equal(10.0, result[3].Value);
+
+        ArgumentNullException nullFuncEx = Assert.Throws<ArgumentNullException>(() => m.Map<DoublePixel>(null!));
+        Assert.Equal("func", nullFuncEx.ParamName);
     }
 
     /// <summary>

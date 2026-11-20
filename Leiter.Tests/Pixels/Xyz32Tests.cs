@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Pixels;
 
 using System;
+using Leiter.Core;
 using Leiter.Pixels;
 using Xunit;
 
@@ -72,5 +73,12 @@ public class Xyz32Tests : PixelContractTestsBase<Xyz32, float>
         double distance = a.Distance(b);
         Assert.True(double.IsFinite(distance));
         Assert.Equal((double)a.X - b.X, distance, 1e25);
+    }
+
+    [Fact]
+    public void ToVector3D_ShouldReturnTristimulusVector()
+    {
+        var pixel = new Xyz32(0.125f, 0.25f, 0.5f);
+        Assert.Equal(new Vector3D(0.125, 0.25, 0.5), pixel.ToVector3D());
     }
 }

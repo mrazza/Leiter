@@ -17,6 +17,12 @@ public class ScalarMathTests
         Assert.Equal(20.0, ScalarMath.Lerp(10.0, 20.0, 1.0), 10);
         Assert.Equal(30.0, ScalarMath.Lerp(10.0, 20.0, 2.0), 10);
         Assert.Equal(0.0, ScalarMath.Lerp(10.0, 20.0, -1.0), 10);
+
+        // Exact endpoints must be preserved without 1-ULP subtraction/addition drift or infinities poisoning 0.0/1.0.
+        Assert.Equal(0.1, ScalarMath.Lerp(0.1, 0.7, 0.0));
+        Assert.Equal(0.7, ScalarMath.Lerp(0.1, 0.7, 1.0));
+        Assert.Equal(0.1, ScalarMath.Lerp(0.1, double.PositiveInfinity, 0.0));
+        Assert.Equal(0.7, ScalarMath.Lerp(double.NegativeInfinity, 0.7, 1.0));
     }
 
     [Fact]
@@ -48,7 +54,28 @@ public class ScalarMathTests
         Assert.Equal(1.0, ScalarMath.OuterBandSmoothstepWeight(2, innerRadius: 2, outerRadius: 2), 10);
         Assert.Equal(0.0, ScalarMath.OuterBandSmoothstepWeight(3, innerRadius: 2, outerRadius: 2), 10);
 
+        for (int distance = 0; distance <= 8; distance++)
+        {
+            Assert.Equal(
+                ScalarMath.OuterBandSmoothstepWeight(distance, innerRadius: 3, outerRadius: 6),
+                ScalarMath.OuterBandSmoothstepWeightUnchecked(distance, innerRadius: 3, outerRadius: 6),
+                12);
+        }
+
         Assert.Throws<ArgumentOutOfRangeException>(() => ScalarMath.OuterBandSmoothstepWeight(0, innerRadius: 5, outerRadius: 4));
+    }
+
+    [Fact]
+    public void ClampUnit_ShouldClampToUnitIntervalAndPreserveNaN()
+    {
+        Assert.Equal(0.0, ScalarMath.ClampUnit(-0.5));
+        Assert.Equal(0.0, ScalarMath.ClampUnit(0.0));
+        Assert.Equal(0.35, ScalarMath.ClampUnit(0.35));
+        Assert.Equal(1.0, ScalarMath.ClampUnit(1.0));
+        Assert.Equal(1.0, ScalarMath.ClampUnit(2.5));
+        Assert.Equal(0.0, ScalarMath.ClampUnit(double.NegativeInfinity));
+        Assert.Equal(1.0, ScalarMath.ClampUnit(double.PositiveInfinity));
+        Assert.True(double.IsNaN(ScalarMath.ClampUnit(double.NaN)));
     }
 
     [Fact]
@@ -72,11 +99,12 @@ public class ScalarMathTests
     }
 
     [Fact]
-    public void Sqrt2Constants_ShouldMatchMathSqrt2()
+    public void Sqrt2Constants_AndNormalizationEpsilon_ShouldMatchExpectedValues()
     {
         double sqrt2 = ScalarMath.Sqrt2;
         double invSqrt2 = ScalarMath.InvSqrt2;
         Assert.Equal(Math.Sqrt(2.0), sqrt2, 15);
         Assert.Equal(1.0 / Math.Sqrt(2.0), invSqrt2, 15);
+        Assert.Equal(1e-24, ScalarMath.NormalizationEpsilonSquared);
     }
 }

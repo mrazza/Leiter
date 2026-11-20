@@ -14,7 +14,9 @@ public class SequentialMatrix<T> : Matrix<T>
     /// </summary>
     /// <param name="width">The number of columns in the matrix.</param>
     /// <param name="height">The number of rows in the matrix.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> or <paramref name="height"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="width"/> or <paramref name="height"/> is negative, or the total element count exceeds <see cref="Array.MaxLength"/>.
+    /// </exception>
     public SequentialMatrix(int width, int height)
         : this(width, height, AllocateData(width, height)) { }
 
@@ -22,7 +24,9 @@ public class SequentialMatrix<T> : Matrix<T>
     /// Initializes a new instance of the <see cref="SequentialMatrix{T}"/> class with the specified size dimensions.
     /// </summary>
     /// <param name="size">The dimensions of the matrix.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> has a negative width or height.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="size"/> has a negative width or height, or its total element count exceeds <see cref="Array.MaxLength"/>.
+    /// </exception>
     public SequentialMatrix(Size size)
         : this(size.Width, size.Height) { }
 
@@ -43,7 +47,9 @@ public class SequentialMatrix<T> : Matrix<T>
     /// <param name="size">The dimensions of the matrix.</param>
     /// <param name="values">The array of elements to copy into the matrix.</param>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> has a negative width or height.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="size"/> has a negative width or height, or its total element count exceeds <see cref="Array.MaxLength"/>.
+    /// </exception>
     /// <exception cref="ArgumentException">The length of <paramref name="values"/> does not equal the total number of elements specified by <paramref name="size"/>.</exception>
     public SequentialMatrix(Size size, T[] values)
         : this(size.Width, size.Height, CopyInputArray(size, values), nameof(values)) { }
@@ -54,7 +60,9 @@ public class SequentialMatrix<T> : Matrix<T>
     /// <param name="width">The number of columns in the matrix.</param>
     /// <param name="height">The number of rows in the matrix.</param>
     /// <param name="data">The contiguous row-major data array to take direct ownership of.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> or <paramref name="height"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="width"/> or <paramref name="height"/> is negative, or the total element count exceeds <see cref="Array.MaxLength"/>.
+    /// </exception>
     /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The length of <paramref name="data"/> does not match <paramref name="width"/> * <paramref name="height"/>.</exception>
     internal SequentialMatrix(int width, int height, T[] data)
@@ -64,7 +72,10 @@ public class SequentialMatrix<T> : Matrix<T>
         : base(width, height)
     {
         ArgumentNullException.ThrowIfNull(data, dataParamName);
-        if (data.Length != width * height)
+        long area = new Size(width, height).Area;
+        if (area > Array.MaxLength)
+            throw new ArgumentOutOfRangeException(nameof(height), area, $"Matrix element count {area} exceeds the maximum supported array length ({Array.MaxLength}).");
+        if (data.Length != area)
             throw new ArgumentException("Data length does not match matrix size.", dataParamName);
 
         this.data = data;
@@ -73,14 +84,21 @@ public class SequentialMatrix<T> : Matrix<T>
     private static T[] AllocateData(int width, int height)
     {
         Guard.ThrowIfNegativeDimensions(width, height);
-        return new T[width * height];
+        long area = new Size(width, height).Area;
+        if (area > Array.MaxLength)
+            throw new ArgumentOutOfRangeException(nameof(height), area, $"Matrix element count {area} exceeds the maximum supported array length ({Array.MaxLength}).");
+
+        return new T[(int)area];
     }
 
     private static T[] CopyInputArray(Size size, T[] values)
     {
         ArgumentNullException.ThrowIfNull(values);
         Guard.ThrowIfNegativeDimensions(size.Width, size.Height);
-        if (values.Length != size.Width * size.Height)
+        long area = size.Area;
+        if (area > Array.MaxLength)
+            throw new ArgumentOutOfRangeException(nameof(size), size, $"Matrix element count {area} exceeds the maximum supported array length ({Array.MaxLength}).");
+        if (values.Length != area)
             throw new ArgumentException("Data length does not match matrix size.", nameof(values));
 
         return values.ToArray();
@@ -197,11 +215,16 @@ public class SequentialMatrix<T> : Matrix<T>
     /// <summary>
     /// Applies a transformation function to each element of the matrix in parallel, producing a new matrix of the mapped type.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="func"/> is invoked concurrently from multiple threads and must be thread-safe.
+    /// </remarks>
     /// <typeparam name="R">The type of elements in the resulting matrix.</typeparam>
     /// <param name="func">A function to apply to each element.</param>
     /// <returns>A new <see cref="Matrix{R}"/> containing the mapped elements.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="func"/> is <see langword="null"/>.</exception>
     public override Matrix<R> Map<R>(Func<T, R> func)
     {
+        ArgumentNullException.ThrowIfNull(func);
         var mappedData = new R[data.Length];
         Parallel.For(0, data.Length, index => mappedData[index] = func(data[index]));
         return new SequentialMatrix<R>(Width, Height, mappedData);

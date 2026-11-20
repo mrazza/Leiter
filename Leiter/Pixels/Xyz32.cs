@@ -149,6 +149,12 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
     /// <inheritdoc/>
     public Vector256<double> ToDoubleVector() => Vector256.Create((double)X, Y, Z, 0.0);
 
+    /// <summary>
+    /// Converts the CIE XYZ tristimulus components of this pixel into a three-dimensional <see cref="Vector3D"/> <c>(X, Y, Z)</c>.
+    /// </summary>
+    /// <returns>A <see cref="Vector3D"/> containing <c>(X, Y, Z)</c> widened to <see cref="double"/>.</returns>
+    public Vector3D ToVector3D() => new(X, Y, Z);
+
     /// <inheritdoc/>
     public static Xyz32 FromDoubleVector(Vector256<double> vector) => new((float)vector[0], (float)vector[1], (float)vector[2]);
 

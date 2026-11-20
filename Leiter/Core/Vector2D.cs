@@ -43,7 +43,7 @@ public readonly record struct Vector2D(double X, double Y)
     public Vector2D Normalize()
     {
         double lenSq = LengthSquared;
-        if (!double.IsFinite(lenSq) || lenSq <= 1e-24)
+        if (!double.IsFinite(lenSq) || lenSq <= ScalarMath.NormalizationEpsilonSquared)
             return Zero;
 
         double invLen = 1.0 / Math.Sqrt(lenSq);
