@@ -368,16 +368,15 @@ public static class WetInWetFilter
 
         Parallel.For(0, regionCount, r =>
         {
-            ReadOnlySpan<Coord> pixels = regionGraph.GetRegionPixels(r);
-            int count = regionGraph.GetRegionPixelCount(r);
+            HashSet<Coord> pixels = regionGraph.Regions[r].Pixels;
+            int count = pixels.Count;
             if (count == 0)
                 return;
 
             double sumX = 0.0;
             double sumY = 0.0;
-            for (int i = 0; i < pixels.Length; i++)
+            foreach (Coord coord in pixels)
             {
-                Coord coord = pixels[i];
                 int x = coord.X;
                 int y = coord.Y;
                 Rgb8 center = image[coord];

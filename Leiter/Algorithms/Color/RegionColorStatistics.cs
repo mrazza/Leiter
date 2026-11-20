@@ -139,42 +139,21 @@ public static class RegionColorStatistics
         ArgumentNullException.ThrowIfNull(intensitySelector);
         Guard.ThrowIfSizeMismatch(graph.Size, image.Size, nameof(image));
 
-        int regionCount = graph.RegionCount;
-        if (regionCount == 0)
-            return [];
-
-        Size size = graph.Size;
-        TSource[]? rawImage = image is SequentialMatrix<TSource> seqImage ? seqImage.RawData : null;
-        var results = new RegionColorStatistics<TColor>[regionCount];
-
-        Parallel.For(0, regionCount, r =>
+        return graph.ComputeRegionStatistics(region =>
         {
-            ReadOnlySpan<Coord> pixels = graph.GetRegionPixels(r);
-            if (pixels.Length == 0)
-            {
-                results[r] = new RegionColorStatistics<TColor>(default, 0.0, 0.0);
-                return;
-            }
+            HashSet<Coord> pixels = region.Pixels;
+            if (pixels.Count == 0)
+                return new RegionColorStatistics<TColor>(default, 0.0, 0.0);
 
             Vector<double> sum = Vector<double>.Zero;
-            if (rawImage is not null)
-            {
-                for (int i = 0; i < pixels.Length; i++)
-                    sum += colorConverter(rawImage[size.IndexOf(pixels[i])]).ToDoubleVector();
-            }
-            else
-            {
-                for (int i = 0; i < pixels.Length; i++)
-                    sum += colorConverter(image[pixels[i]]).ToDoubleVector();
-            }
+            foreach (Coord coord in pixels)
+                sum += colorConverter(image[coord]).ToDoubleVector();
 
-            TColor meanColor = TColor.FromDoubleVector(sum / (double)pixels.Length);
-            results[r] = new RegionColorStatistics<TColor>(
+            TColor meanColor = TColor.FromDoubleVector(sum / (double)pixels.Count);
+            return new RegionColorStatistics<TColor>(
                 meanColor,
                 hueSelector(meanColor),
                 intensitySelector(meanColor));
         });
-
-        return results;
     }
 }
