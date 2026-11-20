@@ -19,8 +19,6 @@ public class DoublePixelTests : PixelContractTestsBase<DoublePixel, double>
     protected override (DoublePixel Add, DoublePixel Subtract, DoublePixel Multiply, DoublePixel Divide) ExpectedScaledByTwoResults =>
         ExpectedSelfResults;
 
-    protected override int RequiredVectorWidth => 1;
-
     protected override DoublePixel VectorSample => new(5.5);
 
     protected override double ExpectedVectorFirstComponent => 5.5;

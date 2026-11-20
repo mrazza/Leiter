@@ -2,7 +2,7 @@ namespace Leiter.Algorithms.Segmentation;
 
 using System;
 using System.Collections.Generic;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Internal;
 using Leiter.Core;
@@ -88,7 +88,7 @@ public static class SegmentationVisualizer
             if (count <= 0)
                 return default;
 
-            Vector<double> sum = Vector<double>.Zero;
+            Vector256<double> sum = Vector256<double>.Zero;
             foreach (Coord coord in region.Pixels)
                 sum += image[coord].ToDoubleVector();
 

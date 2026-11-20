@@ -3,7 +3,7 @@ namespace Leiter.Pixels;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using System.Runtime.InteropServices;
 using Leiter.Core;
 
@@ -127,7 +127,7 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
     public Rgb64 ComponentMap(Func<double, double> func) => ColorComponentMap(func);
 
     /// <inheritdoc/>
-    public Vector<double> ToDoubleVector() => Internal.PixelVector.Create(R, G, B);
+    public Vector256<double> ToDoubleVector() => Vector256.Create(R, G, B, 0.0);
 
     /// <summary>
     /// Computes the squared Euclidean magnitude across the red, green, and blue channels (<c>R^2 + G^2 + B^2</c>).
@@ -142,7 +142,7 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
     public double Norm() => Math.Sqrt(NormSquared());
 
     /// <inheritdoc/>
-    public static Rgb64 FromDoubleVector(Vector<double> vector) => new(vector[0], vector[1], vector[2]);
+    public static Rgb64 FromDoubleVector(Vector256<double> vector) => new(vector[0], vector[1], vector[2]);
 
     /// <inheritdoc/>
     public IEnumerator<double> GetEnumerator()

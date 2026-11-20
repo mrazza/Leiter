@@ -3,7 +3,7 @@ namespace Leiter.Tests.Pixels;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Core;
 using Leiter.Tests.TestUtils;
 using Xunit;
@@ -24,8 +24,6 @@ public abstract class PixelContractTestsBase<TPixel, TComponent>
     protected abstract (TPixel Add, TPixel Subtract, TPixel Multiply, TPixel Divide) ExpectedSelfResults { get; }
 
     protected abstract (TPixel Add, TPixel Subtract, TPixel Multiply, TPixel Divide) ExpectedScaledByTwoResults { get; }
-
-    protected abstract int RequiredVectorWidth { get; }
 
     protected abstract TPixel VectorSample { get; }
 
@@ -93,14 +91,11 @@ public abstract class PixelContractTestsBase<TPixel, TComponent>
     [Fact]
     public void VectorOperations_ShouldWork()
     {
-        if (Vector<double>.Count >= RequiredVectorWidth)
-        {
-            Vector<double> vec = VectorSample.ToDoubleVector();
-            Assert.Equal(ExpectedVectorFirstComponent, vec[0], 5);
+        Vector256<double> vec = VectorSample.ToDoubleVector();
+        Assert.Equal(ExpectedVectorFirstComponent, vec[0], 5);
 
-            TPixel pFromVec = TPixel.FromDoubleVector(vec);
-            Assert.Equal(VectorSample, pFromVec);
-        }
+        TPixel pFromVec = TPixel.FromDoubleVector(vec);
+        Assert.Equal(VectorSample, pFromVec);
     }
 
     [Fact]

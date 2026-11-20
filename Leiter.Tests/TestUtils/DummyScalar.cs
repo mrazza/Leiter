@@ -1,7 +1,7 @@
 namespace Leiter.Tests.TestUtils;
 
 using System;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Core;
 
 /// <summary>
@@ -64,8 +64,8 @@ public class DummyScalar : IScalar<DummyScalar>
     public DummyScalar Divide(double right) => new(Val / right);
 
     /// <inheritdoc/>
-    public Vector<double> ToDoubleVector() => new(Val);
+    public Vector256<double> ToDoubleVector() => Vector256.CreateScalar(Val);
 
     /// <inheritdoc/>
-    public static DummyScalar FromDoubleVector(Vector<double> vector) => new(vector[0]);
+    public static DummyScalar FromDoubleVector(Vector256<double> vector) => new(vector[0]);
 }

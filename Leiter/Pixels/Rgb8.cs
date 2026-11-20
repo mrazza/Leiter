@@ -2,7 +2,7 @@ namespace Leiter.Pixels;
 
 using System.Collections;
 using System.Collections.Generic;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using System.Runtime.InteropServices;
 using Leiter.Core;
 
@@ -223,19 +223,18 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
     public Rgb8 ComponentMap(Func<byte, byte> func) => ColorComponentMap(func);
 
     /// <summary>
-    /// Converts this pixel to a <see cref="Vector{Double}"/>, normalizing channel values from [0, 255] to [0.0, 1.0].
+    /// Converts this pixel to a <see cref="Vector256{Double}"/>, normalizing channel values from [0, 255] to [0.0, 1.0].
     /// </summary>
     /// <returns>A double vector containing the normalized RGB channel values.</returns>
-    /// <exception cref="PlatformNotSupportedException">Thrown when the vector width is less than 3.</exception>
-    public Vector<double> ToDoubleVector() =>
-        Internal.PixelVector.Create(R / 255.0, G / 255.0, B / 255.0);
+    public Vector256<double> ToDoubleVector() =>
+        Vector256.Create(R / 255.0, G / 255.0, B / 255.0, 0.0);
 
     /// <summary>
-    /// Creates an <see cref="Rgb8"/> pixel from a <see cref="Vector{Double}"/> by scaling normalized components by 255.0 with <see cref="MidpointRounding.AwayFromZero"/> rounding and clamping to [0, 255].
+    /// Creates an <see cref="Rgb8"/> pixel from a <see cref="Vector256{Double}"/> by scaling normalized components by 255.0 with <see cref="MidpointRounding.AwayFromZero"/> rounding and clamping to [0, 255].
     /// </summary>
     /// <param name="vector">The double vector containing normalized RGB values.</param>
     /// <returns>A new <see cref="Rgb8"/> pixel with rounded, clamped byte channels.</returns>
-    public static Rgb8 FromDoubleVector(Vector<double> vector) => FromNormalized(vector[0], vector[1], vector[2]);
+    public static Rgb8 FromDoubleVector(Vector256<double> vector) => FromNormalized(vector[0], vector[1], vector[2]);
 
     /// <inheritdoc/>
     public IEnumerator<byte> GetEnumerator()

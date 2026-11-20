@@ -19,8 +19,6 @@ public class LongPixelTests : PixelContractTestsBase<LongPixel, long>
     protected override (LongPixel Add, LongPixel Subtract, LongPixel Multiply, LongPixel Divide) ExpectedScaledByTwoResults =>
         ExpectedSelfResults;
 
-    protected override int RequiredVectorWidth => 1;
-
     protected override LongPixel VectorSample => new(123L);
 
     protected override double ExpectedVectorFirstComponent => 123.0;

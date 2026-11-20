@@ -19,8 +19,6 @@ public class Lab32Tests : PixelContractTestsBase<Lab32, float>
     protected override (Lab32 Add, Lab32 Subtract, Lab32 Multiply, Lab32 Divide) ExpectedScaledByTwoResults =>
         ExpectedSelfResults;
 
-    protected override int RequiredVectorWidth => 3;
-
     protected override Lab32 VectorSample => new(1.0f, 2.0f, 3.0f);
 
     protected override double ExpectedVectorFirstComponent => 1.0;

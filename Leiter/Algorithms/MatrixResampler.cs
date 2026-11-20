@@ -1,6 +1,6 @@
 namespace Leiter.Algorithms;
 
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -177,7 +177,7 @@ public static class MatrixResampler
     private static T SampleFootprint<T>(IReadOnlyMatrix<T> source, in BilinearFootprint fp)
         where T : struct, IPixel<T>
     {
-        Vector<double> interpolatedPixel =
+        Vector256<double> interpolatedPixel =
             (source[fp.X0, fp.Y0].ToDoubleVector() * fp.W00) +
             (source[fp.X1, fp.Y0].ToDoubleVector() * fp.W10) +
             (source[fp.X0, fp.Y1].ToDoubleVector() * fp.W01) +
@@ -231,7 +231,7 @@ public static class MatrixResampler
     {
         BilinearFootprint fp = ComputeBilinearFootprint(source.Width, source.Height, x, y, edgeHandling);
 
-        Vector<double> sum = Vector<double>.Zero;
+        Vector256<double> sum = Vector256<double>.Zero;
         double weightSum = 0.0;
 
         if (predicate(fp.X0, fp.Y0, state))
@@ -594,7 +594,7 @@ public static class MatrixResampler
     private struct VectorBoxAccumulator<T> : IBoxAccumulator<T>
         where T : struct, IPixel<T>
     {
-        private Vector<double> sum;
+        private Vector256<double> sum;
 
         public void Add(T pixel) => sum += pixel.ToDoubleVector();
 

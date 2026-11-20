@@ -262,7 +262,7 @@ public class RegionColorStatisticsTests
         Assert.Equal(10.0f, labStats[0].MeanColor.B, 5);
 
         // 16-pixel precision regression: in float32, 16_777_216f + 1f drops the +1f terms completely;
-        // double-precision Vector<double> accumulation preserves all 15 smaller terms.
+        // double-precision Vector256<double> accumulation preserves all 15 smaller terms.
         var precisionLabels = new SequentialMatrix<int>(16, 1);
         var precisionGraph = RegionGraph.FromLabels(precisionLabels);
         var precisionLab = new SequentialMatrix<Lab32>(16, 1);

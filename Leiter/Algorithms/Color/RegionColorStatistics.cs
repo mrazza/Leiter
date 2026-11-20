@@ -1,6 +1,6 @@
 namespace Leiter.Algorithms.Color;
 
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -145,7 +145,7 @@ public static class RegionColorStatistics
             if (pixels.Count == 0)
                 return new RegionColorStatistics<TColor>(default, 0.0, 0.0);
 
-            Vector<double> sum = Vector<double>.Zero;
+            Vector256<double> sum = Vector256<double>.Zero;
             foreach (Coord coord in pixels)
                 sum += colorConverter(image[coord]).ToDoubleVector();
 
