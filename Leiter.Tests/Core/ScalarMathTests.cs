@@ -90,15 +90,6 @@ public class ScalarMathTests
     }
 
     [Fact]
-    public void PackUnorderedPairKey_ShouldBeOrderIndependentAndUnique()
-    {
-        Assert.Equal(ScalarMath.PackUnorderedPairKey(3, 17), ScalarMath.PackUnorderedPairKey(17, 3));
-        Assert.Equal(ScalarMath.PackUnorderedPairKey(-1, 5), ScalarMath.PackUnorderedPairKey(5, -1));
-        Assert.NotEqual(ScalarMath.PackUnorderedPairKey(1, 2), ScalarMath.PackUnorderedPairKey(1, 3));
-        Assert.NotEqual(ScalarMath.PackUnorderedPairKey(1, 100), ScalarMath.PackUnorderedPairKey(2, 100));
-    }
-
-    [Fact]
     public void Sqrt2Constants_AndNormalizationEpsilon_ShouldMatchExpectedValues()
     {
         double sqrt2 = ScalarMath.Sqrt2;

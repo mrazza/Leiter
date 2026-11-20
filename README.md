@@ -10,13 +10,13 @@ A pure-C# image processing, computer vision, and non-photorealistic rendering (N
 
 ## Features
 
-- **Generic Core & Region Graphs:** Strongly-typed pixel (`Rgb8`, `Rgb64`, `Lab32`, `Xyz32`, `DoublePixel`, `LongPixel`), matrix, and boolean mask types paired with disjoint-set and region-adjacency graph primitives.
+- **Generic Core & Region Graphs:** Strongly-typed pixel (`Rgb8`, `Rgb64`, `Lab32`, `Xyz32`, `DoublePixel`, `LongPixel`), matrix, and boolean mask types paired with disjoint-set, region-adjacency graph, and histogram (`IReadOnlyHistogram<T>.Total`) primitives.
 - **Color Science & Palette Transfer:** Bidirectional conversions across **sRGB**, **Linear RGB**, **CIEXYZ**, and **CIELAB** (D65 & Illuminant E with Bradford adaptation), CIE76 & CIEDE2000 color difference, per-channel LUTs, quantization, and Reinhard statistical color transfer.
 - **Image Segmentation:** Multi-threaded Felzenszwalb–Huttenlocher (**EGBI**), Comaniciu–Meer **Mean-Shift**, and **GrabCut** foreground extraction.
-- **Visual Saliency & Distance Transforms:** Global and Regional Contrast saliency, iterative `SaliencyCut` masking, binary morphology, and Jump Flooding (**JFA**) distance fields.
+- **Visual Saliency & Distance Transforms:** Global and Regional Contrast saliency (`EnableSmoothing`), iterative `SaliencyCut` masking, binary morphology, and Jump Flooding (**JFA**) distance fields.
 - **Filtering, Gradients, Noise & Anti-Aliasing:** Separable and recursive Gaussian blurs, box and oriented elliptical filters, `Sobel`/`Scharr` gradients, bilinear/box/nearest resampling and displacement warping, fractal Perlin noise, and **FXAA 3.11**.
-- **Stylization & Photo Watercolorization:** Saliency-guided LOD abstraction, pigment blending, tone curves, wet-in-wet bleeding, hand-tremor warping, paper granulation, resolution/content-aware option tuning (`ForSize`/`ForImage`), and an end-to-end `WatercolorPipeline`.
-- **Multi-OS Platform Support:** Adapters for cross-platform `SixLabors.ImageSharp` and Windows GDI+ (`System.Drawing.Common`).
+- **Stylization & Photo Watercolorization:** Saliency-guided LOD abstraction, pigment blending, tone curves, `WetInWet` bleeding, `HandTremor` warping, `PaperGranulation`, cached `ImageAnalysis` & resolution/content-aware option tuning (`ForSize`/`ForImage`/`ForAnalysis`), and an end-to-end `WatercolorPipeline`.
+- **Multi-OS Platform Support:** Adapters for cross-platform `SixLabors.ImageSharp` (`LoadRgb8`/`SaveImage`) and Windows GDI+ (`System.Drawing.Common`, `LoadRgb8`/`SaveBitmap` targeting `net10.0-windows`).
 
 ---
 
@@ -27,8 +27,6 @@ A pure-C# image processing, computer vision, and non-photorealistic rendering (N
 Loads an image, computes EGBI segmentation in CIELAB, evaluates Global and Regional Contrast Saliency, and extracts a refined foreground mask plus normalized saliency distance field via `SaliencyCut` and `1+JFA`:
 
 ```csharp
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -42,13 +40,12 @@ class Program
 {
     static void Main()
     {
-        // 1. Load an image and convert to a generic Leiter Matrix
-        using Image<Rgb24> image = Image.Load<Rgb24>("examples/input.png");
-        Matrix<Rgb8> imageMatrix = image.ToSequentialMatrix();
+        // 1. Load an image into a generic Leiter Matrix
+        Matrix<Rgb8> imageMatrix = ImageExtensions.LoadRgb8("examples/input.png"); // Or BitmapExtensions.LoadRgb8 on Windows
 
         // 2. Smooth with Gaussian blur and convert to CIELAB for perceptual segmentation
         Matrix<Rgb8> blurred = Blur.GaussianBlur(imageMatrix, sigma: 0.8);
-        Matrix<Lab32> labImage = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
+        Matrix<Lab32> labImage = blurred.ToLab32(RgbColorSpace.SRgb);
 
         // 3. Segment with EGBI (Felzenszwalb–Huttenlocher)
         var egbiOptions = new EgbiOptions(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200);
@@ -58,11 +55,12 @@ class Program
             imageMatrix,
             segmentation.ToRegions(),
             SegmentationVisualizer.AverageColorAssigner());
-        using Image<Rgb24> segmentedImg = segmented.ToImage();
-        segmentedImg.Save("segmented.png");
+        segmented.SaveImage("segmented.png"); // Or segmented.SaveBitmap("segmented.png") on Windows
 
         // 4. Compute Global (HC) and Regional (RC) Contrast Saliency
-        Matrix<DoublePixel> globalSaliency = GlobalContrastSaliency.ComputeSaliency(imageMatrix);
+        Matrix<DoublePixel> globalSaliency = GlobalContrastSaliency.ComputeSaliency(
+            imageMatrix,
+            new GlobalContrastSaliencyOptions(EnableSmoothing: true));
         Matrix<DoublePixel> regionalSaliency = RegionalContrastSaliency.ComputeSaliency(imageMatrix, segmentation);
 
         // 5. Extract a refined binary foreground mask and smoothed [0, 1] distance field
@@ -76,43 +74,46 @@ class Program
 
 ### 2. Artistic Photo Watercolorization
 
-Runs the complete 6-stage photo watercolorization pipeline in a single call, or with per-stage customization and intermediate artifact inspection:
+Runs the complete 6-stage photo watercolorization pipeline in a single call, or with per-stage customization (including `WetInWet`, `HandTremor`, and `PaperGranulation.Apply`) and intermediate artifact inspection:
 
 ```csharp
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Leiter.Algorithms;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Platform.ImageSharp;
 
-using Image<Rgb24> input = Image.Load<Rgb24>("examples/input.png");
-Matrix<Rgb8> source = input.ToSequentialMatrix();
+Matrix<Rgb8> source = ImageExtensions.LoadRgb8("examples/input.png");
 
 // Option A: Render with default parameters and automatic palette matching
 Matrix<Rgb8> watercolor = WatercolorPipeline.Render(source);
-using Image<Rgb24> watercolorImg = watercolor.ToImage();
-watercolorImg.Save("watercolor.png");
+watercolor.SaveImage("watercolor.png"); // Or watercolor.SaveBitmap("watercolor.png") on Windows
 
-// Option B: Automatically scale and tune all stage options to the input image
-// (individual stages also expose *Options.ForImage(...) and *Options.ForSize(...))
-WatercolorOptions autoOptions = WatercolorOptions.ForImage(source);
-Matrix<Rgb8> resolutionTuned = WatercolorPipeline.Render(source, autoOptions);
+// Option B: Analyze once with ImageAnalysis and tune stage/pipeline options without re-analyzing
+// (individual stages also expose *Options.ForImage(...), *Options.ForAnalysis(...), and *Options.ForSize(...))
+ImageAnalysis analysis = ImageAnalysis.Analyze(source);
+WatercolorOptions autoOptions = WatercolorOptions.ForAnalysis(analysis);
+Matrix<Rgb8> resolutionTuned = WatercolorPipeline.Render(source, options: autoOptions);
 
-// Option C: Tune stage options explicitly and inspect intermediate pipeline artifacts
+// Option C: Tune stage options explicitly (passing paperHeightMap before options) and inspect all intermediates
 var options = new WatercolorOptions(
     TargetPalette: WatercolorPalettes.WarmOchreEarth,
     MeanShift: new MeanShiftOptions(SpatialRadius: 8, RangeRadius: 5.5, MinRegionSize: 50),
     WetInWet: new WetInWetOptions(Mode: WetInWetMode.Default),
     HandTremor: new HandTremorOptions(Amplitude: 2.5),
-    PaperGranulation: new PaperGranulationOptions(DensityStrength: 0.3, WarpAmplitude: 0.6));
+    TurbulenceFlow: new TurbulenceFlowOptions(Intensity: 0.35, Noise: TurbulenceFlowOptions.DefaultNoise),
+    PaperGranulation: new PaperGranulationOptions(DensityStrength: 0.3, WarpAmplitude: 0.6, GrainNoise: PaperGranulationOptions.DefaultGrainNoise));
 
-WatercolorResult detailed = WatercolorPipeline.RenderDetailed(source, options);
+Matrix<DoublePixel> paperHeightMap = PaperGranulation.GeneratePaperHeightMap(source.Size, options.PaperGranulation?.GrainNoise);
+WatercolorResult detailed = WatercolorPipeline.RenderDetailed(source, paperHeightMap, options);
+// Standalone finishing stage uses the same parameter order:
+// Matrix<Rgb8> granulated = PaperGranulation.Apply(detailed.ToneAdjusted, paperHeightMap, options.PaperGranulation);
 // Available artifacts: detailed.ColorTransferred, detailed.SelectedPalette,
 // detailed.SaliencyMap, detailed.SalientMask, detailed.SaliencyDistanceField,
-// detailed.SegmentationGraph, detailed.LodAbstracted, detailed.WetInWet (.Image, .WetAreaMask),
-// detailed.HandTremor, and detailed.Image.
+// detailed.MeanShiftFiltered, detailed.SegmentationGraph, detailed.LodAbstracted,
+// detailed.WetInWet (.Image, .WetAreaMask, .QualifyingBoundaries), detailed.HandTremor,
+// detailed.DensityAdjusted, detailed.ToneAdjusted, detailed.Granulated, and detailed.Image.
 ```
 
 ---
@@ -143,10 +144,10 @@ WatercolorResult detailed = WatercolorPipeline.RenderDetailed(source, options);
 ## Solution Architecture & CLI Harness
 
 - **`Leiter`**: Zero-dependency core library containing matrices, pixel types, color spaces, vision algorithms, and stylization pipelines.
-- **`Leiter.Platform.ImageSharp`**: Cross-platform image I/O via `SixLabors.ImageSharp`.
-- **`Leiter.Platform.Windows`**: Native Windows GDI+ (`System.Drawing.Common`) image I/O via `Bitmap.LockBits`.
-- **`Leiter.Tests`**: Unit test suite validating core math, platform interop, and algorithm behavior.
-- **`LeiterTest`**: CLI benchmark harness executing the library's operations against an input image.
+- **`Leiter.Platform.ImageSharp`**: Cross-platform image I/O via `SixLabors.ImageSharp` (`LoadRgb8`, `SaveImage`, `ToSequentialMatrix`, `ToImage`).
+- **`Leiter.Platform.Windows`**: Native Windows GDI+ (`System.Drawing.Common`) image I/O via `Bitmap.LockBits` (`LoadRgb8`, `SaveBitmap`, `ToSequentialMatrix`, `ToBitmap`), targeting `net10.0-windows` with `EnableWindowsTargeting=true` so the full solution builds cross-platform.
+- **`Leiter.Tests`**: Unit test suite validating core math, platform interop, and algorithm behavior (targets `net10.0-windows` on Windows and `net10.0` elsewhere, skipping Windows-only GDI+ tests on non-Windows hosts).
+- **`LeiterTest`**: CLI benchmark harness executing the library's operations against an input image (targets `net10.0-windows` on Windows and `net10.0` elsewhere).
 
 ### Build, Test & Run CLI Benchmark
 

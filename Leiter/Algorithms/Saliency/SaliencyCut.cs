@@ -3,7 +3,6 @@ namespace Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Segmentation;
-using Leiter.Algorithms.Segmentation.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -106,7 +105,7 @@ public static class SaliencyCut
         int bandRadius = options.TrimapBandRadius;
 
         TrimapMatrix trimap = TrimapMatrix.FromCandidateMask(candidateMask);
-        var session = new GrabCutSession(image, grabCutOptions);
+        var session = GrabCut.CreateSession(image, grabCutOptions);
         MaskMatrix? previousMask = null;
 
         for (int outer = 0; outer < options.MaxOuterIterations; outer++)
