@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.AntiAliasing;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.AntiAliasing;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -211,5 +212,28 @@ public class FxaaTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             Fxaa.Apply(uniformGrayImage, new FxaaOptions(RelativeContrastThreshold: 0.0, AbsoluteContrastThreshold: 0.0)));
+    }
+
+    /// <summary>
+    /// Verifies that a pre-canceled <see cref="CancellationToken"/> throws <see cref="OperationCanceledException"/>
+    /// and that an active uncanceled token produces bit-for-bit identical output.
+    /// </summary>
+    [Fact]
+    public void Apply_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            16,
+            16,
+            (x, y) => (x + y < 16) ? new Rgb8(0, 0, 0) : new Rgb8(255, 255, 255));
+        var empty = new SequentialMatrix<Rgb8>(0, 0);
+        var canceledToken = new CancellationToken(canceled: true);
+
+        Assert.Throws<OperationCanceledException>(() => Fxaa.Apply(image, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() => Fxaa.Apply(empty, cancellationToken: canceledToken));
+
+        using var cts = new CancellationTokenSource();
+        Matrix<Rgb8> expected = Fxaa.Apply(image);
+        Matrix<Rgb8> actual = Fxaa.Apply(image, cancellationToken: cts.Token);
+        MatrixAssert.Equal(expected, actual);
     }
 }

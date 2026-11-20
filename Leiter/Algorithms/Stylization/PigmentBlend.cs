@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Stylization;
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -146,30 +147,34 @@ public static class PigmentBlend
     /// <param name="image">The input 8-bit RGB image.</param>
     /// <param name="densityField">The scalar density field matching <paramref name="image"/> dimensions.</param>
     /// <param name="intensity">The scalar multiplier applied to each field sample (default <c>1.0</c>).</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing density-adjusted pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="densityField"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="densityField"/> dimensions do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="intensity"/>, any sample in <paramref name="densityField"/>, or any scaled density offset is non-finite.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static Matrix<Rgb8> ApplyDensityField(
         IReadOnlyMatrix<Rgb8> image,
         IReadOnlyMatrix<DoublePixel> densityField,
-        double intensity = 1.0)
+        double intensity = 1.0,
+        CancellationToken cancellationToken = default)
     {
         Guard.ThrowIfSizeMismatch(image, densityField);
         Guard.ThrowIfNotFinite(intensity);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (image.Count == 0)
         {
             return image.Clone();
         }
 
-        double[]? densityOffsets = ValidateAndBuildDensityOffsets(densityField, intensity);
+        double[]? densityOffsets = ValidateAndBuildDensityOffsets(densityField, intensity, cancellationToken);
         if (densityOffsets is null)
         {
             return image.Clone();
         }
 
-        return ApplyDensityOffsetsUnchecked(image, densityOffsets);
+        return ApplyDensityOffsetsUnchecked(image, densityOffsets, cancellationToken);
     }
 
     /// <summary>
@@ -178,31 +183,39 @@ public static class PigmentBlend
     /// <param name="image">The input 8-bit RGB image.</param>
     /// <param name="field">The scalar field matching <paramref name="image"/> dimensions.</param>
     /// <param name="densityOffsetSelector">Maps each raw field sample to the density offset passed to <see cref="AdjustDensity(Rgb8, double)"/>.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing density-adjusted pixels.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="image"/>, <paramref name="field"/>, or <paramref name="densityOffsetSelector"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="field"/> dimensions do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="densityOffsetSelector"/> returns a non-finite density offset.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static Matrix<Rgb8> ApplyDensityField(
         IReadOnlyMatrix<Rgb8> image,
         IReadOnlyMatrix<DoublePixel> field,
-        Func<double, double> densityOffsetSelector)
+        Func<double, double> densityOffsetSelector,
+        CancellationToken cancellationToken = default)
     {
         Guard.ThrowIfSizeMismatch(image, field);
         ArgumentNullException.ThrowIfNull(densityOffsetSelector);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (image.Count == 0)
         {
             return image.Clone();
         }
 
-        double[] densityOffsets = EvaluateAndValidateDensityOffsets(field, densityOffsetSelector);
-        return ApplyDensityOffsetsUnchecked(image, densityOffsets);
+        double[] densityOffsets = EvaluateAndValidateDensityOffsets(field, densityOffsetSelector, cancellationToken);
+        return ApplyDensityOffsetsUnchecked(image, densityOffsets, cancellationToken);
     }
 
-    private static double[]? ValidateAndBuildDensityOffsets(IReadOnlyMatrix<DoublePixel> densityField, double intensity)
+    private static double[]? ValidateAndBuildDensityOffsets(
+        IReadOnlyMatrix<DoublePixel> densityField,
+        double intensity,
+        CancellationToken cancellationToken)
     {
+        bool canCancel = cancellationToken.CanBeCanceled;
         int count = densityField.Count;
         if (intensity == 0.0)
         {
@@ -210,6 +223,11 @@ public static class PigmentBlend
             {
                 for (int i = 0; i < span.Length; i++)
                 {
+                    if (canCancel && (i & 4095) == 0)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
+
                     Guard.ThrowIfNotFinite(span[i].Value, nameof(densityField));
                 }
             }
@@ -217,6 +235,7 @@ public static class PigmentBlend
             {
                 for (int y = 0; y < densityField.Height; y++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     for (int x = 0; x < densityField.Width; x++)
                     {
                         Guard.ThrowIfNotFinite(densityField[x, y].Value, nameof(densityField));
@@ -224,6 +243,7 @@ public static class PigmentBlend
                 }
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             return null;
         }
 
@@ -232,6 +252,11 @@ public static class PigmentBlend
         {
             for (int i = 0; i < fieldSpan.Length; i++)
             {
+                if (canCancel && (i & 4095) == 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
                 offsets[i] = ValidateScaledOffset(fieldSpan[i].Value, intensity, nameof(densityField));
             }
         }
@@ -240,6 +265,7 @@ public static class PigmentBlend
             Size size = densityField.Size;
             for (int y = 0; y < size.Height; y++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 int rowOffset = size.IndexOf(0, y);
                 for (int x = 0; x < size.Width; x++)
                 {
@@ -248,6 +274,7 @@ public static class PigmentBlend
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         return offsets;
     }
 
@@ -261,13 +288,20 @@ public static class PigmentBlend
 
     private static double[] EvaluateAndValidateDensityOffsets(
         IReadOnlyMatrix<DoublePixel> field,
-        Func<double, double> densityOffsetSelector)
+        Func<double, double> densityOffsetSelector,
+        CancellationToken cancellationToken)
     {
+        bool canCancel = cancellationToken.CanBeCanceled;
         var offsets = new double[field.Count];
         if (field.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> span))
         {
             for (int i = 0; i < span.Length; i++)
             {
+                if (canCancel && (i & 4095) == 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
                 double densityOffset = densityOffsetSelector(span[i].Value);
                 Guard.ThrowIfNotFinite(densityOffset);
                 offsets[i] = densityOffset;
@@ -278,6 +312,7 @@ public static class PigmentBlend
             Size size = field.Size;
             for (int y = 0; y < size.Height; y++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 int rowOffset = size.IndexOf(0, y);
                 for (int x = 0; x < size.Width; x++)
                 {
@@ -288,10 +323,14 @@ public static class PigmentBlend
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         return offsets;
     }
 
-    private static Matrix<Rgb8> ApplyDensityOffsetsUnchecked(IReadOnlyMatrix<Rgb8> image, double[] densityOffsets)
+    private static Matrix<Rgb8> ApplyDensityOffsetsUnchecked(
+        IReadOnlyMatrix<Rgb8> image,
+        double[] densityOffsets,
+        CancellationToken cancellationToken)
     {
         int width = image.Width;
         int height = image.Height;
@@ -301,12 +340,12 @@ public static class PigmentBlend
         if (image is SequentialMatrix<Rgb8> sequentialImage)
         {
             Rgb8[] srcRaw = sequentialImage.RawData;
-            Parallel.For(0, destRaw.Length, i => destRaw[i] = AdjustDensityUnchecked(srcRaw[i], densityOffsets[i]));
+            ParallelFor(destRaw.Length, cancellationToken, i => destRaw[i] = AdjustDensityUnchecked(srcRaw[i], densityOffsets[i]));
             return result;
         }
 
         Size size = image.Size;
-        Parallel.For(0, height, y =>
+        ParallelFor(height, cancellationToken, y =>
         {
             int rowOffset = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
@@ -317,5 +356,17 @@ public static class PigmentBlend
         });
 
         return result;
+    }
+
+    private static void ParallelFor(int toExclusive, CancellationToken cancellationToken, Action<int> body)
+    {
+        if (cancellationToken.CanBeCanceled)
+        {
+            Parallel.For(0, toExclusive, new ParallelOptions { CancellationToken = cancellationToken }, body);
+        }
+        else
+        {
+            Parallel.For(0, toExclusive, body);
+        }
     }
 }

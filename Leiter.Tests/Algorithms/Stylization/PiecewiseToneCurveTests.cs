@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -222,5 +223,28 @@ public class PiecewiseToneCurveTests
                 Assert.Equal(expectedByte, result[x, y].B);
             }
         }
+    }
+
+    /// <summary>
+    /// Verifies that a pre-canceled <see cref="CancellationToken"/> throws <see cref="OperationCanceledException"/>
+    /// and that an active uncanceled token produces bit-for-bit identical output.
+    /// </summary>
+    [Fact]
+    public void Apply_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            8,
+            8,
+            (x, y) => new Rgb8((byte)(x * 32), (byte)(y * 32), (byte)((x + y) * 16)));
+        var empty = new SequentialMatrix<Rgb8>(0, 0);
+        var canceledToken = new CancellationToken(canceled: true);
+
+        Assert.Throws<OperationCanceledException>(() => PiecewiseToneCurve.Apply(image, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() => PiecewiseToneCurve.Apply(empty, cancellationToken: canceledToken));
+
+        using var cts = new CancellationTokenSource();
+        Matrix<Rgb8> expected = PiecewiseToneCurve.Apply(image);
+        Matrix<Rgb8> actual = PiecewiseToneCurve.Apply(image, cancellationToken: cts.Token);
+        MatrixAssert.Equal(expected, actual);
     }
 }

@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
@@ -338,5 +339,91 @@ public class PaperGranulationTests
         var midtone = TestMatrices.Constant(32, 32, new Rgb8(128, 128, 128));
         Matrix<Rgb8> warpedProcedural = PaperGranulation.Apply(midtone, options: PaperGranulationOptions.ForSize(midtone.Size));
         Assert.Equal(midtone.Size, warpedProcedural.Size);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="PaperGranulation.ApplyCore"/> with a cached procedural height map and <c>isProcedural: true</c>
+    /// matches <see cref="PaperGranulation.Apply"/> bit-for-bit even when <see cref="PaperGranulationOptions.GrainNoise"/>
+    /// frequency differs from <see cref="PaperGranulationOptions.DefaultGrainNoise"/>, and preserves procedural warp scaling
+    /// distinct from <c>isProcedural: false</c>.
+    /// </summary>
+    [Fact]
+    public void ApplyCore_CachedProceduralHeightMap_WithNonDefaultFrequency_ShouldMatchApplyBitForBit()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(
+            32,
+            32,
+            new Rgb8(220, 180, 140),
+            new Rgb8(40, 80, 130),
+            splitX: 16);
+
+        var nonDefaultGrain = new PerlinNoiseOptions(
+            Seed: 707,
+            Frequency: 0.045, // 4x lower than DefaultGrainNoise.Frequency (0.18) => warpScale = 4.0
+            Octaves: 4,
+            Lacunarity: 2.0,
+            Persistence: 0.55);
+        Assert.NotEqual(PaperGranulationOptions.DefaultGrainNoise.Frequency, nonDefaultGrain.Frequency);
+
+        var options = new PaperGranulationOptions(
+            DensityStrength: 0.35,
+            WarpAmplitude: 1.5,
+            GrainNoise: nonDefaultGrain);
+
+        Matrix<DoublePixel> cachedHeightMap = PaperGranulation.GeneratePaperHeightMap(image.Size, nonDefaultGrain);
+
+        // Full granulation (warp + density) with procedural flag matches Apply(..., paperHeightMap: null) bit-for-bit
+        Matrix<Rgb8> expectedProcedural = PaperGranulation.Apply(image, paperHeightMap: null, options: options);
+        Matrix<Rgb8> actualProcedural = PaperGranulation.ApplyCore(image, cachedHeightMap, isProcedural: true, options);
+        MatrixAssert.Equal(expectedProcedural, actualProcedural);
+
+        // Custom flag matches Apply(..., paperHeightMap: cachedHeightMap) bit-for-bit and differs from procedural warp scaling
+        Matrix<Rgb8> expectedCustom = PaperGranulation.Apply(image, paperHeightMap: cachedHeightMap, options: options);
+        Matrix<Rgb8> actualCustom = PaperGranulation.ApplyCore(image, cachedHeightMap, isProcedural: false, options);
+        MatrixAssert.Equal(expectedCustom, actualCustom);
+        MatrixAssert.NotEqual(actualProcedural, actualCustom);
+
+        // Warp-only path (DensityStrength == 0) also matches bit-for-bit
+        PaperGranulationOptions warpOnlyOptions = options with { DensityStrength = 0.0 };
+        MatrixAssert.Equal(
+            PaperGranulation.Apply(image, paperHeightMap: null, options: warpOnlyOptions),
+            PaperGranulation.ApplyCore(image, cachedHeightMap, isProcedural: true, warpOnlyOptions));
+
+        // No-op path (DensityStrength == 0 && WarpAmplitude == 0) returns exact clone
+        PaperGranulationOptions noOpOptions = options with { DensityStrength = 0.0, WarpAmplitude = 0.0 };
+        MatrixAssert.Equal(image, PaperGranulation.ApplyCore(image, cachedHeightMap, isProcedural: true, noOpOptions));
+    }
+
+    /// <summary>
+    /// Verifies that a pre-canceled <see cref="CancellationToken"/> throws <see cref="OperationCanceledException"/>
+    /// across <see cref="PaperGranulation.GeneratePaperHeightMap"/>, <see cref="PaperGranulation.Apply"/>, and <see cref="PaperGranulation.ApplyCore"/>,
+    /// and that an active uncanceled token produces bit-for-bit identical output.
+    /// </summary>
+    [Fact]
+    public void GeneratePaperHeightMap_And_Apply_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(16, 16, new Rgb8(200, 180, 160), new Rgb8(60, 80, 100), splitX: 8);
+        Matrix<DoublePixel> heightMap = PaperGranulation.GeneratePaperHeightMap(image.Size);
+        var canceledToken = new CancellationToken(canceled: true);
+
+        Assert.Throws<OperationCanceledException>(() =>
+            PaperGranulation.GeneratePaperHeightMap(image.Size, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            PaperGranulation.Apply(image, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            PaperGranulation.Apply(image, heightMap, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            PaperGranulation.ApplyCore(image, heightMap, isProcedural: true, PaperGranulationOptions.Default, canceledToken));
+
+        using var cts = new CancellationTokenSource();
+        MatrixAssert.Equal(
+            heightMap,
+            PaperGranulation.GeneratePaperHeightMap(image.Size, cancellationToken: cts.Token));
+        MatrixAssert.Equal(
+            PaperGranulation.Apply(image),
+            PaperGranulation.Apply(image, cancellationToken: cts.Token));
+        MatrixAssert.Equal(
+            PaperGranulation.ApplyCore(image, heightMap, isProcedural: true, PaperGranulationOptions.Default),
+            PaperGranulation.ApplyCore(image, heightMap, isProcedural: true, PaperGranulationOptions.Default, cts.Token));
     }
 }

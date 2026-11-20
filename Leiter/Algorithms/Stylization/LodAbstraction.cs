@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Stylization;
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
@@ -22,16 +23,19 @@ public static class LodAbstraction
     /// <param name="distanceField">The normalized [0, 1] saliency distance field.</param>
     /// <param name="salientMask">Optional boolean salient mask; if <see langword="null"/>, regions with distance ≤ 1e-6 are considered salient.</param>
     /// <param name="options">Optional LOD abstraction configuration parameters.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the stylized LOD abstracted image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="regionGraph"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="regionGraph"/>, <paramref name="distanceField"/>, or <paramref name="salientMask"/> do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static Matrix<Rgb8> Apply(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph regionGraph,
         IReadOnlyMatrix<DoublePixel> distanceField,
         IReadOnlyMatrix<bool>? salientMask = null,
-        LodAbstractionOptions? options = null)
+        LodAbstractionOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
@@ -40,7 +44,7 @@ public static class LodAbstraction
         Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
 
         LodAbstractionOptions resolvedOptions = OptionsResolver.Resolve(options);
-        return ApplyCore(image, regionGraph, distanceField, salientMask, precomputedSalientFractions: null, resolvedOptions);
+        return ApplyCore(image, regionGraph, distanceField, salientMask, precomputedSalientFractions: null, resolvedOptions, cancellationToken);
     }
 
     internal static Matrix<Rgb8> ApplyCore(
@@ -49,8 +53,11 @@ public static class LodAbstraction
         IReadOnlyMatrix<DoublePixel> distanceField,
         IReadOnlyMatrix<bool>? salientMask,
         double[]? precomputedSalientFractions,
-        LodAbstractionOptions resolvedOptions)
+        LodAbstractionOptions resolvedOptions,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (image.Count == 0)
             return new SequentialMatrix<Rgb8>(image.Size);
 
@@ -59,16 +66,18 @@ public static class LodAbstraction
         int height = size.Height;
 
         Rgb64[] normalizedRgb = image.MapToArray(static pixel => pixel.ToRgb64());
+        cancellationToken.ThrowIfCancellationRequested();
 
         bool[] isSalientRegion = precomputedSalientFractions is not null
             ? RegionGraph.ComputeRegionFlags(precomputedSalientFractions, resolvedOptions.SalientOverlapThreshold)
             : regionGraph.ComputeRegionFlags(
                 salientMask ?? SaliencyDistanceField.ExtractSalientMask(distanceField),
                 resolvedOptions.SalientOverlapThreshold);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var result = new SequentialMatrix<Rgb8>(size);
 
-        Parallel.For(0, height, y =>
+        void ProcessRow(int y)
         {
             int rowOffset = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
@@ -140,7 +149,16 @@ public static class LodAbstraction
 
                 result[x, y] = new Rgb64(sumR / weightSum, sumG / weightSum, sumB / weightSum).ToRgb8();
             }
-        });
+        }
+
+        if (cancellationToken.CanBeCanceled)
+        {
+            Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, ProcessRow);
+        }
+        else
+        {
+            Parallel.For(0, height, ProcessRow);
+        }
 
         return result;
     }
@@ -153,23 +171,27 @@ public static class LodAbstraction
     /// <param name="distanceField">The normalized [0, 1] saliency distance field.</param>
     /// <param name="salientMask">Optional boolean salient mask; if <see langword="null"/>, regions with distance ≤ 1e-6 are considered salient.</param>
     /// <param name="options">Optional LOD abstraction configuration parameters.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the stylized LOD abstracted image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="segmentation"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="segmentation"/>, <paramref name="distanceField"/>, or <paramref name="salientMask"/> do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static Matrix<Rgb8> Apply(
         IReadOnlyMatrix<Rgb8> image,
         IDisjointSet segmentation,
         IReadOnlyMatrix<DoublePixel> distanceField,
         IReadOnlyMatrix<bool>? salientMask = null,
-        LodAbstractionOptions? options = null)
+        LodAbstractionOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         Guard.ThrowIfSizeMismatch(image, segmentation);
         Guard.ThrowIfSizeMismatch(image, distanceField);
         Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
 
         LodAbstractionOptions resolvedOptions = OptionsResolver.Resolve(options);
+        cancellationToken.ThrowIfCancellationRequested();
         RegionGraph regionGraph = segmentation.ToRegionGraph();
-        return ApplyCore(image, regionGraph, distanceField, salientMask, precomputedSalientFractions: null, resolvedOptions);
+        return ApplyCore(image, regionGraph, distanceField, salientMask, precomputedSalientFractions: null, resolvedOptions, cancellationToken);
     }
 }

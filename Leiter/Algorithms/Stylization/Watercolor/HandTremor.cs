@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Color;
@@ -42,16 +43,19 @@ public static class HandTremor
     /// <param name="distanceField">The normalized saliency distance field.</param>
     /// <param name="wetInWet">Optional wet-in-wet filtering result; boundaries and wet areas qualifying in wet-in-wet are preserved without tremor perturbation.</param>
     /// <param name="options">Optional hand tremor configuration options.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the tremor-perturbed watercolor image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="regionGraph"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="regionGraph"/>, <paramref name="distanceField"/>, or <paramref name="wetInWet"/> do not match <paramref name="image"/>, or boundary counts do not match.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static Matrix<Rgb8> Apply(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph regionGraph,
         IReadOnlyMatrix<DoublePixel> distanceField,
         WetInWetResult? wetInWet = null,
-        HandTremorOptions? options = null)
+        HandTremorOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
@@ -61,7 +65,7 @@ public static class HandTremor
         wetInWet?.ValidateAgainst(regionGraph, nameof(wetInWet));
 
         HandTremorOptions opts = OptionsResolver.Resolve(options);
-        return ApplyCore(image, regionGraph, distanceField, wetInWet, opts);
+        return ApplyCore(image, regionGraph, distanceField, wetInWet, opts, cancellationToken);
     }
 
     /// <summary>
@@ -72,26 +76,30 @@ public static class HandTremor
     /// <param name="distanceField">The normalized saliency distance field.</param>
     /// <param name="wetInWet">Optional wet-in-wet filtering result; boundaries and wet areas qualifying in wet-in-wet are preserved without tremor perturbation.</param>
     /// <param name="options">Optional hand tremor configuration options.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the tremor-perturbed watercolor image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="segmentation"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="segmentation"/>, <paramref name="distanceField"/>, or <paramref name="wetInWet"/> do not match <paramref name="image"/>, or boundary counts do not match.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static Matrix<Rgb8> Apply(
         IReadOnlyMatrix<Rgb8> image,
         IDisjointSet segmentation,
         IReadOnlyMatrix<DoublePixel> distanceField,
         WetInWetResult? wetInWet = null,
-        HandTremorOptions? options = null)
+        HandTremorOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         Guard.ThrowIfSizeMismatch(image, segmentation);
         Guard.ThrowIfSizeMismatch(image, distanceField);
         Guard.ThrowIfSizeMismatchIfNotNull(image, wetInWet?.Image, nameof(wetInWet));
 
         HandTremorOptions opts = OptionsResolver.Resolve(options);
+        cancellationToken.ThrowIfCancellationRequested();
         RegionGraph regionGraph = segmentation.ToRegionGraph();
         wetInWet?.ValidateAgainst(regionGraph, nameof(wetInWet));
 
-        return ApplyCore(image, regionGraph, distanceField, wetInWet, opts);
+        return ApplyCore(image, regionGraph, distanceField, wetInWet, opts, cancellationToken);
     }
 
     internal static Matrix<Rgb8> ApplyCore(
@@ -99,8 +107,11 @@ public static class HandTremor
         RegionGraph regionGraph,
         IReadOnlyMatrix<DoublePixel> distanceField,
         WetInWetResult? wetInWet,
-        HandTremorOptions opts)
+        HandTremorOptions opts,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         int boundaryCount = regionGraph.Boundaries.Count;
         if (image.Count == 0 || opts.Amplitude == 0.0 || boundaryCount == 0)
         {
@@ -112,11 +123,18 @@ public static class HandTremor
         Rgb8 paperColor = opts.PaperColor ?? HandTremorOptions.DefaultPaperColor;
 
         RegionColorStatistics<Rgb64>[] stats = RegionColorStatistics.Compute(regionGraph, image);
+        cancellationToken.ThrowIfCancellationRequested();
 
+        bool canCancel = cancellationToken.CanBeCanceled;
         double minContrastingChroma = opts.MinContrastingChroma;
         var boundaryGroup = new BoundaryGroup[boundaryCount];
         for (int bi = 0; bi < boundaryCount; bi++)
         {
+            if (canCancel && (bi & 4095) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             if (wetInWet is not null && wetInWet.QualifyingBoundaries[bi])
             {
                 boundaryGroup[bi] = BoundaryGroup.WetInWetPreserved;
@@ -143,14 +161,18 @@ public static class HandTremor
         int bandRadius = innerRadius + BandTaperWidth;
         ArgumentOutOfRangeException.ThrowIfLessThan(bandRadius, innerRadius);
 
+        cancellationToken.ThrowIfCancellationRequested();
         RegionBoundaryBand band = regionGraph.ComputeBoundaryBand(bandRadius, restrictToIncidentRegions: true);
+        cancellationToken.ThrowIfCancellationRequested();
 
         Matrix<Vector2D> t1 = PerlinNoise.GenerateDisplacementField(image.Size, opts.Amplitude, primaryNoise);
+        cancellationToken.ThrowIfCancellationRequested();
         Matrix<Vector2D> t2 = PerlinNoise.GenerateDisplacementField(image.Size, opts.Amplitude, secondaryNoise);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var result = new SequentialMatrix<Rgb8>(width, height);
 
-        Parallel.For(0, height, y =>
+        void ProcessRow(int y)
         {
             for (int x = 0; x < width; x++)
             {
@@ -225,7 +247,16 @@ public static class HandTremor
                     }
                 }
             }
-        });
+        }
+
+        if (canCancel)
+        {
+            Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, ProcessRow);
+        }
+        else
+        {
+            Parallel.For(0, height, ProcessRow);
+        }
 
         return result;
     }

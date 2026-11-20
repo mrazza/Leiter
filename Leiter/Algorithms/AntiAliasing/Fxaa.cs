@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.AntiAliasing;
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Core;
@@ -17,14 +18,20 @@ public static class Fxaa
     /// </summary>
     /// <param name="image">The input RGB image to anti-alias.</param>
     /// <param name="options">Optional FXAA configuration parameters.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the anti-aliased image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
-    public static Matrix<Rgb8> Apply(IReadOnlyMatrix<Rgb8> image, FxaaOptions? options = null)
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
+    public static Matrix<Rgb8> Apply(
+        IReadOnlyMatrix<Rgb8> image,
+        FxaaOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
 
         FxaaOptions opts = OptionsResolver.Resolve(options);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (image.Count == 0)
             return new SequentialMatrix<Rgb8>(image.Size);
@@ -34,10 +41,11 @@ public static class Fxaa
         int height = size.Height;
 
         double[] luma = image.MapToArray(static pixel => pixel.GetLuma());
+        cancellationToken.ThrowIfCancellationRequested();
 
         var result = new SequentialMatrix<Rgb8>(size);
 
-        Parallel.For(0, height, y =>
+        void ProcessRow(int y)
         {
             for (int x = 0; x < width; x++)
             {
@@ -145,7 +153,16 @@ public static class Fxaa
                     result[x, y] = MatrixResampler.SampleBilinearUnchecked(image, sampleX, sampleY, EdgeHandling.Extend);
                 }
             }
-        });
+        }
+
+        if (cancellationToken.CanBeCanceled)
+        {
+            Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, ProcessRow);
+        }
+        else
+        {
+            Parallel.For(0, height, ProcessRow);
+        }
 
         return result;
     }

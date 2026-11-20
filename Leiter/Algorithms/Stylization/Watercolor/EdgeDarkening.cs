@@ -1,6 +1,8 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
@@ -16,34 +18,117 @@ public static class EdgeDarkening
     /// </summary>
     /// <param name="image">The input RGB image.</param>
     /// <param name="options">Optional edge darkening configuration parameters. If <see langword="null"/>, default options are used.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the edge-darkened image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> are invalid.</exception>
-    public static Matrix<Rgb8> Apply(IReadOnlyMatrix<Rgb8> image, EdgeDarkeningOptions? options = null)
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
+    public static Matrix<Rgb8> Apply(
+        IReadOnlyMatrix<Rgb8> image,
+        EdgeDarkeningOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
 
         EdgeDarkeningOptions opts = OptionsResolver.Resolve(options);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (image.Count == 0 || opts.Intensity == 0.0)
         {
             return image.Clone();
         }
 
-        Matrix<DoublePixel> densityField = ComputeDensityField(image, opts);
-        return PigmentBlend.ApplyDensityField(image, densityField);
+        Matrix<DoublePixel> densityField = ComputeDensityFieldCore(image, opts, cancellationToken);
+        return PigmentBlend.ApplyDensityField(image, densityField, cancellationToken: cancellationToken);
     }
 
-    internal static Matrix<DoublePixel> ComputeDensityField(IReadOnlyMatrix<Rgb8> image, EdgeDarkeningOptions opts)
+    /// <summary>
+    /// Computes the per-pixel edge darkening pigment density offset field for <paramref name="image"/>.
+    /// </summary>
+    /// <remarks>
+    /// The returned field can be passed directly to <see cref="PigmentBlend.ApplyDensityField(IReadOnlyMatrix{Rgb8}, IReadOnlyMatrix{DoublePixel}, double, CancellationToken)"/>
+    /// or summed with other pigment density fields before blending.
+    /// </remarks>
+    /// <param name="image">The input RGB image.</param>
+    /// <param name="options">Optional edge darkening configuration parameters. If <see langword="null"/>, default options are used.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
+    /// <returns>A new <see cref="Matrix{DoublePixel}"/> containing non-negative edge density offsets matching <paramref name="image"/> dimensions.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
+    public static Matrix<DoublePixel> ComputeDensityField(
+        IReadOnlyMatrix<Rgb8> image,
+        EdgeDarkeningOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+
+        EdgeDarkeningOptions opts = OptionsResolver.Resolve(options);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (image.Count == 0 || opts.Intensity == 0.0)
+        {
+            return new SequentialMatrix<DoublePixel>(image.Size);
+        }
+
+        return ComputeDensityFieldCore(image, opts, cancellationToken);
+    }
+
+    private static Matrix<DoublePixel> ComputeDensityFieldCore(
+        IReadOnlyMatrix<Rgb8> image,
+        EdgeDarkeningOptions opts,
+        CancellationToken cancellationToken)
     {
         var (_, _, edgeStrength) = SpatialGradients.ComputeColorGradients(image, opts.GradientOperator);
+        cancellationToken.ThrowIfCancellationRequested();
 
         Matrix<DoublePixel> smoothedEdges = Blur.GaussianBlur(edgeStrength, opts.BlurSigma);
+        cancellationToken.ThrowIfCancellationRequested();
 
+        int width = smoothedEdges.Width;
+        int height = smoothedEdges.Height;
         double intensity = opts.Intensity;
-        for (int i = 0; i < smoothedEdges.Count; i++)
+
+        if (smoothedEdges is SequentialMatrix<DoublePixel> sequential)
         {
-            smoothedEdges[i] = new DoublePixel(intensity * ScalarMath.ClampUnitOrDefault(smoothedEdges[i].Value));
+            DoublePixel[] raw = sequential.RawData;
+            void ScaleSequentialRow(int y)
+            {
+                int rowOffset = y * width;
+                for (int x = 0; x < width; x++)
+                {
+                    int idx = rowOffset + x;
+                    raw[idx] = new DoublePixel(intensity * ScalarMath.ClampUnitOrDefault(raw[idx].Value));
+                }
+            }
+
+            if (cancellationToken.CanBeCanceled)
+            {
+                Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, ScaleSequentialRow);
+            }
+            else
+            {
+                Parallel.For(0, height, ScaleSequentialRow);
+            }
+        }
+        else
+        {
+            void ScaleRow(int y)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    smoothedEdges[x, y] = new DoublePixel(intensity * ScalarMath.ClampUnitOrDefault(smoothedEdges[x, y].Value));
+                }
+            }
+
+            if (cancellationToken.CanBeCanceled)
+            {
+                Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, ScaleRow);
+            }
+            else
+            {
+                Parallel.For(0, height, ScaleRow);
+            }
         }
 
         return smoothedEdges;

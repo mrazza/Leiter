@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -474,5 +475,40 @@ public class PigmentBlendTests
 
         Matrix<Rgb8> result = PigmentBlend.ApplyDensityField(image, field, static v => ScalarMath.ClampUnitOrDefault(v, 0.5) - 0.5);
         Assert.Equal(image[1, 1], result[1, 1]);
+    }
+
+    /// <summary>
+    /// Verifies that a pre-canceled <see cref="CancellationToken"/> throws <see cref="OperationCanceledException"/>
+    /// across both <see cref="PigmentBlend.ApplyDensityField(IReadOnlyMatrix{Rgb8}, IReadOnlyMatrix{DoublePixel}, double, CancellationToken)"/>
+    /// overloads and that an active uncanceled token matches default execution bit-for-bit.
+    /// </summary>
+    [Fact]
+    public void ApplyDensityField_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(6, 6, (x, y) => new Rgb8((byte)(40 + (x * 20)), (byte)(60 + (y * 20)), 140));
+        SequentialMatrix<DoublePixel> field = TestMatrices.Create(6, 6, (x, y) => new DoublePixel(((x + y) / 10.0) - 0.5));
+        var customImage = new DummyReadOnlyMatrix<Rgb8>(6, 6, new Rgb8(120, 140, 160));
+        var customField = new DummyReadOnlyMatrix<DoublePixel>(6, 6, new DoublePixel(0.3));
+        var canceledToken = new CancellationToken(canceled: true);
+
+        Assert.Throws<OperationCanceledException>(() =>
+            PigmentBlend.ApplyDensityField(image, field, intensity: 0.8, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            PigmentBlend.ApplyDensityField(image, field, intensity: 0.0, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            PigmentBlend.ApplyDensityField(image, field, static v => 0.8 * v, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            PigmentBlend.ApplyDensityField(customImage, customField, intensity: 0.8, cancellationToken: canceledToken));
+
+        using var cts = new CancellationTokenSource();
+        MatrixAssert.Equal(
+            PigmentBlend.ApplyDensityField(image, field, intensity: 0.8),
+            PigmentBlend.ApplyDensityField(image, field, intensity: 0.8, cancellationToken: cts.Token));
+        MatrixAssert.Equal(
+            PigmentBlend.ApplyDensityField(image, field, static v => 0.8 * v),
+            PigmentBlend.ApplyDensityField(image, field, static v => 0.8 * v, cancellationToken: cts.Token));
+        MatrixAssert.Equal(
+            PigmentBlend.ApplyDensityField(customImage, customField, intensity: 0.8),
+            PigmentBlend.ApplyDensityField(customImage, customField, intensity: 0.8, cancellationToken: cts.Token));
     }
 }
