@@ -149,7 +149,7 @@ public static class RegionalContrastSaliency
                 colorData[idx++] = (histogram.GetDensity(bucket), distanceTable.GetIndex(bucket));
             }
 
-            processedRegions[r] = (histogram.Total(), colorData);
+            processedRegions[r] = (histogram.Total, colorData);
         }
 
         var rawSaliency = new double[regionCount];

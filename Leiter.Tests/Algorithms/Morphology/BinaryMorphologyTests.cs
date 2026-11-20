@@ -65,6 +65,51 @@ public class BinaryMorphologyTests
     }
 
     [Fact]
+    public void Dilate_Open_And_Close_BorderIsBackground_ShouldBehaveConsistently()
+    {
+        var cornerImpulse = new MaskMatrix(5, 5);
+        cornerImpulse[0, 0] = true;
+
+        foreach (StructuringElementShape shape in new[] { StructuringElementShape.Disk, StructuringElementShape.Square })
+        {
+            MaskMatrix dilatedClamped = BinaryMorphology.Dilate(cornerImpulse, 2, shape, borderIsBackground: false);
+            MaskMatrix dilatedBackground = BinaryMorphology.Dilate(cornerImpulse, 2, shape, borderIsBackground: true);
+            MatrixAssert.Equal(dilatedClamped, dilatedBackground);
+            Assert.True(dilatedBackground[0, 0]);
+            Assert.True(dilatedBackground[2, 0]);
+            Assert.True(dilatedBackground[0, 2]);
+            Assert.Equal(shape == StructuringElementShape.Square, dilatedBackground[2, 2]);
+        }
+
+        var singleFalse = new MaskMatrix(1, 1);
+        Assert.False(BinaryMorphology.Dilate(singleFalse, 1, StructuringElementShape.Disk, borderIsBackground: false)[0, 0]);
+        Assert.False(BinaryMorphology.Dilate(singleFalse, 1, StructuringElementShape.Disk, borderIsBackground: true)[0, 0]);
+
+        // Verify Open and Close forward borderIsBackground consistently.
+        // A 2x2 top-left corner block survives Erode+Dilate when clamped, but vanishes completely when borderIsBackground=true.
+        var cornerBlock = new MaskMatrix(5, 5);
+        cornerBlock[0, 0] = true;
+        cornerBlock[1, 0] = true;
+        cornerBlock[0, 1] = true;
+        cornerBlock[1, 1] = true;
+
+        MaskMatrix openedClamped = BinaryMorphology.Open(cornerBlock, 1, StructuringElementShape.Square, borderIsBackground: false);
+        MaskMatrix openedBackground = BinaryMorphology.Open(cornerBlock, 1, StructuringElementShape.Square, borderIsBackground: true);
+        Assert.True(openedClamped[0, 0]);
+        Assert.False(openedBackground[0, 0]);
+        Assert.False(openedBackground[1, 1]);
+
+        var fullBlock = new MaskMatrix(5, 5);
+        fullBlock.SetAll(true);
+
+        MaskMatrix closedClamped = BinaryMorphology.Close(fullBlock, 1, StructuringElementShape.Square, borderIsBackground: false);
+        MaskMatrix closedBackground = BinaryMorphology.Close(fullBlock, 1, StructuringElementShape.Square, borderIsBackground: true);
+        Assert.True(closedClamped[0, 0]);
+        Assert.False(closedBackground[0, 0]);
+        Assert.True(closedBackground[1, 1]);
+    }
+
+    [Fact]
     public void Open_And_Close_ShouldRemoveSpecksAndFillHoles()
     {
         var mask = new MaskMatrix(11, 11);
@@ -270,7 +315,8 @@ public class BinaryMorphologyTests
 
         foreach (StructuringElementShape shape in new[] { StructuringElementShape.Disk, StructuringElementShape.Square })
         {
-            MatrixAssert.Equal(BinaryMorphology.Dilate(materialized, 2, shape), BinaryMorphology.Dilate(view, 2, shape));
+            MatrixAssert.Equal(BinaryMorphology.Dilate(materialized, 2, shape, borderIsBackground: false), BinaryMorphology.Dilate(view, 2, shape, borderIsBackground: false));
+            MatrixAssert.Equal(BinaryMorphology.Dilate(materialized, 2, shape, borderIsBackground: true), BinaryMorphology.Dilate(view, 2, shape, borderIsBackground: true));
             MatrixAssert.Equal(BinaryMorphology.Erode(materialized, 1, shape, borderIsBackground: false), BinaryMorphology.Erode(view, 1, shape, borderIsBackground: false));
             MatrixAssert.Equal(BinaryMorphology.Erode(materialized, 1, shape, borderIsBackground: true), BinaryMorphology.Erode(view, 1, shape, borderIsBackground: true));
             MatrixAssert.Equal(BinaryMorphology.Open(materialized, 1, shape), BinaryMorphology.Open(view, 1, shape));

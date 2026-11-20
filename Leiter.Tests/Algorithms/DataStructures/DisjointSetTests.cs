@@ -298,4 +298,72 @@ public class DisjointSetTests
         var nullInitEx = Assert.Throws<ArgumentNullException>(() => new DisjointSet<int>(matrix, null!));
         Assert.Equal("initialValueFunc", nullInitEx.ParamName);
     }
+
+    [Fact]
+    public void OutOfBoundsLookupsAndOperations_ShouldThrowArgumentOutOfRangeException()
+    {
+        var mat = new DummyUntypedMatrix(4, 3);
+        var dsu = new DisjointSet<int>(mat, index => index);
+        var otherDsu = new DisjointSet<int>(mat, index => index);
+
+        // Linear index checks
+        Assert.Equal("index", Assert.Throws<ArgumentOutOfRangeException>(() => dsu[-1]).ParamName);
+        Assert.Equal("index", Assert.Throws<ArgumentOutOfRangeException>(() => dsu[12]).ParamName);
+        Assert.Equal("index", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetElement(-1)).ParamName);
+        Assert.Equal("index", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetElement(12)).ParamName);
+        Assert.Equal("index", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetPartition(-1)).ParamName);
+        Assert.Equal("index", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetPartition(12)).ParamName);
+        Assert.Equal("index", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetRegion(-1)).ParamName);
+        Assert.Equal("index", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetRegion(12)).ParamName);
+
+        // 2D (x, y) checks including row-wrap coordinates like (-1, 1) and (4, 0)
+        Assert.Equal("x", Assert.Throws<ArgumentOutOfRangeException>(() => dsu[-1, 1]).ParamName);
+        Assert.Equal("x", Assert.Throws<ArgumentOutOfRangeException>(() => dsu[4, 0]).ParamName);
+        Assert.Equal("y", Assert.Throws<ArgumentOutOfRangeException>(() => dsu[0, -1]).ParamName);
+        Assert.Equal("y", Assert.Throws<ArgumentOutOfRangeException>(() => dsu[0, 3]).ParamName);
+        Assert.Equal("x", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetElement(-1, 1)).ParamName);
+        Assert.Equal("x", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetElement(4, 0)).ParamName);
+        Assert.Equal("y", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetElement(0, -1)).ParamName);
+        Assert.Equal("y", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetElement(0, 3)).ParamName);
+
+        // Coord checks including row-wrap coordinates like (-1, 1) and (4, 0)
+        Coord[] invalidCoords = [new(-1, 0), new(-1, 1), new(4, 0), new(0, -1), new(0, 3)];
+        foreach (Coord badCoord in invalidCoords)
+        {
+            Assert.Equal("coord", Assert.Throws<ArgumentOutOfRangeException>(() => dsu[badCoord]).ParamName);
+            Assert.Equal("coord", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetPartition(badCoord)).ParamName);
+            Assert.Equal("coord", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.GetRegion(badCoord)).ParamName);
+            Assert.Equal("firstCoord", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.Union(badCoord, new Coord(0, 0), 1)).ParamName);
+            Assert.Equal("secondCoord", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.Union(new Coord(0, 0), badCoord, 1)).ParamName);
+        }
+
+        // Union / TryUnion index validation
+        Assert.Equal("firstIndex", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.Union(-1, 0, 1)).ParamName);
+        Assert.Equal("firstIndex", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.Union(12, 0, 1)).ParamName);
+        Assert.Equal("secondIndex", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.Union(0, -1, 1)).ParamName);
+        Assert.Equal("secondIndex", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.Union(0, 12, 1)).ParamName);
+
+        Assert.Equal("firstIndex", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.TryUnion(-1, 0, 1, out _)).ParamName);
+        Assert.Equal("firstIndex", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.TryUnion(12, 0, 1, out _)).ParamName);
+        Assert.Equal("secondIndex", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.TryUnion(0, -1, 1, out _)).ParamName);
+        Assert.Equal("secondIndex", Assert.Throws<ArgumentOutOfRangeException>(() => dsu.TryUnion(0, 12, 1, out _)).ParamName);
+
+        // Partition validation
+        Assert.Throws<ArgumentNullException>(() => dsu.GetRegion((IDisjointSet.IPartition)null!));
+        Assert.Equal("firstPartition", Assert.Throws<ArgumentException>(() => dsu.Union(default, dsu.GetPartition(0), 1)).ParamName);
+        Assert.Equal("secondPartition", Assert.Throws<ArgumentException>(() => dsu.Union(dsu.GetPartition(0), otherDsu.GetPartition(1), 1)).ParamName);
+
+        // Empty 0x0 DisjointSet
+        var emptyDsu = new DisjointSet<int>(new DummyUntypedMatrix(0, 0), i => i);
+        Assert.Empty(emptyDsu.ToMatrix());
+        Assert.Empty(emptyDsu.ToRegions());
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyDsu[0]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyDsu[0, 0]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyDsu[new Coord(0, 0)]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyDsu.GetElement(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyDsu.GetElement(0, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyDsu.GetPartition(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyDsu.GetPartition(new Coord(0, 0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyDsu.TryUnion(0, 0, 1, out _));
+    }
 }

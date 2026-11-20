@@ -283,7 +283,7 @@ public sealed class RegionGraph
 
     /// <summary>
     /// Computes the unit normal vector at boundary pixel <paramref name="coord"/> pointing from
-    /// <paramref name="fromRegionId"/> toward <paramref name="towardsRegionId"/> over its 8-connected neighborhood.
+    /// <paramref name="fromRegionId"/> toward <paramref name="towardsRegionId"/> over the graph's <see cref="Connectivity"/> neighborhood.
     /// </summary>
     /// <param name="coord">The pixel coordinate at which to evaluate the boundary normal.</param>
     /// <param name="towardsRegionId">The region identifier toward which the returned normal points.</param>
@@ -312,7 +312,7 @@ public sealed class RegionGraph
 
         double sumX = 0.0;
         double sumY = 0.0;
-        ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.All8Connected;
+        ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(Connectivity);
 
         for (int s = 0; s < neighbors.Length; s++)
         {
@@ -337,9 +337,9 @@ public sealed class RegionGraph
     }
 
     /// <summary>
-    /// Computes a multi-source 8-connected geodesic distance band around selected inter-region boundaries.
+    /// Computes a multi-source geodesic distance band around selected inter-region boundaries using the graph's <see cref="Connectivity"/>.
     /// </summary>
-    /// <param name="maxRadius">The maximum Chebyshev grid step radius to expand from boundary seed pixels.</param>
+    /// <param name="maxRadius">The maximum grid step radius to expand from boundary seed pixels.</param>
     /// <param name="boundaryPredicate">
     /// Optional filter predicate receiving a boundary index in <c>[0, Boundaries.Count)</c>;
     /// when <see langword="null"/>, all boundaries seed the band.
@@ -410,7 +410,7 @@ public sealed class RegionGraph
             EnqueueBorderPixels(b.SecondBorderPixels.Span, bi);
         }
 
-        ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.All8Connected;
+        ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(Connectivity);
         ReadOnlySpan<int> labelSpan = labels.AsReadOnlySpan();
 
         while (queue.Count > 0)
@@ -487,61 +487,46 @@ public sealed class RegionGraph
         for (int id = 0; id < regionCount; id++)
             regions[id] = new Region<Coord>(pixelCounts[id]) { Id = id };
 
-        var pairToBoundaryBuilder = new Dictionary<ulong, (List<int> FirstIndices, List<int> SecondIndices)>();
-        ReadOnlySpan<GridNeighbor> forwardSteps = GridNeighborhood.GetForward(connectivity);
-
+        int[] labelData = denseLabels.RawData;
         for (int y = 0; y < height; y++)
         {
             int rowBase = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
             {
-                int firstIndex = rowBase + x;
-                int firstLabel = labelSpan[firstIndex];
-                var coord = new Coord(x, y);
-                regions[firstLabel].Pixels.Add(coord);
-
-                for (int s = 0; s < forwardSteps.Length; s++)
-                {
-                    Coord neighborCoord = coord + forwardSteps[s].Offset;
-                    if (!size.Contains(neighborCoord))
-                        continue;
-
-                    int secondIndex = size.IndexOf(neighborCoord);
-                    int secondLabel = labelSpan[secondIndex];
-                    if (firstLabel == secondLabel)
-                        continue;
-
-                    int lowRegion;
-                    int highRegion;
-                    int lowPixelIndex;
-                    int highPixelIndex;
-                    if (firstLabel < secondLabel)
-                    {
-                        lowRegion = firstLabel;
-                        highRegion = secondLabel;
-                        lowPixelIndex = firstIndex;
-                        highPixelIndex = secondIndex;
-                    }
-                    else
-                    {
-                        lowRegion = secondLabel;
-                        highRegion = firstLabel;
-                        lowPixelIndex = secondIndex;
-                        highPixelIndex = firstIndex;
-                    }
-
-                    ulong pairKey = ScalarMath.PackUnorderedPairKey(lowRegion, highRegion);
-                    if (!pairToBoundaryBuilder.TryGetValue(pairKey, out var lists))
-                    {
-                        lists = (new List<int>(), new List<int>());
-                        pairToBoundaryBuilder.Add(pairKey, lists);
-                    }
-
-                    lists.FirstIndices.Add(lowPixelIndex);
-                    lists.SecondIndices.Add(highPixelIndex);
-                }
+                regions[labelData[rowBase + x]].Pixels.Add(new Coord(x, y));
             }
         }
+
+        var pairToBoundaryBuilder = new Dictionary<ulong, (List<int> FirstIndices, List<int> SecondIndices)>();
+        GridNeighborhood.ForEachForwardPair(
+            size,
+            connectivity,
+            (labelData, pairToBoundaryBuilder),
+            static (firstIndex, secondIndex, state) =>
+            {
+                int firstLabel = state.labelData[firstIndex];
+                int secondLabel = state.labelData[secondIndex];
+                if (firstLabel == secondLabel)
+                    return;
+
+                ulong pairKey = GridNeighborhood.PackUnorderedPairKey(firstLabel, secondLabel);
+                if (!state.pairToBoundaryBuilder.TryGetValue(pairKey, out var lists))
+                {
+                    lists = (new List<int>(), new List<int>());
+                    state.pairToBoundaryBuilder.Add(pairKey, lists);
+                }
+
+                if (firstLabel < secondLabel)
+                {
+                    lists.FirstIndices.Add(firstIndex);
+                    lists.SecondIndices.Add(secondIndex);
+                }
+                else
+                {
+                    lists.FirstIndices.Add(secondIndex);
+                    lists.SecondIndices.Add(firstIndex);
+                }
+            });
 
         ulong[] sortedKeys = pairToBoundaryBuilder.Keys.ToArray();
         Array.Sort(sortedKeys);

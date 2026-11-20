@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.DataStructures;
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Core;
@@ -116,5 +117,161 @@ public class GridNeighborhoodTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() => ((GridDirection)8).Opposite());
         Assert.Throws<ArgumentOutOfRangeException>(() => ((GridDirection)255).ToOffset());
+    }
+
+    /// <summary>
+    /// Verifies <see cref="GridNeighborhood.PackUnorderedPairKey"/> order independence, bit layout, and uniqueness.
+    /// </summary>
+    [Fact]
+    public void PackUnorderedPairKey_ShouldBeOrderIndependentAndUnique()
+    {
+        Assert.Equal(GridNeighborhood.PackUnorderedPairKey(3, 17), GridNeighborhood.PackUnorderedPairKey(17, 3));
+        Assert.Equal(GridNeighborhood.PackUnorderedPairKey(-5, 2), GridNeighborhood.PackUnorderedPairKey(2, -5));
+        Assert.Equal(GridNeighborhood.PackUnorderedPairKey(42, 42), GridNeighborhood.PackUnorderedPairKey(42, 42));
+        Assert.NotEqual(GridNeighborhood.PackUnorderedPairKey(1, 2), GridNeighborhood.PackUnorderedPairKey(1, 3));
+        Assert.NotEqual(GridNeighborhood.PackUnorderedPairKey(1, 100), GridNeighborhood.PackUnorderedPairKey(2, 100));
+
+        ulong key = GridNeighborhood.PackUnorderedPairKey(9, 4);
+        Assert.Equal(4, (int)(key >> 32));
+        Assert.Equal(9, (int)(uint)key);
+    }
+
+    /// <summary>
+    /// Verifies sequential, per-row, and parallel <see cref="GridNeighborhood.ForEachForwardPair"/> overloads across
+    /// 4- and 8-connected grids, edge shapes, and argument validation.
+    /// </summary>
+    [Fact]
+    public void ForEachForwardPair_AllOverloads_ShouldVisitExpectedPairsWithoutDuplicates()
+    {
+        Size[] sizes =
+        [
+            new(0, 0),
+            new(0, 3),
+            new(3, 0),
+            new(1, 1),
+            new(4, 1),
+            new(1, 4),
+            new(4, 3),
+        ];
+
+        foreach (Size size in sizes)
+        {
+            foreach (GridConnectivity connectivity in new[] { GridConnectivity.FourConnected, GridConnectivity.EightConnected })
+            {
+                var expectedCoordPairs = BuildExpectedForwardPairs(size, connectivity);
+                var expectedIndexPairs = new List<(int First, int Second)>(expectedCoordPairs.Count);
+                foreach ((Coord first, Coord second, _) in expectedCoordPairs)
+                    expectedIndexPairs.Add((size.IndexOf(first), size.IndexOf(second)));
+
+                // 1. Sequential index-pair overloads (Action<int, int> and stateful)
+                var actualIndices = new List<(int First, int Second)>();
+                GridNeighborhood.ForEachForwardPair(size, connectivity, (a, b) => actualIndices.Add((a, b)));
+                Assert.Equal(expectedIndexPairs, actualIndices);
+
+                var actualStatefulIndices = new List<(int First, int Second)>();
+                GridNeighborhood.ForEachForwardPair(size, connectivity, actualStatefulIndices, static (a, b, list) => list.Add((a, b)));
+                Assert.Equal(expectedIndexPairs, actualStatefulIndices);
+
+                // 2. Sequential coord-pair overloads (Action<Coord, Coord, GridNeighbor> and stateful)
+                var actualCoords = new List<(Coord First, Coord Second, GridDirection Direction)>();
+                GridNeighborhood.ForEachForwardPair(size, connectivity, (a, b, n) => actualCoords.Add((a, b, n.Direction)));
+                Assert.Equal(expectedCoordPairs, actualCoords);
+
+                var actualStatefulCoords = new List<(Coord First, Coord Second, GridDirection Direction)>();
+                GridNeighborhood.ForEachForwardPair(size, connectivity, actualStatefulCoords, static (a, b, n, list) => list.Add((a, b, n.Direction)));
+                Assert.Equal(expectedCoordPairs, actualStatefulCoords);
+
+                // 3. Per-row sweeps
+                var rowIndices = new List<(int First, int Second)>();
+                var rowCoords = new List<(Coord First, Coord Second, GridDirection Direction)>();
+                var rowStatefulIndices = new List<(int First, int Second)>();
+                var rowStatefulCoords = new List<(Coord First, Coord Second, GridDirection Direction)>();
+                for (int y = 0; y < size.Height; y++)
+                {
+                    GridNeighborhood.ForEachForwardPairInRow(size, y, connectivity, (a, b) => rowIndices.Add((a, b)));
+                    GridNeighborhood.ForEachForwardPairInRow(size, y, connectivity, (a, b, n) => rowCoords.Add((a, b, n.Direction)));
+                    GridNeighborhood.ForEachForwardPairInRow(size, y, connectivity, rowStatefulIndices, static (a, b, list) => list.Add((a, b)));
+                    GridNeighborhood.ForEachForwardPairInRow(size, y, connectivity, rowStatefulCoords, static (a, b, n, list) => list.Add((a, b, n.Direction)));
+                }
+                Assert.Equal(expectedIndexPairs, rowIndices);
+                Assert.Equal(expectedCoordPairs, rowCoords);
+                Assert.Equal(expectedIndexPairs, rowStatefulIndices);
+                Assert.Equal(expectedCoordPairs, rowStatefulCoords);
+
+                // 4. Parallel sweeps (index & coord, stateless & stateful)
+                var parallelIndices = new ConcurrentBag<(int First, int Second)>();
+                GridNeighborhood.ForEachForwardPairParallel(size, connectivity, (a, b) => parallelIndices.Add((a, b)));
+                Assert.Equal(expectedIndexPairs.OrderBy(p => p), parallelIndices.OrderBy(p => p));
+
+                var parallelStatefulIndices = new ConcurrentBag<(int First, int Second)>();
+                GridNeighborhood.ForEachForwardPairParallel(size, connectivity, parallelStatefulIndices, static (a, b, bag) => bag.Add((a, b)));
+                Assert.Equal(expectedIndexPairs.OrderBy(p => p), parallelStatefulIndices.OrderBy(p => p));
+
+                var parallelCoords = new ConcurrentBag<(Coord First, Coord Second, GridDirection Direction)>();
+                GridNeighborhood.ForEachForwardPairParallel(size, connectivity, (a, b, n) => parallelCoords.Add((a, b, n.Direction)));
+                Assert.Equal(
+                    expectedCoordPairs.OrderBy(p => (p.First.Y, p.First.X, p.Direction)),
+                    parallelCoords.OrderBy(p => (p.First.Y, p.First.X, p.Direction)));
+
+                var parallelStatefulCoords = new ConcurrentBag<(Coord First, Coord Second, GridDirection Direction)>();
+                GridNeighborhood.ForEachForwardPairParallel(size, connectivity, parallelStatefulCoords, static (a, b, n, bag) => bag.Add((a, b, n.Direction)));
+                Assert.Equal(
+                    expectedCoordPairs.OrderBy(p => (p.First.Y, p.First.X, p.Direction)),
+                    parallelStatefulCoords.OrderBy(p => (p.First.Y, p.First.X, p.Direction)));
+            }
+        }
+
+        // Exact undirected edge count verification on 4x3 grid:
+        // 4-connected: (4-1)*3 + 4*(3-1) = 9 + 8 = 17
+        // 8-connected: 17 + 2*(4-1)*(3-1) = 17 + 12 = 29
+        int count4 = 0;
+        int count8 = 0;
+        GridNeighborhood.ForEachForwardPair(new Size(4, 3), GridConnectivity.FourConnected, (_, _) => count4++);
+        GridNeighborhood.ForEachForwardPair(new Size(4, 3), GridConnectivity.EightConnected, (_, _) => count8++);
+        Assert.Equal(17, count4);
+        Assert.Equal(29, count8);
+
+        // Argument validation across overloads
+        var validSize = new Size(3, 3);
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.ForEachForwardPair(new Size(-1, 3), GridConnectivity.FourConnected, (_, _) => { }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.ForEachForwardPair(new Size(3, -1), GridConnectivity.FourConnected, (_, _, _) => { }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.ForEachForwardPair(validSize, (GridConnectivity)99, (_, _) => { }));
+        Assert.Throws<ArgumentNullException>(() => GridNeighborhood.ForEachForwardPair(validSize, GridConnectivity.FourConnected, (Action<int, int>)null!));
+        Assert.Throws<ArgumentNullException>(() => GridNeighborhood.ForEachForwardPair(validSize, GridConnectivity.FourConnected, (Action<Coord, Coord, GridNeighbor>)null!));
+        Assert.Throws<ArgumentNullException>(() => GridNeighborhood.ForEachForwardPair(validSize, GridConnectivity.FourConnected, 0, (Action<int, int, int>)null!));
+        Assert.Throws<ArgumentNullException>(() => GridNeighborhood.ForEachForwardPair(validSize, GridConnectivity.FourConnected, 0, (Action<Coord, Coord, GridNeighbor, int>)null!));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.ForEachForwardPairInRow(validSize, -1, GridConnectivity.FourConnected, (_, _) => { }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.ForEachForwardPairInRow(validSize, 3, GridConnectivity.FourConnected, (_, _, _) => { }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.ForEachForwardPairInRow(new Size(3, 0), 0, GridConnectivity.FourConnected, (_, _) => { }));
+        Assert.Throws<ArgumentNullException>(() => GridNeighborhood.ForEachForwardPairInRow(validSize, 0, GridConnectivity.FourConnected, (Action<int, int>)null!));
+        Assert.Throws<ArgumentNullException>(() => GridNeighborhood.ForEachForwardPairInRow(validSize, 0, GridConnectivity.FourConnected, (Action<Coord, Coord, GridNeighbor>)null!));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.ForEachForwardPairParallel(new Size(-1, 2), GridConnectivity.EightConnected, (_, _, _) => { }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.ForEachForwardPairParallel(validSize, (GridConnectivity)99, (_, _) => { }));
+        Assert.Throws<ArgumentNullException>(() => GridNeighborhood.ForEachForwardPairParallel(validSize, GridConnectivity.EightConnected, (Action<int, int>)null!));
+        Assert.Throws<ArgumentNullException>(() => GridNeighborhood.ForEachForwardPairParallel(validSize, GridConnectivity.EightConnected, (Action<Coord, Coord, GridNeighbor>)null!));
+    }
+
+    private static List<(Coord First, Coord Second, GridDirection Direction)> BuildExpectedForwardPairs(Size size, GridConnectivity connectivity)
+    {
+        var pairs = new List<(Coord First, Coord Second, GridDirection Direction)>();
+        ReadOnlySpan<GridNeighbor> forward = GridNeighborhood.GetForward(connectivity);
+
+        for (int y = 0; y < size.Height; y++)
+        {
+            for (int x = 0; x < size.Width; x++)
+            {
+                var first = new Coord(x, y);
+                for (int i = 0; i < forward.Length; i++)
+                {
+                    Coord second = first + forward[i].Offset;
+                    if (size.Contains(second))
+                        pairs.Add((first, second, forward[i].Direction));
+                }
+            }
+        }
+
+        return pairs;
     }
 }

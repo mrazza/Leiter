@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.DistanceTransform;
 
 using System;
 using System.Collections.Generic;
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.DistanceTransform;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -27,8 +28,8 @@ public class JumpFloodingTests
 
         mask[3, 3] = false;
 
-        IReadOnlyList<Coord> eightConnected = JumpFlooding.ExtractBoundarySeeds(mask, eightConnectedBackground: true);
-        IReadOnlyList<Coord> fourConnected = JumpFlooding.ExtractBoundarySeeds(mask, eightConnectedBackground: false);
+        IReadOnlyList<Coord> eightConnected = JumpFlooding.ExtractBoundarySeeds(mask, backgroundConnectivity: GridConnectivity.EightConnected);
+        IReadOnlyList<Coord> fourConnected = JumpFlooding.ExtractBoundarySeeds(mask, backgroundConnectivity: GridConnectivity.FourConnected);
 
         Assert.Contains(new Coord(2, 2), eightConnected);
         Assert.DoesNotContain(new Coord(2, 2), fourConnected);
@@ -41,6 +42,8 @@ public class JumpFloodingTests
         Assert.Empty(JumpFlooding.ExtractBoundarySeeds(allForeground));
 
         Assert.Throws<ArgumentNullException>(() => JumpFlooding.ExtractBoundarySeeds(null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => JumpFlooding.ExtractBoundarySeeds(mask, (GridConnectivity)99));
+        Assert.Throws<ArgumentOutOfRangeException>(() => JumpFlooding.ExtractBoundarySeeds(emptyMask, (GridConnectivity)99));
     }
 
     [Fact]
@@ -161,11 +164,11 @@ public class JumpFloodingTests
         MaskMatrix materialized = view.ToMaskMatrix();
 
         Assert.Equal(
-            JumpFlooding.ExtractBoundarySeeds(materialized, eightConnectedBackground: true),
-            JumpFlooding.ExtractBoundarySeeds(view, eightConnectedBackground: true));
+            JumpFlooding.ExtractBoundarySeeds(materialized, backgroundConnectivity: GridConnectivity.EightConnected),
+            JumpFlooding.ExtractBoundarySeeds(view, backgroundConnectivity: GridConnectivity.EightConnected));
         Assert.Equal(
-            JumpFlooding.ExtractBoundarySeeds(materialized, eightConnectedBackground: false),
-            JumpFlooding.ExtractBoundarySeeds(view, eightConnectedBackground: false));
+            JumpFlooding.ExtractBoundarySeeds(materialized, backgroundConnectivity: GridConnectivity.FourConnected),
+            JumpFlooding.ExtractBoundarySeeds(view, backgroundConnectivity: GridConnectivity.FourConnected));
 
         MatrixAssert.Equal(JumpFlooding.ComputeNearestSeeds(materialized), JumpFlooding.ComputeNearestSeeds(view));
         MatrixAssert.ApproxEqual(JumpFlooding.ComputeDistanceTransform(materialized), JumpFlooding.ComputeDistanceTransform(view), 1e-12);

@@ -15,23 +15,24 @@ public static class JumpFlooding
     /// Extracts all foreground (<see langword="true"/>) coordinates in a boolean mask that border at least one background pixel.
     /// </summary>
     /// <param name="binaryMask">The boolean mask (<see langword="false"/> = background, <see langword="true"/> = foreground).</param>
-    /// <param name="eightConnectedBackground">
-    /// If <see langword="true"/>, checks all 8 neighbors for background pixels; otherwise checks only the 4 cardinal neighbors.
+    /// <param name="backgroundConnectivity">
+    /// The neighborhood connectivity used to check adjacent pixels for background (<see langword="false"/>) values.
     /// </param>
     /// <returns>The list of foreground boundary coordinates in row-major order.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="binaryMask"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="backgroundConnectivity"/> is invalid.</exception>
     public static IReadOnlyList<Coord> ExtractBoundarySeeds(
         IReadOnlyMatrix<bool> binaryMask,
-        bool eightConnectedBackground = true)
+        GridConnectivity backgroundConnectivity = GridConnectivity.EightConnected)
     {
         ArgumentNullException.ThrowIfNull(binaryMask);
+        ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(backgroundConnectivity);
 
         var seeds = new List<Coord>();
         Size size = binaryMask.Size;
         if (size.IsEmpty)
             return seeds;
 
-        ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(eightConnectedBackground ? GridConnectivity.EightConnected : GridConnectivity.FourConnected);
         int width = size.Width;
         int height = size.Height;
 

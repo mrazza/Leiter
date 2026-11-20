@@ -8,17 +8,9 @@ using System.Collections;
 /// <typeparam name="T">The type of elements counted in the histogram.</typeparam>
 public class BucketingHistogram<T> : IHistogram<T> where T : notnull
 {
-    /// <summary>
-    /// Represents a method that maps an input value to its corresponding bucket key.
-    /// </summary>
-    /// <typeparam name="Type">The type of the value to bucket.</typeparam>
-    /// <param name="value">The value to determine the bucket for.</param>
-    /// <returns>The bucket key corresponding to <paramref name="value"/>.</returns>
-    public delegate Type Bucketer<Type>(Type value);
-
     private readonly Dictionary<T, int> histogram;
 
-    private readonly Bucketer<T> bucketer;
+    private readonly Func<T, T> bucketer;
 
     private int total;
 
@@ -26,11 +18,11 @@ public class BucketingHistogram<T> : IHistogram<T> where T : notnull
     public int this[T value] => GetCount(value);
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="BucketingHistogram{T}"/> class using the specified bucketing delegate.
+    /// Initializes a new instance of the <see cref="BucketingHistogram{T}"/> class using the specified bucketing function.
     /// </summary>
-    /// <param name="bucketer">The delegate that maps elements to bucket keys.</param>
+    /// <param name="bucketer">The function that maps elements to bucket keys.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="bucketer"/> is <see langword="null"/>.</exception>
-    public BucketingHistogram(Bucketer<T> bucketer)
+    public BucketingHistogram(Func<T, T> bucketer)
     {
         ArgumentNullException.ThrowIfNull(bucketer);
         histogram = [];
@@ -54,7 +46,7 @@ public class BucketingHistogram<T> : IHistogram<T> where T : notnull
     }
 
     /// <inheritdoc/>
-    public int Total() => total;
+    public int Total => total;
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="mapFunc"/> is <see langword="null"/>.</exception>
