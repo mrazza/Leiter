@@ -194,8 +194,7 @@ public static class SegmentationVisualizer
         ArgumentNullException.ThrowIfNull(colorAssigner);
         Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
 
-        IReadOnlyList<Region<Coord>> regions = regionGraph.Regions;
-        return ColorRegions(image, regions, colorAssigner);
+        return ColorRegions(image, regionGraph.Regions, colorAssigner);
     }
 
     /// <summary>

@@ -2,8 +2,6 @@ namespace Leiter.Tests.Algorithms.DataStructures;
 
 using System;
 using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
@@ -530,111 +528,6 @@ public class RegionGraphTests
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeRegionFlags(mask, -0.01));
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeRegionFlags(mask, 1.01));
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeRegionFlags(mask, double.NaN));
-    }
-
-    /// <summary>
-    /// Verifies that <see cref="RegionGraph.GetRegionPixels"/> and <see cref="RegionGraph.GetRegionPixelCount"/>
-    /// return deterministic row-major pixels and counts matching <see cref="RegionGraph.Regions"/>, and validate region IDs.
-    /// </summary>
-    [Fact]
-    public void GetRegionPixels_And_GetRegionPixelCount_ShouldReturnRowMajorPixelsAndValidateRegionId()
-    {
-        var labels = new SequentialMatrix<int>(4, 3);
-        // Row 0: 10, 20, 10, 30
-        labels[0, 0] = 10;
-        labels[1, 0] = 20;
-        labels[2, 0] = 10;
-        labels[3, 0] = 30;
-        // Row 1: 20, 10, 30, 10
-        labels[0, 1] = 20;
-        labels[1, 1] = 10;
-        labels[2, 1] = 30;
-        labels[3, 1] = 10;
-        // Row 2: 30, 30, 20, 20
-        labels[0, 2] = 30;
-        labels[1, 2] = 30;
-        labels[2, 2] = 20;
-        labels[3, 2] = 20;
-
-        var graph = RegionGraph.FromLabels(labels);
-
-        Assert.Equal(3, graph.RegionCount);
-        Assert.Equal(4, graph.GetRegionPixelCount(0));
-        Assert.Equal(4, graph.GetRegionPixelCount(1));
-        Assert.Equal(4, graph.GetRegionPixelCount(2));
-
-        Assert.Equal(
-            [new Coord(0, 0), new Coord(2, 0), new Coord(1, 1), new Coord(3, 1)],
-            graph.GetRegionPixels(0).ToArray());
-        Assert.Equal(
-            [new Coord(1, 0), new Coord(0, 1), new Coord(2, 2), new Coord(3, 2)],
-            graph.GetRegionPixels(1).ToArray());
-        Assert.Equal(
-            [new Coord(3, 0), new Coord(2, 1), new Coord(0, 2), new Coord(1, 2)],
-            graph.GetRegionPixels(2).ToArray());
-
-        for (int r = 0; r < graph.RegionCount; r++)
-        {
-            ReadOnlySpan<Coord> span = graph.GetRegionPixels(r);
-            Assert.Equal(graph.GetRegionPixelCount(r), span.Length);
-            Assert.Equal(graph.Regions[r].Pixels.Count, span.Length);
-            foreach (Coord coord in span)
-                Assert.Contains(coord, graph.Regions[r].Pixels);
-        }
-
-        Assert.Throws<ArgumentOutOfRangeException>(() => graph.GetRegionPixels(-1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => graph.GetRegionPixels(graph.RegionCount));
-        Assert.Throws<ArgumentOutOfRangeException>(() => graph.GetRegionPixelCount(-1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => graph.GetRegionPixelCount(graph.RegionCount));
-
-        RegionGraph emptyGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(0, 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => emptyGraph.GetRegionPixels(0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => emptyGraph.GetRegionPixels(-1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => emptyGraph.GetRegionPixelCount(0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => emptyGraph.GetRegionPixelCount(-1));
-        Assert.Empty(emptyGraph.Regions);
-        Assert.Same(emptyGraph.Regions, emptyGraph.Regions);
-    }
-
-    /// <summary>
-    /// Verifies that concurrent accesses to <see cref="RegionGraph.Regions"/> safely initialize and return the same instance.
-    /// </summary>
-    [Fact]
-    public async Task Regions_ConcurrentAccess_ShouldSafelyInitializeSingleConsistentList()
-    {
-        var labels = TestMatrices.Create(16, 16, static (x, y) => ((x / 4) * 4) + (y / 4));
-        var graph = RegionGraph.FromLabels(labels);
-
-        const int threadCount = 12;
-        var results = new IReadOnlyList<Region<Coord>>[threadCount];
-        using var startGate = new ManualResetEventSlim(false);
-        var tasks = new Task[threadCount];
-
-        for (int i = 0; i < threadCount; i++)
-        {
-            int index = i;
-            tasks[i] = Task.Run(() =>
-            {
-                startGate.Wait();
-                results[index] = graph.Regions;
-            });
-        }
-
-        startGate.Set();
-        await Task.WhenAll(tasks);
-
-        IReadOnlyList<Region<Coord>> first = results[0];
-        Assert.Equal(graph.RegionCount, first.Count);
-        for (int i = 1; i < threadCount; i++)
-            Assert.Same(first, results[i]);
-
-        for (int r = 0; r < graph.RegionCount; r++)
-        {
-            Assert.Equal(r, first[r].Id);
-            Assert.Equal(graph.GetRegionPixelCount(r), first[r].Pixels.Count);
-            foreach (Coord coord in graph.GetRegionPixels(r))
-                Assert.Contains(coord, first[r].Pixels);
-        }
     }
 
     /// <summary>

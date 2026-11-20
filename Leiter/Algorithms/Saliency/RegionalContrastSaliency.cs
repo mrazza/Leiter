@@ -98,6 +98,7 @@ public static class RegionalContrastSaliency
         bool computeBorderRegions = resolvedOptions.ComputeBorderRegions;
         int regionCount = graph.RegionCount;
         IReadOnlyMatrix<int> labels = graph.Labels;
+        IReadOnlyList<Region<Coord>> regions = graph.Regions;
 
         var (colorQuantizedImage, _, rgbToLabLookupTable) = SaliencyColorSmoother.QuantizeForSaliency(image);
 
@@ -106,17 +107,17 @@ public static class RegionalContrastSaliency
         var imageCenter = new NormalizedCoord(0.5, 0.5);
         for (int r = 0; r < regionCount; r++)
         {
-            ReadOnlySpan<Coord> regionPixels = graph.GetRegionPixels(r);
+            Region<Coord> region = regions[r];
             NormalizedCoord sum = new(0, 0);
             double sumDist = 0.0;
-            for (int p = 0; p < regionPixels.Length; p++)
+            foreach (Coord coord in region.Pixels)
             {
-                NormalizedCoord normalizedCoord = image.NormalizeCoord(regionPixels[p]);
+                NormalizedCoord normalizedCoord = image.NormalizeCoord(coord);
                 sum += normalizedCoord;
                 sumDist += normalizedCoord.Distance(imageCenter);
             }
 
-            double invCount = 1.0 / regionPixels.Length;
+            double invCount = 1.0 / region.Pixels.Count;
             regionCentroids[r] = sum * invCount;
             avgRegionDistances[r] = sumDist * invCount;
         }
@@ -208,18 +209,17 @@ public static class RegionalContrastSaliency
 
             for (int r = 0; r < regionCount; r++)
             {
-                ReadOnlySpan<Coord> regionPixels = graph.GetRegionPixels(r);
+                HashSet<Coord> regionPixels = regions[r].Pixels;
                 int borderPixels = 0;
-                for (int p = 0; p < regionPixels.Length; p++)
+                foreach (Coord pixel in regionPixels)
                 {
-                    Coord pixel = regionPixels[p];
                     if (pixel.X < borderPixelWidth || pixel.X >= maxX || pixel.Y < borderPixelHeight || pixel.Y >= maxY)
                     {
                         borderPixels++;
                     }
                 }
 
-                if (borderPixels > graph.GetRegionPixelCount(r) * regionInBorderPercentage)
+                if (borderPixels > regionPixels.Count * regionInBorderPercentage)
                 {
                     isBorderRegion[r] = true;
                     rawSaliency[r] = 0.0;

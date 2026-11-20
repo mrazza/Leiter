@@ -1,6 +1,5 @@
 namespace Leiter.Algorithms.DataStructures;
 
-using System.Threading;
 using Leiter.Core;
 
 /// <summary>
@@ -10,18 +9,14 @@ using Leiter.Core;
 public sealed class RegionGraph
 {
     private readonly SequentialMatrix<int> labels;
-    private readonly Coord[] regionPixels;
-    private readonly int[] regionOffsets;
     private readonly int[] neighborIds;
     private readonly int[] boundaryIndices;
     private readonly int[] neighborOffsets;
-    private Region<Coord>[]? regions;
 
     private RegionGraph(
         SequentialMatrix<int> labels,
         GridConnectivity connectivity,
-        Coord[] regionPixels,
-        int[] regionOffsets,
+        Region<Coord>[] regions,
         RegionBoundary[] boundaries,
         int[] neighborIds,
         int[] boundaryIndices,
@@ -31,8 +26,7 @@ public sealed class RegionGraph
         Connectivity = connectivity;
         this.labels = labels;
         Labels = labels;
-        this.regionPixels = regionPixels;
-        this.regionOffsets = regionOffsets;
+        Regions = regions;
         Boundaries = boundaries;
         this.neighborIds = neighborIds;
         this.boundaryIndices = boundaryIndices;
@@ -57,7 +51,7 @@ public sealed class RegionGraph
     /// <summary>
     /// Gets the total number of distinct regions (<c>0</c> through <c>RegionCount - 1</c>).
     /// </summary>
-    public int RegionCount => regionOffsets.Length - 1;
+    public int RegionCount => Regions.Count;
 
     /// <summary>
     /// Gets the grid connectivity rule used to discover adjacent regions and shared boundaries.
@@ -72,8 +66,7 @@ public sealed class RegionGraph
     /// <summary>
     /// Gets the ordered list of regions indexed by their dense region identifier.
     /// </summary>
-    public IReadOnlyList<Region<Coord>> Regions =>
-        LazyInitializer.EnsureInitialized(ref regions, BuildRegions);
+    public IReadOnlyList<Region<Coord>> Regions { get; }
 
     /// <summary>
     /// Gets all undirected inter-region boundaries ordered deterministically by <c>(First, Second)</c>.
@@ -137,32 +130,6 @@ public sealed class RegionGraph
         }
 
         return BuildFromDenseLabels(denseLabels, idMap.Count, connectivity);
-    }
-
-    /// <summary>
-    /// Returns the pixels belonging to <paramref name="regionId"/> in deterministic row-major order.
-    /// </summary>
-    /// <param name="regionId">The dense region identifier in <c>[0, RegionCount)</c>.</param>
-    /// <returns>A <see cref="ReadOnlySpan{Coord}"/> of pixel coordinates in the region.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="regionId"/> is outside <c>[0, RegionCount)</c>.</exception>
-    public ReadOnlySpan<Coord> GetRegionPixels(int regionId)
-    {
-        ValidateRegionId(regionId, nameof(regionId));
-        int start = regionOffsets[regionId];
-        int length = regionOffsets[regionId + 1] - start;
-        return regionPixels.AsSpan(start, length);
-    }
-
-    /// <summary>
-    /// Returns the number of pixels belonging to <paramref name="regionId"/>.
-    /// </summary>
-    /// <param name="regionId">The dense region identifier in <c>[0, RegionCount)</c>.</param>
-    /// <returns>The pixel count of the specified region.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="regionId"/> is outside <c>[0, RegionCount)</c>.</exception>
-    public int GetRegionPixelCount(int regionId)
-    {
-        ValidateRegionId(regionId, nameof(regionId));
-        return regionOffsets[regionId + 1] - regionOffsets[regionId];
     }
 
     /// <summary>
@@ -247,13 +214,11 @@ public sealed class RegionGraph
     {
         ArgumentNullException.ThrowIfNull(selector);
 
-        int regionCount = RegionCount;
-        var results = new TStat[regionCount];
-        if (regionCount == 0)
+        var results = new TStat[RegionCount];
+        if (RegionCount == 0)
             return results;
 
-        IReadOnlyList<Region<Coord>> materializedRegions = Regions;
-        Parallel.For(0, regionCount, regionId => results[regionId] = selector(materializedRegions[regionId]));
+        Parallel.For(0, RegionCount, regionId => results[regionId] = selector(Regions[regionId]));
         return results;
     }
 
@@ -269,44 +234,21 @@ public sealed class RegionGraph
         ArgumentNullException.ThrowIfNull(mask);
         Guard.ThrowIfSizeMismatch(Size, mask.Size, nameof(mask));
 
-        int regionCount = RegionCount;
-        if (regionCount == 0)
-            return [];
-
-        var fractions = new double[regionCount];
-        bool[]? rawMask = mask is SequentialMatrix<bool> seqMask ? seqMask.RawData : null;
-
-        Parallel.For(0, regionCount, regionId =>
+        return ComputeRegionStatistics(region =>
         {
-            ReadOnlySpan<Coord> pixels = GetRegionPixels(regionId);
-            if (pixels.Length == 0)
-            {
-                fractions[regionId] = 0.0;
-                return;
-            }
+            HashSet<Coord> pixels = region.Pixels;
+            if (pixels.Count == 0)
+                return 0.0;
 
             int trueCount = 0;
-            if (rawMask is not null)
+            foreach (Coord coord in pixels)
             {
-                for (int i = 0; i < pixels.Length; i++)
-                {
-                    if (rawMask[Size.IndexOf(pixels[i])])
-                        trueCount++;
-                }
-            }
-            else
-            {
-                for (int i = 0; i < pixels.Length; i++)
-                {
-                    if (mask[pixels[i]])
-                        trueCount++;
-                }
+                if (mask[coord])
+                    trueCount++;
             }
 
-            fractions[regionId] = (double)trueCount / pixels.Length;
+            return (double)trueCount / pixels.Count;
         });
-
-        return fractions;
     }
 
     /// <summary>
@@ -517,34 +459,11 @@ public sealed class RegionGraph
             seedPixels.ToArray());
     }
 
-    private Region<Coord>[] BuildRegions()
-    {
-        int count = RegionCount;
-        if (count == 0)
-            return [];
-
-        var built = new Region<Coord>[count];
-        for (int id = 0; id < count; id++)
-        {
-            int start = regionOffsets[id];
-            int length = regionOffsets[id + 1] - start;
-            var region = new Region<Coord>(length) { Id = id };
-            HashSet<Coord> pixels = region.Pixels;
-            for (int i = 0; i < length; i++)
-                pixels.Add(regionPixels[start + i]);
-
-            built[id] = region;
-        }
-
-        return built;
-    }
-
     private static RegionGraph CreateEmpty(Size size, GridConnectivity connectivity) =>
         new(
             new SequentialMatrix<int>(size),
             connectivity,
             [],
-            [0],
             [],
             [],
             [],
@@ -564,12 +483,9 @@ public sealed class RegionGraph
         for (int i = 0; i < labelSpan.Length; i++)
             pixelCounts[labelSpan[i]]++;
 
-        var regionOffsets = new int[regionCount + 1];
+        var regions = new Region<Coord>[regionCount];
         for (int id = 0; id < regionCount; id++)
-            regionOffsets[id + 1] = regionOffsets[id] + pixelCounts[id];
-
-        var regionPixels = new Coord[regionOffsets[regionCount]];
-        var regionCursors = regionOffsets[..regionCount];
+            regions[id] = new Region<Coord>(pixelCounts[id]) { Id = id };
 
         var pairToBoundaryBuilder = new Dictionary<ulong, (List<int> FirstIndices, List<int> SecondIndices)>();
         ReadOnlySpan<GridNeighbor> forwardSteps = GridNeighborhood.GetForward(connectivity);
@@ -582,7 +498,7 @@ public sealed class RegionGraph
                 int firstIndex = rowBase + x;
                 int firstLabel = labelSpan[firstIndex];
                 var coord = new Coord(x, y);
-                regionPixels[regionCursors[firstLabel]++] = coord;
+                regions[firstLabel].Pixels.Add(coord);
 
                 for (int s = 0; s < forwardSteps.Length; s++)
                 {
@@ -702,8 +618,7 @@ public sealed class RegionGraph
         return new RegionGraph(
             denseLabels,
             connectivity,
-            regionPixels,
-            regionOffsets,
+            regions,
             boundaries,
             neighborIds,
             boundaryIndices,
