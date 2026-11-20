@@ -44,16 +44,9 @@ public class SpatialGradientsTests
         Matrix<Vector2D> sobel = SpatialGradients.Compute(source, GradientOperator.Sobel);
         Matrix<Vector2D> scharr = SpatialGradients.Compute(source, GradientOperator.Scharr);
 
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                Assert.Equal(0.0, sobel[x, y].X, 9);
-                Assert.Equal(0.0, sobel[x, y].Y, 9);
-                Assert.Equal(0.0, scharr[x, y].X, 9);
-                Assert.Equal(0.0, scharr[x, y].Y, 9);
-            }
-        }
+        SequentialMatrix<Vector2D> expectedZeros = TestMatrices.Constant(4, 4, Vector2D.Zero);
+        MatrixAssert.Equal(expectedZeros, sobel);
+        MatrixAssert.Equal(expectedZeros, scharr);
     }
 
     /// <summary>
@@ -114,14 +107,7 @@ public class SpatialGradientsTests
     [Fact]
     public void ComputeLuminanceGradients_StepEdge_ShouldCalculateAccurately()
     {
-        var image = new SequentialMatrix<Rgb8>(4, 4);
-        for (int y = 0; y < 4; y++)
-        {
-            image[0, y] = new Rgb8(0, 0, 0);
-            image[1, y] = new Rgb8(0, 0, 0);
-            image[2, y] = new Rgb8(255, 0, 0);
-            image[3, y] = new Rgb8(255, 0, 0);
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(4, 4, new Rgb8(0, 0, 0), new Rgb8(255, 0, 0), splitX: 2);
 
         Matrix<Vector2D> sobel = SpatialGradients.ComputeLuminanceGradients(image, GradientOperator.Sobel);
         Matrix<Vector2D> scharr = SpatialGradients.ComputeLuminanceGradients(image, GradientOperator.Scharr);
@@ -172,14 +158,7 @@ public class SpatialGradientsTests
     [Fact]
     public void ComputeColorGradients_StepEdgeAndChannelNorm_ShouldMatchExpected()
     {
-        var image = new SequentialMatrix<Rgb8>(4, 4);
-        for (int y = 0; y < 4; y++)
-        {
-            image[0, y] = new Rgb8(0, 0, 0);
-            image[1, y] = new Rgb8(0, 0, 0);
-            image[2, y] = new Rgb8(255, 0, 0);
-            image[3, y] = new Rgb8(255, 0, 0);
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(4, 4, new Rgb8(0, 0, 0), new Rgb8(255, 0, 0), splitX: 2);
 
         var (sobelGx, sobelGy, sobelMag) = SpatialGradients.ComputeColorGradients(image, GradientOperator.Sobel);
         var (scharrGx, scharrGy, scharrMag) = SpatialGradients.ComputeColorGradients(image, GradientOperator.Scharr);
@@ -213,18 +192,11 @@ public class SpatialGradientsTests
     [Fact]
     public void ComputeColorGradients_MultiChannelDerivatives_ShouldComputeCorrectly()
     {
-        var image = new SequentialMatrix<Rgb8>(4, 4);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                // R steps horizontally, G steps vertically, B remains constant
-                byte r = (byte)(x >= 2 ? 255 : 0);
-                byte g = (byte)(y >= 2 ? 255 : 0);
-                byte b = 128;
-                image[x, y] = new Rgb8(r, g, b);
-            }
-        }
+        // R steps horizontally, G steps vertically, B remains constant
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            4,
+            4,
+            (x, y) => new Rgb8((byte)(x >= 2 ? 255 : 0), (byte)(y >= 2 ? 255 : 0), 128));
 
         var (gx, gy, mag) = SpatialGradients.ComputeColorGradients(image, GradientOperator.Sobel);
 

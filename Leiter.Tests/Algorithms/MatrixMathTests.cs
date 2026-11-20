@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -171,29 +172,28 @@ public class MatrixMathTests
     [Fact]
     public void ConvolveSeparable_ShouldMatch2DConvolution()
     {
-        var img = new SequentialMatrix<DoublePixel>(7, 6);
-        for (int y = 0; y < img.Height; y++)
-            for (int x = 0; x < img.Width; x++)
-                img[x, y] = x * 1.5 + y * y + ((x + y) % 3) * 2.0;
+        SequentialMatrix<DoublePixel> img = TestMatrices.Create(
+            7,
+            6,
+            (x, y) => new DoublePixel(x * 1.5 + y * y + ((x + y) % 3) * 2.0));
 
         double[] hKernel = [0.2, 0.5, 0.3];
         double[] vKernel = [0.1, 0.3, 0.4, 0.2];
-        var kernel2D = new SequentialMatrix<DoublePixel>(hKernel.Length, vKernel.Length);
-        for (int ky = 0; ky < vKernel.Length; ky++)
-            for (int kx = 0; kx < hKernel.Length; kx++)
-                kernel2D[kx, ky] = hKernel[kx] * vKernel[ky];
+        SequentialMatrix<DoublePixel> kernel2D = TestMatrices.Create(
+            hKernel.Length,
+            vKernel.Length,
+            (kx, ky) => new DoublePixel(hKernel[kx] * vKernel[ky]));
 
         var expected = img.Convolve(kernel2D);
         var actual = img.ConvolveSeparable(hKernel, vKernel);
 
-        Leiter.Tests.TestUtils.MatrixAssert.ApproxEqual(expected, actual, 1e-10);
+        MatrixAssert.ApproxEqual(expected, actual, 1e-10);
     }
 
     [Fact]
     public void Convolve_And_ConvolveSeparable_EdgeCases_ShouldValidateAndHandleEmptyAndLargeKernels()
     {
-        var img = new SequentialMatrix<DoublePixel>(2, 2);
-        img.SetAll(5.0);
+        SequentialMatrix<DoublePixel> img = TestMatrices.Constant(2, 2, new DoublePixel(5.0));
 
         Assert.Throws<ArgumentException>(() => img.Convolve(new SequentialMatrix<DoublePixel>(0, 3)));
         Assert.Throws<ArgumentException>(() => img.Convolve(new SequentialMatrix<DoublePixel>(3, 0)));
@@ -225,8 +225,7 @@ public class MatrixMathTests
         double[] largeVertical = new double[257];
         Array.Fill(largeVertical, 1.0 / largeVertical.Length);
         var convolvedLargeV = img.ConvolveSeparable([1.0], largeVertical);
-        for (int i = 0; i < convolvedLargeV.Count; i++)
-            Assert.Equal(5.0, convolvedLargeV[i].Value, 10);
+        MatrixAssert.ApproxEqual(img, convolvedLargeV, 1e-10);
     }
 
     [Fact]
@@ -278,5 +277,81 @@ public class MatrixMathTests
         var rightMismatch = new SequentialMatrix<DoublePixel>(2, 4);
         var mulMismatchEx = Assert.Throws<ArgumentException>(() => leftMismatch.Multiply(rightMismatch));
         Assert.Equal("right", mulMismatchEx.ParamName);
+    }
+
+    [Fact]
+    public void Add_And_Scale_ShouldComputeElementWiseResultsAndValidateInputs()
+    {
+        var left = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
+        var right = new SequentialMatrix<DoublePixel>(new Size(2, 2), [10.0, 20.0, 30.0, 40.0]);
+        var rightView = new MatrixView<DoublePixel>(right, 0, 0, 2, 2, EdgeHandling.Extend);
+
+        Matrix<DoublePixel> sum = left.Add(right);
+        MatrixAssert.ApproxEqual(new SequentialMatrix<DoublePixel>(new Size(2, 2), [11.0, 22.0, 33.0, 44.0]), sum, 1e-12);
+        MatrixAssert.ApproxEqual(sum, left.Add(rightView), 1e-12);
+
+        Matrix<DoublePixel> scaled = left.Scale(2.5);
+        MatrixAssert.ApproxEqual(new SequentialMatrix<DoublePixel>(new Size(2, 2), [2.5, 5.0, 7.5, 10.0]), scaled, 1e-12);
+        MatrixAssert.ApproxEqual(new SequentialMatrix<DoublePixel>(new Size(2, 2), [25.0, 50.0, 75.0, 100.0]), rightView.Scale(2.5), 1e-12);
+
+        var emptyA = new SequentialMatrix<DoublePixel>(0, 2);
+        var emptyB = new SequentialMatrix<DoublePixel>(0, 2);
+        Assert.Empty(emptyA.Add(emptyB));
+        Assert.Empty(emptyA.Scale(3.0));
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).Add(right));
+        Assert.Throws<ArgumentNullException>(() => left.Add(null!));
+        Assert.Throws<ArgumentException>(() => left.Add(new SequentialMatrix<DoublePixel>(3, 2)));
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).Scale(2.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => left.Scale(double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => left.Scale(double.PositiveInfinity));
+        Assert.Throws<ArgumentOutOfRangeException>(() => left.Scale(double.NegativeInfinity));
+    }
+
+    [Fact]
+    public void AddInPlace_And_ScaleInPlace_ShouldMutateSequentialAndNonSequentialMatrices()
+    {
+        var seqTarget = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
+        var addend = new SequentialMatrix<DoublePixel>(new Size(2, 2), [0.5, 1.5, 2.5, 3.5]);
+
+        seqTarget.AddInPlace(addend);
+        MatrixAssert.ApproxEqual(new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.5, 3.5, 5.5, 7.5]), seqTarget, 1e-12);
+
+        seqTarget.ScaleInPlace(2.0);
+        MatrixAssert.ApproxEqual(new SequentialMatrix<DoublePixel>(new Size(2, 2), [3.0, 7.0, 11.0, 15.0]), seqTarget, 1e-12);
+
+        var nonSeqTarget = new NonSequentialDoubleMatrix(2, 2, [1.0, 2.0, 3.0, 4.0]);
+        var viewAddend = new MatrixView<DoublePixel>(addend, 0, 0, 2, 2, EdgeHandling.Extend);
+        nonSeqTarget.AddInPlace(viewAddend);
+        MatrixAssert.ApproxEqual(new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.5, 3.5, 5.5, 7.5]), nonSeqTarget, 1e-12);
+
+        nonSeqTarget.ScaleInPlace(0.5);
+        MatrixAssert.ApproxEqual(new SequentialMatrix<DoublePixel>(new Size(2, 2), [0.75, 1.75, 2.75, 3.75]), nonSeqTarget, 1e-12);
+
+        var empty = new SequentialMatrix<DoublePixel>(0, 2);
+        empty.AddInPlace(new SequentialMatrix<DoublePixel>(0, 2));
+        empty.ScaleInPlace(4.0);
+
+        Assert.Throws<ArgumentNullException>(() => ((Matrix<DoublePixel>)null!).AddInPlace(addend));
+        Assert.Throws<ArgumentNullException>(() => seqTarget.AddInPlace(null!));
+        Assert.Throws<ArgumentException>(() => seqTarget.AddInPlace(new SequentialMatrix<DoublePixel>(3, 2)));
+        Assert.Throws<ArgumentNullException>(() => ((Matrix<DoublePixel>)null!).ScaleInPlace(1.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => seqTarget.ScaleInPlace(double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => seqTarget.ScaleInPlace(double.PositiveInfinity));
+    }
+
+    private sealed class NonSequentialDoubleMatrix(int width, int height, DoublePixel[] backing)
+        : Matrix<DoublePixel>(width, height)
+    {
+        public override DoublePixel GetElement(int index) => backing[index];
+        public override DoublePixel GetElement(int x, int y) => backing[Size.IndexOf(x, y)];
+        public override void SetElement(int index, DoublePixel value) => backing[index] = value;
+        public override void SetElement(int x, int y, DoublePixel value) => backing[Size.IndexOf(x, y)] = value;
+        public override void SetAll(DoublePixel value) => Array.Fill(backing, value);
+        public override Matrix<R> Map<R>(Func<DoublePixel, R> func) =>
+            new SequentialMatrix<R>(Size, Array.ConvertAll(backing, p => func(p)));
+        public override Matrix<DoublePixel> Clone() =>
+            new NonSequentialDoubleMatrix(Width, Height, backing.ToArray());
     }
 }

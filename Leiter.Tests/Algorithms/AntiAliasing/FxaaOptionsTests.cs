@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.AntiAliasing;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.AntiAliasing;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -164,15 +165,8 @@ public class FxaaOptionsTests : SizeTunableOptionsContractTestsBase<FxaaOptions>
         Assert.Equal(4, small.MaxSpanSearchSteps);
         Assert.True(large.MaxSpanSearchSteps > refOptions.MaxSpanSearchSteps);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            FxaaOptions.ForSize(size).Validate();
-        }
-
-        var darkImage = new SequentialMatrix<Rgb8>(64, 64);
-        darkImage.SetAll(new Rgb8(8, 8, 10));
-        var brightImage = new SequentialMatrix<Rgb8>(64, 64);
-        brightImage.SetAll(new Rgb8(210, 210, 210));
+        SequentialMatrix<Rgb8> darkImage = TestMatrices.Constant(64, 64, new Rgb8(8, 8, 10));
+        SequentialMatrix<Rgb8> brightImage = TestMatrices.Constant(64, 64, new Rgb8(210, 210, 210));
 
         FxaaOptions darkOpts = FxaaOptions.ForImage(darkImage);
         FxaaOptions brightOpts = FxaaOptions.ForImage(brightImage);
@@ -196,9 +190,27 @@ public class FxaaOptionsTests : SizeTunableOptionsContractTestsBase<FxaaOptions>
         var zeroAbsBaseline = new FxaaOptions(AbsoluteContrastThreshold: 0.0);
         Assert.Equal(0.0, FxaaOptions.ForImage(darkImage, zeroAbsBaseline).AbsoluteContrastThreshold, 6);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => FxaaOptions.ForSize(new Size(-1, 10)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => FxaaOptions.ForSize(new Size(10, 10), 0.0));
+        // Low MaxSpanSearchSteps (< 4) must remain unchanged at scale 1.0 instead of clamping upward to 4.
+        var lowStepBaseline = new FxaaOptions(MaxSpanSearchSteps: 2);
+        Assert.Equal(lowStepBaseline, FxaaOptions.ForSize(new Size(800, 800), lowStepBaseline));
+        Assert.Equal(lowStepBaseline, FxaaOptions.ForSize(new Size(1000, 640), lowStepBaseline));
+        Assert.Equal(2, FxaaOptions.ForSize(new Size(200, 200), lowStepBaseline).MaxSpanSearchSteps);
+        Assert.Equal(4, FxaaOptions.ForSize(new Size(1600, 1600), lowStepBaseline).MaxSpanSearchSteps);
+
+        var minStepBaseline = new FxaaOptions(MaxSpanSearchSteps: 1);
+        Assert.Equal(minStepBaseline, FxaaOptions.ForSize(new Size(800, 800), minStepBaseline));
+
+        // ForAnalysis must match ForImage and validate inputs.
+        ImageAnalysis darkAnalysis = ImageAnalysis.Analyze(darkImage);
+        Assert.Equal(darkOpts, FxaaOptions.ForAnalysis(darkAnalysis));
+        Assert.Equal(darkCustom, FxaaOptions.ForAnalysis(darkAnalysis, customBaseline));
+
         Assert.Throws<ArgumentNullException>(() => FxaaOptions.ForImage(null!));
         Assert.Throws<ArgumentNullException>(() => FxaaOptions.ForImage(darkImage, null!));
+        Assert.Throws<ArgumentNullException>("analysis", () => FxaaOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>("analysis", () => FxaaOptions.ForAnalysis(null!, customBaseline));
+        Assert.Throws<ArgumentNullException>("baseline", () => FxaaOptions.ForAnalysis(darkAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => FxaaOptions.ForAnalysis(darkAnalysis, 0.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FxaaOptions.ForAnalysis(darkAnalysis, new FxaaOptions(MaxSpanSearchSteps: 0)));
     }
 }

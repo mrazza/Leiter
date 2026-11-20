@@ -15,6 +15,8 @@ public sealed record OrientedEllipticalFilterOptions(
     double MinorRadius = 1.5,
     double SigmaScale = 0.5) : ISizeTunableOptions<OrientedEllipticalFilterOptions>
 {
+    private const double MinScaledRadius = 0.25;
+
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default radii apply unscaled.
     /// </summary>
@@ -51,18 +53,19 @@ public sealed record OrientedEllipticalFilterOptions(
         OrientedEllipticalFilterOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
-        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        ArgumentNullException.ThrowIfNull(baseline);
-        baseline.Validate();
+        OptionTuning.ValidateSizeTuning(size, baseline, referenceDimension);
+        var (s, _, totalPixels) = OptionTuning.ComputeScalesUnchecked(size, referenceDimension);
         if (totalPixels == 0)
         {
             return baseline;
         }
 
+        double minMajor = Math.Min(MinScaledRadius, baseline.MajorRadius);
+        double minMinor = Math.Min(MinScaledRadius, baseline.MinorRadius);
         return baseline with
         {
-            MajorRadius = Math.Max(0.25, baseline.MajorRadius * s),
-            MinorRadius = Math.Max(0.25, baseline.MinorRadius * s)
+            MajorRadius = OptionTuning.ScaleFinitePositive(baseline.MajorRadius * s, minMajor),
+            MinorRadius = OptionTuning.ScaleFinitePositive(baseline.MinorRadius * s, minMinor)
         };
     }
 

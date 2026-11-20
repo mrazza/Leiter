@@ -177,23 +177,8 @@ public sealed class PerlinNoise
         double persistence,
         bool absolute)
     {
-        double total = 0.0;
-        double frequency = 1.0;
-        double amplitude = 1.0;
-        double maxAmplitude = 0.0;
-
-        for (int i = 0; i < octaves; i++)
-        {
-            double sample = SampleUnchecked(x * frequency, y * frequency);
-            total += (absolute ? Math.Abs(sample) : sample) * amplitude;
-            maxAmplitude += amplitude;
-            frequency *= lacunarity;
-            amplitude *= persistence;
-        }
-
-        return absolute
-            ? Math.Clamp(total / maxAmplitude, 0.0, 1.0)
-            : Math.Clamp(total / maxAmplitude, -1.0, 1.0);
+        var (fractal, turbulence) = SampleFractalAndTurbulenceUnchecked(x, y, octaves, lacunarity, persistence);
+        return absolute ? turbulence : fractal;
     }
 
     /// <summary>
@@ -223,7 +208,7 @@ public sealed class PerlinNoise
     {
         Guard.ThrowIfNegative(size);
 
-        PerlinNoiseOptions opts = OptionsResolver.Resolve(options, PerlinNoiseOptions.Default);
+        PerlinNoiseOptions opts = OptionsResolver.Resolve(options);
 
         if (size.Width == 0 || size.Height == 0)
             return new SequentialMatrix<DoublePixel>(size);
@@ -257,7 +242,7 @@ public sealed class PerlinNoise
         Guard.ThrowIfNegative(size);
         Guard.ThrowIfNotFiniteNonNegative(amplitude);
 
-        PerlinNoiseOptions opts = OptionsResolver.Resolve(options, PerlinNoiseOptions.Default);
+        PerlinNoiseOptions opts = OptionsResolver.Resolve(options);
 
         if (size.Width == 0 || size.Height == 0)
             return new SequentialMatrix<Vector2D>(size);

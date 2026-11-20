@@ -1,8 +1,6 @@
 namespace Leiter.Algorithms.Internal;
 
 using System.Runtime.Intrinsics;
-using Leiter.Core;
-using Leiter.Pixels;
 
 /// <summary>
 /// Implements the 3rd-order Young–van Vliet recursive IIR Gaussian filter with
@@ -14,20 +12,32 @@ internal readonly struct YoungVanVlietFilter
     private readonly double feedbackWeight1;
     private readonly double feedbackWeight2;
     private readonly double feedbackWeight3;
-    private readonly IReadOnlyMatrix<DoublePixel> rightBoundaryMatrix;
+    private readonly double m00, m01, m02;
+    private readonly double m10, m11, m12;
+    private readonly double m20, m21, m22;
 
     private YoungVanVlietFilter(
         double inputGain,
         double feedbackWeight1,
         double feedbackWeight2,
         double feedbackWeight3,
-        IReadOnlyMatrix<DoublePixel> rightBoundaryMatrix)
+        double m00, double m01, double m02,
+        double m10, double m11, double m12,
+        double m20, double m21, double m22)
     {
         this.inputGain = inputGain;
         this.feedbackWeight1 = feedbackWeight1;
         this.feedbackWeight2 = feedbackWeight2;
         this.feedbackWeight3 = feedbackWeight3;
-        this.rightBoundaryMatrix = rightBoundaryMatrix;
+        this.m00 = m00;
+        this.m01 = m01;
+        this.m02 = m02;
+        this.m10 = m10;
+        this.m11 = m11;
+        this.m12 = m12;
+        this.m20 = m20;
+        this.m21 = m21;
+        this.m22 = m22;
     }
 
     /// <summary>
@@ -47,23 +57,33 @@ internal readonly struct YoungVanVlietFilter
 
         // Normalized feedback weights `b1/b0`, `b2/b0`, `b3/b0` from Young & van Vliet (1995) Eq. (11a).
         double normalization = 1.57825 + 2.44413 * poleScale + 1.4281 * poleScaleSq + 0.422205 * poleScaleCubed;
-        double feedbackWeight1 = (2.44413 * poleScale + 2.85619 * poleScaleSq + 1.26661 * poleScaleCubed) / normalization;
-        double feedbackWeight2 = -(1.4281 * poleScaleSq + 1.26661 * poleScaleCubed) / normalization;
-        double feedbackWeight3 = (0.422205 * poleScaleCubed) / normalization;
+        double a1 = (2.44413 * poleScale + 2.85619 * poleScaleSq + 1.26661 * poleScaleCubed) / normalization;
+        double a2 = -(1.4281 * poleScaleSq + 1.26661 * poleScaleCubed) / normalization;
+        double a3 = (0.422205 * poleScaleCubed) / normalization;
 
         // Unity DC-gain input weight `B = 1 - (a1 + a2 + a3)`.
-        double inputGain = 1.0 - (feedbackWeight1 + feedbackWeight2 + feedbackWeight3);
-        IReadOnlyMatrix<DoublePixel> rightBoundaryMatrix = CreateTriggsSdikaBoundaryMatrix(
-            feedbackWeight1,
-            feedbackWeight2,
-            feedbackWeight3);
+        double inputGain = 1.0 - (a1 + a2 + a3);
+
+        // Triggs & Sdika (2006) Eq. (14), scaled by inputGain = 1 - (a1 + a2 + a3).
+        double invDenom = 1.0 / ((1.0 + a1 - a2 + a3) * (1.0 + a2 + (a1 - a3) * a3));
+        double m00 = invDenom * (1.0 - a2 - a3 * (a1 + a3));
+        double m01 = invDenom * (a1 + a3) * (a2 + a1 * a3);
+        double m02 = invDenom * a3 * (a1 + a2 * a3);
+        double m10 = invDenom * (a1 + a2 * a3);
+        double m11 = invDenom * (1.0 - a2) * (a2 + a1 * a3);
+        double m12 = -invDenom * a3 * (a1 * a3 + a3 * a3 + a2 - 1.0);
+        double m20 = invDenom * (a1 * a3 + a2 + a1 * a1 - a2 * a2);
+        double m21 = invDenom * (a1 * a2 + a3 * a2 * a2 - a1 * a3 * a3 - a3 * a3 * a3 - a2 * a3 + a3);
+        double m22 = m02;
 
         return new YoungVanVlietFilter(
             inputGain,
-            feedbackWeight1,
-            feedbackWeight2,
-            feedbackWeight3,
-            rightBoundaryMatrix);
+            a1,
+            a2,
+            a3,
+            m00, m01, m02,
+            m10, m11, m12,
+            m20, m21, m22);
     }
 
     /// <summary>
@@ -139,56 +159,10 @@ internal readonly struct YoungVanVlietFilter
         Vector256<double> deviation1 = prevForward1 - rightBoundaryValue;
         Vector256<double> deviation2 = prevForward2 - rightBoundaryValue;
         Vector256<double> deviation3 = prevForward3 - rightBoundaryValue;
-        IReadOnlyMatrix<DoublePixel> matrix = rightBoundaryMatrix;
-
-        Vector256<double> ComputeRow(int row) =>
-            rightBoundaryValue
-            + matrix[0, row].Value * deviation1
-            + matrix[1, row].Value * deviation2
-            + matrix[2, row].Value * deviation3;
 
         return (
-            AtEdge: ComputeRow(0),
-            BeyondEdge1: ComputeRow(1),
-            BeyondEdge2: ComputeRow(2));
-    }
-
-    /// <summary>
-    /// Constructs the 3x3 Triggs–Sdika boundary matrix used to initialize the anti-causal backward filter pass.
-    /// </summary>
-    /// <param name="feedback1">The first-order feedback weight.</param>
-    /// <param name="feedback2">The second-order feedback weight.</param>
-    /// <param name="feedback3">The third-order feedback weight.</param>
-    /// <returns>A 3x3 sequential matrix containing the closed-form Triggs–Sdika polynomial boundary coefficients.</returns>
-    private static SequentialMatrix<DoublePixel> CreateTriggsSdikaBoundaryMatrix(
-        double feedback1,
-        double feedback2,
-        double feedback3)
-    {
-        // Triggs & Sdika (2006) Eq. (14), scaled by inputGain = 1 - (a1 + a2 + a3).
-        // Local aliases keep the closed-form boundary polynomials concise and directly verifiable.
-        double a1 = feedback1;
-        double a2 = feedback2;
-        double a3 = feedback3;
-
-        double invDenom = 1.0 / ((1.0 + a1 - a2 + a3) * (1.0 + a2 + (a1 - a3) * a3));
-        return new SequentialMatrix<DoublePixel>(new DoublePixel[,]
-        {
-            {
-                invDenom * (1.0 - a2 - a3 * (a1 + a3)),
-                invDenom * (a1 + a3) * (a2 + a1 * a3),
-                invDenom * a3 * (a1 + a2 * a3)
-            },
-            {
-                invDenom * (a1 + a2 * a3),
-                invDenom * (1.0 - a2) * (a2 + a1 * a3),
-                -invDenom * a3 * (a1 * a3 + a3 * a3 + a2 - 1.0)
-            },
-            {
-                invDenom * (a1 * a3 + a2 + a1 * a1 - a2 * a2),
-                invDenom * (a1 * a2 + a3 * a2 * a2 - a1 * a3 * a3 - a3 * a3 * a3 - a2 * a3 + a3),
-                invDenom * a3 * (a1 + a2 * a3)
-            }
-        });
+            AtEdge: rightBoundaryValue + (m00 * deviation1) + (m01 * deviation2) + (m02 * deviation3),
+            BeyondEdge1: rightBoundaryValue + (m10 * deviation1) + (m11 * deviation2) + (m12 * deviation3),
+            BeyondEdge2: rightBoundaryValue + (m20 * deviation1) + (m21 * deviation2) + (m22 * deviation3));
     }
 }

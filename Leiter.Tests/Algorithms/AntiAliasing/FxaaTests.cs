@@ -19,19 +19,13 @@ public class FxaaTests
     public void Apply_FlatAndLowContrastRegions_ShouldStayBitExact()
     {
         int size = 12;
-        var solidImage = new SequentialMatrix<Rgb8>(size, size);
-        var lowContrastImage = new SequentialMatrix<Rgb8>(size, size);
-
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                solidImage[x, y] = new Rgb8(128, 64, 32);
-                // Difference of 2 is well below default absolute threshold 0.0625 * 255 = ~16
-                byte delta = (byte)((x + y) % 2 == 0 ? 0 : 2);
-                lowContrastImage[x, y] = new Rgb8((byte)(100 + delta), 100, 100);
-            }
-        }
+        SequentialMatrix<Rgb8> solidImage = TestMatrices.Constant(size, size, new Rgb8(128, 64, 32));
+        // Difference of 2 is well below default absolute threshold 0.0625 * 255 = ~16
+        SequentialMatrix<Rgb8> lowContrastImage = TestMatrices.Checkerboard(
+            size,
+            size,
+            new Rgb8(100, 100, 100),
+            new Rgb8(102, 100, 100));
 
         Matrix<Rgb8> solidResult = Fxaa.Apply(solidImage);
         MatrixAssert.Equal(solidImage, solidResult);
@@ -48,15 +42,10 @@ public class FxaaTests
     public void Apply_DiagonalStepEdge_ShouldAntiAliasBoundaryAndPreserveFlatInteriors()
     {
         int size = 16;
-        var image = new SequentialMatrix<Rgb8>(size, size);
-
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                image[x, y] = (x + y < size) ? new Rgb8(0, 0, 0) : new Rgb8(255, 255, 255);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            size,
+            size,
+            (x, y) => (x + y < size) ? new Rgb8(0, 0, 0) : new Rgb8(255, 255, 255));
 
         Matrix<Rgb8> result = Fxaa.Apply(image);
 
@@ -192,14 +181,10 @@ public class FxaaTests
     public void Apply_ThinVerticalLine_ShouldDetectVerticalOrientationAndBlendHorizontally()
     {
         const int size = 16;
-        var image = new SequentialMatrix<Rgb8>(size, size);
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                image[x, y] = x == 8 ? new Rgb8(255, 255, 255) : new Rgb8(0, 0, 0);
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            size,
+            size,
+            (x, _) => x == 8 ? new Rgb8(255, 255, 255) : new Rgb8(0, 0, 0));
 
         Matrix<Rgb8> result = Fxaa.Apply(image);
 

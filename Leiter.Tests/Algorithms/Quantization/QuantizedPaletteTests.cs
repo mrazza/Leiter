@@ -7,6 +7,7 @@ using Leiter.Algorithms.Quantization;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -17,8 +18,7 @@ public class QuantizedPaletteTests
     [Fact]
     public void Constructor_PropertyAccessors_ShouldAssignAndReturnProperties()
     {
-        var image = new SequentialMatrix<Rgb8>(3, 3);
-        image.SetAll(new Rgb8(200, 100, 50));
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(3, 3, new Rgb8(200, 100, 50));
         var histogram = new BucketingHistogram<Rgb8>(static p => p);
         histogram.Increment(new Rgb8(200, 100, 50), 9);
         var metricLookup = new Dictionary<Rgb8, Lab32>
@@ -56,8 +56,7 @@ public class QuantizedPaletteTests
     [Fact]
     public void PaletteQuantizer_QuantizeAndTruncate_ProducesConsistentQuantizedPalette()
     {
-        var img = new SequentialMatrix<Rgb8>(2, 2);
-        img.SetAll(new Rgb8(120, 60, 30));
+        SequentialMatrix<Rgb8> img = TestMatrices.Constant(2, 2, new Rgb8(120, 60, 30));
 
         QuantizedPalette<Rgb8, Lab32> result = PaletteQuantizer.QuantizeAndTruncate(
             img,

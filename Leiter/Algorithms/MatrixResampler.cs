@@ -9,11 +9,31 @@ using Leiter.Pixels;
 /// </summary>
 public static class MatrixResampler
 {
-    private readonly record struct BilinearSampleAxis(
+    /// <summary>
+    /// Represents a 1D bilinear interpolation bracket along a matrix axis.
+    /// </summary>
+    internal readonly record struct BilinearSampleAxis(
         int LowerIndex,
         int UpperIndex,
         double LowerWeight,
         double UpperWeight);
+
+    private interface ICornerVectorProjector<T>
+        where T : struct
+    {
+        static abstract Vector256<double> Project(T pixel);
+    }
+
+    private readonly struct PixelVectorProjector<T> : ICornerVectorProjector<T>
+        where T : struct, IPixel<T>
+    {
+        public static Vector256<double> Project(T pixel) => pixel.ToDoubleVector();
+    }
+
+    private readonly struct RawRgb8VectorProjector : ICornerVectorProjector<Rgb8>
+    {
+        public static Vector256<double> Project(Rgb8 pixel) => Vector256.Create((double)pixel.R, pixel.G, pixel.B, 0.0);
+    }
 
     private readonly record struct BilinearFootprint(
         int X0,
@@ -75,6 +95,11 @@ public static class MatrixResampler
     /// <summary>
     /// Resizes a numeric pixel matrix to <paramref name="targetSize"/> using area-averaged box resampling.
     /// </summary>
+    /// <remarks>
+    /// Along any downscaled axis, each target pixel averages all source pixels covered by its mapped box span.
+    /// Along any upscaled axis, each target span covers a single source pixel, duplicating pixels via nearest-neighbor box spans
+    /// rather than interpolating smoothly between neighbors.
+    /// </remarks>
     /// <typeparam name="T">The numeric pixel type stored in the matrix.</typeparam>
     /// <param name="source">The source matrix to resample.</param>
     /// <param name="targetSize">The target matrix dimensions.</param>
@@ -229,34 +254,8 @@ public static class MatrixResampler
         EdgeHandling edgeHandling = EdgeHandling.Extend)
         where T : struct, IPixel<T>
     {
-        BilinearFootprint fp = ComputeBilinearFootprint(source.Width, source.Height, x, y, edgeHandling);
-
-        Vector256<double> sum = Vector256<double>.Zero;
-        double weightSum = 0.0;
-
-        if (predicate(fp.X0, fp.Y0, state))
-        {
-            sum += source[fp.X0, fp.Y0].ToDoubleVector() * fp.W00;
-            weightSum += fp.W00;
-        }
-
-        if (predicate(fp.X1, fp.Y0, state))
-        {
-            sum += source[fp.X1, fp.Y0].ToDoubleVector() * fp.W10;
-            weightSum += fp.W10;
-        }
-
-        if (predicate(fp.X0, fp.Y1, state))
-        {
-            sum += source[fp.X0, fp.Y1].ToDoubleVector() * fp.W01;
-            weightSum += fp.W01;
-        }
-
-        if (predicate(fp.X1, fp.Y1, state))
-        {
-            sum += source[fp.X1, fp.Y1].ToDoubleVector() * fp.W11;
-            weightSum += fp.W11;
-        }
+        var (sum, weightSum) = AccumulateBilinearCorners<T, TState, PixelVectorProjector<T>>(
+            source, x, y, state, predicate, edgeHandling);
 
         return weightSum > 0.0
             ? T.FromDoubleVector(sum / weightSum)
@@ -272,54 +271,56 @@ public static class MatrixResampler
         Rgb64 fallback = default,
         EdgeHandling edgeHandling = EdgeHandling.Extend)
     {
+        var (sum, weightSum) = AccumulateBilinearCorners<Rgb8, TState, RawRgb8VectorProjector>(
+            source, x, y, state, predicate, edgeHandling);
+
+        if (weightSum <= 0.0)
+            return fallback;
+
+        Vector256<double> normalized = sum / (weightSum * 255.0);
+        return new Rgb64(normalized[0], normalized[1], normalized[2]);
+    }
+
+    private static (Vector256<double> Sum, double WeightSum) AccumulateBilinearCorners<T, TState, TProjector>(
+        IReadOnlyMatrix<T> source,
+        double x,
+        double y,
+        TState state,
+        Func<int, int, TState, bool> predicate,
+        EdgeHandling edgeHandling)
+        where T : struct
+        where TProjector : ICornerVectorProjector<T>
+    {
         BilinearFootprint fp = ComputeBilinearFootprint(source.Width, source.Height, x, y, edgeHandling);
 
-        double sumR = 0.0;
-        double sumG = 0.0;
-        double sumB = 0.0;
+        Vector256<double> sum = Vector256<double>.Zero;
         double weightSum = 0.0;
 
         if (predicate(fp.X0, fp.Y0, state))
         {
-            Rgb8 p = source[fp.X0, fp.Y0];
-            sumR += p.R * fp.W00;
-            sumG += p.G * fp.W00;
-            sumB += p.B * fp.W00;
+            sum += TProjector.Project(source[fp.X0, fp.Y0]) * fp.W00;
             weightSum += fp.W00;
         }
 
         if (predicate(fp.X1, fp.Y0, state))
         {
-            Rgb8 p = source[fp.X1, fp.Y0];
-            sumR += p.R * fp.W10;
-            sumG += p.G * fp.W10;
-            sumB += p.B * fp.W10;
+            sum += TProjector.Project(source[fp.X1, fp.Y0]) * fp.W10;
             weightSum += fp.W10;
         }
 
         if (predicate(fp.X0, fp.Y1, state))
         {
-            Rgb8 p = source[fp.X0, fp.Y1];
-            sumR += p.R * fp.W01;
-            sumG += p.G * fp.W01;
-            sumB += p.B * fp.W01;
+            sum += TProjector.Project(source[fp.X0, fp.Y1]) * fp.W01;
             weightSum += fp.W01;
         }
 
         if (predicate(fp.X1, fp.Y1, state))
         {
-            Rgb8 p = source[fp.X1, fp.Y1];
-            sumR += p.R * fp.W11;
-            sumG += p.G * fp.W11;
-            sumB += p.B * fp.W11;
+            sum += TProjector.Project(source[fp.X1, fp.Y1]) * fp.W11;
             weightSum += fp.W11;
         }
 
-        if (weightSum <= 0.0)
-            return fallback;
-
-        double denom = weightSum * 255.0;
-        return new Rgb64(sumR / denom, sumG / denom, sumB / denom);
+        return (sum, weightSum);
     }
 
     /// <summary>
@@ -522,7 +523,10 @@ public static class MatrixResampler
         return ComputeBilinearSampleAxis(sourceCoord, sourceLength);
     }
 
-    private static BilinearSampleAxis ComputeBilinearSampleAxis(
+    /// <summary>
+    /// Computes the lower/upper sample indices and normalized bilinear weights along a single axis.
+    /// </summary>
+    internal static BilinearSampleAxis ComputeBilinearSampleAxis(
         double sourceCoord,
         int sourceLength,
         EdgeHandling edgeHandling = EdgeHandling.Extend)
@@ -640,7 +644,7 @@ public static class MatrixResampler
     }
 
     private static int ComputeNearestSourceIndex(int targetCoord, int sourceLength, int targetLength) =>
-        Math.Clamp((int)((long)targetCoord * sourceLength / targetLength), 0, sourceLength - 1);
+        EdgeHandling.Extend.ResolveIndex((int)((long)targetCoord * sourceLength / targetLength), sourceLength);
 
     private static void CopyNearest<T>(IReadOnlyMatrix<T> source, Matrix<T> destination)
         where T : struct
