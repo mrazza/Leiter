@@ -22,8 +22,7 @@ public class WetInWetTests
     public void ApplyDetailed_NullArguments_ShouldThrowArgumentNullException()
     {
         var image = new SequentialMatrix<Rgb8>(4, 4);
-        var labels = new SequentialMatrix<int>(4, 4);
-        var graph = RegionGraph.FromLabels(labels);
+        RegionGraph graph = TestMatrices.SingleRegionGraph(4, 4);
         DisjointSet<int> disjointSet = CreateVerticalSplitDisjointSet(4, 4);
         var dist = new SequentialMatrix<DoublePixel>(4, 4);
 
@@ -48,8 +47,7 @@ public class WetInWetTests
     public void Apply_NullArguments_ShouldThrowArgumentNullException()
     {
         var image = new SequentialMatrix<Rgb8>(4, 4);
-        var labels = new SequentialMatrix<int>(4, 4);
-        var graph = RegionGraph.FromLabels(labels);
+        RegionGraph graph = TestMatrices.SingleRegionGraph(4, 4);
         DisjointSet<int> disjointSet = CreateVerticalSplitDisjointSet(4, 4);
         var dist = new SequentialMatrix<DoublePixel>(4, 4);
 
@@ -73,8 +71,8 @@ public class WetInWetTests
     public void ApplyDetailed_MismatchedDimensions_ShouldThrowArgumentException()
     {
         var image = new SequentialMatrix<Rgb8>(6, 6);
-        var graphMismatched = RegionGraph.FromLabels(new SequentialMatrix<int>(4, 6));
-        var graphMatching = RegionGraph.FromLabels(new SequentialMatrix<int>(6, 6));
+        RegionGraph graphMismatched = TestMatrices.SingleRegionGraph(4, 6);
+        RegionGraph graphMatching = TestMatrices.SingleRegionGraph(6, 6);
         DisjointSet<int> disjointMismatched = CreateVerticalSplitDisjointSet(4, 6);
         DisjointSet<int> disjointMatching = CreateVerticalSplitDisjointSet(6, 6);
         var distMismatched = new SequentialMatrix<DoublePixel>(6, 4);
@@ -99,7 +97,7 @@ public class WetInWetTests
     public void ApplyDetailed_InvalidOptions_ShouldThrowArgumentOutOfRangeException()
     {
         var image = new SequentialMatrix<Rgb8>(4, 4);
-        var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(4, 4));
+        RegionGraph graph = TestMatrices.SingleRegionGraph(4, 4);
         var dist = new SequentialMatrix<DoublePixel>(4, 4);
         var invalidOptions = new WetInWetOptions(EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: -1.0));
 
@@ -158,8 +156,7 @@ public class WetInWetTests
         int width = 4;
         int height = 4;
         var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-        var graph = RegionGraph.FromLabels(labels);
+        RegionGraph graph = TestMatrices.SingleRegionGraph(width, height);
         var dist = new SequentialMatrix<DoublePixel>(width, height);
 
         WetInWetResult result = WetInWet.ApplyDetailed(image, graph, dist);

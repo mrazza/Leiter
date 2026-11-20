@@ -3,6 +3,7 @@ namespace Leiter.Tests.Core;
 using System;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -13,79 +14,61 @@ public class MaskExtensionsTests
     [Fact]
     public void BooleanMaskOperations_ShouldComputeExpectedResults()
     {
-        var left = new MaskMatrix(2, 2);
-        left[0, 0] = true;
-        left[1, 0] = true;
-
-        var right = new MaskMatrix(2, 2);
-        right[1, 0] = true;
-        right[0, 1] = true;
+        var left = new MaskMatrix(new[,] { { true, true }, { false, false } });
+        var right = new MaskMatrix(new[,] { { false, true }, { true, false } });
 
         Assert.Equal(2, left.CountTrue());
         Assert.Equal(2, left.CountFalse());
 
-        MaskMatrix inverted = left.Invert();
-        Assert.False(inverted[0, 0]);
-        Assert.False(inverted[1, 0]);
-        Assert.True(inverted[0, 1]);
-        Assert.True(inverted[1, 1]);
-
-        MaskMatrix intersected = left.And(right);
-        Assert.False(intersected[0, 0]);
-        Assert.True(intersected[1, 0]);
-        Assert.False(intersected[0, 1]);
-        Assert.False(intersected[1, 1]);
-
-        MaskMatrix unioned = left.Or(right);
-        Assert.True(unioned[0, 0]);
-        Assert.True(unioned[1, 0]);
-        Assert.True(unioned[0, 1]);
-        Assert.False(unioned[1, 1]);
-
-        MaskMatrix subtracted = left.Except(right);
-        Assert.True(subtracted[0, 0]);
-        Assert.False(subtracted[1, 0]);
-        Assert.False(subtracted[0, 1]);
-        Assert.False(subtracted[1, 1]);
+        MatrixAssert.Equal(new MaskMatrix(new[,] { { false, false }, { true, true } }), left.Invert());
+        MatrixAssert.Equal(new MaskMatrix(new[,] { { false, true }, { false, false } }), left.And(right));
+        MatrixAssert.Equal(new MaskMatrix(new[,] { { true, true }, { true, false } }), left.Or(right));
+        MatrixAssert.Equal(new MaskMatrix(new[,] { { true, false }, { false, false } }), left.Except(right));
     }
 
     [Fact]
     public void ApplyMask_ShouldRetainMaskedPixelsAndReplaceUnmasked()
     {
-        var image = new SequentialMatrix<Rgb8>(2, 2);
-        image[0, 0] = new Rgb8(10, 20, 30);
-        image[1, 0] = new Rgb8(40, 50, 60);
-        image[0, 1] = new Rgb8(70, 80, 90);
-        image[1, 1] = new Rgb8(100, 110, 120);
+        var image = new SequentialMatrix<Rgb8>(new Rgb8[,]
+        {
+            { new(10, 20, 30), new(40, 50, 60) },
+            { new(70, 80, 90), new(100, 110, 120) }
+        });
 
-        var mask = new MaskMatrix(2, 2);
-        mask[0, 0] = true;
-        mask[1, 1] = true;
+        var mask = new MaskMatrix(new[,]
+        {
+            { true, false },
+            { false, true }
+        });
 
         Matrix<Rgb8> defaultMasked = image.ApplyMask(mask);
-        Assert.Equal(new Rgb8(10, 20, 30), defaultMasked[0, 0]);
-        Assert.Equal(Rgb8.Zero, defaultMasked[1, 0]);
-        Assert.Equal(Rgb8.Zero, defaultMasked[0, 1]);
-        Assert.Equal(new Rgb8(100, 110, 120), defaultMasked[1, 1]);
+        MatrixAssert.Equal(
+            new SequentialMatrix<Rgb8>(new Rgb8[,]
+            {
+                { new(10, 20, 30), Rgb8.Zero },
+                { Rgb8.Zero, new(100, 110, 120) }
+            }),
+            defaultMasked);
 
         var fallback = new Rgb8(255, 255, 255);
         Matrix<Rgb8> customMasked = image.ApplyMask(mask, fallback);
-        Assert.Equal(fallback, customMasked[1, 0]);
-        Assert.Equal(new Rgb8(10, 20, 30), customMasked[0, 0]);
+        MatrixAssert.Equal(
+            new SequentialMatrix<Rgb8>(new Rgb8[,]
+            {
+                { new(10, 20, 30), fallback },
+                { fallback, new(100, 110, 120) }
+            }),
+            customMasked);
     }
 
     [Fact]
     public void ToMaskMatrix_FromReadOnlyMatrix_ShouldMaterializeMaskMatrix()
     {
-        var original = new MaskMatrix(2, 2);
-        original[0, 0] = true;
-        original[1, 1] = true;
+        var original = new MaskMatrix(new[,] { { true, false }, { false, true } });
 
         var view = new MatrixView<bool>(original, 0, 0, 2, 1, EdgeHandling.Extend);
         MaskMatrix viaExtension = view.ToMaskMatrix();
-        Assert.Equal(new Size(2, 1), viaExtension.Size);
-        Assert.True(viaExtension[0, 0]);
-        Assert.False(viaExtension[1, 0]);
+        MatrixAssert.Equal(new MaskMatrix(new[,] { { true, false } }), viaExtension);
 
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ToMaskMatrix());
     }
@@ -93,17 +76,14 @@ public class MaskExtensionsTests
     [Fact]
     public void ToMaskMatrix_WithPredicate_ShouldProjectInParallelAndValidateArgs()
     {
-        var scores = new SequentialMatrix<DoublePixel>(2, 2);
-        scores[0, 0] = 0.2;
-        scores[1, 0] = 0.8;
-        scores[0, 1] = 0.5;
-        scores[1, 1] = 0.9;
+        var scores = new SequentialMatrix<DoublePixel>(new DoublePixel[,]
+        {
+            { 0.2, 0.8 },
+            { 0.5, 0.9 }
+        });
 
         MaskMatrix thresholded = scores.ToMaskMatrix(static p => p.Value >= 0.8);
-        Assert.False(thresholded[0, 0]);
-        Assert.True(thresholded[1, 0]);
-        Assert.False(thresholded[0, 1]);
-        Assert.True(thresholded[1, 1]);
+        MatrixAssert.Equal(new MaskMatrix(new[,] { { false, true }, { false, true } }), thresholded);
 
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).ToMaskMatrix(static _ => true));
         Assert.Throws<ArgumentNullException>(() => scores.ToMaskMatrix(null!));
@@ -148,10 +128,10 @@ public class MaskExtensionsTests
 
         Assert.Equal(leftMat.CountTrue(), leftView.CountTrue());
         Assert.Equal(leftMat.CountFalse(), leftView.CountFalse());
-        Assert.True(leftMat.Invert().ContentEquals(leftView.Invert()));
-        Assert.True(leftMat.And(rightMat).ContentEquals(leftView.And(rightView)));
-        Assert.True(leftMat.Or(rightMat).ContentEquals(leftView.Or(rightMat)));
-        Assert.True(leftMat.Except(rightMat).ContentEquals(leftMat.Except(rightView)));
+        MatrixAssert.Equal(leftMat.Invert(), leftView.Invert());
+        MatrixAssert.Equal(leftMat.And(rightMat), leftView.And(rightView));
+        MatrixAssert.Equal(leftMat.Or(rightMat), leftView.Or(rightMat));
+        MatrixAssert.Equal(leftMat.Except(rightMat), leftMat.Except(rightView));
 
         var image = new SequentialMatrix<Rgb8>(3, 3);
         image[1, 1] = new Rgb8(10, 20, 30);
@@ -163,6 +143,6 @@ public class MaskExtensionsTests
         var fallback = new Rgb8(5, 5, 5);
         Matrix<Rgb8> expected = imageView.ToSequentialMatrix().ApplyMask(leftMat, fallback);
         Matrix<Rgb8> actual = imageView.ApplyMask(leftView, fallback);
-        Assert.True(expected.ContentEquals(actual));
+        MatrixAssert.Equal(expected, actual);
     }
 }

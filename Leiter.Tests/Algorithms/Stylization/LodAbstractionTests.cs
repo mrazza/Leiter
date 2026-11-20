@@ -122,10 +122,9 @@ public class LodAbstractionTests
     {
         int width = 15;
         int height = 15;
-        var labels = new SequentialMatrix<int>(width, height);
         var salientMask = new MaskMatrix(width, height);
 
-        var regionGraph = RegionGraph.FromLabels(labels);
+        RegionGraph regionGraph = TestMatrices.SingleRegionGraph(width, height);
 
         // Test near-salient (d = 0.0 -> kernel size 4, radius 2)
         var imageNear = new SequentialMatrix<Rgb8>(width, height);
@@ -184,8 +183,7 @@ public class LodAbstractionTests
         var image = new SequentialMatrix<Rgb8>(width, height);
         image[2, 2] = new Rgb8(255, 255, 255);
 
-        var labels = new SequentialMatrix<int>(width, height);
-        var regionGraph = RegionGraph.FromLabels(labels);
+        RegionGraph regionGraph = TestMatrices.SingleRegionGraph(width, height);
         var salientMask = new MaskMatrix(width, height);
         SequentialMatrix<DoublePixel> distanceField = TestMatrices.Constant(width, height, new DoublePixel(double.NaN));
 
@@ -246,11 +244,10 @@ public class LodAbstractionTests
             4,
             4,
             (x, y) => new Rgb8((byte)(x * 40), (byte)(y * 40), (byte)((x + y) * 20)));
-        var labels = new SequentialMatrix<int>(4, 4);
         SequentialMatrix<bool> salientMask = TestMatrices.Constant(4, 4, true);
         var distanceField = new SequentialMatrix<DoublePixel>(4, 4);
 
-        var regionGraph = RegionGraph.FromLabels(labels);
+        RegionGraph regionGraph = TestMatrices.SingleRegionGraph(4, 4);
         var options = new LodAbstractionOptions(SalientKernelSize: 1);
         Matrix<Rgb8> result = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask, options);
 
@@ -268,8 +265,7 @@ public class LodAbstractionTests
         var image = new SequentialMatrix<Rgb8>(width, height);
         image[2, 0] = new Rgb8(255, 255, 255);
 
-        var labels = new SequentialMatrix<int>(width, height);
-        var regionGraph = RegionGraph.FromLabels(labels);
+        RegionGraph regionGraph = TestMatrices.SingleRegionGraph(width, height);
         SequentialMatrix<bool> salientMask = TestMatrices.Constant(width, height, true);
         var distanceField = new SequentialMatrix<DoublePixel>(width, height);
 
@@ -311,8 +307,7 @@ public class LodAbstractionTests
     public void Apply_NullArguments_ShouldThrowArgumentNullException()
     {
         var image = new SequentialMatrix<Rgb8>(4, 4);
-        var labels = new SequentialMatrix<int>(4, 4);
-        var regionGraph = RegionGraph.FromLabels(labels);
+        RegionGraph regionGraph = TestMatrices.SingleRegionGraph(4, 4);
         var distanceField = new SequentialMatrix<DoublePixel>(4, 4);
         var dummy = new SequentialMatrix<int>(4, 4);
         var segmentation = new DisjointSet<int>(dummy, i => i);
@@ -332,10 +327,10 @@ public class LodAbstractionTests
     public void Apply_MismatchedDimensions_ShouldThrowArgumentException()
     {
         var image = new SequentialMatrix<Rgb8>(4, 4);
-        var regionGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(4, 4));
+        RegionGraph regionGraph = TestMatrices.SingleRegionGraph(4, 4);
         var distanceField = new SequentialMatrix<DoublePixel>(4, 4);
 
-        var badGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(5, 5));
+        RegionGraph badGraph = TestMatrices.SingleRegionGraph(5, 5);
         var badDistance = new SequentialMatrix<DoublePixel>(5, 5);
         var badMask = new MaskMatrix(5, 5);
         var badSegmentation = new DisjointSet<int>(new SequentialMatrix<int>(5, 5), i => i);
@@ -353,7 +348,7 @@ public class LodAbstractionTests
     public void Apply_InvalidOptions_ShouldThrowArgumentOutOfRangeException()
     {
         var image = new SequentialMatrix<Rgb8>(4, 4);
-        var regionGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(4, 4));
+        RegionGraph regionGraph = TestMatrices.SingleRegionGraph(4, 4);
         var distanceField = new SequentialMatrix<DoublePixel>(4, 4);
 
         var invalidOptions = new LodAbstractionOptions(SalientKernelSize: 0);
@@ -392,8 +387,7 @@ public class LodAbstractionTests
     {
         const int width = 15;
         const int height = 15;
-        var labels = new SequentialMatrix<int>(width, height);
-        var regionGraph = RegionGraph.FromLabels(labels);
+        RegionGraph regionGraph = TestMatrices.SingleRegionGraph(width, height);
         var salientMask = new MaskMatrix(width, height);
 
         var image = new SequentialMatrix<Rgb8>(width, height);
