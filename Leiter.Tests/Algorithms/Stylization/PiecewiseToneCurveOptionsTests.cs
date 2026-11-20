@@ -15,7 +15,7 @@ using static Leiter.Tests.TestUtils.TestConstants;
 /// <summary>
 /// Provides unit tests for <see cref="PiecewiseToneCurveOptions"/>.
 /// </summary>
-public class PiecewiseToneCurveOptionsTests : SizeTunableOptionsContractTestsBase<PiecewiseToneCurveOptions>
+public class PiecewiseToneCurveOptionsTests : AlgorithmOptionsContractTestsBase<PiecewiseToneCurveOptions>
 {
     /// <inheritdoc/>
     protected override PiecewiseToneCurveOptions CreateValidCustomOptions() =>
@@ -129,19 +129,29 @@ public class PiecewiseToneCurveOptionsTests : SizeTunableOptionsContractTestsBas
     }
 
     /// <summary>
-    /// Verifies that <see cref="PiecewiseToneCurveOptions.ForSize"/> preserves defaults and <see cref="PiecewiseToneCurveOptions.ForImage"/> adapts knee breakpoints safely.
+    /// Verifies that <see cref="PiecewiseToneCurveOptions"/> implements <see cref="IProfileTunableOptions{TSelf}"/> without <see cref="ISizeTunableOptions{TSelf}"/>,
+    /// and that <see cref="PiecewiseToneCurveOptions.ForImage"/>, <see cref="PiecewiseToneCurveOptions.ForAnalysis"/>, and <see cref="PiecewiseToneCurveOptions.ForProfile"/> adapt knees safely.
     /// </summary>
     [Fact]
-    public void ForSize_And_ForImage_ShouldPreserveBoundsAndAdaptKnees()
+    public void ForImage_ForAnalysis_And_ForProfile_ShouldPreserveBoundsAndAdaptKnees()
     {
-        PiecewiseToneCurveOptions refOpts = PiecewiseToneCurveOptions.ForSize(new Size(3200, 2400));
-        Assert.Equal(new PiecewiseToneCurveOptions(), refOpts);
+        Assert.True(typeof(IProfileTunableOptions<PiecewiseToneCurveOptions>).IsAssignableFrom(typeof(PiecewiseToneCurveOptions)));
+        Assert.DoesNotContain(
+            typeof(PiecewiseToneCurveOptions).GetInterfaces(),
+            static iface => iface.IsGenericType && iface.GetGenericTypeDefinition() == typeof(ISizeTunableOptions<>));
+
+        var empty = new SequentialMatrix<Rgb8>(0, 0);
+        Assert.Equal(PiecewiseToneCurveOptions.Default, PiecewiseToneCurveOptions.ForImage(empty));
+        var customBaseline = CreateValidCustomOptions();
+        Assert.Equal(customBaseline, PiecewiseToneCurveOptions.ForImage(empty, customBaseline));
 
         SequentialMatrix<Rgb8> flat = TestMatrices.Constant(64, 64, new Rgb8(128, 128, 128));
         SequentialMatrix<Rgb8> highContrast = TestMatrices.VerticalSplit(64, 64, new Rgb8(5, 5, 5), new Rgb8(250, 250, 250));
 
         PiecewiseToneCurveOptions flatOpts = PiecewiseToneCurveOptions.ForImage(flat);
         PiecewiseToneCurveOptions hcOpts = PiecewiseToneCurveOptions.ForImage(highContrast);
+        Assert.True(flatOpts.ShadowKnee < PiecewiseToneCurveOptions.Default.ShadowKnee);
+        Assert.True(flatOpts.HighlightKnee > PiecewiseToneCurveOptions.Default.HighlightKnee);
         Assert.True(hcOpts.ShadowKnee > flatOpts.ShadowKnee);
         Assert.True(hcOpts.HighlightKnee < flatOpts.HighlightKnee);
         Assert.InRange(hcOpts.ShadowKnee, 0.12, 0.22);
@@ -164,6 +174,10 @@ public class PiecewiseToneCurveOptionsTests : SizeTunableOptionsContractTestsBas
         edgeFlat.Validate();
         Assert.True(edgeFlat.ShadowKnee > 0.0 && edgeFlat.ShadowKnee < edgeFlat.HighlightKnee && edgeFlat.HighlightKnee < 1.0);
 
+        ImageAnalysis emptyAnalysis = ImageAnalysis.Analyze(empty);
+        Assert.Equal(PiecewiseToneCurveOptions.Default, PiecewiseToneCurveOptions.ForAnalysis(emptyAnalysis));
+        Assert.Equal(customBaseline, PiecewiseToneCurveOptions.ForAnalysis(emptyAnalysis, customBaseline));
+
         ImageAnalysis hcAnalysis = ImageAnalysis.Analyze(highContrast);
         Assert.Equal(hcOpts, PiecewiseToneCurveOptions.ForAnalysis(hcAnalysis));
         Assert.Equal(tightHc, PiecewiseToneCurveOptions.ForAnalysis(hcAnalysis, tightBaseline));
@@ -176,10 +190,27 @@ public class PiecewiseToneCurveOptionsTests : SizeTunableOptionsContractTestsBas
             ColorSpreadFactor: 1.0,
             ClutterFactor: 1.0);
         Assert.Equal(new PiecewiseToneCurveOptions(), PiecewiseToneCurveOptions.ForProfile(refProfile, PiecewiseToneCurveOptions.Default, OptionTuning.DefaultReferenceDimension));
+        Assert.Equal(customBaseline, PiecewiseToneCurveOptions.ForProfile(ImageTuningProfile.CreateEmpty(new Size(800, 800)), customBaseline, OptionTuning.DefaultReferenceDimension));
 
-        Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForImage(null!));
-        Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForImage(flat, null!));
-        Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForAnalysis(null!));
-        Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForAnalysis(hcAnalysis, null!));
+        // Resolution-invariant: changing non-empty size on ForProfile preserves exact tuned values.
+        ImageTuningProfile highContrastProfile = new(
+            new Size(3200, 2400),
+            IsEmpty: false,
+            new LabColorStatistics(50.0, 0.0, 0.0, OptionTuning.ReferenceStdDevL * 1.5, 5.0, 5.0),
+            LabDispersion: OptionTuning.ReferenceLabDispersion,
+            ColorSpreadFactor: 1.0,
+            ClutterFactor: 1.0);
+        Assert.Equal(
+            PiecewiseToneCurveOptions.ForProfile(highContrastProfile, customBaseline, 800.0),
+            PiecewiseToneCurveOptions.ForProfile(highContrastProfile with { ImageSize = new Size(100, 100) }, customBaseline, 800.0));
+
+        Assert.Throws<ArgumentNullException>("image", () => PiecewiseToneCurveOptions.ForImage(null!));
+        Assert.Throws<ArgumentNullException>("baseline", () => PiecewiseToneCurveOptions.ForImage(flat, null!));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => PiecewiseToneCurveOptions.ForImage(flat, 0.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PiecewiseToneCurveOptions.ForImage(flat, CreateInvalidOptions()));
+        Assert.Throws<ArgumentNullException>("analysis", () => PiecewiseToneCurveOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>("baseline", () => PiecewiseToneCurveOptions.ForAnalysis(hcAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => PiecewiseToneCurveOptions.ForAnalysis(hcAnalysis, -1.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PiecewiseToneCurveOptions.ForAnalysis(hcAnalysis, CreateInvalidOptions()));
     }
 }

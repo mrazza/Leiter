@@ -5,9 +5,11 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Leiter.Algorithms;
+using Leiter.Algorithms.AntiAliasing;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Noise;
+using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Stylization;
 using Leiter.Algorithms.Stylization.Watercolor;
@@ -50,6 +52,23 @@ public class OptionTuningTests
 
         double exactMeanDispersion = WatercolorPalettes.Defaults.Average(p => ImageTuningProfile.ComputeDispersion(p.Statistics));
         Assert.Equal(OptionTuning.ReferenceLabDispersion, exactMeanDispersion, 2);
+    }
+
+    [Fact]
+    public void PaletteRecompute_ShouldMatchReferenceLabDispersionAndStdDevLWithinTolerance()
+    {
+        Assert.NotEmpty(WatercolorPalettes.Defaults);
+        Assert.All(WatercolorPalettes.Defaults, static palette => Assert.Equal(Illuminant.E, palette.Illuminant));
+
+        double meanDispersion = WatercolorPalettes.Defaults.Average(
+            static palette => ImageTuningProfile.ComputeDispersion(palette.Statistics));
+        double meanStdDevL = WatercolorPalettes.Defaults.Average(
+            static palette => palette.Statistics.StdDevL);
+
+        Assert.Equal(25.14, OptionTuning.ReferenceLabDispersion, 12);
+        Assert.Equal(17.696, OptionTuning.ReferenceStdDevL, 12);
+        Assert.InRange(Math.Abs(meanDispersion - OptionTuning.ReferenceLabDispersion), 0.0, 0.01);
+        Assert.InRange(Math.Abs(meanStdDevL - OptionTuning.ReferenceStdDevL), 0.0, 0.01);
     }
 
     [Fact]
@@ -306,6 +325,239 @@ public class OptionTuningTests
         Assert.Throws<ArgumentNullException>("analysis", () => OptionTuning.TuneForSizeAnalysis<PerlinNoiseOptions>(null!, 800.0));
         Assert.Throws<ArgumentNullException>("baseline", () => OptionTuning.TuneForSizeAnalysis<PerlinNoiseOptions>(rgbAnalysis, null!, 800.0));
         Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => OptionTuning.TuneForSizeAnalysis<PerlinNoiseOptions>(rgbAnalysis, -5.0));
+    }
+
+    [Fact]
+    public void ForProfile_AllProfileTunableOptions_ShouldFollowAdaptationCurves()
+    {
+        const double refDim = OptionTuning.DefaultReferenceDimension;
+        var refSize = new Size(800, 800);
+
+        ImageTuningProfile zeroSizeProfile = ImageTuningProfile.CreateEmpty(new Size(0, 0));
+        ImageTuningProfile emptyContentProfile = ImageTuningProfile.CreateEmpty(refSize);
+        ImageTuningProfile neutralProfile = CreateSyntheticProfile(refSize);
+
+        // Zero-area empty profiles preserve baselines verbatim across all 9 IProfileTunableOptions.
+        Assert.Equal(FxaaOptions.Default, InvokeInterfaceForProfile(in zeroSizeProfile, FxaaOptions.Default, refDim));
+        Assert.Equal(EgbiOptions.Default, InvokeInterfaceForProfile(in zeroSizeProfile, EgbiOptions.Default, refDim));
+        Assert.Equal(GrabCutOptions.Default, InvokeInterfaceForProfile(in zeroSizeProfile, GrabCutOptions.Default, refDim));
+        Assert.Equal(MeanShiftOptions.Default, InvokeInterfaceForProfile(in zeroSizeProfile, MeanShiftOptions.Default, refDim));
+        Assert.Equal(SaliencyCutOptions.Default, InvokeInterfaceForProfile(in zeroSizeProfile, SaliencyCutOptions.Default, refDim));
+        Assert.Equal(LodAbstractionOptions.Default, InvokeInterfaceForProfile(in zeroSizeProfile, LodAbstractionOptions.Default, refDim));
+        Assert.Equal(PiecewiseToneCurveOptions.Default, InvokeInterfaceForProfile(in zeroSizeProfile, PiecewiseToneCurveOptions.Default, refDim));
+        Assert.Equal(EdgeDarkeningOptions.Default, InvokeInterfaceForProfile(in zeroSizeProfile, EdgeDarkeningOptions.Default, refDim));
+        Assert.Equal(WetInWetOptions.Default, InvokeInterfaceForProfile(in zeroSizeProfile, WetInWetOptions.Default, refDim));
+
+        // Non-zero-sized IsEmpty profiles (and neutral reference profiles) apply size scaling without content adaptation.
+        WetInWetOptions expectedWetNeutral = WetInWetOptions.Default with { EllipticalFilter = WetInWetOptions.DefaultEllipticalFilter };
+        SaliencyCutOptions expectedSaliencyCutNeutral = SaliencyCutOptions.Default with { GrabCut = SaliencyCutOptions.DefaultGrabCut, Mask = SaliencyCutOptions.DefaultMask };
+        Assert.Equal(FxaaOptions.Default, InvokeInterfaceForProfile(in emptyContentProfile, FxaaOptions.Default, refDim));
+        Assert.Equal(EgbiOptions.Default, InvokeInterfaceForProfile(in emptyContentProfile, EgbiOptions.Default, refDim));
+        Assert.Equal(GrabCutOptions.Default, InvokeInterfaceForProfile(in emptyContentProfile, GrabCutOptions.Default, refDim));
+        Assert.Equal(MeanShiftOptions.Default, InvokeInterfaceForProfile(in emptyContentProfile, MeanShiftOptions.Default, refDim));
+        Assert.Equal(SaliencyCutOptions.Default, InvokeInterfaceForProfile(in emptyContentProfile, SaliencyCutOptions.Default, refDim));
+        Assert.Equal(LodAbstractionOptions.Default, InvokeInterfaceForProfile(in emptyContentProfile, LodAbstractionOptions.Default, refDim));
+        Assert.Equal(PiecewiseToneCurveOptions.Default, InvokeInterfaceForProfile(in emptyContentProfile, PiecewiseToneCurveOptions.Default, refDim));
+        Assert.Equal(EdgeDarkeningOptions.Default, InvokeInterfaceForProfile(in emptyContentProfile, EdgeDarkeningOptions.Default, refDim));
+        Assert.Equal(expectedWetNeutral, InvokeInterfaceForProfile(in emptyContentProfile, WetInWetOptions.Default, refDim));
+
+        Assert.Equal(FxaaOptions.Default, InvokeInterfaceForProfile(in neutralProfile, FxaaOptions.Default, refDim));
+        Assert.Equal(EgbiOptions.Default, InvokeInterfaceForProfile(in neutralProfile, EgbiOptions.Default, refDim));
+        Assert.Equal(GrabCutOptions.Default, InvokeInterfaceForProfile(in neutralProfile, GrabCutOptions.Default, refDim));
+        Assert.Equal(MeanShiftOptions.Default, InvokeInterfaceForProfile(in neutralProfile, MeanShiftOptions.Default, refDim));
+        Assert.Equal(expectedSaliencyCutNeutral, InvokeInterfaceForProfile(in neutralProfile, SaliencyCutOptions.Default, refDim));
+        Assert.Equal(LodAbstractionOptions.Default, InvokeInterfaceForProfile(in neutralProfile, LodAbstractionOptions.Default, refDim));
+        Assert.Equal(PiecewiseToneCurveOptions.Default, InvokeInterfaceForProfile(in neutralProfile, PiecewiseToneCurveOptions.Default, refDim));
+        Assert.Equal(EdgeDarkeningOptions.Default, InvokeInterfaceForProfile(in neutralProfile, EdgeDarkeningOptions.Default, refDim));
+        Assert.Equal(expectedWetNeutral, InvokeInterfaceForProfile(in neutralProfile, WetInWetOptions.Default, refDim));
+
+        // 1. FxaaOptions: low-key luminance lowers AbsoluteContrastThreshold linearly toward 0.0312; >= 35 is unchanged.
+        Assert.Equal(0.0625, FxaaOptions.ForProfile(CreateSyntheticProfile(meanL: 35.0), FxaaOptions.Default, refDim).AbsoluteContrastThreshold, 12);
+        Assert.Equal(0.04685, FxaaOptions.ForProfile(CreateSyntheticProfile(meanL: 17.5), FxaaOptions.Default, refDim).AbsoluteContrastThreshold, 12);
+        Assert.Equal(0.0312, FxaaOptions.ForProfile(CreateSyntheticProfile(meanL: 0.0), FxaaOptions.Default, refDim).AbsoluteContrastThreshold, 12);
+        Assert.Equal(0.01, FxaaOptions.ForProfile(CreateSyntheticProfile(meanL: 0.0), new FxaaOptions(AbsoluteContrastThreshold: 0.01), refDim).AbsoluteContrastThreshold, 12);
+
+        // 2. EgbiOptions: KFactor scales with ColorSpreadFactor; MinRegionSize scales with ClutterFactor (0 stays 0).
+        EgbiOptions egbiLow = EgbiOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 0.75, clutterFactor: 0.75), EgbiOptions.Default, refDim);
+        EgbiOptions egbiHigh = EgbiOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 1.35, clutterFactor: 1.50), EgbiOptions.Default, refDim);
+        Assert.Equal(75.0, egbiLow.KFactor, 12);
+        Assert.Equal(135.0, egbiHigh.KFactor, 12);
+        Assert.Equal(1.0, egbiLow.Epsilon, 12);
+        Assert.Equal(1.0, egbiHigh.Epsilon, 12);
+        Assert.Equal(75, egbiLow.MinRegionSize);
+        Assert.Equal(150, egbiHigh.MinRegionSize);
+        Assert.Equal(0, EgbiOptions.ForProfile(CreateSyntheticProfile(clutterFactor: 1.50), new EgbiOptions(MinRegionSize: 0), refDim).MinRegionSize);
+
+        // 3. GrabCutOptions: LabDispersion adjusts MixtureComponentCount (-1 / 0 / +1, >= 1); clamped ColorSpreadFactor scales SmoothnessWeight inversely by sqrt.
+        GrabCutOptions gcLow = GrabCutOptions.ForProfile(CreateSyntheticProfile(labDispersion: 10.0, colorSpreadFactor: 0.50), GrabCutOptions.Default, refDim);
+        GrabCutOptions gcLowAtClamp = GrabCutOptions.ForProfile(CreateSyntheticProfile(labDispersion: 10.0, colorSpreadFactor: 0.80), GrabCutOptions.Default, refDim);
+        GrabCutOptions gcHigh = GrabCutOptions.ForProfile(CreateSyntheticProfile(labDispersion: 35.0, colorSpreadFactor: 2.00), GrabCutOptions.Default, refDim);
+        GrabCutOptions gcHighAtClamp = GrabCutOptions.ForProfile(CreateSyntheticProfile(labDispersion: 35.0, colorSpreadFactor: 1.25), GrabCutOptions.Default, refDim);
+        Assert.Equal(4, gcLow.MixtureComponentCount);
+        Assert.Equal(6, gcHigh.MixtureComponentCount);
+        Assert.Equal(gcLowAtClamp, gcLow);
+        Assert.Equal(gcHighAtClamp, gcHigh);
+        Assert.Equal(50.0 / Math.Sqrt(0.80), gcLow.SmoothnessWeight, 12);
+        Assert.Equal(50.0 / Math.Sqrt(1.25), gcHigh.SmoothnessWeight, 12);
+        Assert.Equal(1, GrabCutOptions.ForProfile(CreateSyntheticProfile(labDispersion: 5.0), new GrabCutOptions(MixtureComponentCount: 1), refDim).MixtureComponentCount);
+
+        // 4. MeanShiftOptions: RangeRadius scales with ColorSpreadFactor; MinRegionSize scales with ClutterFactor (0 stays 0).
+        MeanShiftOptions msLow = MeanShiftOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 0.75, clutterFactor: 0.75), MeanShiftOptions.Default, refDim);
+        MeanShiftOptions msHigh = MeanShiftOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 1.35, clutterFactor: 1.50), MeanShiftOptions.Default, refDim);
+        Assert.Equal(5.5 * 0.75, msLow.RangeRadius, 12);
+        Assert.Equal(5.5 * 1.35, msHigh.RangeRadius, 12);
+        Assert.Equal(38, msLow.MinRegionSize);
+        Assert.Equal(75, msHigh.MinRegionSize);
+        Assert.Equal(0, MeanShiftOptions.ForProfile(CreateSyntheticProfile(clutterFactor: 1.50), new MeanShiftOptions(MinRegionSize: 0), refDim).MinRegionSize);
+
+        // 5. SaliencyCutOptions: delegates nested GrabCut adaptation via GrabCutOptions.ForProfile and scales TrimapBandRadius.
+        ImageTuningProfile largeHighSpread = CreateSyntheticProfile(size: new Size(1600, 1600), labDispersion: 35.0, colorSpreadFactor: 1.25);
+        SaliencyCutOptions scTuned = SaliencyCutOptions.ForProfile(in largeHighSpread, SaliencyCutOptions.Default, refDim);
+        Assert.Equal(20, scTuned.TrimapBandRadius);
+        Assert.Equal(SaliencyCutOptions.DefaultMask, scTuned.Mask);
+        Assert.Equal(GrabCutOptions.ForProfile(in largeHighSpread, SaliencyCutOptions.DefaultGrabCut, refDim), scTuned.GrabCut);
+
+        // 6. LodAbstractionOptions: CrossSegmentColorScale scales with ColorSpreadFactor and clamps within [0.15, 0.50] (respecting custom baselines).
+        Assert.Equal(0.225, LodAbstractionOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 0.75), LodAbstractionOptions.Default, refDim).CrossSegmentColorScale, 12);
+        Assert.Equal(0.405, LodAbstractionOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 1.35), LodAbstractionOptions.Default, refDim).CrossSegmentColorScale, 12);
+        Assert.Equal(0.15, LodAbstractionOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 0.20), LodAbstractionOptions.Default, refDim).CrossSegmentColorScale, 12);
+        Assert.Equal(0.50, LodAbstractionOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 3.00), LodAbstractionOptions.Default, refDim).CrossSegmentColorScale, 12);
+        Assert.Equal(0.05, LodAbstractionOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 0.20), new LodAbstractionOptions(CrossSegmentColorScale: 0.05), refDim).CrossSegmentColorScale, 12);
+
+        // 7. PiecewiseToneCurveOptions: StdDevL widens knees for flat contrast and narrows for high contrast; resolution-invariant.
+        PiecewiseToneCurveOptions toneLow = PiecewiseToneCurveOptions.ForProfile(CreateSyntheticProfile(stdDevL: 0.0), PiecewiseToneCurveOptions.Default, refDim);
+        PiecewiseToneCurveOptions toneHigh = PiecewiseToneCurveOptions.ForProfile(CreateSyntheticProfile(stdDevL: OptionTuning.ReferenceStdDevL * 2.5), PiecewiseToneCurveOptions.Default, refDim);
+        Assert.Equal(0.12, toneLow.ShadowKnee, 12);
+        Assert.Equal(0.88, toneLow.HighlightKnee, 12);
+        Assert.Equal(0.21, toneHigh.ShadowKnee, 12);
+        Assert.Equal(0.79, toneHigh.HighlightKnee, 12);
+        Assert.Equal(toneHigh, PiecewiseToneCurveOptions.ForProfile(CreateSyntheticProfile(size: new Size(200, 200), stdDevL: OptionTuning.ReferenceStdDevL * 2.5), PiecewiseToneCurveOptions.Default, refDim));
+
+        // 8. EdgeDarkeningOptions: Intensity divides by clamped ColorSpreadFactor in [0.85, 1.20].
+        EdgeDarkeningOptions edgeLow = EdgeDarkeningOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 0.50), EdgeDarkeningOptions.Default, refDim);
+        EdgeDarkeningOptions edgeHigh = EdgeDarkeningOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 2.00), EdgeDarkeningOptions.Default, refDim);
+        Assert.Equal(1.8 / 0.85, edgeLow.Intensity, 12);
+        Assert.Equal(1.8 / 1.20, edgeHigh.Intensity, 12);
+        Assert.Equal(edgeLow, EdgeDarkeningOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 0.85), EdgeDarkeningOptions.Default, refDim));
+        Assert.Equal(edgeHigh, EdgeDarkeningOptions.ForProfile(CreateSyntheticProfile(colorSpreadFactor: 1.20), EdgeDarkeningOptions.Default, refDim));
+
+        // 9. WetInWetOptions: ColorGradientThreshold scales with ClutterFactor and clamps within [0.005, 0.5].
+        Assert.Equal(0.075, WetInWetOptions.ForProfile(CreateSyntheticProfile(clutterFactor: 0.75), WetInWetOptions.Default, refDim).ColorGradientThreshold, 12);
+        Assert.Equal(0.15, WetInWetOptions.ForProfile(CreateSyntheticProfile(clutterFactor: 1.50), WetInWetOptions.Default, refDim).ColorGradientThreshold, 12);
+        Assert.Equal(0.005, WetInWetOptions.ForProfile(CreateSyntheticProfile(clutterFactor: 0.01), WetInWetOptions.Default, refDim).ColorGradientThreshold, 12);
+        Assert.Equal(0.5, WetInWetOptions.ForProfile(CreateSyntheticProfile(clutterFactor: 10.0), WetInWetOptions.Default, refDim).ColorGradientThreshold, 12);
+    }
+
+    [Fact]
+    public void ImageAnalysis_RgbAndLabE_And_ForAnalysis_ShouldMatchAcrossAllOptions()
+    {
+        const double refDim = OptionTuning.DefaultReferenceDimension;
+        var emptyRgb = new SequentialMatrix<Rgb8>(0, 12);
+        Matrix<Lab32> emptyLabE = emptyRgb.ToLab32(RgbColorSpace.SRgb, Illuminant.E);
+        ImageAnalysis emptyRgbAnalysis = ImageAnalysis.Analyze(emptyRgb);
+        ImageAnalysis emptyLabAnalysis = ImageAnalysis.Analyze(emptyLabE, Illuminant.E);
+        Assert.Equal(emptyRgbAnalysis.Profile, emptyLabAnalysis.Profile);
+
+        var medium = CreatePatternRgbImage(128, 96);
+        Matrix<Lab32> mediumLabE = medium.ToLab32(RgbColorSpace.SRgb, Illuminant.E);
+        ImageAnalysis rgbAnalysis = ImageAnalysis.Analyze(medium);
+        ImageAnalysis labAnalysisE = ImageAnalysis.Analyze(mediumLabE, Illuminant.E);
+
+        Assert.Equal(rgbAnalysis.Size, labAnalysisE.Size);
+        Assert.Equal(rgbAnalysis.Profile.LabStats.MeanL, labAnalysisE.Profile.LabStats.MeanL, 3);
+        Assert.Equal(rgbAnalysis.Profile.LabStats.StdDevL, labAnalysisE.Profile.LabStats.StdDevL, 3);
+        Assert.Equal(rgbAnalysis.Profile.LabDispersion, labAnalysisE.Profile.LabDispersion, 3);
+        Assert.Equal(rgbAnalysis.Profile.ColorSpreadFactor, labAnalysisE.Profile.ColorSpreadFactor, 4);
+        Assert.Equal(rgbAnalysis.Profile.ClutterFactor, labAnalysisE.Profile.ClutterFactor, 6);
+
+        // Every concrete ForAnalysis(ImageAnalysis) overload must match ForImage(Rgb8) for both empty and populated images.
+        AssertAllProfileAnalysisParity(emptyRgb, emptyRgbAnalysis, refDim);
+        AssertAllProfileAnalysisParity(medium, rgbAnalysis, refDim);
+
+        // Larger-than-canonical (> 256) thumbnail path also matches ForImage <-> ForAnalysis exactly.
+        var large = CreatePatternRgbImage(320, 260);
+        ImageAnalysis largeAnalysis = ImageAnalysis.Analyze(large);
+        AssertAllProfileAnalysisParity(large, largeAnalysis, refDim);
+
+        // TuneForLabImage(Lab32, ..., Illuminant.E) must match TuneForAnalysis(ImageAnalysis.Analyze(labE, Illuminant.E)).
+        AssertTuneForLabMatchesAnalysis<FxaaOptions>(mediumLabE, labAnalysisE, refDim);
+        AssertTuneForLabMatchesAnalysis<EgbiOptions>(mediumLabE, labAnalysisE, refDim);
+        AssertTuneForLabMatchesAnalysis<GrabCutOptions>(mediumLabE, labAnalysisE, refDim);
+        AssertTuneForLabMatchesAnalysis<MeanShiftOptions>(mediumLabE, labAnalysisE, refDim);
+        AssertTuneForLabMatchesAnalysis<SaliencyCutOptions>(mediumLabE, labAnalysisE, refDim);
+        AssertTuneForLabMatchesAnalysis<LodAbstractionOptions>(mediumLabE, labAnalysisE, refDim);
+        AssertTuneForLabMatchesAnalysis<PiecewiseToneCurveOptions>(mediumLabE, labAnalysisE, refDim);
+        AssertTuneForLabMatchesAnalysis<EdgeDarkeningOptions>(mediumLabE, labAnalysisE, refDim);
+        AssertTuneForLabMatchesAnalysis<WetInWetOptions>(mediumLabE, labAnalysisE, refDim);
+
+        // Size-only and pipeline options also match ForSize/ForImage <-> ForAnalysis.
+        Assert.Equal(OrientedEllipticalFilterOptions.ForSize(medium.Size), OptionTuning.TuneForSizeAnalysis<OrientedEllipticalFilterOptions>(rgbAnalysis, refDim));
+        Assert.Equal(PerlinNoiseOptions.ForSize(medium.Size), OptionTuning.TuneForSizeAnalysis<PerlinNoiseOptions>(rgbAnalysis, refDim));
+        Assert.Equal(HandTremorOptions.ForImage(medium), HandTremorOptions.ForAnalysis(rgbAnalysis));
+        Assert.Equal(TurbulenceFlowOptions.ForImage(medium), TurbulenceFlowOptions.ForAnalysis(rgbAnalysis));
+        Assert.Equal(PaperGranulationOptions.ForImage(medium), PaperGranulationOptions.ForAnalysis(rgbAnalysis));
+        Assert.Equal(WatercolorOptions.ForImage(medium), WatercolorOptions.ForAnalysis(rgbAnalysis));
+        Assert.Equal(WatercolorOptions.ForImage(large), WatercolorOptions.ForAnalysis(largeAnalysis));
+    }
+
+    private static ImageTuningProfile CreateSyntheticProfile(
+        Size? size = null,
+        double meanL = 50.0,
+        double stdDevL = OptionTuning.ReferenceStdDevL,
+        double labDispersion = OptionTuning.ReferenceLabDispersion,
+        double colorSpreadFactor = 1.0,
+        double clutterFactor = 1.0) =>
+        new(
+            size ?? new Size(800, 800),
+            IsEmpty: false,
+            new LabColorStatistics(meanL, 0.0, 0.0, stdDevL, 5.0, 5.0),
+            labDispersion,
+            colorSpreadFactor,
+            clutterFactor);
+
+    private static T InvokeInterfaceForProfile<T>(in ImageTuningProfile profile, T baseline, double referenceDimension)
+        where T : class, IProfileTunableOptions<T> =>
+        T.ForProfile(in profile, baseline, referenceDimension);
+
+    private static void AssertAllProfileAnalysisParity(IReadOnlyMatrix<Rgb8> image, ImageAnalysis analysis, double refDim)
+    {
+        Assert.Equal(FxaaOptions.ForImage(image, refDim), FxaaOptions.ForAnalysis(analysis, refDim));
+        Assert.Equal(EgbiOptions.ForImage(image, refDim), EgbiOptions.ForAnalysis(analysis, refDim));
+        Assert.Equal(GrabCutOptions.ForImage(image, refDim), GrabCutOptions.ForAnalysis(analysis, refDim));
+        Assert.Equal(MeanShiftOptions.ForImage(image, refDim), MeanShiftOptions.ForAnalysis(analysis, refDim));
+        Assert.Equal(SaliencyCutOptions.ForImage(image, refDim), SaliencyCutOptions.ForAnalysis(analysis, refDim));
+        Assert.Equal(LodAbstractionOptions.ForImage(image, refDim), LodAbstractionOptions.ForAnalysis(analysis, refDim));
+        Assert.Equal(PiecewiseToneCurveOptions.ForImage(image, refDim), PiecewiseToneCurveOptions.ForAnalysis(analysis, refDim));
+        Assert.Equal(EdgeDarkeningOptions.ForImage(image, refDim), EdgeDarkeningOptions.ForAnalysis(analysis, refDim));
+        Assert.Equal(WetInWetOptions.ForImage(image, refDim), WetInWetOptions.ForAnalysis(analysis, refDim));
+
+        var customFxaa = new FxaaOptions(RelativeContrastThreshold: 0.2, AbsoluteContrastThreshold: 0.08, SubpixelBlendStrength: 0.5, MaxSpanSearchSteps: 12);
+        var customEgbi = new EgbiOptions(KFactor: 120.0, Epsilon: 2.0, MinRegionSize: 80);
+        var customGrabCut = new GrabCutOptions(Iterations: 3, MixtureComponentCount: 4, SmoothnessWeight: 35.0);
+        var customMeanShift = new MeanShiftOptions(SpatialRadius: 10, RangeRadius: 7.0, MinRegionSize: 60);
+        var customSaliencyCut = new SaliencyCutOptions(MaxOuterIterations: 3, TrimapBandRadius: 8, GrabCut: customGrabCut);
+        var customLod = new LodAbstractionOptions(SalientKernelSize: 3, MinNonSalientKernelSize: 3, MaxNonSalientKernelSize: 7, CrossSegmentColorScale: 0.25);
+        var customTone = new PiecewiseToneCurveOptions(MinTone: 0.02, MaxTone: 0.98, ShadowKnee: 0.2, HighlightKnee: 0.8);
+        var customEdge = new EdgeDarkeningOptions(Intensity: 2.2, BlurSigma: 1.1);
+        var customWet = new WetInWetOptions(ColorGradientThreshold: 0.12, ScatterRadius: 6);
+
+        Assert.Equal(FxaaOptions.ForImage(image, customFxaa, refDim), FxaaOptions.ForAnalysis(analysis, customFxaa, refDim));
+        Assert.Equal(EgbiOptions.ForImage(image, customEgbi, refDim), EgbiOptions.ForAnalysis(analysis, customEgbi, refDim));
+        Assert.Equal(GrabCutOptions.ForImage(image, customGrabCut, refDim), GrabCutOptions.ForAnalysis(analysis, customGrabCut, refDim));
+        Assert.Equal(MeanShiftOptions.ForImage(image, customMeanShift, refDim), MeanShiftOptions.ForAnalysis(analysis, customMeanShift, refDim));
+        Assert.Equal(SaliencyCutOptions.ForImage(image, customSaliencyCut, refDim), SaliencyCutOptions.ForAnalysis(analysis, customSaliencyCut, refDim));
+        Assert.Equal(LodAbstractionOptions.ForImage(image, customLod, refDim), LodAbstractionOptions.ForAnalysis(analysis, customLod, refDim));
+        Assert.Equal(PiecewiseToneCurveOptions.ForImage(image, customTone, refDim), PiecewiseToneCurveOptions.ForAnalysis(analysis, customTone, refDim));
+        Assert.Equal(EdgeDarkeningOptions.ForImage(image, customEdge, refDim), EdgeDarkeningOptions.ForAnalysis(analysis, customEdge, refDim));
+        Assert.Equal(WetInWetOptions.ForImage(image, customWet, refDim), WetInWetOptions.ForAnalysis(analysis, customWet, refDim));
+    }
+
+    private static void AssertTuneForLabMatchesAnalysis<TOptions>(IReadOnlyMatrix<Lab32> labImage, ImageAnalysis labAnalysis, double refDim)
+        where TOptions : class, IProfileTunableOptions<TOptions>
+    {
+        Assert.Equal(
+            OptionTuning.TuneForLabImage<TOptions>(labImage, refDim, Illuminant.E),
+            OptionTuning.TuneForAnalysis<TOptions>(labAnalysis, refDim));
     }
 
     private static SequentialMatrix<Rgb8> CreatePatternRgbImage(int width, int height)

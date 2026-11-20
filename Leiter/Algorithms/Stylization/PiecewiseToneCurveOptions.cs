@@ -26,42 +26,9 @@ public sealed record PiecewiseToneCurveOptions(
     private const double MaxInwardKneeFraction = 0.25;
 
     /// <summary>
-    /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) accepted for uniform <c>ForSize</c> signatures.
-    /// </summary>
-    public const double DefaultReferenceDimension = OptionTuning.DefaultReferenceDimension;
-
-    /// <summary>
     /// Gets the default <see cref="PiecewiseToneCurveOptions"/> instance.
     /// </summary>
     public static PiecewiseToneCurveOptions Default { get; } = new();
-
-    /// <summary>
-    /// Creates <see cref="PiecewiseToneCurveOptions"/> for <paramref name="size"/>. Tone mapping is resolution-invariant and returns validated default parameters.
-    /// </summary>
-    /// <param name="size">The target image dimensions.</param>
-    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="PiecewiseToneCurveOptions"/> instance.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
-    public static PiecewiseToneCurveOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
-        ForSize(size, Default, referenceDimension);
-
-    /// <summary>
-    /// Validates and returns <paramref name="baseline"/> for <paramref name="size"/>. Tone mapping is resolution-invariant.
-    /// </summary>
-    /// <param name="size">The target image dimensions.</param>
-    /// <param name="baseline">The baseline tone curve configuration calibrated at <paramref name="referenceDimension"/>.</param>
-    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>The validated <paramref name="baseline"/> instance.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
-    public static PiecewiseToneCurveOptions ForSize(
-        Size size,
-        PiecewiseToneCurveOptions baseline,
-        double referenceDimension = DefaultReferenceDimension)
-    {
-        OptionTuning.ValidateSizeTuning(size, baseline, referenceDimension);
-        return baseline;
-    }
 
     /// <summary>
     /// Creates <see cref="PiecewiseToneCurveOptions"/> with knee breakpoints gently adapted to the lightness dispersion of <paramref name="image"/>.
@@ -75,7 +42,7 @@ public sealed record PiecewiseToneCurveOptions(
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static PiecewiseToneCurveOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
-        double referenceDimension = DefaultReferenceDimension) =>
+        double referenceDimension = OptionTuning.DefaultReferenceDimension) =>
         OptionTuning.TuneForImage<PiecewiseToneCurveOptions>(image, referenceDimension);
 
     /// <summary>
@@ -92,7 +59,7 @@ public sealed record PiecewiseToneCurveOptions(
     public static PiecewiseToneCurveOptions ForImage(
         IReadOnlyMatrix<Rgb8> image,
         PiecewiseToneCurveOptions baseline,
-        double referenceDimension = DefaultReferenceDimension) =>
+        double referenceDimension = OptionTuning.DefaultReferenceDimension) =>
         OptionTuning.TuneForImage(image, baseline, referenceDimension);
 
     /// <summary>
@@ -107,7 +74,7 @@ public sealed record PiecewiseToneCurveOptions(
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static PiecewiseToneCurveOptions ForAnalysis(
         ImageAnalysis analysis,
-        double referenceDimension = DefaultReferenceDimension) =>
+        double referenceDimension = OptionTuning.DefaultReferenceDimension) =>
         OptionTuning.TuneForAnalysis<PiecewiseToneCurveOptions>(analysis, referenceDimension);
 
     /// <summary>
@@ -124,7 +91,7 @@ public sealed record PiecewiseToneCurveOptions(
     public static PiecewiseToneCurveOptions ForAnalysis(
         ImageAnalysis analysis,
         PiecewiseToneCurveOptions baseline,
-        double referenceDimension = DefaultReferenceDimension) =>
+        double referenceDimension = OptionTuning.DefaultReferenceDimension) =>
         OptionTuning.TuneForAnalysis(analysis, baseline, referenceDimension);
 
     static PiecewiseToneCurveOptions IProfileTunableOptions<PiecewiseToneCurveOptions>.ForProfile(

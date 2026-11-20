@@ -3,10 +3,10 @@ namespace Leiter.Algorithms.Internal;
 using Leiter.Core;
 
 /// <summary>
-/// Defines an internal contract for size-tunable algorithm options that also adapt to canonical image statistics.
+/// Defines an internal contract for algorithm options that adapt to canonical image statistics and dimensions.
 /// </summary>
 /// <typeparam name="TSelf">The concrete options type implementing this interface.</typeparam>
-internal interface IProfileTunableOptions<TSelf> : ISizeTunableOptions<TSelf>
+internal interface IProfileTunableOptions<TSelf> : IAlgorithmOptions<TSelf>
     where TSelf : class, IProfileTunableOptions<TSelf>
 {
     /// <summary>

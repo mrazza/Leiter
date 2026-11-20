@@ -119,14 +119,4 @@ public static class ScalarMath
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static double ClampUnitOrDefault(double value, double fallback = 0.0) =>
         double.IsFinite(value) ? Math.Clamp(value, 0.0, 1.0) : fallback;
-
-    /// <summary>
-    /// Packs two 32-bit integer identifiers into a canonical order-independent 64-bit pair key.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static ulong PackUnorderedPairKey(int first, int second)
-    {
-        (int low, int high) = first < second ? (first, second) : (second, first);
-        return ((ulong)(uint)low << 32) | (uint)high;
-    }
 }

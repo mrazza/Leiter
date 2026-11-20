@@ -234,7 +234,7 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
         Assert.Equal(HandTremorOptions.ForSize(size), opts.HandTremor);
         Assert.Equal(EdgeDarkeningOptions.ForSize(size), opts.EdgeDarkening);
         Assert.Equal(TurbulenceFlowOptions.ForSize(size), opts.TurbulenceFlow);
-        Assert.Equal(PiecewiseToneCurveOptions.ForSize(size), opts.ToneCurve);
+        Assert.Equal(PiecewiseToneCurveOptions.Default, opts.ToneCurve);
         Assert.Equal(PaperGranulationOptions.ForSize(size), opts.PaperGranulation);
         Assert.Equal(FxaaOptions.ForSize(size), opts.Fxaa);
         Assert.True(opts.EnableFxaa);

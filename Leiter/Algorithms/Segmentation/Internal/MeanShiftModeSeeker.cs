@@ -2,6 +2,7 @@ namespace Leiter.Algorithms.Segmentation.Internal;
 
 using System;
 using System.Threading.Tasks;
+using Leiter.Algorithms;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -47,8 +48,6 @@ internal sealed class MeanShiftModeSeeker
         this.maxIterations = maxIterations;
         this.lattice = lattice;
     }
-
-    private readonly record struct CoarseAxisBracket(int Lower, int Upper, double Fraction, bool IsOnCoarseGrid);
 
     internal readonly record struct CoarseCornerSample(Lab32 SourceColor, MeanShiftMode Mode, double BilinearWeight);
 
@@ -144,8 +143,10 @@ internal sealed class MeanShiftModeSeeker
         }
         else
         {
-            seeker.SeekCoarseGrid(coarseStride, modes);
-            seeker.RefineFinePixels(coarseStride, modes);
+            int[] coarseXs = BuildCoarseAxisCoordinates(size.Width, coarseStride);
+            int[] coarseYs = BuildCoarseAxisCoordinates(size.Height, coarseStride);
+            seeker.SeekCoarseGrid(coarseXs, coarseYs, modes);
+            seeker.RefineFinePixels(coarseStride, coarseXs, coarseYs, modes);
         }
 
         return (modes, sourcePixels);
@@ -236,11 +237,8 @@ internal sealed class MeanShiftModeSeeker
         });
     }
 
-    private void SeekCoarseGrid(int coarseStride, MeanShiftMode[] modes)
+    private void SeekCoarseGrid(int[] coarseXs, int[] coarseYs, MeanShiftMode[] modes)
     {
-        int[] coarseXs = BuildCoarseAxisCoordinates(size.Width, coarseStride);
-        int[] coarseYs = BuildCoarseAxisCoordinates(size.Height, coarseStride);
-
         Parallel.For(0, coarseYs.Length, yi =>
         {
             int coarseY = coarseYs[yi];
@@ -253,7 +251,7 @@ internal sealed class MeanShiftModeSeeker
         });
     }
 
-    private void RefineFinePixels(int coarseStride, MeanShiftMode[] modes)
+    private void RefineFinePixels(int coarseStride, int[] coarseXs, int[] coarseYs, MeanShiftMode[] modes)
     {
         int width = size.Width;
         int height = size.Height;
@@ -261,23 +259,33 @@ internal sealed class MeanShiftModeSeeker
         double sourceColorToleranceSquared = (SourceInterpolationColorToleranceFactor * SourceInterpolationColorToleranceFactor) * rangeRadiusSquared;
         double cornerMatchToleranceSquared = (CornerMatchColorToleranceFactor * CornerMatchColorToleranceFactor) * rangeRadiusSquared;
 
+        var xAxes = new MatrixResampler.BilinearSampleAxis[width];
+        for (int x = 0; x < width; x++)
+        {
+            xAxes[x] = ComputeCoarseBilinearAxis(x, coarseXs, coarseStride, width);
+        }
+
         Parallel.For(0, height, y =>
         {
-            CoarseAxisBracket yBracket = ComputeCoarseBracket(y, height, coarseStride);
+            MatrixResampler.BilinearSampleAxis yAxis = ComputeCoarseBilinearAxis(y, coarseYs, coarseStride, height);
+            bool isOnCoarseY = y == yAxis.LowerIndex;
             int rowStart = size.IndexOf(0, y);
 
             for (int x = 0; x < width; x++)
             {
-                CoarseAxisBracket xBracket = ComputeCoarseBracket(x, width, coarseStride);
-                if (xBracket.IsOnCoarseGrid && yBracket.IsOnCoarseGrid)
+                MatrixResampler.BilinearSampleAxis xAxis = xAxes[x];
+                bool isOnCoarseX = x == xAxis.LowerIndex;
+                if (isOnCoarseX && isOnCoarseY)
                     continue;
 
                 modes[rowStart + x] = TryInterpolatePixelMode(
                     modes,
                     x,
                     y,
-                    in xBracket,
-                    in yBracket,
+                    in xAxis,
+                    in yAxis,
+                    isOnCoarseX,
+                    isOnCoarseY,
                     modeColorToleranceSquared,
                     sourceColorToleranceSquared,
                     cornerMatchToleranceSquared,
@@ -288,42 +296,61 @@ internal sealed class MeanShiftModeSeeker
         });
     }
 
-    private static CoarseAxisBracket ComputeCoarseBracket(int coordinate, int axisLength, int coarseStride)
+    private static MatrixResampler.BilinearSampleAxis ComputeCoarseBilinearAxis(
+        int coordinate,
+        int[] coarseCoordinates,
+        int coarseStride,
+        int axisLength)
     {
         int lastIndex = axisLength - 1;
-        if (coordinate == lastIndex)
-            return new CoarseAxisBracket(coordinate, coordinate, 0.0, IsOnCoarseGrid: true);
+        double coarseCoord;
+        if (coordinate >= lastIndex)
+        {
+            coarseCoord = coarseCoordinates.Length - 1;
+        }
+        else
+        {
+            int lowerGridIndex = coordinate / coarseStride;
+            int lower = coarseCoordinates[lowerGridIndex];
+            int upper = coarseCoordinates[lowerGridIndex + 1];
+            coarseCoord = lowerGridIndex + ((double)(coordinate - lower) / (upper - lower));
+        }
 
-        int lower = (coordinate / coarseStride) * coarseStride;
-        int upper = Math.Min(lower + coarseStride, lastIndex);
-        double fraction = upper > lower ? (double)(coordinate - lower) / (upper - lower) : 0.0;
-        return new CoarseAxisBracket(lower, upper, fraction, IsOnCoarseGrid: coordinate == lower);
+        MatrixResampler.BilinearSampleAxis gridAxis = MatrixResampler.ComputeBilinearSampleAxis(
+            coarseCoord,
+            coarseCoordinates.Length);
+
+        return new MatrixResampler.BilinearSampleAxis(
+            coarseCoordinates[gridAxis.LowerIndex],
+            coarseCoordinates[gridAxis.UpperIndex],
+            gridAxis.LowerWeight,
+            gridAxis.UpperWeight);
     }
 
     private bool TryInterpolatePixelMode(
         MeanShiftMode[] modes,
         int x,
         int y,
-        in CoarseAxisBracket xBracket,
-        in CoarseAxisBracket yBracket,
+        in MatrixResampler.BilinearSampleAxis xAxis,
+        in MatrixResampler.BilinearSampleAxis yAxis,
+        bool isOnCoarseX,
+        bool isOnCoarseY,
         double modeColorToleranceSquared,
         double sourceColorToleranceSquared,
         double cornerMatchToleranceSquared,
         out MeanShiftMode interpolatedMode)
     {
-        int upperRowOffset = size.IndexOf(0, yBracket.Lower);
-        int lowerRowOffset = size.IndexOf(0, yBracket.Upper);
-        int index00 = upperRowOffset + xBracket.Lower;
-        int index10 = upperRowOffset + xBracket.Upper;
-        int index01 = lowerRowOffset + xBracket.Lower;
-        int index11 = lowerRowOffset + xBracket.Upper;
+        int upperRowOffset = size.IndexOf(0, yAxis.LowerIndex);
+        int lowerRowOffset = size.IndexOf(0, yAxis.UpperIndex);
+        int index00 = upperRowOffset + xAxis.LowerIndex;
+        int index10 = upperRowOffset + xAxis.UpperIndex;
+        int index01 = lowerRowOffset + xAxis.LowerIndex;
+        int index11 = lowerRowOffset + xAxis.UpperIndex;
 
-        double oneMinusTx = 1.0 - xBracket.Fraction;
-        double oneMinusTy = 1.0 - yBracket.Fraction;
-        var corner00 = new CoarseCornerSample(sourcePixels[index00], modes[index00], oneMinusTx * oneMinusTy);
-        var corner10 = new CoarseCornerSample(sourcePixels[index10], modes[index10], xBracket.Fraction * oneMinusTy);
-        var corner01 = new CoarseCornerSample(sourcePixels[index01], modes[index01], oneMinusTx * yBracket.Fraction);
-        var corner11 = new CoarseCornerSample(sourcePixels[index11], modes[index11], xBracket.Fraction * yBracket.Fraction);
+        var corner00 = new CoarseCornerSample(sourcePixels[index00], modes[index00], xAxis.LowerWeight * yAxis.LowerWeight);
+        var corner10 = new CoarseCornerSample(sourcePixels[index10], modes[index10], xAxis.UpperWeight * yAxis.LowerWeight);
+        var corner01 = new CoarseCornerSample(sourcePixels[index01], modes[index01], xAxis.LowerWeight * yAxis.UpperWeight);
+        var corner11 = new CoarseCornerSample(sourcePixels[index11], modes[index11], xAxis.UpperWeight * yAxis.UpperWeight);
 
         Lab32 pixelColor = sourcePixels[size.IndexOf(x, y)];
 
@@ -348,7 +375,7 @@ internal sealed class MeanShiftModeSeeker
                 out interpolatedMode);
         }
 
-        if (!xBracket.IsOnCoarseGrid && !yBracket.IsOnCoarseGrid)
+        if (!isOnCoarseX && !isOnCoarseY)
         {
             return TryInterpolateMatchingCornerSubset(
                 pixelColor,
