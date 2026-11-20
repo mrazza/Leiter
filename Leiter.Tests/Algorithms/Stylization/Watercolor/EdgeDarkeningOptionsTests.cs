@@ -106,11 +106,6 @@ public class EdgeDarkeningOptionsTests : SizeTunableOptionsContractTestsBase<Edg
         Assert.True(large.BlurSigma > refOpts.BlurSigma);
         Assert.True(large.Intensity > refOpts.Intensity);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            EdgeDarkeningOptions.ForSize(size).Validate();
-        }
-
         SequentialMatrix<Rgb8> flat = TestMatrices.Constant(64, 64, new Rgb8(120, 120, 120));
         SequentialMatrix<Rgb8> vibrant = TestMatrices.Checkerboard(64, 64, new Rgb8(255, 240, 20), new Rgb8(10, 20, 235));
 
@@ -124,9 +119,23 @@ public class EdgeDarkeningOptionsTests : SizeTunableOptionsContractTestsBase<Edg
         Assert.Equal(GradientOperator.Scharr, EdgeDarkeningOptions.ForImage(vibrant, customBaseline).GradientOperator);
         Assert.True(EdgeDarkeningOptions.ForImage(flat, customBaseline).Intensity > EdgeDarkeningOptions.ForImage(vibrant, customBaseline).Intensity);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => EdgeDarkeningOptions.ForSize(new Size(10, -1)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => EdgeDarkeningOptions.ForSize(new Size(10, 10), double.PositiveInfinity));
+        ImageAnalysis vibrantAnalysis = ImageAnalysis.Analyze(vibrant);
+        Assert.Equal(EdgeDarkeningOptions.ForImage(vibrant), EdgeDarkeningOptions.ForAnalysis(vibrantAnalysis));
+        Assert.Equal(EdgeDarkeningOptions.ForImage(vibrant, customBaseline), EdgeDarkeningOptions.ForAnalysis(vibrantAnalysis, customBaseline));
+
+        var overflowBaseline = new EdgeDarkeningOptions(Intensity: 1e300, BlurSigma: 1e300);
+        EdgeDarkeningOptions overflowScaled = EdgeDarkeningOptions.ForSize(new Size(100_000, 100_000), overflowBaseline, referenceDimension: 1.0);
+        overflowScaled.Validate();
+        Assert.True(double.IsFinite(overflowScaled.Intensity));
+        Assert.True(double.IsFinite(overflowScaled.BlurSigma));
+
+        var zeroIntensityBaseline = new EdgeDarkeningOptions(Intensity: 0.0);
+        Assert.Equal(0.0, EdgeDarkeningOptions.ForSize(new Size(1600, 1600), zeroIntensityBaseline).Intensity);
+
         Assert.Throws<ArgumentNullException>(() => EdgeDarkeningOptions.ForImage(null!));
         Assert.Throws<ArgumentNullException>(() => EdgeDarkeningOptions.ForImage(flat, null!));
+        Assert.Throws<ArgumentNullException>(() => EdgeDarkeningOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>(() => EdgeDarkeningOptions.ForAnalysis(vibrantAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => EdgeDarkeningOptions.ForAnalysis(vibrantAnalysis, 0.0));
     }
 }

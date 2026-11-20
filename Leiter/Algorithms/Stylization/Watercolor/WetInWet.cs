@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Color;
@@ -16,8 +17,11 @@ using Leiter.Pixels.ColorSpaces;
 /// Bleeds pigments across qualifying low-contrast boundaries by scattering pigment seeds from darker to brighter regions
 /// and smoothing the wet region with an oriented elliptical Gaussian filter.
 /// </summary>
-public static class WetInWetFilter
+public static class WetInWet
 {
+    private const double DarkerBoundarySeedAlpha = 0.45;
+    private const double DarkerBoundaryInnerRingAlpha = 0.15;
+
     /// <summary>
     /// Applies wet-in-wet edge bleeding to an image and returns a detailed <see cref="WetInWetResult"/>
     /// containing the filtered image, the binary wet area mask, and qualifying boundary classifications.
@@ -41,7 +45,7 @@ public static class WetInWetFilter
         Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
         Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
 
-        WetInWetOptions opts = OptionsResolver.Resolve(options, WetInWetOptions.Default);
+        WetInWetOptions opts = OptionsResolver.Resolve(options);
         return ApplyDetailedCore(image, regionGraph, salientMask, precomputedSalientFractions: null, opts);
     }
 
@@ -50,7 +54,8 @@ public static class WetInWetFilter
         RegionGraph regionGraph,
         IReadOnlyMatrix<bool>? salientMask,
         double[]? precomputedSalientFractions,
-        WetInWetOptions opts)
+        WetInWetOptions opts,
+        IReadOnlyMatrix<DoublePixel>? distanceField = null)
     {
         OrientedEllipticalFilterOptions filterOpts = opts.EllipticalFilter ?? WetInWetOptions.DefaultEllipticalFilter;
 
@@ -60,11 +65,14 @@ public static class WetInWetFilter
             return CreateUnmodifiedResult(image, boundaryCount);
         }
 
+        IReadOnlyMatrix<bool>? resolvedSalientMask = salientMask
+            ?? (distanceField is not null ? SaliencyDistanceField.ExtractSalientMask(distanceField) : null);
+
         bool[]? salientRegions = precomputedSalientFractions is not null
             ? RegionGraph.ComputeRegionFlags(precomputedSalientFractions, opts.SalientOverlapThreshold)
-            : salientMask is null
+            : resolvedSalientMask is null
                 ? null
-                : regionGraph.ComputeRegionFlags(salientMask, opts.SalientOverlapThreshold);
+                : regionGraph.ComputeRegionFlags(resolvedSalientMask, opts.SalientOverlapThreshold);
         RegionColorStatistics<Rgb64>[] stats = RegionColorStatistics.Compute(regionGraph, image);
 
         var (avgGradX, avgGradY) = ComputeAverageRegionGradients(regionGraph, image);
@@ -138,6 +146,7 @@ public static class WetInWetFilter
 
         double filterRadius = Math.Ceiling(Math.Max(filterOpts.MajorRadius, filterOpts.MinorRadius));
         int maxBand = Math.Max(opts.ScatterRadius, (int)Math.Min(filterRadius, width + height));
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxBand, opts.ScatterRadius);
 
         RegionBoundaryBand band = regionGraph.ComputeBoundaryBand(
             maxBand,
@@ -252,21 +261,13 @@ public static class WetInWetFilter
                 bool isBrighterSide = regionGraph.Labels[x, y] == brighterId;
 
                 double alpha = isBrighterSide
-                    ? ScalarMath.OuterBandSmoothstepWeight(dist, opts.ScatterRadius, maxBand)
-                    : dist == 0 ? 0.45 : dist == 1 ? 0.15 : 0.0;
+                    ? ScalarMath.OuterBandSmoothstepWeightUnchecked(dist, opts.ScatterRadius, maxBand)
+                    : dist == 0
+                        ? DarkerBoundarySeedAlpha
+                        : DarkerBoundaryInnerRingAlpha;
 
-                if (alpha >= 1.0)
-                {
-                    composited[x, y] = filtered[x, y];
-                }
-                else if (alpha <= 0.0)
-                {
-                    composited[x, y] = image[x, y];
-                }
-                else
-                {
-                    composited[x, y] = Rgb8.Lerp(image[x, y], filtered[x, y], alpha);
-                }
+                Debug.Assert(isBrighterSide || dist is 0 or 1);
+                composited[x, y] = Rgb8.Lerp(image[x, y], filtered[x, y], alpha);
             }
         });
 
@@ -293,19 +294,62 @@ public static class WetInWetFilter
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
-        ArgumentNullException.ThrowIfNull(distanceField);
         Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
         Guard.ThrowIfSizeMismatch(image, distanceField);
 
-        WetInWetOptions opts = OptionsResolver.Resolve(options, WetInWetOptions.Default);
-        int boundaryCount = regionGraph.Boundaries.Count;
-        if (image.Count == 0 || opts.Mode == WetInWetMode.Disabled || boundaryCount == 0)
-        {
-            return CreateUnmodifiedResult(image, boundaryCount);
-        }
+        WetInWetOptions opts = OptionsResolver.Resolve(options);
+        return ApplyDetailedCore(image, regionGraph, salientMask: null, precomputedSalientFractions: null, opts, distanceField);
+    }
 
-        MaskMatrix salientMask = SaliencyDistanceField.ExtractSalientMask(distanceField);
+    /// <summary>
+    /// Applies wet-in-wet edge bleeding to an image using a disjoint-set pixel partition and returns a detailed <see cref="WetInWetResult"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image.</param>
+    /// <param name="segmentation">The segmented pixel partition.</param>
+    /// <param name="salientMask">Optional boolean salient mask; when <see langword="null"/>, no regions are treated as salient.</param>
+    /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <returns>A <see cref="WetInWetResult"/> containing the filtered image, wet area mask, and qualifying boundaries.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="segmentation"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="segmentation"/> or <paramref name="salientMask"/> do not match <paramref name="image"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    public static WetInWetResult ApplyDetailed(
+        IReadOnlyMatrix<Rgb8> image,
+        IDisjointSet segmentation,
+        IReadOnlyMatrix<bool>? salientMask = null,
+        WetInWetOptions? options = null)
+    {
+        Guard.ThrowIfSizeMismatch(image, segmentation);
+        Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
+
+        WetInWetOptions opts = OptionsResolver.Resolve(options);
+        RegionGraph regionGraph = segmentation.ToRegionGraph();
         return ApplyDetailedCore(image, regionGraph, salientMask, precomputedSalientFractions: null, opts);
+    }
+
+    /// <summary>
+    /// Applies wet-in-wet edge bleeding to an image using a disjoint-set pixel partition and saliency distance field (thresholded at <c>1e-6</c>),
+    /// returning a detailed <see cref="WetInWetResult"/>.
+    /// </summary>
+    /// <param name="image">The input RGB image.</param>
+    /// <param name="segmentation">The segmented pixel partition.</param>
+    /// <param name="distanceField">The normalized saliency distance field.</param>
+    /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <returns>A <see cref="WetInWetResult"/> containing the filtered image, wet area mask, and qualifying boundaries.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="segmentation"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="segmentation"/> or <paramref name="distanceField"/> do not match <paramref name="image"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    public static WetInWetResult ApplyDetailed(
+        IReadOnlyMatrix<Rgb8> image,
+        IDisjointSet segmentation,
+        IReadOnlyMatrix<DoublePixel> distanceField,
+        WetInWetOptions? options = null)
+    {
+        Guard.ThrowIfSizeMismatch(image, segmentation);
+        Guard.ThrowIfSizeMismatch(image, distanceField);
+
+        WetInWetOptions opts = OptionsResolver.Resolve(options);
+        RegionGraph regionGraph = segmentation.ToRegionGraph();
+        return ApplyDetailedCore(image, regionGraph, salientMask: null, precomputedSalientFractions: null, opts, distanceField);
     }
 
     private static WetInWetResult CreateUnmodifiedResult(IReadOnlyMatrix<Rgb8> image, int boundaryCount) =>
@@ -351,35 +395,71 @@ public static class WetInWetFilter
         WetInWetOptions? options = null) =>
         ApplyDetailed(image, regionGraph, distanceField, options).Image;
 
+    /// <summary>
+    /// Applies wet-in-wet edge bleeding to an image using a disjoint-set pixel partition and returns the filtered RGB result matrix.
+    /// </summary>
+    /// <param name="image">The input RGB image.</param>
+    /// <param name="segmentation">The segmented pixel partition.</param>
+    /// <param name="salientMask">Optional boolean salient mask; when <see langword="null"/>, no regions are treated as salient.</param>
+    /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the edge-bled image.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="segmentation"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="segmentation"/> or <paramref name="salientMask"/> do not match <paramref name="image"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    public static Matrix<Rgb8> Apply(
+        IReadOnlyMatrix<Rgb8> image,
+        IDisjointSet segmentation,
+        IReadOnlyMatrix<bool>? salientMask = null,
+        WetInWetOptions? options = null) =>
+        ApplyDetailed(image, segmentation, salientMask, options).Image;
+
+    /// <summary>
+    /// Applies wet-in-wet edge bleeding to an image using a disjoint-set pixel partition and saliency distance field (thresholded at <c>1e-6</c>),
+    /// returning the filtered RGB result matrix.
+    /// </summary>
+    /// <param name="image">The input RGB image.</param>
+    /// <param name="segmentation">The segmented pixel partition.</param>
+    /// <param name="distanceField">The normalized saliency distance field.</param>
+    /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the edge-bled image.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="segmentation"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="segmentation"/> or <paramref name="distanceField"/> do not match <paramref name="image"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    public static Matrix<Rgb8> Apply(
+        IReadOnlyMatrix<Rgb8> image,
+        IDisjointSet segmentation,
+        IReadOnlyMatrix<DoublePixel> distanceField,
+        WetInWetOptions? options = null) =>
+        ApplyDetailed(image, segmentation, distanceField, options).Image;
+
     private static (double[] AvgGradX, double[] AvgGradY) ComputeAverageRegionGradients(
         RegionGraph regionGraph,
         IReadOnlyMatrix<Rgb8> image)
     {
         Size size = image.Size;
+        int width = size.Width;
+        int height = size.Height;
         int regionCount = regionGraph.RegionCount;
         var avgGradX = new double[regionCount];
         var avgGradY = new double[regionCount];
-        if (regionCount == 0)
+        if (regionCount == 0 || width == 0 || height == 0)
             return (avgGradX, avgGradY);
 
         IReadOnlyMatrix<int> labels = regionGraph.Labels;
         (double w0, double w1, double w2, double scale) = SpatialGradients.GetKernelWeights(GradientOperator.Sobel);
         double normalizedScale = scale / 255.0;
 
-        Parallel.For(0, regionCount, r =>
-        {
-            HashSet<Coord> pixels = regionGraph.Regions[r].Pixels;
-            int count = pixels.Count;
-            if (count == 0)
-                return;
+        int totalPixels = size.Count;
+        var pixelGradX = new double[totalPixels];
+        var pixelGradY = new double[totalPixels];
 
-            double sumX = 0.0;
-            double sumY = 0.0;
-            foreach (Coord coord in pixels)
+        Parallel.For(0, height, y =>
+        {
+            int rowOffset = size.IndexOf(0, y);
+            for (int x = 0; x < width; x++)
             {
-                int x = coord.X;
-                int y = coord.Y;
-                Rgb8 center = image[coord];
+                int r = labels[x, y];
+                Rgb8 center = image[x, y];
 
                 var (gx, gy) = SpatialGradients.ComputeRgb8GradientAt(
                     SampleRegionClamped(image, labels, size, x - 1, y - 1, r, center),
@@ -395,14 +475,46 @@ public static class WetInWetFilter
                     w2,
                     normalizedScale);
 
-                sumX += SpatialGradients.ChannelNorm(gx);
-                sumY += SpatialGradients.ChannelNorm(gy);
+                int idx = rowOffset + x;
+                pixelGradX[idx] = SpatialGradients.ChannelNorm(gx);
+                pixelGradY[idx] = SpatialGradients.ChannelNorm(gy);
             }
-
-            double invCount = 1.0 / count;
-            avgGradX[r] = sumX * invCount;
-            avgGradY[r] = sumY * invCount;
         });
+
+        if (labels.TryGetReadOnlySpan(out ReadOnlySpan<int> labelSpan))
+        {
+            for (int i = 0; i < totalPixels; i++)
+            {
+                int r = labelSpan[i];
+                avgGradX[r] += pixelGradX[i];
+                avgGradY[r] += pixelGradY[i];
+            }
+        }
+        else
+        {
+            for (int y = 0; y < height; y++)
+            {
+                int rowOffset = size.IndexOf(0, y);
+                for (int x = 0; x < width; x++)
+                {
+                    int r = labels[x, y];
+                    int idx = rowOffset + x;
+                    avgGradX[r] += pixelGradX[idx];
+                    avgGradY[r] += pixelGradY[idx];
+                }
+            }
+        }
+
+        for (int r = 0; r < regionCount; r++)
+        {
+            int count = regionGraph.Regions[r].Pixels.Count;
+            if (count > 0)
+            {
+                double invCount = 1.0 / count;
+                avgGradX[r] *= invCount;
+                avgGradY[r] *= invCount;
+            }
+        }
 
         return (avgGradX, avgGradY);
     }

@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -203,11 +204,6 @@ public class LodAbstractionOptionsTests : SizeTunableOptionsContractTestsBase<Lo
         Assert.True(large.MaxNonSalientKernelSize >= large.MinNonSalientKernelSize);
         Assert.True(large.DistanceKernelScale > refOpts.DistanceKernelScale);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            LodAbstractionOptions.ForSize(size).Validate();
-        }
-
         SequentialMatrix<Rgb8> flat = TestMatrices.Constant(64, 64, new Rgb8(120, 120, 120));
         SequentialMatrix<Rgb8> vibrant = TestMatrices.Checkerboard(64, 64, new Rgb8(255, 240, 20), new Rgb8(10, 20, 235));
 
@@ -226,9 +222,19 @@ public class LodAbstractionOptionsTests : SizeTunableOptionsContractTestsBase<Lo
         Assert.Equal(0.6, customDouble.SalientOverlapThreshold, 6);
         Assert.True(LodAbstractionOptions.ForImage(vibrant, customBaseline).CrossSegmentColorScale > LodAbstractionOptions.ForImage(flat, customBaseline).CrossSegmentColorScale);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => LodAbstractionOptions.ForSize(new Size(-1, 10)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => LodAbstractionOptions.ForSize(new Size(10, 10), double.NaN));
+        ImageAnalysis vibrantAnalysis = ImageAnalysis.Analyze(vibrant);
+        Assert.Equal(vibrantOpts, LodAbstractionOptions.ForAnalysis(vibrantAnalysis));
+        Assert.Equal(LodAbstractionOptions.ForImage(vibrant, customBaseline), LodAbstractionOptions.ForAnalysis(vibrantAnalysis, customBaseline));
+
+        var overflowBaseline = new LodAbstractionOptions(DistanceKernelScale: 1e300);
+        LodAbstractionOptions overflowScaled = LodAbstractionOptions.ForSize(new Size(100_000, 100_000), overflowBaseline, referenceDimension: 1.0);
+        overflowScaled.Validate();
+        Assert.True(double.IsFinite(overflowScaled.DistanceKernelScale));
+
         Assert.Throws<ArgumentNullException>(() => LodAbstractionOptions.ForImage(null!));
         Assert.Throws<ArgumentNullException>(() => LodAbstractionOptions.ForImage(flat, null!));
+        Assert.Throws<ArgumentNullException>(() => LodAbstractionOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>(() => LodAbstractionOptions.ForAnalysis(vibrantAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => LodAbstractionOptions.ForAnalysis(vibrantAnalysis, 0.0));
     }
 }

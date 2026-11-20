@@ -1,6 +1,9 @@
 namespace Leiter.Tests.Algorithms.Stylization;
 
 using System;
+using Leiter.Algorithms;
+using Leiter.Algorithms.Color;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -134,21 +137,8 @@ public class PiecewiseToneCurveOptionsTests : SizeTunableOptionsContractTestsBas
         PiecewiseToneCurveOptions refOpts = PiecewiseToneCurveOptions.ForSize(new Size(3200, 2400));
         Assert.Equal(new PiecewiseToneCurveOptions(), refOpts);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            PiecewiseToneCurveOptions.ForSize(size).Validate();
-        }
-
-        var flat = new SequentialMatrix<Rgb8>(64, 64);
-        flat.SetAll(new Rgb8(128, 128, 128));
-        var highContrast = new SequentialMatrix<Rgb8>(64, 64);
-        for (int y = 0; y < 64; y++)
-        {
-            for (int x = 0; x < 64; x++)
-            {
-                highContrast[x, y] = x < 32 ? new Rgb8(5, 5, 5) : new Rgb8(250, 250, 250);
-            }
-        }
+        SequentialMatrix<Rgb8> flat = TestMatrices.Constant(64, 64, new Rgb8(128, 128, 128));
+        SequentialMatrix<Rgb8> highContrast = TestMatrices.VerticalSplit(64, 64, new Rgb8(5, 5, 5), new Rgb8(250, 250, 250));
 
         PiecewiseToneCurveOptions flatOpts = PiecewiseToneCurveOptions.ForImage(flat);
         PiecewiseToneCurveOptions hcOpts = PiecewiseToneCurveOptions.ForImage(highContrast);
@@ -174,9 +164,22 @@ public class PiecewiseToneCurveOptionsTests : SizeTunableOptionsContractTestsBas
         edgeFlat.Validate();
         Assert.True(edgeFlat.ShadowKnee > 0.0 && edgeFlat.ShadowKnee < edgeFlat.HighlightKnee && edgeFlat.HighlightKnee < 1.0);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => PiecewiseToneCurveOptions.ForSize(new Size(-1, 10)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => PiecewiseToneCurveOptions.ForSize(new Size(10, 10), 0.0));
+        ImageAnalysis hcAnalysis = ImageAnalysis.Analyze(highContrast);
+        Assert.Equal(hcOpts, PiecewiseToneCurveOptions.ForAnalysis(hcAnalysis));
+        Assert.Equal(tightHc, PiecewiseToneCurveOptions.ForAnalysis(hcAnalysis, tightBaseline));
+
+        var refProfile = new ImageTuningProfile(
+            new Size(800, 800),
+            IsEmpty: false,
+            new LabColorStatistics(50.0, 0.0, 0.0, OptionTuning.ReferenceStdDevL, 5.0, 5.0),
+            LabDispersion: OptionTuning.ReferenceLabDispersion,
+            ColorSpreadFactor: 1.0,
+            ClutterFactor: 1.0);
+        Assert.Equal(new PiecewiseToneCurveOptions(), PiecewiseToneCurveOptions.ForProfile(refProfile, PiecewiseToneCurveOptions.Default, OptionTuning.DefaultReferenceDimension));
+
         Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForImage(null!));
         Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForImage(flat, null!));
+        Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>(() => PiecewiseToneCurveOptions.ForAnalysis(hcAnalysis, null!));
     }
 }

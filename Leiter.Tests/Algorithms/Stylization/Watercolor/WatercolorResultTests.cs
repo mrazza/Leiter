@@ -25,10 +25,14 @@ public class WatercolorResultTests
         var saliency = new SequentialMatrix<DoublePixel>(2, 2);
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
+        var meanShift = new SequentialMatrix<Rgb8>(2, 2);
         var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(2, 2));
         var lod = new SequentialMatrix<Rgb8>(2, 2);
         var wet = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), []);
         var tremor = new SequentialMatrix<Rgb8>(2, 2);
+        var density = new SequentialMatrix<Rgb8>(2, 2);
+        var tone = new SequentialMatrix<Rgb8>(2, 2);
+        var granulated = new SequentialMatrix<Rgb8>(2, 2);
 
         var result = new WatercolorResult(
             output,
@@ -37,10 +41,14 @@ public class WatercolorResultTests
             saliency,
             salientMask,
             distanceField,
+            meanShift,
             graph,
             lod,
             wet,
-            tremor);
+            tremor,
+            density,
+            tone,
+            granulated);
 
         Assert.Same(output, result.Image);
         Assert.Same(transferred, result.ColorTransferred);
@@ -48,10 +56,14 @@ public class WatercolorResultTests
         Assert.Same(saliency, result.SaliencyMap);
         Assert.Same(salientMask, result.SalientMask);
         Assert.Same(distanceField, result.SaliencyDistanceField);
+        Assert.Same(meanShift, result.MeanShiftFiltered);
         Assert.Same(graph, result.SegmentationGraph);
         Assert.Same(lod, result.LodAbstracted);
         Assert.Same(wet, result.WetInWet);
         Assert.Same(tremor, result.HandTremor);
+        Assert.Same(density, result.DensityAdjusted);
+        Assert.Same(tone, result.ToneAdjusted);
+        Assert.Same(granulated, result.Granulated);
     }
 
     /// <summary>
@@ -66,21 +78,29 @@ public class WatercolorResultTests
         var saliency = new SequentialMatrix<DoublePixel>(2, 2);
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
+        var meanShift = new SequentialMatrix<Rgb8>(2, 2);
         var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(2, 2));
         var lod = new SequentialMatrix<Rgb8>(2, 2);
         var wet = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), []);
         var tremor = new SequentialMatrix<Rgb8>(2, 2);
+        var density = new SequentialMatrix<Rgb8>(2, 2);
+        var tone = new SequentialMatrix<Rgb8>(2, 2);
+        var granulated = new SequentialMatrix<Rgb8>(2, 2);
 
-        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(null!, transferred, palette, saliency, salientMask, distanceField, graph, lod, wet, tremor));
-        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, null!, palette, saliency, salientMask, distanceField, graph, lod, wet, tremor));
-        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, null!, saliency, salientMask, distanceField, graph, lod, wet, tremor));
-        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, null!, salientMask, distanceField, graph, lod, wet, tremor));
-        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, null!, distanceField, graph, lod, wet, tremor));
-        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, null!, graph, lod, wet, tremor));
-        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, null!, lod, wet, tremor));
-        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, graph, null!, wet, tremor));
-        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, graph, lod, null!, tremor));
-        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, graph, lod, wet, null!));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(null!, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, null!, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, null!, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, null!, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, null!, distanceField, meanShift, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, null!, meanShift, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, null!, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, meanShift, null!, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, null!, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, null!, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, null!, density, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, null!, tone, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, null!, granulated));
+        Assert.Throws<ArgumentNullException>(() => new WatercolorResult(output, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, tone, null!));
     }
 
     /// <summary>
@@ -95,10 +115,14 @@ public class WatercolorResultTests
         var saliency = new SequentialMatrix<DoublePixel>(2, 2);
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
+        var meanShift = new SequentialMatrix<Rgb8>(2, 2);
         var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(2, 2));
         var lod = new SequentialMatrix<Rgb8>(2, 2);
         var wet = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), []);
         var tremor = new SequentialMatrix<Rgb8>(2, 2);
+        var density = new SequentialMatrix<Rgb8>(2, 2);
+        var tone = new SequentialMatrix<Rgb8>(2, 2);
+        var granulated = new SequentialMatrix<Rgb8>(2, 2);
 
         var badRgb = new SequentialMatrix<Rgb8>(3, 2);
         var badDouble = new SequentialMatrix<DoublePixel>(3, 2);
@@ -106,14 +130,18 @@ public class WatercolorResultTests
         var badGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(3, 2));
         var badWet = new WetInWetResult(badRgb, badMask, []);
 
-        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, badRgb, palette, saliency, salientMask, distanceField, graph, lod, wet, tremor));
-        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, badDouble, salientMask, distanceField, graph, lod, wet, tremor));
-        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, badMask, distanceField, graph, lod, wet, tremor));
-        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, badDouble, graph, lod, wet, tremor));
-        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, badGraph, lod, wet, tremor));
-        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, graph, badRgb, wet, tremor));
-        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, graph, lod, badWet, tremor));
-        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, graph, lod, wet, badRgb));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, badRgb, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, badDouble, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, badMask, distanceField, meanShift, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, badDouble, meanShift, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, badRgb, graph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, meanShift, badGraph, lod, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, badRgb, wet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, badWet, tremor, density, tone, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, badRgb, density, tone, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, badRgb, tone, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, badRgb, granulated));
+        Assert.Throws<ArgumentException>(() => new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, meanShift, graph, lod, wet, tremor, density, tone, badRgb));
     }
 
     /// <summary>
@@ -129,13 +157,17 @@ public class WatercolorResultTests
         var saliency = new SequentialMatrix<DoublePixel>(2, 2);
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
+        var meanShift = new SequentialMatrix<Rgb8>(2, 2);
         var zeroBoundaryGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(2, 2));
         var lod = new SequentialMatrix<Rgb8>(2, 2);
         var tremor = new SequentialMatrix<Rgb8>(2, 2);
+        var density = new SequentialMatrix<Rgb8>(2, 2);
+        var tone = new SequentialMatrix<Rgb8>(2, 2);
+        var granulated = new SequentialMatrix<Rgb8>(2, 2);
 
         var extraBoundaryWet = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), [true]);
         Assert.Throws<ArgumentException>(() =>
-            new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, zeroBoundaryGraph, lod, extraBoundaryWet, tremor));
+            new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, meanShift, zeroBoundaryGraph, lod, extraBoundaryWet, tremor, density, tone, granulated));
 
         var labels = new SequentialMatrix<int>(2, 2);
         labels[1, 0] = 1;
@@ -143,11 +175,11 @@ public class WatercolorResultTests
         var oneBoundaryGraph = RegionGraph.FromLabels(labels);
         var emptyBoundaryWet = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), []);
         Assert.Throws<ArgumentException>(() =>
-            new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, oneBoundaryGraph, lod, emptyBoundaryWet, tremor));
+            new WatercolorResult(image, transferred, palette, saliency, salientMask, distanceField, meanShift, oneBoundaryGraph, lod, emptyBoundaryWet, tremor, density, tone, granulated));
     }
 
     /// <summary>
-    /// Verifies that <see cref="WatercolorResult.Deconstruct"/> unpacks all 10 artifacts in positional order.
+    /// Verifies that <see cref="WatercolorResult.Deconstruct"/> unpacks all 14 artifacts in positional order.
     /// </summary>
     [Fact]
     public void Deconstruct_ShouldReturnAllPropertiesInOrder()
@@ -158,10 +190,14 @@ public class WatercolorResultTests
         var saliency = new SequentialMatrix<DoublePixel>(2, 2);
         var salientMask = new MaskMatrix(2, 2);
         var distanceField = new SequentialMatrix<DoublePixel>(2, 2);
+        var meanShift = new SequentialMatrix<Rgb8>(2, 2);
         var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(2, 2));
         var lod = new SequentialMatrix<Rgb8>(2, 2);
         var wet = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), []);
         var tremor = new SequentialMatrix<Rgb8>(2, 2);
+        var density = new SequentialMatrix<Rgb8>(2, 2);
+        var tone = new SequentialMatrix<Rgb8>(2, 2);
+        var granulated = new SequentialMatrix<Rgb8>(2, 2);
 
         var result = new WatercolorResult(
             output,
@@ -170,10 +206,14 @@ public class WatercolorResultTests
             saliency,
             salientMask,
             distanceField,
+            meanShift,
             graph,
             lod,
             wet,
-            tremor);
+            tremor,
+            density,
+            tone,
+            granulated);
 
         (
             Matrix<Rgb8> dImage,
@@ -182,10 +222,14 @@ public class WatercolorResultTests
             Matrix<DoublePixel> dSaliency,
             MaskMatrix dMask,
             Matrix<DoublePixel> dDistance,
+            Matrix<Rgb8> dMeanShift,
             RegionGraph dGraph,
             Matrix<Rgb8> dLod,
             WetInWetResult dWet,
-            Matrix<Rgb8> dTremor
+            Matrix<Rgb8> dTremor,
+            Matrix<Rgb8> dDensity,
+            Matrix<Rgb8> dTone,
+            Matrix<Rgb8> dGranulated
         ) = result;
 
         Assert.Same(output, dImage);
@@ -194,10 +238,14 @@ public class WatercolorResultTests
         Assert.Same(saliency, dSaliency);
         Assert.Same(salientMask, dMask);
         Assert.Same(distanceField, dDistance);
+        Assert.Same(meanShift, dMeanShift);
         Assert.Same(graph, dGraph);
         Assert.Same(lod, dLod);
         Assert.Same(wet, dWet);
         Assert.Same(tremor, dTremor);
+        Assert.Same(density, dDensity);
+        Assert.Same(tone, dTone);
+        Assert.Same(granulated, dGranulated);
     }
 
     /// <summary>

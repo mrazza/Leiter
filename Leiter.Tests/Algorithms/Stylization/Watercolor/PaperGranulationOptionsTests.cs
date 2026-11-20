@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
@@ -19,7 +20,7 @@ public class PaperGranulationOptionsTests : SizeTunableOptionsContractTestsBase<
         new(
             DensityStrength: 0.45,
             WarpAmplitude: 0.9,
-            GrainNoiseOptions: new PerlinNoiseOptions(Seed: 808, Frequency: 0.12, Octaves: 3, Lacunarity: 2.1, Persistence: 0.5));
+            GrainNoise: new PerlinNoiseOptions(Seed: 808, Frequency: 0.12, Octaves: 3, Lacunarity: 2.1, Persistence: 0.5));
 
     /// <inheritdoc/>
     protected override PaperGranulationOptions CreateInvalidOptions() =>
@@ -34,7 +35,7 @@ public class PaperGranulationOptionsTests : SizeTunableOptionsContractTestsBase<
 
         Assert.Equal(0.3, options.DensityStrength);
         Assert.Equal(0.6, options.WarpAmplitude);
-        Assert.Null(options.GrainNoiseOptions);
+        Assert.Null(options.GrainNoise);
 
         options.Validate();
     }
@@ -46,13 +47,13 @@ public class PaperGranulationOptionsTests : SizeTunableOptionsContractTestsBase<
     public void Validate_ValidCustomOptions_ShouldNotThrow()
     {
         var grainOpts = new PerlinNoiseOptions(Seed: 707, Frequency: 0.35, Octaves: 3, Lacunarity: 2.1, Persistence: 0.55);
-        var options = new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: 0.0, GrainNoiseOptions: grainOpts);
+        var options = new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: 0.0, GrainNoise: grainOpts);
 
         options.Validate();
 
         Assert.Equal(0.0, options.DensityStrength);
         Assert.Equal(0.0, options.WarpAmplitude);
-        Assert.NotNull(options.GrainNoiseOptions);
+        Assert.NotNull(options.GrainNoise);
     }
 
     /// <summary>
@@ -80,13 +81,13 @@ public class PaperGranulationOptionsTests : SizeTunableOptionsContractTestsBase<
     }
 
     /// <summary>
-    /// Verifies that invalid GrainNoiseOptions throw <see cref="ArgumentOutOfRangeException"/>.
+    /// Verifies that invalid GrainNoise throws <see cref="ArgumentOutOfRangeException"/>.
     /// </summary>
     [Fact]
-    public void Validate_InvalidGrainNoiseOptions_ShouldThrowArgumentOutOfRangeException()
+    public void Validate_InvalidGrainNoise_ShouldThrowArgumentOutOfRangeException()
     {
         var invalidNoise = new PerlinNoiseOptions(Octaves: 0);
-        var options = new PaperGranulationOptions(GrainNoiseOptions: invalidNoise);
+        var options = new PaperGranulationOptions(GrainNoise: invalidNoise);
         Assert.Throws<ArgumentOutOfRangeException>(() => options.Validate());
     }
 
@@ -98,22 +99,17 @@ public class PaperGranulationOptionsTests : SizeTunableOptionsContractTestsBase<
     {
         PaperGranulationOptions refOpts = PaperGranulationOptions.ForSize(new Size(800, 800));
         Assert.Equal(0.6, refOpts.WarpAmplitude, 6);
-        Assert.NotNull(refOpts.GrainNoiseOptions);
-        Assert.Equal(0.18, refOpts.GrainNoiseOptions!.Frequency, 6);
-        Assert.Equal(707, refOpts.GrainNoiseOptions.Seed);
+        Assert.NotNull(refOpts.GrainNoise);
+        Assert.Equal(0.18, refOpts.GrainNoise!.Frequency, 6);
+        Assert.Equal(707, refOpts.GrainNoise.Seed);
         Assert.Equal(refOpts, PaperGranulationOptions.ForSize(new Size(1000, 640)));
 
         PaperGranulationOptions small = PaperGranulationOptions.ForSize(new Size(200, 200));
         PaperGranulationOptions large = PaperGranulationOptions.ForSize(new Size(3200, 2400));
         Assert.Equal(0.15, small.WarpAmplitude, 6);
-        Assert.Equal(0.5, small.GrainNoiseOptions!.Frequency, 6); // Clamped to Nyquist limit
+        Assert.Equal(0.5, small.GrainNoise!.Frequency, 6); // Clamped to Nyquist limit
         Assert.True(large.WarpAmplitude > refOpts.WarpAmplitude);
-        Assert.True(large.GrainNoiseOptions!.Frequency < refOpts.GrainNoiseOptions.Frequency);
-
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            PaperGranulationOptions.ForSize(size).Validate();
-        }
+        Assert.True(large.GrainNoise!.Frequency < refOpts.GrainNoise.Frequency);
 
         var image = new SequentialMatrix<Rgb8>(400, 400);
         Assert.Equal(PaperGranulationOptions.ForSize(image.Size), PaperGranulationOptions.ForImage(image));
@@ -122,8 +118,8 @@ public class PaperGranulationOptionsTests : SizeTunableOptionsContractTestsBase<
         PaperGranulationOptions customHalf = PaperGranulationOptions.ForSize(new Size(400, 400), customBaseline);
         Assert.Equal(0.45, customHalf.DensityStrength, 6);
         Assert.Equal(0.45, customHalf.WarpAmplitude, 6);
-        Assert.Equal(0.24, customHalf.GrainNoiseOptions!.Frequency, 6);
-        Assert.Equal(808, customHalf.GrainNoiseOptions.Seed);
+        Assert.Equal(0.24, customHalf.GrainNoise!.Frequency, 6);
+        Assert.Equal(808, customHalf.GrainNoise.Seed);
 
         var scalarImage = new SequentialMatrix<DoublePixel>(400, 400);
         Assert.Equal(customHalf, PaperGranulationOptions.ForImage(scalarImage, customBaseline));
@@ -131,10 +127,20 @@ public class PaperGranulationOptionsTests : SizeTunableOptionsContractTestsBase<
         var rgb64Image = new SequentialMatrix<Rgb64>(400, 400);
         Assert.Equal(PaperGranulationOptions.ForSize(rgb64Image.Size), PaperGranulationOptions.ForImage(rgb64Image));
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => PaperGranulationOptions.ForSize(new Size(-1, 10)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => PaperGranulationOptions.ForSize(new Size(10, 10), double.NaN));
+        ImageAnalysis imageAnalysis = ImageAnalysis.Analyze(image);
+        Assert.Equal(PaperGranulationOptions.ForSize(image.Size), PaperGranulationOptions.ForAnalysis(imageAnalysis));
+        Assert.Equal(customHalf, PaperGranulationOptions.ForAnalysis(imageAnalysis, customBaseline));
+
+        var overflowBaseline = new PaperGranulationOptions(WarpAmplitude: 1e300);
+        PaperGranulationOptions overflowScaled = PaperGranulationOptions.ForSize(new Size(100_000, 100_000), overflowBaseline, referenceDimension: 1.0);
+        overflowScaled.Validate();
+        Assert.True(double.IsFinite(overflowScaled.WarpAmplitude));
+
         Assert.Throws<ArgumentNullException>(() => PaperGranulationOptions.ForImage<Rgb8>(null!));
         Assert.Throws<ArgumentNullException>(() => PaperGranulationOptions.ForImage<Rgb8>(null!, customBaseline));
         Assert.Throws<ArgumentNullException>(() => PaperGranulationOptions.ForImage(image, null!));
+        Assert.Throws<ArgumentNullException>(() => PaperGranulationOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>(() => PaperGranulationOptions.ForAnalysis(imageAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaperGranulationOptions.ForAnalysis(imageAnalysis, 0.0));
     }
 }

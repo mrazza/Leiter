@@ -120,7 +120,7 @@ public class PaperGranulationTests
         var image = new SequentialMatrix<Rgb8>(4, 4);
         var invalidOptions = new PaperGranulationOptions(DensityStrength: -0.5);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => PaperGranulation.Apply(image, invalidOptions));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaperGranulation.Apply(image, options: invalidOptions));
     }
 
     /// <summary>
@@ -132,7 +132,7 @@ public class PaperGranulationTests
         var image = new SequentialMatrix<Rgb8>(8, 8);
         var mismatchedMap = new SequentialMatrix<DoublePixel>(4, 4);
 
-        Assert.Throws<ArgumentException>(() => PaperGranulation.Apply(image, null, mismatchedMap));
+        Assert.Throws<ArgumentException>(() => PaperGranulation.Apply(image, mismatchedMap));
     }
 
     /// <summary>
@@ -163,7 +163,7 @@ public class PaperGranulationTests
         SequentialMatrix<Rgb8> image = TestMatrices.Create(4, 4, (x, y) => new Rgb8((byte)(x * 50), (byte)(y * 60), 128));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: 0.0);
-        Matrix<Rgb8> result = PaperGranulation.Apply(image, options);
+        Matrix<Rgb8> result = PaperGranulation.Apply(image, options: options);
 
         MatrixAssert.Equal(image, result);
     }
@@ -177,7 +177,7 @@ public class PaperGranulationTests
         var custom = new DummyReadOnlyMatrix<Rgb8>(3, 3, new Rgb8(110, 120, 130));
         var options = new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: 0.0);
 
-        Matrix<Rgb8> result = PaperGranulation.Apply(custom, options);
+        Matrix<Rgb8> result = PaperGranulation.Apply(custom, options: options);
 
         MatrixAssert.Equal(custom, result);
     }
@@ -193,7 +193,7 @@ public class PaperGranulationTests
         SequentialMatrix<DoublePixel> heightMap = TestMatrices.Create(4, 4, (x, _) => new DoublePixel(x < 2 ? 0.1 : 0.9));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.5, WarpAmplitude: 0.0);
-        Matrix<Rgb8> result = PaperGranulation.Apply(image, options, heightMap);
+        Matrix<Rgb8> result = PaperGranulation.Apply(image, heightMap, options);
 
         // Valley pixels (x < 2) must be darker than original 128.
         Assert.True(result[0, 0].R < 128);
@@ -216,7 +216,7 @@ public class PaperGranulationTests
         SequentialMatrix<Rgb8> image = TestMatrices.Constant(width, height, new Rgb8(128, 128, 128));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.35, WarpAmplitude: 0.0);
-        Matrix<Rgb8> result = PaperGranulation.Apply(image, options);
+        Matrix<Rgb8> result = PaperGranulation.Apply(image, options: options);
 
         byte minVal = byte.MaxValue;
         byte maxVal = byte.MinValue;
@@ -246,7 +246,7 @@ public class PaperGranulationTests
         SequentialMatrix<DoublePixel> heightMap = TestMatrices.Create(16, 16, (x, _) => new DoublePixel(x < 8 ? 0.0 : 1.0));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: 2.0);
-        Matrix<Rgb8> result = PaperGranulation.Apply(image, options, heightMap);
+        Matrix<Rgb8> result = PaperGranulation.Apply(image, heightMap, options);
 
         // Near the edge, the gradient displaces sampling, altering the pixel.
         Assert.NotEqual(image[7, 8], result[7, 8]);
@@ -265,7 +265,7 @@ public class PaperGranulationTests
         SequentialMatrix<DoublePixel> heightMap = TestMatrices.Constant(4, 4, new DoublePixel(double.NaN));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.4, WarpAmplitude: 1.0);
-        Matrix<Rgb8> result = PaperGranulation.Apply(image, options, heightMap);
+        Matrix<Rgb8> result = PaperGranulation.Apply(image, heightMap, options);
 
         // NaN height defaults to 0.5 (neutral density offset = 0) and NaN gradients are bypassed
         MatrixAssert.Equal(image, result);
@@ -280,7 +280,7 @@ public class PaperGranulationTests
         SequentialMatrix<Rgb8> image = TestMatrices.Checkerboard(8, 8, new Rgb8(255, 255, 255), new Rgb8(0, 0, 0));
 
         var options = new PaperGranulationOptions(DensityStrength: 0.5, WarpAmplitude: 0.0);
-        Matrix<Rgb8> result = PaperGranulation.Apply(image, options);
+        Matrix<Rgb8> result = PaperGranulation.Apply(image, options: options);
 
         MatrixAssert.Equal(image, result);
     }
@@ -329,14 +329,14 @@ public class PaperGranulationTests
         SequentialMatrix<DoublePixel> stepMap = TestMatrices.Create(16, 16, (x, _) => new DoublePixel(x < 8 ? 0.0 : 1.0));
 
         var customOpts = new PaperGranulationOptions(DensityStrength: 0.0, WarpAmplitude: bigOpts.WarpAmplitude);
-        Matrix<Rgb8> warpedCustom = PaperGranulation.Apply(image, customOpts, stepMap);
+        Matrix<Rgb8> warpedCustom = PaperGranulation.Apply(image, stepMap, customOpts);
 
         // At 3px away from step edge (x=5), Sobel gradient is 0, so pixel remains unwarped
         Assert.Equal(image[5, 8], warpedCustom[5, 8]);
 
         // Procedural height map application executes cleanly under ForSize options
         var midtone = TestMatrices.Constant(32, 32, new Rgb8(128, 128, 128));
-        Matrix<Rgb8> warpedProcedural = PaperGranulation.Apply(midtone, PaperGranulationOptions.ForSize(midtone.Size));
+        Matrix<Rgb8> warpedProcedural = PaperGranulation.Apply(midtone, options: PaperGranulationOptions.ForSize(midtone.Size));
         Assert.Equal(midtone.Size, warpedProcedural.Size);
     }
 }

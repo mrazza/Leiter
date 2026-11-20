@@ -81,12 +81,12 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
             EdgeDarkening: new EdgeDarkeningOptions(Intensity: 2.4, BlurSigma: 1.2, GradientOperator: GradientOperator.Scharr),
             TurbulenceFlow: new TurbulenceFlowOptions(
                 Intensity: 0.5,
-                NoiseOptions: new PerlinNoiseOptions(Seed: 909, Frequency: 0.025, Octaves: 3, Lacunarity: 2.2, Persistence: 0.45)),
+                Noise: new PerlinNoiseOptions(Seed: 909, Frequency: 0.025, Octaves: 3, Lacunarity: 2.2, Persistence: 0.45)),
             ToneCurve: new PiecewiseToneCurveOptions(MinTone: 0.02, MaxTone: 0.98, ShadowKnee: 0.2, HighlightKnee: 0.8),
             PaperGranulation: new PaperGranulationOptions(
                 DensityStrength: 0.45,
                 WarpAmplitude: 0.9,
-                GrainNoiseOptions: new PerlinNoiseOptions(Seed: 808, Frequency: 0.12, Octaves: 3, Lacunarity: 2.1, Persistence: 0.5)),
+                GrainNoise: new PerlinNoiseOptions(Seed: 808, Frequency: 0.12, Octaves: 3, Lacunarity: 2.1, Persistence: 0.5)),
             Fxaa: new FxaaOptions(
                 RelativeContrastThreshold: 0.2,
                 AbsoluteContrastThreshold: 0.08,
@@ -242,23 +242,6 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
     }
 
     /// <summary>
-    /// Verifies that <see cref="WatercolorOptions.ForSize"/> validates extreme and degenerate dimensions cleanly and rejects invalid arguments.
-    /// </summary>
-    [Fact]
-    public void ForSize_ExtremeSizesAndInvalidArguments_ShouldBehaveAsExpected()
-    {
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            WatercolorOptions.ForSize(size).Validate();
-        }
-
-        Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForSize(new Size(-1, 100)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForSize(new Size(100, -1)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForSize(new Size(100, 100), 0.0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForSize(new Size(100, 100), double.NaN));
-    }
-
-    /// <summary>
     /// Verifies that <see cref="WatercolorOptions.ForImage"/> selects palettes, moderates low-chroma transfer strength, preserves content scaling across resamplings, and validates inputs.
     /// </summary>
     [Fact]
@@ -269,34 +252,26 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
         emptyOpts.Validate();
         Assert.NotNull(emptyOpts.TargetPalette);
 
-        var neutral = new SequentialMatrix<Rgb8>(64, 64);
-        for (int y = 0; y < 64; y++)
+        SequentialMatrix<Rgb8> neutral = TestMatrices.Create(64, 64, static (x, _) =>
         {
-            for (int x = 0; x < 64; x++)
-            {
-                byte v = (byte)(60 + ((x * 2) % 140));
-                neutral[x, y] = new Rgb8(v, v, v);
-            }
-        }
+            byte v = (byte)(60 + ((x * 2) % 140));
+            return new Rgb8(v, v, v);
+        });
 
         WatercolorOptions neutralOpts = WatercolorOptions.ForImage(neutral);
         neutralOpts.Validate();
         Assert.InRange(neutralOpts.ColorTransferStrength, 0.55, 0.999);
 
-        var largeScene = new SequentialMatrix<Rgb8>(800, 600);
-        for (int y = 0; y < 600; y++)
+        SequentialMatrix<Rgb8> largeScene = TestMatrices.Create(800, 600, static (x, y) =>
         {
-            for (int x = 0; x < 800; x++)
-            {
-                bool fg = x >= 220 && x < 580 && y >= 150 && y < 450;
-                int wave = (x / 16 + y / 16) % 3;
-                largeScene[x, y] = fg
-                    ? new Rgb8((byte)(210 + (wave * 10)), (byte)(60 + (wave * 8)), 35)
-                    : wave == 0
-                        ? new Rgb8(45, 110, 175)
-                        : new Rgb8(215, 225, 210);
-            }
-        }
+            bool fg = x >= 220 && x < 580 && y >= 150 && y < 450;
+            int wave = (x / 16 + y / 16) % 3;
+            return fg
+                ? new Rgb8((byte)(210 + (wave * 10)), (byte)(60 + (wave * 8)), 35)
+                : wave == 0
+                    ? new Rgb8(45, 110, 175)
+                    : new Rgb8(215, 225, 210);
+        });
 
         Matrix<Rgb8> smallScene = largeScene.ResizeBilinear(new Size(200, 150));
 
@@ -359,6 +334,38 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
 
         WatercolorOptions customEmptyOpts = WatercolorOptions.ForImage(empty, customBaseline);
         Assert.Equal(customBaseline, customEmptyOpts);
+
+        ImageAnalysis largeAnalysis = ImageAnalysis.Analyze(largeScene);
+        Assert.Equal(largeOpts, WatercolorOptions.ForAnalysis(largeAnalysis));
+        Assert.Equal(customImageOpts, WatercolorOptions.ForAnalysis(largeAnalysis, customBaseline));
+        Assert.Equal(subsetOpts, WatercolorOptions.ForAnalysis(largeAnalysis, candidatePalettes: customSubset));
+
+        var overflowBaseline = new WatercolorOptions(EgbiBlurSigma: 1e300);
+        WatercolorOptions overflowScaled = WatercolorOptions.ForSize(new Size(100_000, 100_000), overflowBaseline, referenceDimension: 1.0);
+        overflowScaled.Validate();
+        Assert.True(double.IsFinite(overflowScaled.EgbiBlurSigma));
+
+        Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForAnalysis(largeAnalysis, baseline: null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForAnalysis(largeAnalysis, 0.0));
+        Assert.Throws<ArgumentException>(() => WatercolorOptions.ForAnalysis(largeAnalysis, candidatePalettes: []));
+        Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForAnalysis(largeAnalysis, candidatePalettes: [null!]));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="WatercolorOptions.ForImage"/> validates candidate palettes before reading image pixels.
+    /// </summary>
+    [Fact]
+    public void ForImage_InvalidCandidatePalettes_ShouldThrowBeforeReadingPixels()
+    {
+        var image = new ThrowingReadOnlyMatrix(8, 8);
+
+        Assert.Throws<ArgumentException>(() => WatercolorOptions.ForImage(image, candidatePalettes: []));
+        Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForImage(image, candidatePalettes: [null!]));
+        Assert.Throws<ArgumentException>(() => WatercolorOptions.ForImage(image, candidatePalettes: [new("   ", WatercolorPalettes.BalancedWash.Statistics)]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForImage(image, candidatePalettes: [new("BadIlluminant", WatercolorPalettes.BalancedWash.Statistics, (Illuminant)999)]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForImage(image, candidatePalettes: [new("NaNMeanL", new LabColorStatistics(double.NaN, 0.0, 0.0, 1.0, 1.0, 1.0))]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForImage(image, candidatePalettes: [new("NegStdDevA", new LabColorStatistics(50.0, 0.0, 0.0, 1.0, -0.1, 1.0))]));
     }
 
     /// <summary>
@@ -406,6 +413,7 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
     [Fact]
     public void PublicDefaultStaticProperties_ShouldAllBeValid()
     {
+        Assert.Equal(0.8, WatercolorOptions.DefaultEgbiBlurSigma);
         WatercolorOptions.DefaultSaliencyEgbi.Validate();
         Assert.Equal(new Rgb8(250, 248, 242), HandTremorOptions.DefaultPaperColor);
         HandTremorOptions.DefaultPrimaryNoise.Validate();

@@ -35,11 +35,11 @@ public static class LodAbstraction
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
-        Guard.ThrowIfSizeMismatch(image, distanceField);
         Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
+        Guard.ThrowIfSizeMismatch(image, distanceField);
         Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
 
-        LodAbstractionOptions resolvedOptions = OptionsResolver.Resolve(options, LodAbstractionOptions.Default);
+        LodAbstractionOptions resolvedOptions = OptionsResolver.Resolve(options);
         return ApplyCore(image, regionGraph, distanceField, salientMask, precomputedSalientFractions: null, resolvedOptions);
     }
 
@@ -98,10 +98,7 @@ public static class LodAbstraction
                 int radius = kernelSize / 2;
                 bool hasHalfBorder = (kernelSize & 1) == 0 && radius > 0;
 
-                int minY = Math.Max(0, y - radius);
-                int maxY = Math.Min(height - 1, y + radius);
-                int minX = Math.Max(0, x - radius);
-                int maxX = Math.Min(width - 1, x + radius);
+                var (minX, maxX, minY, maxY) = size.ClampWindow(x, y, radius);
 
                 double sumR = 0.0;
                 double sumG = 0.0;
@@ -167,17 +164,12 @@ public static class LodAbstraction
         IReadOnlyMatrix<bool>? salientMask = null,
         LodAbstractionOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(image);
-        ArgumentNullException.ThrowIfNull(segmentation);
-        Guard.ThrowIfSizeMismatch(image, distanceField);
         Guard.ThrowIfSizeMismatch(image, segmentation);
+        Guard.ThrowIfSizeMismatch(image, distanceField);
         Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
 
-        LodAbstractionOptions resolvedOptions = OptionsResolver.Resolve(options, LodAbstractionOptions.Default);
-        if (image.Count == 0)
-            return new SequentialMatrix<Rgb8>(image.Size);
-
-        RegionGraph regionGraph = RegionGraph.FromDisjointSet(segmentation);
+        LodAbstractionOptions resolvedOptions = OptionsResolver.Resolve(options);
+        RegionGraph regionGraph = segmentation.ToRegionGraph();
         return ApplyCore(image, regionGraph, distanceField, salientMask, precomputedSalientFractions: null, resolvedOptions);
     }
 }

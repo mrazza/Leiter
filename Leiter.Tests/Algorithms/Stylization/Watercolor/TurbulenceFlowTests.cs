@@ -121,11 +121,11 @@ public class TurbulenceFlowTests
 
         var optsA = new TurbulenceFlowOptions(
             Intensity: 0.4,
-            NoiseOptions: new PerlinNoiseOptions(Seed: 101, Frequency: 0.05));
+            Noise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.05));
 
         var optsB = new TurbulenceFlowOptions(
             Intensity: 0.4,
-            NoiseOptions: new PerlinNoiseOptions(Seed: 999, Frequency: 0.05));
+            Noise: new PerlinNoiseOptions(Seed: 999, Frequency: 0.05));
 
         Matrix<Rgb8> resA = TurbulenceFlow.Apply(image, optsA);
         Matrix<Rgb8> resB = TurbulenceFlow.Apply(image, optsB);
@@ -198,14 +198,14 @@ public class TurbulenceFlowTests
     /// Verifies that custom PerlinNoiseOptions are properly utilized.
     /// </summary>
     [Fact]
-    public void Apply_CustomNoiseOptions_ShouldBeRespected()
+    public void Apply_CustomNoise_ShouldBeRespected()
     {
         SequentialMatrix<Rgb8> image = TestMatrices.Constant(16, 16, new Rgb8(128, 128, 128));
 
         var defaultOpts = new TurbulenceFlowOptions(Intensity: 0.5);
         var customOpts = new TurbulenceFlowOptions(
             Intensity: 0.5,
-            NoiseOptions: new PerlinNoiseOptions(Seed: 888, Frequency: 0.1, Octaves: 2));
+            Noise: new PerlinNoiseOptions(Seed: 888, Frequency: 0.1, Octaves: 2));
 
         Matrix<Rgb8> resDefault = TurbulenceFlow.Apply(image, defaultOpts);
         Matrix<Rgb8> resCustom = TurbulenceFlow.Apply(image, customOpts);

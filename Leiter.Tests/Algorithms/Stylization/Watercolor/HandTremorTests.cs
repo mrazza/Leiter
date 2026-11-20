@@ -10,12 +10,17 @@ using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
-/// Provides unit tests for <see cref="HandTremorFilter"/>.
+/// Provides unit tests for <see cref="HandTremor"/>.
 /// </summary>
-public class HandTremorFilterTests
+public class HandTremorTests
 {
+    private static readonly Rgb8 DefaultPaperColor = HandTremorOptions.DefaultPaperColor;
+    private static readonly PerlinNoiseOptions HighFreqPrimaryNoise = new(Seed: 101, Frequency: 0.25, Octaves: 3);
+    private static readonly PerlinNoiseOptions HighFreqSecondaryNoise = new(Seed: 202, Frequency: 0.25, Octaves: 3);
+
     /// <summary>
-    /// Verifies that null arguments passed to <see cref="HandTremorFilter.Apply"/> throw <see cref="ArgumentNullException"/>.
+    /// Verifies that null arguments passed to <see cref="HandTremor.Apply(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{DoublePixel}, WetInWetResult?, HandTremorOptions?)"/>
+    /// and <see cref="HandTremor.Apply(IReadOnlyMatrix{Rgb8}, IDisjointSet, IReadOnlyMatrix{DoublePixel}, WetInWetResult?, HandTremorOptions?)"/> throw <see cref="ArgumentNullException"/>.
     /// </summary>
     [Fact]
     public void Apply_NullArguments_ShouldThrowArgumentNullException()
@@ -23,11 +28,16 @@ public class HandTremorFilterTests
         var image = new SequentialMatrix<Rgb8>(4, 4);
         var labels = new SequentialMatrix<int>(4, 4);
         var graph = RegionGraph.FromLabels(labels);
+        var disjointSet = CreateVerticalSplitDisjointSet(4, 4);
         var dist = new SequentialMatrix<DoublePixel>(4, 4);
 
-        Assert.Throws<ArgumentNullException>(() => HandTremorFilter.Apply(null!, graph, dist));
-        Assert.Throws<ArgumentNullException>(() => HandTremorFilter.Apply(image, null!, dist));
-        Assert.Throws<ArgumentNullException>(() => HandTremorFilter.Apply(image, graph, null!));
+        Assert.Throws<ArgumentNullException>(() => HandTremor.Apply(null!, graph, dist));
+        Assert.Throws<ArgumentNullException>(() => HandTremor.Apply(image, (RegionGraph)null!, dist));
+        Assert.Throws<ArgumentNullException>(() => HandTremor.Apply(image, graph, null!));
+
+        Assert.Throws<ArgumentNullException>(() => HandTremor.Apply(null!, disjointSet, dist));
+        Assert.Throws<ArgumentNullException>(() => HandTremor.Apply(image, (IDisjointSet)null!, dist));
+        Assert.Throws<ArgumentNullException>(() => HandTremor.Apply(image, disjointSet, null!));
     }
 
     /// <summary>
@@ -39,11 +49,15 @@ public class HandTremorFilterTests
         var image = new SequentialMatrix<Rgb8>(6, 6);
         var graphMismatched = RegionGraph.FromLabels(new SequentialMatrix<int>(4, 6));
         var graphMatching = RegionGraph.FromLabels(new SequentialMatrix<int>(6, 6));
+        var disjointMismatched = CreateVerticalSplitDisjointSet(4, 6);
+        var disjointMatching = CreateVerticalSplitDisjointSet(6, 6);
         var distMismatched = new SequentialMatrix<DoublePixel>(6, 4);
         var distMatching = new SequentialMatrix<DoublePixel>(6, 6);
 
-        Assert.Throws<ArgumentException>(() => HandTremorFilter.Apply(image, graphMismatched, distMatching));
-        Assert.Throws<ArgumentException>(() => HandTremorFilter.Apply(image, graphMatching, distMismatched));
+        Assert.Throws<ArgumentException>(() => HandTremor.Apply(image, graphMismatched, distMatching));
+        Assert.Throws<ArgumentException>(() => HandTremor.Apply(image, graphMatching, distMismatched));
+        Assert.Throws<ArgumentException>(() => HandTremor.Apply(image, disjointMismatched, distMatching));
+        Assert.Throws<ArgumentException>(() => HandTremor.Apply(image, disjointMatching, distMismatched));
     }
 
     /// <summary>
@@ -65,7 +79,7 @@ public class HandTremorFilterTests
             new MaskMatrix(4, 4),
             new bool[] { true });
 
-        Assert.Throws<ArgumentException>(() => HandTremorFilter.Apply(image, graph, dist, wetInWet: invalidMaskWetInWet));
+        Assert.Throws<ArgumentException>(() => HandTremor.Apply(image, graph, dist, wetInWet: invalidMaskWetInWet));
 
         // Mismatched qualifying boundaries count
         var invalidBoundariesWetInWet = new WetInWetResult(
@@ -73,7 +87,7 @@ public class HandTremorFilterTests
             new MaskMatrix(6, 6),
             new bool[] { true, false, true }); // graph has 1 boundary, wetInWet has 3
 
-        Assert.Throws<ArgumentException>(() => HandTremorFilter.Apply(image, graph, dist, wetInWet: invalidBoundariesWetInWet));
+        Assert.Throws<ArgumentException>(() => HandTremor.Apply(image, graph, dist, wetInWet: invalidBoundariesWetInWet));
     }
 
     /// <summary>
@@ -87,7 +101,7 @@ public class HandTremorFilterTests
         var dist = new SequentialMatrix<DoublePixel>(4, 4);
         var invalidOptions = new HandTremorOptions(Amplitude: -1.0);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => HandTremorFilter.Apply(image, graph, dist, options: invalidOptions));
+        Assert.Throws<ArgumentOutOfRangeException>(() => HandTremor.Apply(image, graph, dist, options: invalidOptions));
     }
 
     /// <summary>
@@ -98,12 +112,15 @@ public class HandTremorFilterTests
     {
         var image = new SequentialMatrix<Rgb8>(0, 0);
         var graph = RegionGraph.FromLabels(new SequentialMatrix<int>(0, 0));
+        var disjointSet = CreateVerticalSplitDisjointSet(0, 0);
         var dist = new SequentialMatrix<DoublePixel>(0, 0);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist);
+        Matrix<Rgb8> resultDisjoint = HandTremor.Apply(image, disjointSet, dist);
 
         Assert.Equal(0, result.Width);
         Assert.Equal(0, result.Height);
+        Assert.Empty(resultDisjoint);
     }
 
     /// <summary>
@@ -120,7 +137,7 @@ public class HandTremorFilterTests
         var dist = new SequentialMatrix<DoublePixel>(6, 6);
         var options = new HandTremorOptions(Amplitude: 0.0);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: options);
 
         Assert.Equal((byte)20, result[0, 0].R);
         Assert.Equal((byte)200, result[5, 5].R);
@@ -139,7 +156,7 @@ public class HandTremorFilterTests
         var graph = RegionGraph.FromLabels(labels);
         var dist = new SequentialMatrix<DoublePixel>(width, height);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist);
 
         Assert.Equal(width, result.Width);
     }
@@ -164,7 +181,7 @@ public class HandTremorFilterTests
             wetMask,
             new bool[] { true });
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, wetInWet: wetInWet);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, wetInWet: wetInWet);
 
         // Entire image must match original since boundary is Group 1 (wet-in-wet)
         MatrixAssert.Equal(image, result);
@@ -183,20 +200,19 @@ public class HandTremorFilterTests
             new Rgb8(200, 20, 20),
             new Rgb8(240, 60, 20));
         var dist = new SequentialMatrix<DoublePixel>(12, 12);
-        var paperColor = new Rgb8(250, 248, 242);
         var options = new HandTremorOptions(
             Amplitude: 2.0,
             SimilarHueThresholdDegrees: 30.0,
-            PaperColor: paperColor);
+            PaperColor: DefaultPaperColor);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: options);
 
         // No pixel should equal paper color because Group 2 samples bilinearly without creating gaps
         for (int y = 0; y < 12; y++)
         {
             for (int x = 0; x < 12; x++)
             {
-                Assert.NotEqual(paperColor, result[x, y]);
+                Assert.NotEqual(DefaultPaperColor, result[x, y]);
             }
         }
     }
@@ -216,17 +232,16 @@ public class HandTremorFilterTests
             new Rgb8(220, 20, 20),
             new Rgb8(20, 220, 220));
         SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
-        var customPaperColor = new Rgb8(250, 248, 242);
 
         var options = new HandTremorOptions(
             Amplitude: 6.0,
             SimilarHueThresholdDegrees: 30.0,
             OverlapDarkening: 0.8,
-            PaperColor: customPaperColor,
-            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
-            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3));
+            PaperColor: DefaultPaperColor,
+            PrimaryNoise: HighFreqPrimaryNoise,
+            SecondaryNoise: HighFreqSecondaryNoise);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: options);
 
         bool foundPaperGap = false;
         bool foundDarkenedOverlap = false;
@@ -236,13 +251,13 @@ public class HandTremorFilterTests
             for (int x = 0; x < width; x++)
             {
                 Rgb8 pixel = result[x, y];
-                if (pixel == customPaperColor)
+                if (pixel == DefaultPaperColor)
                 {
                     foundPaperGap = true;
                 }
 
                 // Darkened overlap mixes Red and Cyan, producing darker channels (both R and G significantly reduced)
-                if (pixel.R < 150 && pixel.G < 150 && pixel != customPaperColor && (pixel.R > 0 || pixel.G > 0))
+                if (pixel.R < 150 && pixel.G < 150 && pixel != DefaultPaperColor && (pixel.R > 0 || pixel.G > 0))
                 {
                     foundDarkenedOverlap = true;
                 }
@@ -259,41 +274,27 @@ public class HandTremorFilterTests
     [Fact]
     public void Apply_TripleJunction_ShouldHandleThirdRegionTransitions()
     {
-        int width = 24;
-        int height = 24;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-
+        const int width = 24;
+        const int height = 24;
         // 3 regions: Top-left Red (0), Top-right Cyan (1), Bottom Yellow (2)
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                if (y < 12)
-                {
-                    labels[x, y] = x < 12 ? 0 : 1;
-                    image[x, y] = x < 12 ? new Rgb8(220, 20, 20) : new Rgb8(20, 220, 220);
-                }
-                else
-                {
-                    labels[x, y] = 2;
-                    image[x, y] = new Rgb8(230, 230, 20);
-                }
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(width, height, static (x, y) =>
+            y < 12
+                ? (x < 12 ? new Rgb8(220, 20, 20) : new Rgb8(20, 220, 220))
+                : new Rgb8(230, 230, 20));
+        SequentialMatrix<int> labels = TestMatrices.Create(width, height, static (x, y) =>
+            y < 12 ? (x < 12 ? 0 : 1) : 2);
 
         var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
-        dist.SetAll(1.0);
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
 
         var options = new HandTremorOptions(
             Amplitude: 6.0,
             SimilarHueThresholdDegrees: 20.0,
             OverlapDarkening: 0.5,
-            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
-            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3));
+            PrimaryNoise: HighFreqPrimaryNoise,
+            SecondaryNoise: HighFreqSecondaryNoise);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: options);
 
         Assert.Equal(width, result.Width);
         Assert.Equal(height, result.Height);
@@ -320,7 +321,7 @@ public class HandTremorFilterTests
             Amplitude: 3.0,
             SalientAmplitudeScale: 0.1);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: options);
 
         Assert.Equal(12, result.Width);
     }
@@ -339,8 +340,8 @@ public class HandTremorFilterTests
         var dist = new SequentialMatrix<DoublePixel>(10, 10);
         var options = new HandTremorOptions(Amplitude: 2.0);
 
-        Matrix<Rgb8> res1 = HandTremorFilter.Apply(image, graph, dist, options: options);
-        Matrix<Rgb8> res2 = HandTremorFilter.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> res1 = HandTremor.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> res2 = HandTremor.Apply(image, graph, dist, options: options);
 
         MatrixAssert.Equal(res1, res2);
     }
@@ -353,30 +354,16 @@ public class HandTremorFilterTests
     {
         const int width = 24;
         const int height = 24;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-
         // Top-left Red (0), Top-right Cyan (1), Bottom Dark Red (2) similar hue to 0 and excluded from Group 3 gaps.
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                if (y < 12)
-                {
-                    labels[x, y] = x < 12 ? 0 : 1;
-                    image[x, y] = x < 12 ? new Rgb8(220, 20, 20) : new Rgb8(20, 220, 220);
-                }
-                else
-                {
-                    labels[x, y] = 2;
-                    image[x, y] = new Rgb8(180, 35, 20);
-                }
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(width, height, static (x, y) =>
+            y < 12
+                ? (x < 12 ? new Rgb8(220, 20, 20) : new Rgb8(20, 220, 220))
+                : new Rgb8(180, 35, 20));
+        SequentialMatrix<int> labels = TestMatrices.Create(width, height, static (x, y) =>
+            y < 12 ? (x < 12 ? 0 : 1) : 2);
 
         var graph = RegionGraph.FromLabels(labels);
-        var dist = new SequentialMatrix<DoublePixel>(width, height);
-        dist.SetAll(1.0);
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
 
         // Mark boundaries involving Region 2 ((0,2) and (1,2)) as WetInWet-qualifying (Group 1) so ONLY boundary (0,1) is Group 3.
         bool[] qualifyingWet = new bool[graph.Boundaries.Count];
@@ -387,21 +374,20 @@ public class HandTremorFilterTests
         }
 
         var wetInWet = new WetInWetResult((SequentialMatrix<Rgb8>)image.Clone(), new MaskMatrix(width, height), qualifyingWet);
-        var paperColor = new Rgb8(250, 248, 242);
         var options = new HandTremorOptions(
             Amplitude: 6.0,
             SimilarHueThresholdDegrees: 30.0,
-            PaperColor: paperColor,
-            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
-            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3));
+            PaperColor: DefaultPaperColor,
+            PrimaryNoise: HighFreqPrimaryNoise,
+            SecondaryNoise: HighFreqSecondaryNoise);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, wetInWet: wetInWet, options: options);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, wetInWet: wetInWet, options: options);
 
         for (int y = 12; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
-                Assert.NotEqual(paperColor, result[x, y]);
+                Assert.NotEqual(DefaultPaperColor, result[x, y]);
             }
         }
     }
@@ -420,23 +406,22 @@ public class HandTremorFilterTests
             new Rgb8(20, 22, 26),
             new Rgb8(215, 165, 140));
         SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
-        var paperColor = new Rgb8(250, 248, 242);
 
         var options = new HandTremorOptions(
             Amplitude: 6.0,
             SimilarHueThresholdDegrees: 30.0,
             OverlapDarkening: 0.8,
-            PaperColor: paperColor,
-            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
-            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3));
+            PaperColor: DefaultPaperColor,
+            PrimaryNoise: HighFreqPrimaryNoise,
+            SecondaryNoise: HighFreqSecondaryNoise);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: options);
 
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
-                Assert.NotEqual(paperColor, result[x, y]);
+                Assert.NotEqual(DefaultPaperColor, result[x, y]);
             }
         }
     }
@@ -455,25 +440,24 @@ public class HandTremorFilterTests
             new Rgb8(20, 22, 26),
             new Rgb8(215, 165, 140));
         SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
-        var paperColor = new Rgb8(250, 248, 242);
 
         var options = new HandTremorOptions(
             Amplitude: 6.0,
             SimilarHueThresholdDegrees: 30.0,
             OverlapDarkening: 0.8,
-            PaperColor: paperColor,
-            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
-            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3),
+            PaperColor: DefaultPaperColor,
+            PrimaryNoise: HighFreqPrimaryNoise,
+            SecondaryNoise: HighFreqSecondaryNoise,
             MinContrastingChroma: 0.0);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: options);
 
         bool foundPaperGap = false;
         for (int y = 0; y < height && !foundPaperGap; y++)
         {
             for (int x = 0; x < width; x++)
             {
-                if (result[x, y] == paperColor)
+                if (result[x, y] == DefaultPaperColor)
                 {
                     foundPaperGap = true;
                     break;
@@ -498,25 +482,24 @@ public class HandTremorFilterTests
             new Rgb8(220, 20, 20),
             new Rgb8(20, 220, 220));
         SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
-        var paperColor = new Rgb8(250, 248, 242);
 
         HandTremorOptions baseOptions = new(
             Amplitude: 6.0,
             SimilarHueThresholdDegrees: 30.0,
             OverlapDarkening: 0.8,
-            PaperColor: paperColor,
-            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
-            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3));
+            PaperColor: DefaultPaperColor,
+            PrimaryNoise: HighFreqPrimaryNoise,
+            SecondaryNoise: HighFreqSecondaryNoise);
 
         int CountPaperGaps(double bias)
         {
-            Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: baseOptions with { PaperGapBias = bias });
+            Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: baseOptions with { PaperGapBias = bias });
             int count = 0;
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
                 {
-                    if (result[x, y] == paperColor)
+                    if (result[x, y] == DefaultPaperColor)
                     {
                         count++;
                     }
@@ -547,29 +530,28 @@ public class HandTremorFilterTests
             new Rgb8(220, 20, 20),
             new Rgb8(20, 220, 220));
         SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
-        var paperColor = new Rgb8(250, 248, 242);
 
         HandTremorOptions baseOptions = new(
             Amplitude: 6.0,
             SimilarHueThresholdDegrees: 30.0,
             OverlapDarkening: 0.8,
-            PaperColor: paperColor,
-            PrimaryNoise: new PerlinNoiseOptions(Seed: 101, Frequency: 0.25, Octaves: 3),
-            SecondaryNoise: new PerlinNoiseOptions(Seed: 202, Frequency: 0.25, Octaves: 3));
+            PaperColor: DefaultPaperColor,
+            PrimaryNoise: HighFreqPrimaryNoise,
+            SecondaryNoise: HighFreqSecondaryNoise);
 
-        Matrix<Rgb8> full = HandTremorFilter.Apply(image, graph, dist, options: baseOptions with { PaperGapOpacity = 1.0 });
-        Matrix<Rgb8> half = HandTremorFilter.Apply(image, graph, dist, options: baseOptions with { PaperGapOpacity = 0.5 });
-        Matrix<Rgb8> zero = HandTremorFilter.Apply(image, graph, dist, options: baseOptions with { PaperGapOpacity = 0.0 });
+        Matrix<Rgb8> full = HandTremor.Apply(image, graph, dist, options: baseOptions with { PaperGapOpacity = 1.0 });
+        Matrix<Rgb8> half = HandTremor.Apply(image, graph, dist, options: baseOptions with { PaperGapOpacity = 0.5 });
+        Matrix<Rgb8> zero = HandTremor.Apply(image, graph, dist, options: baseOptions with { PaperGapOpacity = 0.0 });
 
         bool checkedGapLocation = false;
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
-                Assert.NotEqual(paperColor, zero[x, y]);
-                Assert.NotEqual(paperColor, half[x, y]);
+                Assert.NotEqual(DefaultPaperColor, zero[x, y]);
+                Assert.NotEqual(DefaultPaperColor, half[x, y]);
 
-                if (full[x, y] == paperColor)
+                if (full[x, y] == DefaultPaperColor)
                 {
                     checkedGapLocation = true;
                     Assert.Equal(image[x, y], zero[x, y]);
@@ -603,9 +585,9 @@ public class HandTremorFilterTests
         var options = new HandTremorOptions(
             Amplitude: 1e12,
             PaperGapBias: paperGapBias,
-            PaperColor: new Rgb8(250, 248, 242));
+            PaperColor: DefaultPaperColor);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: options);
 
         Assert.Equal(image.Size, result.Size);
         for (int y = 0; y < height; y++)
@@ -642,7 +624,7 @@ public class HandTremorFilterTests
             PrimaryNoise: nearZeroNoise,
             SecondaryNoise: nearZeroNoise);
 
-        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: options);
 
         // innerRadius = Ceil(2 * 1.37) = 3, bandRadius = 6
         for (int y = 0; y < size; y++)
@@ -653,5 +635,53 @@ public class HandTremorFilterTests
                 Assert.NotEqual(new Rgb8(0, 0, 0), result[x, y]);
             }
         }
+    }
+
+    /// <summary>
+    /// Verifies that the <see cref="IDisjointSet"/> overload produces identical results to the <see cref="RegionGraph"/> overload.
+    /// </summary>
+    [Fact]
+    public void Apply_DisjointSetOverload_ShouldProduceIdenticalResultToRegionGraph()
+    {
+        const int width = 16;
+        const int height = 16;
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(width, height, new Rgb8(220, 20, 20), new Rgb8(20, 220, 220));
+        DisjointSet<int> disjointSet = CreateVerticalSplitDisjointSet(width, height);
+        RegionGraph graph = disjointSet.ToRegionGraph();
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(0.8));
+        var options = new HandTremorOptions(
+            Amplitude: 4.0,
+            OverlapDarkening: 0.6,
+            PrimaryNoise: HighFreqPrimaryNoise,
+            SecondaryNoise: HighFreqSecondaryNoise);
+
+        Matrix<Rgb8> fromDisjointSet = HandTremor.Apply(image, disjointSet, dist, options: options);
+        Matrix<Rgb8> fromGraph = HandTremor.Apply(image, graph, dist, options: options);
+
+        MatrixAssert.Equal(fromGraph, fromDisjointSet);
+    }
+
+    private static DisjointSet<int> CreateVerticalSplitDisjointSet(int width, int height)
+    {
+        var dummy = new SequentialMatrix<int>(width, height);
+        var disjointSet = new DisjointSet<int>(dummy, static i => i);
+        int splitX = width / 2;
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (x < splitX && (x != 0 || y != 0))
+                {
+                    disjointSet.Union(new Coord(0, 0), new Coord(x, y), 0);
+                }
+                else if (x >= splitX && (x != splitX || y != 0))
+                {
+                    disjointSet.Union(new Coord(splitX, 0), new Coord(x, y), 1);
+                }
+            }
+        }
+
+        return disjointSet;
     }
 }

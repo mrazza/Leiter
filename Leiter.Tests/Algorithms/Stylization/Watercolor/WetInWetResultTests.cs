@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
 using System.Collections.Generic;
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -75,7 +76,28 @@ public class WetInWetResultTests
 
         Assert.Same(image, result.Image);
         Assert.Same(mask, result.WetAreaMask);
-        Assert.Same(qualifying, result.QualifyingBoundaries);
+        Assert.NotSame(qualifying, result.QualifyingBoundaries);
+        Assert.Equal(qualifying, result.QualifyingBoundaries);
+        Assert.True(result.QualifyingBoundaries is not bool[]);
+    }
+
+    /// <summary>
+    /// Verifies that mutating the caller's source list or attempting to mutate <see cref="WetInWetResult.QualifyingBoundaries"/>
+    /// does not corrupt the stored boundary flags.
+    /// </summary>
+    [Fact]
+    public void QualifyingBoundaries_ShouldBeDefensivelyCopiedAndReadOnly()
+    {
+        var image = new SequentialMatrix<Rgb8>(4, 4);
+        var mask = new MaskMatrix(4, 4);
+        var qualifying = new bool[] { true, false };
+
+        var result = new WetInWetResult(image, mask, qualifying);
+        qualifying[0] = false;
+        qualifying[1] = true;
+
+        Assert.Equal([true, false], result.QualifyingBoundaries);
+        Assert.Throws<NotSupportedException>(() => ((IList<bool>)result.QualifyingBoundaries)[0] = false);
     }
 
     /// <summary>
@@ -93,7 +115,8 @@ public class WetInWetResultTests
 
         Assert.Same(image, img);
         Assert.Same(mask, m);
-        Assert.Same(qualifying, q);
+        Assert.NotSame(qualifying, q);
+        Assert.Equal(qualifying, q);
     }
 
     /// <summary>
@@ -104,17 +127,43 @@ public class WetInWetResultTests
     {
         var image = new SequentialMatrix<Rgb8>(4, 4);
         var mask = new MaskMatrix(4, 4);
-        var qualifying = new bool[] { true };
 
-        var res1 = new WetInWetResult(image, mask, qualifying);
-        var res2 = new WetInWetResult(image, mask, qualifying);
+        var res1 = new WetInWetResult(image, mask, [true, false]);
+        var res2 = new WetInWetResult(image, mask, [true, false]);
 
         var otherImage = new SequentialMatrix<Rgb8>(4, 4);
-        var res3 = new WetInWetResult(otherImage, mask, qualifying);
+        var res3 = new WetInWetResult(otherImage, mask, [true, false]);
+        var res4 = new WetInWetResult(image, mask, [false, true]);
 
         Assert.Equal(res1, res2);
         Assert.True(res1 == res2);
         Assert.False(res1 == res3);
+        Assert.False(res1 == res4);
         Assert.Equal(res1.GetHashCode(), res2.GetHashCode());
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="WetInWetResult.ValidateAgainst"/> validates null, dimensions, and boundary counts.
+    /// </summary>
+    [Fact]
+    public void ValidateAgainst_ShouldValidateRegionGraphDimensionsAndBoundaryCount()
+    {
+        var labels = new SequentialMatrix<int>(2, 2);
+        labels[1, 0] = 1;
+        labels[1, 1] = 1;
+        var graph = RegionGraph.FromLabels(labels);
+
+        var valid = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), [true]);
+        valid.ValidateAgainst(graph, "wetInWet");
+
+        Assert.Throws<ArgumentNullException>(() => valid.ValidateAgainst(null!, "wetInWet"));
+
+        var wrongSize = new WetInWetResult(new SequentialMatrix<Rgb8>(3, 2), new MaskMatrix(3, 2), [true]);
+        ArgumentException sizeEx = Assert.Throws<ArgumentException>(() => wrongSize.ValidateAgainst(graph, "wetInWet"));
+        Assert.Equal("wetInWet", sizeEx.ParamName);
+
+        var wrongBoundaryCount = new WetInWetResult(new SequentialMatrix<Rgb8>(2, 2), new MaskMatrix(2, 2), []);
+        ArgumentException boundaryEx = Assert.Throws<ArgumentException>(() => wrongBoundaryCount.ValidateAgainst(graph, "wetInWet"));
+        Assert.Equal("wetInWet", boundaryEx.ParamName);
     }
 }

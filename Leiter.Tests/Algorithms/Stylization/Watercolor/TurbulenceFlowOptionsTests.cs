@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
@@ -18,7 +19,7 @@ public class TurbulenceFlowOptionsTests : SizeTunableOptionsContractTestsBase<Tu
     protected override TurbulenceFlowOptions CreateValidCustomOptions() =>
         new(
             Intensity: 0.5,
-            NoiseOptions: new PerlinNoiseOptions(Seed: 909, Frequency: 0.025, Octaves: 3, Lacunarity: 2.2, Persistence: 0.45));
+            Noise: new PerlinNoiseOptions(Seed: 909, Frequency: 0.025, Octaves: 3, Lacunarity: 2.2, Persistence: 0.45));
 
     /// <inheritdoc/>
     protected override TurbulenceFlowOptions CreateInvalidOptions() =>
@@ -32,7 +33,7 @@ public class TurbulenceFlowOptionsTests : SizeTunableOptionsContractTestsBase<Tu
         var options = new TurbulenceFlowOptions();
 
         Assert.Equal(0.35, options.Intensity);
-        Assert.Null(options.NoiseOptions);
+        Assert.Null(options.Noise);
 
         options.Validate();
     }
@@ -44,12 +45,12 @@ public class TurbulenceFlowOptionsTests : SizeTunableOptionsContractTestsBase<Tu
     public void Validate_ValidCustomOptions_ShouldNotThrow()
     {
         var noiseOpts = new PerlinNoiseOptions(Seed: 123, Frequency: 0.02, Octaves: 3, Lacunarity: 2.0, Persistence: 0.6);
-        var options = new TurbulenceFlowOptions(Intensity: 0.0, NoiseOptions: noiseOpts);
+        var options = new TurbulenceFlowOptions(Intensity: 0.0, Noise: noiseOpts);
 
         options.Validate();
 
         Assert.Equal(0.0, options.Intensity);
-        Assert.NotNull(options.NoiseOptions);
+        Assert.NotNull(options.Noise);
     }
 
     /// <summary>
@@ -68,10 +69,10 @@ public class TurbulenceFlowOptionsTests : SizeTunableOptionsContractTestsBase<Tu
     /// Verifies that invalid PerlinNoiseOptions throw <see cref="ArgumentOutOfRangeException"/>.
     /// </summary>
     [Fact]
-    public void Validate_InvalidNoiseOptions_ShouldThrowArgumentOutOfRangeException()
+    public void Validate_InvalidNoise_ShouldThrowArgumentOutOfRangeException()
     {
         var invalidNoise = new PerlinNoiseOptions(Frequency: -1.0);
-        var options = new TurbulenceFlowOptions(NoiseOptions: invalidNoise);
+        var options = new TurbulenceFlowOptions(Noise: invalidNoise);
         Assert.Throws<ArgumentOutOfRangeException>(() => options.Validate());
     }
 
@@ -82,20 +83,15 @@ public class TurbulenceFlowOptionsTests : SizeTunableOptionsContractTestsBase<Tu
     public void ForSize_And_ForImage_ShouldScaleNoiseFrequency()
     {
         TurbulenceFlowOptions refOpts = TurbulenceFlowOptions.ForSize(new Size(800, 800));
-        Assert.NotNull(refOpts.NoiseOptions);
-        Assert.Equal(0.015, refOpts.NoiseOptions!.Frequency, 6);
-        Assert.Equal(404, refOpts.NoiseOptions.Seed);
+        Assert.NotNull(refOpts.Noise);
+        Assert.Equal(0.015, refOpts.Noise!.Frequency, 6);
+        Assert.Equal(404, refOpts.Noise.Seed);
         Assert.Equal(refOpts, TurbulenceFlowOptions.ForSize(new Size(1000, 640)));
 
         TurbulenceFlowOptions small = TurbulenceFlowOptions.ForSize(new Size(200, 200));
         TurbulenceFlowOptions large = TurbulenceFlowOptions.ForSize(new Size(3200, 2400));
-        Assert.Equal(0.06, small.NoiseOptions!.Frequency, 6);
-        Assert.True(large.NoiseOptions!.Frequency < refOpts.NoiseOptions.Frequency);
-
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            TurbulenceFlowOptions.ForSize(size).Validate();
-        }
+        Assert.Equal(0.06, small.Noise!.Frequency, 6);
+        Assert.True(large.Noise!.Frequency < refOpts.Noise.Frequency);
 
         var image = new SequentialMatrix<Rgb8>(400, 400);
         Assert.Equal(TurbulenceFlowOptions.ForSize(image.Size), TurbulenceFlowOptions.ForImage(image));
@@ -103,8 +99,8 @@ public class TurbulenceFlowOptionsTests : SizeTunableOptionsContractTestsBase<Tu
         TurbulenceFlowOptions customBaseline = CreateValidCustomOptions();
         TurbulenceFlowOptions customHalf = TurbulenceFlowOptions.ForSize(new Size(400, 400), customBaseline);
         Assert.Equal(0.5, customHalf.Intensity, 6);
-        Assert.Equal(0.05, customHalf.NoiseOptions!.Frequency, 6);
-        Assert.Equal(909, customHalf.NoiseOptions.Seed);
+        Assert.Equal(0.05, customHalf.Noise!.Frequency, 6);
+        Assert.Equal(909, customHalf.Noise.Seed);
 
         var scalarImage = new SequentialMatrix<DoublePixel>(400, 400);
         Assert.Equal(customHalf, TurbulenceFlowOptions.ForImage(scalarImage, customBaseline));
@@ -112,10 +108,15 @@ public class TurbulenceFlowOptionsTests : SizeTunableOptionsContractTestsBase<Tu
         var rgb64Image = new SequentialMatrix<Rgb64>(400, 400);
         Assert.Equal(TurbulenceFlowOptions.ForSize(rgb64Image.Size), TurbulenceFlowOptions.ForImage(rgb64Image));
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => TurbulenceFlowOptions.ForSize(new Size(-1, 10)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TurbulenceFlowOptions.ForSize(new Size(10, 10), -2.0));
+        ImageAnalysis imageAnalysis = ImageAnalysis.Analyze(image);
+        Assert.Equal(TurbulenceFlowOptions.ForSize(image.Size), TurbulenceFlowOptions.ForAnalysis(imageAnalysis));
+        Assert.Equal(customHalf, TurbulenceFlowOptions.ForAnalysis(imageAnalysis, customBaseline));
+
         Assert.Throws<ArgumentNullException>(() => TurbulenceFlowOptions.ForImage<Rgb8>(null!));
         Assert.Throws<ArgumentNullException>(() => TurbulenceFlowOptions.ForImage<Rgb8>(null!, customBaseline));
         Assert.Throws<ArgumentNullException>(() => TurbulenceFlowOptions.ForImage(image, null!));
+        Assert.Throws<ArgumentNullException>(() => TurbulenceFlowOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>(() => TurbulenceFlowOptions.ForAnalysis(imageAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TurbulenceFlowOptions.ForAnalysis(imageAnalysis, 0.0));
     }
 }

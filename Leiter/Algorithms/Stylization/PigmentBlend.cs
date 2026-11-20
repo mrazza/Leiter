@@ -1,8 +1,7 @@
 namespace Leiter.Algorithms.Stylization;
 
 using System;
-using System.Linq;
-using System.Runtime.ExceptionServices;
+using System.Threading.Tasks;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -34,8 +33,8 @@ public static class PigmentBlend
 
     internal static double AdjustChannelDensityUnchecked(double channel, double densityOffset)
     {
-        double c = Math.Clamp(channel, 0.0, 1.0);
-        return Math.Clamp(c - (c * (1.0 - c) * densityOffset), 0.0, 1.0);
+        double c = ScalarMath.ClampUnit(channel);
+        return ScalarMath.ClampUnit(c - (c * (1.0 - c) * densityOffset));
     }
 
     /// <summary>
@@ -101,13 +100,13 @@ public static class PigmentBlend
     internal static Rgb64 MixPigmentsUnchecked(Rgb64 first, Rgb64 second, double overlapDarkening = 0.5)
     {
         Rgb64 c1 = new(
-            Math.Clamp(first.R, 0.0, 1.0),
-            Math.Clamp(first.G, 0.0, 1.0),
-            Math.Clamp(first.B, 0.0, 1.0));
+            ScalarMath.ClampUnit(first.R),
+            ScalarMath.ClampUnit(first.G),
+            ScalarMath.ClampUnit(first.B));
         Rgb64 c2 = new(
-            Math.Clamp(second.R, 0.0, 1.0),
-            Math.Clamp(second.G, 0.0, 1.0),
-            Math.Clamp(second.B, 0.0, 1.0));
+            ScalarMath.ClampUnit(second.R),
+            ScalarMath.ClampUnit(second.G),
+            ScalarMath.ClampUnit(second.B));
 
         Rgb64 darker;
         Rgb64 lighter;
@@ -150,13 +149,12 @@ public static class PigmentBlend
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing density-adjusted pixels.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="densityField"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="densityField"/> dimensions do not match <paramref name="image"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="intensity"/> or any field sample is non-finite.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="intensity"/>, any sample in <paramref name="densityField"/>, or any scaled density offset is non-finite.</exception>
     public static Matrix<Rgb8> ApplyDensityField(
         IReadOnlyMatrix<Rgb8> image,
         IReadOnlyMatrix<DoublePixel> densityField,
         double intensity = 1.0)
     {
-        ArgumentNullException.ThrowIfNull(image);
         Guard.ThrowIfSizeMismatch(image, densityField);
         Guard.ThrowIfNotFinite(intensity);
 
@@ -165,20 +163,13 @@ public static class PigmentBlend
             return image.Clone();
         }
 
-        if (intensity == 0.0)
+        double[]? densityOffsets = ValidateAndBuildDensityOffsets(densityField, intensity);
+        if (densityOffsets is null)
         {
-            for (int y = 0; y < densityField.Height; y++)
-            {
-                for (int x = 0; x < densityField.Width; x++)
-                {
-                    Guard.ThrowIfNotFinite(densityField[x, y].Value, nameof(densityField));
-                }
-            }
-
             return image.Clone();
         }
 
-        return ApplyDensityField(image, densityField, value => intensity * value);
+        return ApplyDensityOffsetsUnchecked(image, densityOffsets);
     }
 
     /// <summary>
@@ -198,7 +189,6 @@ public static class PigmentBlend
         IReadOnlyMatrix<DoublePixel> field,
         Func<double, double> densityOffsetSelector)
     {
-        ArgumentNullException.ThrowIfNull(image);
         Guard.ThrowIfSizeMismatch(image, field);
         ArgumentNullException.ThrowIfNull(densityOffsetSelector);
 
@@ -207,19 +197,125 @@ public static class PigmentBlend
             return image.Clone();
         }
 
-        try
+        double[] densityOffsets = EvaluateAndValidateDensityOffsets(field, densityOffsetSelector);
+        return ApplyDensityOffsetsUnchecked(image, densityOffsets);
+    }
+
+    private static double[]? ValidateAndBuildDensityOffsets(IReadOnlyMatrix<DoublePixel> densityField, double intensity)
+    {
+        int count = densityField.Count;
+        if (intensity == 0.0)
         {
-            return image.Zip(field, (pixel, sample) =>
+            if (densityField.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> span))
             {
-                double densityOffset = densityOffsetSelector(sample.Value);
-                Guard.ThrowIfNotFinite(densityOffset);
-                return AdjustDensityUnchecked(pixel, densityOffset);
-            });
+                for (int i = 0; i < span.Length; i++)
+                {
+                    Guard.ThrowIfNotFinite(span[i].Value, nameof(densityField));
+                }
+            }
+            else
+            {
+                for (int y = 0; y < densityField.Height; y++)
+                {
+                    for (int x = 0; x < densityField.Width; x++)
+                    {
+                        Guard.ThrowIfNotFinite(densityField[x, y].Value, nameof(densityField));
+                    }
+                }
+            }
+
+            return null;
         }
-        catch (AggregateException ex) when (ex.InnerExceptions.FirstOrDefault(static e => e is ArgumentOutOfRangeException) is ArgumentOutOfRangeException inner)
+
+        var offsets = new double[count];
+        if (densityField.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> fieldSpan))
         {
-            ExceptionDispatchInfo.Capture(inner).Throw();
-            throw;
+            for (int i = 0; i < fieldSpan.Length; i++)
+            {
+                offsets[i] = ValidateScaledOffset(fieldSpan[i].Value, intensity, nameof(densityField));
+            }
         }
+        else
+        {
+            Size size = densityField.Size;
+            for (int y = 0; y < size.Height; y++)
+            {
+                int rowOffset = size.IndexOf(0, y);
+                for (int x = 0; x < size.Width; x++)
+                {
+                    offsets[rowOffset + x] = ValidateScaledOffset(densityField[x, y].Value, intensity, nameof(densityField));
+                }
+            }
+        }
+
+        return offsets;
+    }
+
+    private static double ValidateScaledOffset(double sample, double intensity, string paramName)
+    {
+        Guard.ThrowIfNotFinite(sample, paramName);
+        double offset = intensity * sample;
+        Guard.ThrowIfNotFinite(offset, paramName);
+        return offset;
+    }
+
+    private static double[] EvaluateAndValidateDensityOffsets(
+        IReadOnlyMatrix<DoublePixel> field,
+        Func<double, double> densityOffsetSelector)
+    {
+        var offsets = new double[field.Count];
+        if (field.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> span))
+        {
+            for (int i = 0; i < span.Length; i++)
+            {
+                double densityOffset = densityOffsetSelector(span[i].Value);
+                Guard.ThrowIfNotFinite(densityOffset);
+                offsets[i] = densityOffset;
+            }
+        }
+        else
+        {
+            Size size = field.Size;
+            for (int y = 0; y < size.Height; y++)
+            {
+                int rowOffset = size.IndexOf(0, y);
+                for (int x = 0; x < size.Width; x++)
+                {
+                    double densityOffset = densityOffsetSelector(field[x, y].Value);
+                    Guard.ThrowIfNotFinite(densityOffset);
+                    offsets[rowOffset + x] = densityOffset;
+                }
+            }
+        }
+
+        return offsets;
+    }
+
+    private static Matrix<Rgb8> ApplyDensityOffsetsUnchecked(IReadOnlyMatrix<Rgb8> image, double[] densityOffsets)
+    {
+        int width = image.Width;
+        int height = image.Height;
+        var result = new SequentialMatrix<Rgb8>(width, height);
+        Rgb8[] destRaw = result.RawData;
+
+        if (image is SequentialMatrix<Rgb8> sequentialImage)
+        {
+            Rgb8[] srcRaw = sequentialImage.RawData;
+            Parallel.For(0, destRaw.Length, i => destRaw[i] = AdjustDensityUnchecked(srcRaw[i], densityOffsets[i]));
+            return result;
+        }
+
+        Size size = image.Size;
+        Parallel.For(0, height, y =>
+        {
+            int rowOffset = size.IndexOf(0, y);
+            for (int x = 0; x < width; x++)
+            {
+                int idx = rowOffset + x;
+                destRaw[idx] = AdjustDensityUnchecked(image[x, y], densityOffsets[idx]);
+            }
+        });
+
+        return result;
     }
 }

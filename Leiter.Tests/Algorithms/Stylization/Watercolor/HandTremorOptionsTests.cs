@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
@@ -316,11 +317,6 @@ public class HandTremorOptionsTests : SizeTunableOptionsContractTestsBase<HandTr
         Assert.True(small.PrimaryNoise!.Frequency > refOpts.PrimaryNoise.Frequency);
         Assert.True(large.PrimaryNoise!.Frequency < refOpts.PrimaryNoise.Frequency);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            HandTremorOptions.ForSize(size).Validate();
-        }
-
         var image = new SequentialMatrix<Rgb8>(400, 400);
         Assert.Equal(HandTremorOptions.ForSize(image.Size), HandTremorOptions.ForImage(image));
 
@@ -339,10 +335,20 @@ public class HandTremorOptionsTests : SizeTunableOptionsContractTestsBase<HandTr
         var rgb64Image = new SequentialMatrix<Rgb64>(400, 400);
         Assert.Equal(HandTremorOptions.ForSize(rgb64Image.Size), HandTremorOptions.ForImage(rgb64Image));
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => HandTremorOptions.ForSize(new Size(-1, 10)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => HandTremorOptions.ForSize(new Size(10, 10), 0.0));
+        ImageAnalysis imageAnalysis = ImageAnalysis.Analyze(image);
+        Assert.Equal(HandTremorOptions.ForSize(image.Size), HandTremorOptions.ForAnalysis(imageAnalysis));
+        Assert.Equal(customHalf, HandTremorOptions.ForAnalysis(imageAnalysis, customBaseline));
+
+        var overflowBaseline = new HandTremorOptions(Amplitude: 1e300);
+        HandTremorOptions overflowScaled = HandTremorOptions.ForSize(new Size(100_000, 100_000), overflowBaseline, referenceDimension: 1.0);
+        overflowScaled.Validate();
+        Assert.True(double.IsFinite(overflowScaled.Amplitude));
+
         Assert.Throws<ArgumentNullException>(() => HandTremorOptions.ForImage<Rgb8>(null!));
         Assert.Throws<ArgumentNullException>(() => HandTremorOptions.ForImage<Rgb8>(null!, customBaseline));
         Assert.Throws<ArgumentNullException>(() => HandTremorOptions.ForImage(image, null!));
+        Assert.Throws<ArgumentNullException>(() => HandTremorOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>(() => HandTremorOptions.ForAnalysis(imageAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => HandTremorOptions.ForAnalysis(imageAnalysis, 0.0));
     }
 }

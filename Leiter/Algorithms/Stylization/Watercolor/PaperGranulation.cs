@@ -47,7 +47,7 @@ public static class PaperGranulation
                     opts.Persistence);
                 double f = (fractal + 1.0) * 0.5;
                 double t = 1.0 - turbulence;
-                double combined = Math.Clamp((0.65 * f) + (0.35 * t), 0.0, 1.0);
+                double combined = ScalarMath.ClampUnit((0.65 * f) + (0.35 * t));
                 result[x, y] = new DoublePixel(combined);
             }
         });
@@ -59,20 +59,20 @@ public static class PaperGranulation
     /// Applies paper granulation, micro-warp surface displacement, and valley pigment darkening to an RGB image.
     /// </summary>
     /// <param name="image">The input RGB image.</param>
-    /// <param name="options">Optional granulation configuration parameters. If <see langword="null"/>, default options are used.</param>
     /// <param name="paperHeightMap">Optional precomputed or custom paper height map. If <see langword="null"/>, a procedural map is synthesized.</param>
+    /// <param name="options">Optional granulation configuration parameters. If <see langword="null"/>, default options are used.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the granulated image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> are invalid.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="paperHeightMap"/> dimensions do not match <paramref name="image"/> dimensions.</exception>
     public static Matrix<Rgb8> Apply(
         IReadOnlyMatrix<Rgb8> image,
-        PaperGranulationOptions? options = null,
-        IReadOnlyMatrix<DoublePixel>? paperHeightMap = null)
+        IReadOnlyMatrix<DoublePixel>? paperHeightMap = null,
+        PaperGranulationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        PaperGranulationOptions opts = OptionsResolver.Resolve(options, PaperGranulationOptions.Default);
+        PaperGranulationOptions opts = OptionsResolver.Resolve(options);
         Guard.ThrowIfSizeMismatchIfNotNull(image, paperHeightMap);
 
         if (image.Count == 0 || (opts.DensityStrength == 0.0 && opts.WarpAmplitude == 0.0))
@@ -80,7 +80,7 @@ public static class PaperGranulation
             return image.Clone();
         }
 
-        PerlinNoiseOptions grainOpts = opts.GrainNoiseOptions ?? PaperGranulationOptions.DefaultGrainNoise;
+        PerlinNoiseOptions grainOpts = opts.GrainNoise ?? PaperGranulationOptions.DefaultGrainNoise;
         bool isProcedural = paperHeightMap is null;
         IReadOnlyMatrix<DoublePixel> heightMap = paperHeightMap ?? GeneratePaperHeightMap(image.Size, grainOpts);
 

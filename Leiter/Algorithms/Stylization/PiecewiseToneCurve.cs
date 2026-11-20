@@ -36,14 +36,14 @@ public static class PiecewiseToneCurve
     {
         Guard.ThrowIfNotFinite(value);
 
-        PiecewiseToneCurveOptions resolvedOptions = OptionsResolver.Resolve(options, PiecewiseToneCurveOptions.Default);
+        PiecewiseToneCurveOptions resolvedOptions = OptionsResolver.Resolve(options);
 
         return EvaluateCore(value, resolvedOptions);
     }
 
     private static double EvaluateCore(double value, PiecewiseToneCurveOptions resolvedOptions)
     {
-        double clampedInput = Math.Clamp(value, 0.0, 1.0);
+        double clampedInput = ScalarMath.ClampUnit(value);
         double minTone = resolvedOptions.MinTone;
         double maxTone = resolvedOptions.MaxTone;
         double toneRange = maxTone - minTone;
@@ -98,7 +98,7 @@ public static class PiecewiseToneCurve
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        PiecewiseToneCurveOptions resolvedOptions = OptionsResolver.Resolve(options, PiecewiseToneCurveOptions.Default);
+        PiecewiseToneCurveOptions resolvedOptions = OptionsResolver.Resolve(options);
 
         if (image.Count == 0)
         {

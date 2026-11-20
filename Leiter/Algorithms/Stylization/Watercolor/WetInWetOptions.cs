@@ -29,8 +29,11 @@ public sealed record WetInWetOptions(
     int ScatterRadius = 4,
     double SeedProbability = 0.45,
     OrientedEllipticalFilterOptions? EllipticalFilter = null,
-    int Seed = 1337) : IProfileTunableOptions<WetInWetOptions>
+    int Seed = 1337) : IProfileTunableOptions<WetInWetOptions>, ISizeTunableOptions<WetInWetOptions>
 {
+    private const double MinScaledGradientThreshold = 0.005;
+    private const double MaxScaledGradientThreshold = 0.5;
+
     /// <summary>
     /// Gets the default oriented elliptical smoothing options used when <see cref="EllipticalFilter"/> is <see langword="null"/>.
     /// </summary>
@@ -52,7 +55,9 @@ public sealed record WetInWetOptions(
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <returns>
+    /// <see cref="Default"/> unchanged when <paramref name="size"/> is empty; otherwise a validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="size"/>.
+    /// </returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static WetInWetOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
         ForSize(size, Default, referenceDimension);
@@ -63,7 +68,9 @@ public sealed record WetInWetOptions(
     /// <param name="size">The target image dimensions.</param>
     /// <param name="baseline">The baseline wet-in-wet configuration calibrated at <paramref name="referenceDimension"/>.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <returns>
+    /// <paramref name="baseline"/> unchanged when <paramref name="size"/> is empty; otherwise a validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="size"/>.
+    /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
     public static WetInWetOptions ForSize(
@@ -71,23 +78,33 @@ public sealed record WetInWetOptions(
         WetInWetOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
-        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        ArgumentNullException.ThrowIfNull(baseline);
-        baseline.Validate();
+        OptionTuning.ValidateSizeTuning(size, baseline, referenceDimension);
+        return ForSizeUnchecked(size, baseline, referenceDimension);
+    }
+
+    internal static WetInWetOptions ForSizeUnchecked(
+        Size size,
+        WetInWetOptions baseline,
+        double referenceDimension)
+    {
+        var (s, _, totalPixels) = OptionTuning.ComputeScalesUnchecked(size, referenceDimension);
         if (totalPixels == 0)
         {
             return baseline;
         }
 
         OrientedEllipticalFilterOptions filterBaseline = baseline.EllipticalFilter ?? DefaultEllipticalFilter;
-        double minGradient = Math.Min(0.005, baseline.ColorGradientThreshold);
-        double maxGradient = Math.Max(0.5, baseline.ColorGradientThreshold);
+        double minGradient = Math.Min(MinScaledGradientThreshold, baseline.ColorGradientThreshold);
+        double maxGradient = Math.Max(MaxScaledGradientThreshold, baseline.ColorGradientThreshold);
+        double colorGradientThreshold = baseline.ColorGradientThreshold == 0.0
+            ? 0.0
+            : OptionTuning.ClampFinite(baseline.ColorGradientThreshold / s, minGradient, maxGradient);
 
         return baseline with
         {
             ScatterRadius = OptionTuning.RoundPositiveInt(baseline.ScatterRadius * s),
             EllipticalFilter = OrientedEllipticalFilterOptions.ForSize(size, filterBaseline, referenceDimension),
-            ColorGradientThreshold = Math.Clamp(baseline.ColorGradientThreshold / s, minGradient, maxGradient)
+            ColorGradientThreshold = colorGradientThreshold
         };
     }
 
@@ -96,7 +113,9 @@ public sealed record WetInWetOptions(
     /// </summary>
     /// <param name="image">The input RGB image to analyze.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <returns>
+    /// <see cref="Default"/> unchanged when <paramref name="image"/> is empty; otherwise a validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="image"/>.
+    /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static WetInWetOptions ForImage(
@@ -110,7 +129,9 @@ public sealed record WetInWetOptions(
     /// <param name="image">The input RGB image to analyze.</param>
     /// <param name="baseline">The baseline wet-in-wet configuration calibrated at <paramref name="referenceDimension"/>.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <returns>
+    /// <paramref name="baseline"/> unchanged when <paramref name="image"/> is empty; otherwise a validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="image"/>.
+    /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
     public static WetInWetOptions ForImage(
@@ -118,6 +139,38 @@ public sealed record WetInWetOptions(
         WetInWetOptions baseline,
         double referenceDimension = DefaultReferenceDimension) =>
         OptionTuning.TuneForImage(image, baseline, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="WetInWetOptions"/> tuned from a cached <see cref="ImageAnalysis"/> profile.
+    /// </summary>
+    /// <param name="analysis">The precomputed image analysis profile.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>
+    /// <see cref="Default"/> unchanged when the analyzed image is empty; otherwise a validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="analysis"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static WetInWetOptions ForAnalysis(
+        ImageAnalysis analysis,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis<WetInWetOptions>(analysis, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="WetInWetOptions"/> tuned from <paramref name="baseline"/> using a cached <see cref="ImageAnalysis"/> profile.
+    /// </summary>
+    /// <param name="analysis">The precomputed image analysis profile.</param>
+    /// <param name="baseline">The baseline wet-in-wet configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>
+    /// <paramref name="baseline"/> unchanged when the analyzed image is empty; otherwise a validated <see cref="WetInWetOptions"/> instance tuned for <paramref name="analysis"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static WetInWetOptions ForAnalysis(
+        ImageAnalysis analysis,
+        WetInWetOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis(analysis, baseline, referenceDimension);
 
     static WetInWetOptions IProfileTunableOptions<WetInWetOptions>.ForProfile(
         in ImageTuningProfile profile,
@@ -130,17 +183,20 @@ public sealed record WetInWetOptions(
         WetInWetOptions baseline,
         double referenceDimension)
     {
-        WetInWetOptions scaled = ForSize(profile.ImageSize, baseline, referenceDimension);
+        WetInWetOptions scaled = ForSizeUnchecked(profile.ImageSize, baseline, referenceDimension);
         if (profile.IsEmpty)
         {
             return scaled;
         }
 
-        double minGradient = Math.Min(0.005, scaled.ColorGradientThreshold);
-        double maxGradient = Math.Max(0.5, scaled.ColorGradientThreshold);
+        double minGradient = Math.Min(MinScaledGradientThreshold, scaled.ColorGradientThreshold);
+        double maxGradient = Math.Max(MaxScaledGradientThreshold, scaled.ColorGradientThreshold);
         return scaled with
         {
-            ColorGradientThreshold = Math.Clamp(scaled.ColorGradientThreshold * profile.ClutterFactor, minGradient, maxGradient)
+            ColorGradientThreshold = OptionTuning.ClampFinite(
+                scaled.ColorGradientThreshold * profile.ClutterFactor,
+                minGradient,
+                maxGradient)
         };
     }
 
