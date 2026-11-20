@@ -16,42 +16,27 @@ internal static class MeanShiftRegionClusterer
     private const double GradientBucketScale = 4.0;
     private const double SeedColorBoundMultiplier = 1.5;
 
-    private readonly struct RegionColorAccumulator(double[] sumL, double[] sumA, double[] sumB)
+    private readonly struct RegionColorAccumulator(Vector3D[] sums)
     {
         public static RegionColorAccumulator Build(DisjointSet<byte> disjointSet, ReadOnlySpan<Lab32> sourcePixels)
         {
             int pixelCount = sourcePixels.Length;
-            var sumL = new double[pixelCount];
-            var sumA = new double[pixelCount];
-            var sumB = new double[pixelCount];
+            var sums = new Vector3D[pixelCount];
 
             for (int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
             {
                 int rootIndex = disjointSet.GetPartition(pixelIndex).RootIndex;
-                Lab32 color = sourcePixels[pixelIndex];
-                sumL[rootIndex] += color.L;
-                sumA[rootIndex] += color.A;
-                sumB[rootIndex] += color.B;
+                sums[rootIndex] += ToColorVector(sourcePixels[pixelIndex]);
             }
 
-            return new RegionColorAccumulator(sumL, sumA, sumB);
+            return new RegionColorAccumulator(sums);
         }
 
-        public Lab32 GetMeanColor(int rootIndex, int regionSize)
-        {
-            double invSize = 1.0 / regionSize;
-            return new Lab32(
-                (float)(sumL[rootIndex] * invSize),
-                (float)(sumA[rootIndex] * invSize),
-                (float)(sumB[rootIndex] * invSize));
-        }
+        public Lab32 GetMeanColor(int rootIndex, int regionSize) =>
+            ComputeMeanColor(sums[rootIndex], regionSize);
 
-        public void Absorb(int targetRoot, int absorbedRoot)
-        {
-            sumL[targetRoot] += sumL[absorbedRoot];
-            sumA[targetRoot] += sumA[absorbedRoot];
-            sumB[targetRoot] += sumB[absorbedRoot];
-        }
+        public void Absorb(int targetRoot, int absorbedRoot) =>
+            sums[targetRoot] += sums[absorbedRoot];
     }
 
     public static IDisjointSet ClusterModes(
@@ -203,9 +188,7 @@ internal static class MeanShiftRegionClusterer
 
         var regionPartition = disjointSet.GetPartition(seedPixel);
         Lab32 seedColor = modes[seedPixel].Color;
-        double sumL = seedColor.L;
-        double sumA = seedColor.A;
-        double sumB = seedColor.B;
+        Vector3D colorSum = ToColorVector(seedColor);
         int memberCount = 1;
 
         while (frontierQueue.Count > 0)
@@ -214,7 +197,7 @@ internal static class MeanShiftRegionClusterer
             int currentX = currentPixel % width;
             int currentY = currentPixel / width;
             MeanShiftMode currentMode = modes[currentPixel];
-            Lab32 regionMeanColor = ComputeMeanColor(sumL, sumA, sumB, memberCount);
+            Lab32 regionMeanColor = ComputeMeanColor(colorSum, memberCount);
 
             for (int n = 0; n < neighbors.Length; n++)
             {
@@ -242,20 +225,23 @@ internal static class MeanShiftRegionClusterer
 
                 visited[neighborPixel] = true;
                 regionPartition = disjointSet.Union(regionPartition, disjointSet.GetPartition(neighborPixel), 0);
-                sumL += neighborMode.Color.L;
-                sumA += neighborMode.Color.A;
-                sumB += neighborMode.Color.B;
+                colorSum += ToColorVector(neighborMode.Color);
                 memberCount++;
-                regionMeanColor = ComputeMeanColor(sumL, sumA, sumB, memberCount);
+                regionMeanColor = ComputeMeanColor(colorSum, memberCount);
                 frontierQueue.Enqueue(neighborPixel);
             }
         }
     }
 
-    private static Lab32 ComputeMeanColor(double sumL, double sumA, double sumB, int memberCount)
+    private static Vector3D ToColorVector(Lab32 color) => new(color.L, color.A, color.B);
+
+    private static Lab32 ComputeMeanColor(Vector3D colorSum, int memberCount)
     {
         double invCount = 1.0 / memberCount;
-        return new Lab32((float)(sumL * invCount), (float)(sumA * invCount), (float)(sumB * invCount));
+        return new Lab32(
+            (float)(colorSum.X * invCount),
+            (float)(colorSum.Y * invCount),
+            (float)(colorSum.Z * invCount));
     }
 
     private static bool CanMergeNeighborMode(

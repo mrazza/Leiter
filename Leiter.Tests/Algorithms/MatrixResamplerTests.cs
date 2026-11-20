@@ -286,4 +286,107 @@ public class MatrixResamplerTests
         Assert.Throws<ArgumentOutOfRangeException>(() => image.WarpBilinear(field, scale: double.NaN));
         Assert.Throws<ArgumentOutOfRangeException>(() => image.WarpBilinear(field, edgeHandling: (EdgeHandling)99));
     }
+
+    [Fact]
+    public void ResizeBox_Rgb8AndLab32AndGeneric_ShouldAverageAndRoundCorrectly()
+    {
+        // Rgb8 exact integer average + AwayFromZero half-step rounding (20.5 -> 21, 0.5 -> 1)
+        var rgbHalfStep = new SequentialMatrix<Rgb8>(2, 2);
+        rgbHalfStep[0, 0] = new Rgb8(10, 20, 0);
+        rgbHalfStep[1, 0] = new Rgb8(11, 21, 1);
+        rgbHalfStep[0, 1] = new Rgb8(10, 20, 0);
+        rgbHalfStep[1, 1] = new Rgb8(11, 21, 1);
+
+        Matrix<Rgb8> rgbSingle = rgbHalfStep.ResizeBox(new Size(1, 1));
+        Assert.Equal(new Size(1, 1), rgbSingle.Size);
+        Assert.Equal(new Rgb8(11, 21, 1), rgbSingle[0, 0]);
+
+        // Non-integer downscale ratio 5x5 -> 2x2 splits axes into [0..2) and [2..5)
+        var rgbFiveByFive = new SequentialMatrix<Rgb8>(5, 5);
+        for (int y = 0; y < 5; y++)
+        {
+            for (int x = 0; x < 5; x++)
+            {
+                byte r = (byte)(x < 2 ? 10 : 40);
+                byte g = (byte)(y < 2 ? 20 : 80);
+                byte b = (byte)(x >= 2 && y >= 2 ? 90 : 30);
+                rgbFiveByFive[x, y] = new Rgb8(r, g, b);
+            }
+        }
+
+        Matrix<Rgb8> rgbTwoByTwo = rgbFiveByFive.ResizeBox(new Size(2, 2));
+        Assert.Equal(new Rgb8(10, 20, 30), rgbTwoByTwo[0, 0]);
+        Assert.Equal(new Rgb8(40, 20, 30), rgbTwoByTwo[1, 0]);
+        Assert.Equal(new Rgb8(10, 80, 30), rgbTwoByTwo[0, 1]);
+        Assert.Equal(new Rgb8(40, 80, 90), rgbTwoByTwo[1, 1]);
+
+        // Lab32 fast path
+        var lab = new SequentialMatrix<Lab32>(2, 2);
+        lab[0, 0] = new Lab32(10f, -20f, 5f);
+        lab[1, 0] = new Lab32(30f, 20f, 15f);
+        lab[0, 1] = new Lab32(50f, -10f, 25f);
+        lab[1, 1] = new Lab32(70f, 10f, 35f);
+
+        Matrix<Lab32> labAvg = lab.ResizeBox(new Size(1, 1));
+        Assert.Equal(40.0f, labAvg[0, 0].L, 5);
+        Assert.Equal(0.0f, labAvg[0, 0].A, 5);
+        Assert.Equal(20.0f, labAvg[0, 0].B, 5);
+
+        // Generic paths: DoublePixel and Rgb64
+        var dbl = new SequentialMatrix<DoublePixel>(4, 2);
+        for (int y = 0; y < 2; y++)
+        {
+            for (int x = 0; x < 4; x++)
+                dbl[x, y] = (y * 100.0) + x;
+        }
+
+        Matrix<DoublePixel> dblMixed = dbl.ResizeBox(new Size(2, 4));
+        Assert.Equal(new Size(2, 4), dblMixed.Size);
+        Assert.Equal(0.5, dblMixed[0, 0].Value, 9);
+        Assert.Equal(2.5, dblMixed[1, 0].Value, 9);
+        Assert.Equal(0.5, dblMixed[0, 1].Value, 9);
+        Assert.Equal(100.5, dblMixed[0, 2].Value, 9);
+        Assert.Equal(102.5, dblMixed[1, 3].Value, 9);
+
+        var rgb64 = new SequentialMatrix<Rgb64>(2, 2);
+        rgb64[0, 0] = new Rgb64(0.2, 0.4, 0.6);
+        rgb64[1, 0] = new Rgb64(0.4, 0.6, 0.8);
+        rgb64[0, 1] = new Rgb64(0.2, 0.4, 0.6);
+        rgb64[1, 1] = new Rgb64(0.4, 0.6, 0.8);
+
+        Matrix<Rgb64> rgb64Upsampled = rgb64.ResizeBox(new Size(4, 4));
+        Assert.Equal(new Size(4, 4), rgb64Upsampled.Size);
+        Assert.Equal(0.2, rgb64Upsampled[0, 0].R, 9);
+        Assert.Equal(0.2, rgb64Upsampled[1, 1].R, 9);
+        Assert.Equal(0.4, rgb64Upsampled[2, 2].R, 9);
+        Assert.Equal(0.8, rgb64Upsampled[3, 3].B, 9);
+
+        Matrix<Rgb64> rgb64Down = rgb64.ResizeBox(new Size(1, 1));
+        Assert.Equal(0.3, rgb64Down[0, 0].R, 9);
+        Assert.Equal(0.5, rgb64Down[0, 0].G, 9);
+        Assert.Equal(0.7, rgb64Down[0, 0].B, 9);
+    }
+
+    [Fact]
+    public void ResizeBox_IdentityAndValidationAndEmpty_ShouldBehaveCorrectly()
+    {
+        var source = new SequentialMatrix<Rgb8>(2, 2);
+        source[0, 0] = new Rgb8(10, 20, 30);
+        source[1, 1] = new Rgb8(40, 50, 60);
+
+        Matrix<Rgb8> identity = source.ResizeBox(source.Size);
+        Assert.NotSame(source, identity);
+        Assert.True(source.ContentEquals(identity));
+
+        Assert.Empty(source.ResizeBox(new Size(0, 2)));
+        Assert.Empty(source.ResizeBox(new Size(2, 0)));
+
+        var empty = new SequentialMatrix<DoublePixel>(0, 0);
+        Assert.Empty(empty.ResizeBox(new Size(0, 0)));
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb8>)null!).ResizeBox(new Size(1, 1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => source.ResizeBox(new Size(-1, 2)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => source.ResizeBox(new Size(2, -1)));
+        Assert.Throws<ArgumentException>(() => empty.ResizeBox(new Size(2, 2)));
+    }
 }

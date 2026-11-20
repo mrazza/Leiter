@@ -1,7 +1,6 @@
 namespace Leiter.Algorithms.Internal;
 
 using System;
-using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Color;
 using Leiter.Core;
@@ -41,7 +40,7 @@ internal readonly record struct ImageTuningProfile(
 
         double geomMean = Math.Sqrt((double)image.Width * image.Height);
         IReadOnlyMatrix<Rgb8> thumb = geomMean > CanonicalDimension
-            ? DownsampleBox<Rgb8, Rgb8BoxAccumulator>(image, geomMean)
+            ? image.ResizeBox(ComputeThumbnailSize(image.Size, geomMean))
             : image;
 
         LabColorStatistics labStats = ColorTransfer.ComputeStatistics(thumb, RgbColorSpace.SRgb, Illuminant.E);
@@ -63,7 +62,7 @@ internal readonly record struct ImageTuningProfile(
 
         double geomMean = Math.Sqrt((double)labImage.Width * labImage.Height);
         IReadOnlyMatrix<Lab32> labThumb = geomMean > CanonicalDimension
-            ? DownsampleBox<Lab32, Lab32BoxAccumulator>(labImage, geomMean)
+            ? labImage.ResizeBox(ComputeThumbnailSize(labImage.Size, geomMean))
             : labImage;
 
         LabColorStatistics labStats = ColorTransfer.ComputeStatistics(labThumb);
@@ -127,86 +126,11 @@ internal readonly record struct ImageTuningProfile(
         return 1.0 + (weight * (rawClutter - 1.0));
     }
 
-    private static Matrix<TPixel> DownsampleBox<TPixel, TAccumulator>(IReadOnlyMatrix<TPixel> source, double sourceGeomMean)
-        where TPixel : struct
-        where TAccumulator : struct, IBoxAccumulator<TPixel>
+    private static Size ComputeThumbnailSize(Size sourceSize, double sourceGeomMean)
     {
         double scale = CanonicalDimension / sourceGeomMean;
-        int thumbW = Math.Clamp((int)Math.Round(source.Width * scale, MidpointRounding.AwayFromZero), 1, source.Width);
-        int thumbH = Math.Clamp((int)Math.Round(source.Height * scale, MidpointRounding.AwayFromZero), 1, source.Height);
-
-        var thumb = new SequentialMatrix<TPixel>(thumbW, thumbH);
-        int srcW = source.Width;
-        int srcH = source.Height;
-
-        Parallel.For(0, thumbH, ty =>
-        {
-            int y0 = Math.Min((int)((long)ty * srcH / thumbH), srcH - 1);
-            int y1 = Math.Clamp((int)((long)(ty + 1) * srcH / thumbH), y0 + 1, srcH);
-
-            for (int tx = 0; tx < thumbW; tx++)
-            {
-                int x0 = Math.Min((int)((long)tx * srcW / thumbW), srcW - 1);
-                int x1 = Math.Clamp((int)((long)(tx + 1) * srcW / thumbW), x0 + 1, srcW);
-
-                TAccumulator accumulator = default;
-                for (int sy = y0; sy < y1; sy++)
-                {
-                    for (int sx = x0; sx < x1; sx++)
-                    {
-                        accumulator.Add(source[sx, sy]);
-                    }
-                }
-
-                double invCount = 1.0 / ((x1 - x0) * (y1 - y0));
-                thumb[tx, ty] = accumulator.ToAverage(invCount);
-            }
-        });
-
-        return thumb;
-    }
-
-    private interface IBoxAccumulator<TPixel>
-        where TPixel : struct
-    {
-        void Add(TPixel pixel);
-        TPixel ToAverage(double invCount);
-    }
-
-    private struct Rgb8BoxAccumulator : IBoxAccumulator<Rgb8>
-    {
-        private long sumR;
-        private long sumG;
-        private long sumB;
-
-        public void Add(Rgb8 pixel)
-        {
-            sumR += pixel.R;
-            sumG += pixel.G;
-            sumB += pixel.B;
-        }
-
-        public readonly Rgb8 ToAverage(double invCount) =>
-            new(
-                Rgb8.ClampRoundedByte(sumR * invCount),
-                Rgb8.ClampRoundedByte(sumG * invCount),
-                Rgb8.ClampRoundedByte(sumB * invCount));
-    }
-
-    private struct Lab32BoxAccumulator : IBoxAccumulator<Lab32>
-    {
-        private double sumL;
-        private double sumA;
-        private double sumB;
-
-        public void Add(Lab32 pixel)
-        {
-            sumL += pixel.L;
-            sumA += pixel.A;
-            sumB += pixel.B;
-        }
-
-        public readonly Lab32 ToAverage(double invCount) =>
-            new((float)(sumL * invCount), (float)(sumA * invCount), (float)(sumB * invCount));
+        int thumbW = Math.Clamp((int)Math.Round(sourceSize.Width * scale, MidpointRounding.AwayFromZero), 1, sourceSize.Width);
+        int thumbH = Math.Clamp((int)Math.Round(sourceSize.Height * scale, MidpointRounding.AwayFromZero), 1, sourceSize.Height);
+        return new Size(thumbW, thumbH);
     }
 }
