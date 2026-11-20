@@ -2,7 +2,7 @@
 
 [![Build & Test](https://github.com/mrazza/Leiter/actions/workflows/test.yml/badge.svg)](https://github.com/mrazza/Leiter/actions/workflows/test.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
+[![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](LICENSE.md)
 
 A pure-C# image processing, computer vision, and non-photorealistic rendering (NPR) library targeting **.NET 10**. `Leiter` provides strongly-typed generic pixel and matrix abstractions with **zero external dependencies** in its core library, cross-platform (`SixLabors.ImageSharp`) and Windows GDI+ (`System.Drawing.Common`) image adapters, and a complete end-to-end artistic **photo watercolorization** pipeline composed from modular primitives.
 
@@ -11,11 +11,11 @@ A pure-C# image processing, computer vision, and non-photorealistic rendering (N
 ## Features
 
 - **Generic Core & Region Graphs:** Strongly-typed pixel (`Rgb8`, `Rgb64`, `Lab32`, `Xyz32`, `DoublePixel`, `LongPixel`), matrix, and boolean mask types paired with disjoint-set and region-adjacency graph primitives.
-- **Color Science & Palette Transfer:** Bidirectional conversions across **sRGB**, **Linear RGB**, **CIEXYZ**, and **CIELAB**, CIE76 & CIEDE2000 color difference, quantization, and Reinhard statistical color transfer.
+- **Color Science & Palette Transfer:** Bidirectional conversions across **sRGB**, **Linear RGB**, **CIEXYZ**, and **CIELAB** (D65 & Illuminant E with Bradford adaptation), CIE76 & CIEDE2000 color difference, per-channel LUTs, quantization, and Reinhard statistical color transfer.
 - **Image Segmentation:** Multi-threaded Felzenszwalb–Huttenlocher (**EGBI**), Comaniciu–Meer **Mean-Shift**, and **GrabCut** foreground extraction.
 - **Visual Saliency & Distance Transforms:** Global and Regional Contrast saliency, iterative `SaliencyCut` masking, binary morphology, and Jump Flooding (**JFA**) distance fields.
-- **Filtering, Gradients, Noise & Anti-Aliasing:** Separable and recursive Gaussian blurs, box and oriented elliptical filters, `Sobel`/`Scharr` gradients, sub-pixel resampling, fractal Perlin noise, and **FXAA 3.11**.
-- **Stylization & Photo Watercolorization:** Saliency-guided LOD abstraction, pigment blending, tone curves, wet-in-wet bleeding, hand-tremor warping, paper granulation, and an end-to-end `WatercolorPipeline`.
+- **Filtering, Gradients, Noise & Anti-Aliasing:** Separable and recursive Gaussian blurs, box and oriented elliptical filters, `Sobel`/`Scharr` gradients, bilinear/box/nearest resampling and displacement warping, fractal Perlin noise, and **FXAA 3.11**.
+- **Stylization & Photo Watercolorization:** Saliency-guided LOD abstraction, pigment blending, tone curves, wet-in-wet bleeding, hand-tremor warping, paper granulation, resolution/content-aware option tuning (`ForSize`/`ForImage`), and an end-to-end `WatercolorPipeline`.
 - **Multi-OS Platform Support:** Adapters for cross-platform `SixLabors.ImageSharp` and Windows GDI+ (`System.Drawing.Common`).
 
 ---
@@ -27,7 +27,6 @@ A pure-C# image processing, computer vision, and non-photorealistic rendering (N
 Loads an image, computes EGBI segmentation in CIELAB, evaluates Global and Regional Contrast Saliency, and extracts a refined foreground mask plus normalized saliency distance field via `SaliencyCut` and `1+JFA`:
 
 ```csharp
-using System;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Leiter.Core;
@@ -48,7 +47,7 @@ class Program
         Matrix<Rgb8> imageMatrix = image.ToSequentialMatrix();
 
         // 2. Smooth with Gaussian blur and convert to CIELAB for perceptual segmentation
-        Matrix<Rgb8> blurred = Blur.GaussianBlur(imageMatrix, sigma: 0.8, radius: 2);
+        Matrix<Rgb8> blurred = Blur.GaussianBlur(imageMatrix, sigma: 0.8);
         Matrix<Lab32> labImage = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
 
         // 3. Segment with EGBI (Felzenszwalb–Huttenlocher)
@@ -82,7 +81,6 @@ Runs the complete 6-stage photo watercolorization pipeline in a single call, or 
 ```csharp
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
-using Leiter.Algorithms.Color;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
@@ -111,8 +109,9 @@ var options = new WatercolorOptions(
     PaperGranulation: new PaperGranulationOptions(DensityStrength: 0.3, WarpAmplitude: 0.6));
 
 WatercolorResult detailed = WatercolorPipeline.RenderDetailed(source, options);
-// Available artifacts: detailed.ColorTransferred, detailed.SalientMask,
-// detailed.SaliencyDistanceField, detailed.LodAbstracted, detailed.WetInWet,
+// Available artifacts: detailed.ColorTransferred, detailed.SelectedPalette,
+// detailed.SaliencyMap, detailed.SalientMask, detailed.SaliencyDistanceField,
+// detailed.SegmentationGraph, detailed.LodAbstracted, detailed.WetInWet (.Image, .WetAreaMask),
 // detailed.HandTremor, and detailed.Image.
 ```
 
@@ -175,10 +174,10 @@ dotnet run --project LeiterTest --configuration Release -- examples/input.png ./
 - Reinhard, E., Adhikhmin, M., Gooch, B., & Shirley, P. *"Color Transfer between Images."* IEEE CG&A, 2001.
 - Rong, G., & Tan, T.-S. *"Jump Flooding in GPU with Applications to Voronoi Diagram and Distance Transform."* ACM I3D, 2006.
 - Young, I. T., & van Vliet, L. J. *"Recursive Implementation of the Gaussian Filter."* Signal Processing, 1995; Triggs, B., & Sdika, M. *"Boundary Conditions for Young–van Vliet Recursive Filtering."* IEEE TSP, 2006.
-- Lottes, T. *"FXAA 3.11."* NVIDIA, 2009.
+- Lottes, T. *"FXAA 3.11."* NVIDIA, 2011.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License — see [LICENSE.md](LICENSE.md) for details.
+This project is licensed under the GNU Lesser General Public License v3.0 (LGPL-3.0) — see [LICENSE.md](LICENSE.md) for details.
