@@ -89,7 +89,7 @@ internal static class Program
             "05. CIELAB + EGBI Segmentation",
             () =>
             {
-                double egbiSigma = WatercolorOptions.ForSize(imageMatrix.Size).EgbiBlurSigma;
+                double egbiSigma = WatercolorOptions.Default.EgbiBlurSigma;
                 Matrix<Rgb8> blurred = Blur.GaussianBlur(imageMatrix, egbiSigma);
                 Matrix<Lab32> labImage = blurred.ToLab32(RgbColorSpace.SRgb);
                 EgbiOptions egbiOptions = EgbiOptions.ForSize(labImage.Size, WatercolorOptions.DefaultSaliencyEgbi);
@@ -99,29 +99,29 @@ internal static class Program
         Console.WriteLine($"  Segments: {egbiRegions.Count}");
 
         RunStepAndSave(
-            "05a. Color EGBI Segments (Average Color)",
+            "06. Color EGBI Segments (Average Color)",
             outputDir,
             $"{stem}_05_egbi_average.png",
             () => SegmentationVisualizer.ColorRegions(imageMatrix, egbiRegions, SegmentationVisualizer.AverageColorAssigner()));
 
         RunStepAndSave(
-            "06. Color EGBI Segments (Random Color, seed=42)",
+            "07. Color EGBI Segments (Random Color, seed=42)",
             outputDir,
             $"{stem}_06_egbi_random.png",
             () => SegmentationVisualizer.ColorRegions(imageMatrix, egbiSeg, seed: 42));
 
         RunStepAndSave(
-            "07. Global Contrast Saliency",
+            "08. Global Contrast Saliency",
             outputDir,
             $"{stem}_07_saliency_global.png",
             () => GlobalContrastSaliency.ComputeSaliency(imageMatrix).ToGrayscaleRgb8());
 
         // End-to-end watercolor pipeline (all intermediate and final outputs come from one consistent run)
         WatercolorResult pipelineResult = RunStep(
-            "10. End-to-End WatercolorPipeline.RenderDetailed (ForImage)",
+            "09. End-to-End WatercolorPipeline.RenderDetailed (ForImage)",
             () => WatercolorPipeline.RenderDetailed(
                 imageMatrix,
-                WatercolorOptions.ForImage(imageMatrix),
+                options: WatercolorOptions.ForImage(imageMatrix),
                 onStageCompleted: static progress =>
                     Console.WriteLine($"  [{progress.Elapsed.TotalMilliseconds,6:F0} ms] Stage: {progress.Stage}")));
 
@@ -130,23 +130,27 @@ internal static class Program
         int qualifyingWetCount = pipelineResult.WetInWet.QualifyingBoundaries.Count(static qualified => qualified);
         Console.WriteLine($"  Qualifying Wet Boundaries: {qualifyingWetCount} / {pipelineResult.WetInWet.QualifyingBoundaries.Count}");
 
-        SaveOutput(outputDir, $"{stem}_10_color_transfer.png", pipelineResult.ColorTransferred);
-        SaveOutput(outputDir, $"{stem}_11_saliency_regional.png", pipelineResult.SaliencyMap.ToGrayscaleRgb8());
-        SaveOutput(outputDir, $"{stem}_12_saliency_regional_masked.png", pipelineResult.ColorTransferred.HadamardProduct<Rgb8, DoublePixel>(pipelineResult.SaliencyMap));
-        SaveOutput(outputDir, $"{stem}_13_saliency_cut_mask.png", pipelineResult.SalientMask.ToGrayscaleRgb8());
-        SaveOutput(outputDir, $"{stem}_14_distance_field.png", pipelineResult.SaliencyDistanceField.ToGrayscaleRgb8());
+        SaveOutput(outputDir, $"{stem}_08_color_transfer.png", pipelineResult.ColorTransferred);
+        SaveOutput(outputDir, $"{stem}_09_saliency_regional.png", pipelineResult.SaliencyMap.ToGrayscaleRgb8());
+        SaveOutput(outputDir, $"{stem}_10_saliency_regional_masked.png", pipelineResult.ColorTransferred.HadamardProduct<Rgb8, DoublePixel>(pipelineResult.SaliencyMap));
+        SaveOutput(outputDir, $"{stem}_11_saliency_cut_mask.png", pipelineResult.SalientMask.ToGrayscaleRgb8());
+        SaveOutput(outputDir, $"{stem}_12_distance_field.png", pipelineResult.SaliencyDistanceField.ToGrayscaleRgb8());
+        SaveOutput(outputDir, $"{stem}_13_meanshift_filtered.png", pipelineResult.MeanShiftFiltered);
         SaveOutput(
             outputDir,
-            $"{stem}_15a_meanshift_average.png",
+            $"{stem}_14_meanshift_average.png",
             SegmentationVisualizer.ColorRegions(pipelineResult.ColorTransferred, pipelineResult.SegmentationGraph, SegmentationVisualizer.AverageColorAssigner()));
         SaveOutput(
             outputDir,
-            $"{stem}_15b_meanshift_random.png",
+            $"{stem}_15_meanshift_random.png",
             SegmentationVisualizer.ColorRegions(pipelineResult.ColorTransferred, pipelineResult.SegmentationGraph, seed: 42));
         SaveOutput(outputDir, $"{stem}_16_lod_abstraction.png", pipelineResult.LodAbstracted);
         SaveOutput(outputDir, $"{stem}_17_wet_in_wet.png", pipelineResult.WetInWet.Image);
         SaveOutput(outputDir, $"{stem}_18_hand_tremor.png", pipelineResult.HandTremor);
-        SaveOutput(outputDir, $"{stem}_20_watercolor_pipeline.png", pipelineResult.Image);
+        SaveOutput(outputDir, $"{stem}_19_density_adjusted.png", pipelineResult.DensityAdjusted);
+        SaveOutput(outputDir, $"{stem}_20_tone_adjusted.png", pipelineResult.ToneAdjusted);
+        SaveOutput(outputDir, $"{stem}_21_granulated.png", pipelineResult.Granulated);
+        SaveOutput(outputDir, $"{stem}_22_watercolor_pipeline.png", pipelineResult.Image);
 
         Console.WriteLine("Done.");
         return 0;

@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Stylization;
 
 using System;
+using Leiter.Algorithms;
 using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -18,6 +19,12 @@ public sealed record PiecewiseToneCurveOptions(
     double ShadowKnee = 0.15,
     double HighlightKnee = 0.85) : IProfileTunableOptions<PiecewiseToneCurveOptions>
 {
+    private const double MinContrastDelta = -0.5;
+    private const double MaxContrastDelta = 1.0;
+    private const double MaxKneeShift = 0.06;
+    private const double MaxRelativeKneeSlack = 0.5;
+    private const double MaxInwardKneeFraction = 0.25;
+
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) accepted for uniform <c>ForSize</c> signatures.
     /// </summary>
@@ -52,9 +59,7 @@ public sealed record PiecewiseToneCurveOptions(
         PiecewiseToneCurveOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
-        OptionTuning.ValidateSizeAndReference(size, referenceDimension);
-        ArgumentNullException.ThrowIfNull(baseline);
-        baseline.Validate();
+        OptionTuning.ValidateSizeTuning(size, baseline, referenceDimension);
         return baseline;
     }
 
@@ -63,7 +68,9 @@ public sealed record PiecewiseToneCurveOptions(
     /// </summary>
     /// <param name="image">The input RGB image to analyze.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="PiecewiseToneCurveOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <returns>
+    /// <see cref="Default"/> unchanged when <paramref name="image"/> is empty; otherwise a validated <see cref="PiecewiseToneCurveOptions"/> instance tuned for <paramref name="image"/>.
+    /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static PiecewiseToneCurveOptions ForImage(
@@ -77,7 +84,9 @@ public sealed record PiecewiseToneCurveOptions(
     /// <param name="image">The input RGB image to analyze.</param>
     /// <param name="baseline">The baseline tone curve configuration calibrated at <paramref name="referenceDimension"/>.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="PiecewiseToneCurveOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <returns>
+    /// <paramref name="baseline"/> unchanged when <paramref name="image"/> is empty; otherwise a validated <see cref="PiecewiseToneCurveOptions"/> instance tuned for <paramref name="image"/>.
+    /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
     public static PiecewiseToneCurveOptions ForImage(
@@ -85,6 +94,38 @@ public sealed record PiecewiseToneCurveOptions(
         PiecewiseToneCurveOptions baseline,
         double referenceDimension = DefaultReferenceDimension) =>
         OptionTuning.TuneForImage(image, baseline, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="PiecewiseToneCurveOptions"/> tuned from a cached <see cref="ImageAnalysis"/> profile.
+    /// </summary>
+    /// <param name="analysis">The precomputed image analysis profile.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>
+    /// <see cref="Default"/> unchanged when the analyzed image is empty; otherwise a validated <see cref="PiecewiseToneCurveOptions"/> instance tuned for <paramref name="analysis"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static PiecewiseToneCurveOptions ForAnalysis(
+        ImageAnalysis analysis,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis<PiecewiseToneCurveOptions>(analysis, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="PiecewiseToneCurveOptions"/> tuned from <paramref name="baseline"/> using a cached <see cref="ImageAnalysis"/> profile.
+    /// </summary>
+    /// <param name="analysis">The precomputed image analysis profile.</param>
+    /// <param name="baseline">The baseline tone curve configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>
+    /// <paramref name="baseline"/> unchanged when the analyzed image is empty; otherwise a validated <see cref="PiecewiseToneCurveOptions"/> instance tuned for <paramref name="analysis"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static PiecewiseToneCurveOptions ForAnalysis(
+        ImageAnalysis analysis,
+        PiecewiseToneCurveOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis(analysis, baseline, referenceDimension);
 
     static PiecewiseToneCurveOptions IProfileTunableOptions<PiecewiseToneCurveOptions>.ForProfile(
         in ImageTuningProfile profile,
@@ -97,33 +138,34 @@ public sealed record PiecewiseToneCurveOptions(
         PiecewiseToneCurveOptions baseline,
         double referenceDimension)
     {
-        PiecewiseToneCurveOptions validated = ForSize(profile.ImageSize, baseline, referenceDimension);
         if (profile.IsEmpty)
         {
-            return validated;
+            return baseline;
         }
 
-        const double ReferenceStdDevL = 17.6;
-        double contrastDelta = Math.Clamp((profile.LabStats.StdDevL - ReferenceStdDevL) / ReferenceStdDevL, -0.5, 1.0);
+        double contrastDelta = Math.Clamp(
+            (profile.LabStats.StdDevL - OptionTuning.ReferenceStdDevL) / OptionTuning.ReferenceStdDevL,
+            MinContrastDelta,
+            MaxContrastDelta);
 
         double shadowDelta;
         double highlightDelta;
         if (contrastDelta < 0.0)
         {
-            shadowDelta = Math.Max(0.06 * contrastDelta, -0.5 * validated.ShadowKnee);
-            highlightDelta = Math.Min(-0.06 * contrastDelta, 0.5 * (1.0 - validated.HighlightKnee));
+            shadowDelta = Math.Max(MaxKneeShift * contrastDelta, -MaxRelativeKneeSlack * baseline.ShadowKnee);
+            highlightDelta = Math.Min(-MaxKneeShift * contrastDelta, MaxRelativeKneeSlack * (1.0 - baseline.HighlightKnee));
         }
         else
         {
-            double maxInwardShift = Math.Min(0.06, 0.25 * (validated.HighlightKnee - validated.ShadowKnee));
+            double maxInwardShift = Math.Min(MaxKneeShift, MaxInwardKneeFraction * (baseline.HighlightKnee - baseline.ShadowKnee));
             shadowDelta = maxInwardShift * contrastDelta;
             highlightDelta = -maxInwardShift * contrastDelta;
         }
 
-        return validated with
+        return baseline with
         {
-            ShadowKnee = validated.ShadowKnee + shadowDelta,
-            HighlightKnee = validated.HighlightKnee + highlightDelta
+            ShadowKnee = baseline.ShadowKnee + shadowDelta,
+            HighlightKnee = baseline.HighlightKnee + highlightDelta
         };
     }
 

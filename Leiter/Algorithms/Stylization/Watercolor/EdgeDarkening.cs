@@ -23,7 +23,7 @@ public static class EdgeDarkening
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        EdgeDarkeningOptions opts = OptionsResolver.Resolve(options, EdgeDarkeningOptions.Default);
+        EdgeDarkeningOptions opts = OptionsResolver.Resolve(options);
 
         if (image.Count == 0 || opts.Intensity == 0.0)
         {
@@ -38,14 +38,12 @@ public static class EdgeDarkening
     {
         var (_, _, edgeStrength) = SpatialGradients.ComputeColorGradients(image, opts.GradientOperator);
 
-        Matrix<DoublePixel> smoothedEdges = opts.BlurSigma > 0.0
-            ? Blur.GaussianBlurRecursive(edgeStrength, opts.BlurSigma)
-            : edgeStrength;
+        Matrix<DoublePixel> smoothedEdges = Blur.GaussianBlur(edgeStrength, opts.BlurSigma);
 
         double intensity = opts.Intensity;
         for (int i = 0; i < smoothedEdges.Count; i++)
         {
-            smoothedEdges[i] = new DoublePixel(intensity * Math.Clamp(smoothedEdges[i].Value, 0.0, 1.0));
+            smoothedEdges[i] = new DoublePixel(intensity * ScalarMath.ClampUnitOrDefault(smoothedEdges[i].Value));
         }
 
         return smoothedEdges;

@@ -23,7 +23,7 @@ public static class TurbulenceFlow
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        TurbulenceFlowOptions opts = OptionsResolver.Resolve(options, TurbulenceFlowOptions.Default);
+        TurbulenceFlowOptions opts = OptionsResolver.Resolve(options);
 
         if (image.Count == 0 || opts.Intensity == 0.0)
         {
@@ -36,7 +36,7 @@ public static class TurbulenceFlow
 
     internal static Matrix<DoublePixel> ComputeDensityField(Size size, TurbulenceFlowOptions opts)
     {
-        PerlinNoiseOptions noiseOpts = opts.NoiseOptions ?? TurbulenceFlowOptions.DefaultNoise;
+        PerlinNoiseOptions noiseOpts = opts.Noise ?? TurbulenceFlowOptions.DefaultNoise;
         Matrix<DoublePixel> noiseField = PerlinNoise.GenerateFractalField(size, noiseOpts);
         double intensity = opts.Intensity;
         for (int i = 0; i < noiseField.Count; i++)

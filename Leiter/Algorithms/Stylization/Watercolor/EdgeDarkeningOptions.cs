@@ -15,8 +15,13 @@ using Leiter.Pixels;
 public sealed record EdgeDarkeningOptions(
     double Intensity = 1.8,
     double BlurSigma = 0.8,
-    GradientOperator GradientOperator = GradientOperator.Sobel) : IProfileTunableOptions<EdgeDarkeningOptions>
+    GradientOperator GradientOperator = GradientOperator.Sobel) : IProfileTunableOptions<EdgeDarkeningOptions>, ISizeTunableOptions<EdgeDarkeningOptions>
 {
+    private const double SobelImpulseVarianceOffset = 0.5;
+    private const double SobelImpulseNormalization = 1.5;
+    private const double MinSpreadDivisor = 0.85;
+    private const double MaxSpreadDivisor = 1.20;
+
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default blur sigma and intensity apply unscaled.
     /// </summary>
@@ -32,7 +37,9 @@ public sealed record EdgeDarkeningOptions(
     /// </summary>
     /// <param name="size">The target image dimensions.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <returns>
+    /// <see cref="Default"/> unchanged when <paramref name="size"/> is empty; otherwise a validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="size"/>.
+    /// </returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static EdgeDarkeningOptions ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
         ForSize(size, Default, referenceDimension);
@@ -43,7 +50,9 @@ public sealed record EdgeDarkeningOptions(
     /// <param name="size">The target image dimensions.</param>
     /// <param name="baseline">The baseline edge darkening configuration calibrated at <paramref name="referenceDimension"/>.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="size"/>.</returns>
+    /// <returns>
+    /// <paramref name="baseline"/> unchanged when <paramref name="size"/> is empty; otherwise a validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="size"/>.
+    /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseline"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/>, <paramref name="baseline"/>, or <paramref name="referenceDimension"/> is invalid.</exception>
     public static EdgeDarkeningOptions ForSize(
@@ -51,19 +60,36 @@ public sealed record EdgeDarkeningOptions(
         EdgeDarkeningOptions baseline,
         double referenceDimension = DefaultReferenceDimension)
     {
-        var (s, _, totalPixels) = OptionTuning.ComputeScales(size, referenceDimension);
-        ArgumentNullException.ThrowIfNull(baseline);
-        baseline.Validate();
+        OptionTuning.ValidateSizeTuning(size, baseline, referenceDimension);
+        return ForSizeUnchecked(size, baseline, referenceDimension);
+    }
+
+    internal static EdgeDarkeningOptions ForSizeUnchecked(
+        Size size,
+        EdgeDarkeningOptions baseline,
+        double referenceDimension)
+    {
+        var (s, _, totalPixels) = OptionTuning.ComputeScalesUnchecked(size, referenceDimension);
         if (totalPixels == 0)
         {
             return baseline;
         }
 
-        double impulseCompensation = Math.Sqrt(((s * s) + 0.5) / 1.5);
+        double sSquared = s * s;
+        double impulseCompensation = double.IsFinite(sSquared)
+            ? Math.Sqrt((sSquared + SobelImpulseVarianceOffset) / SobelImpulseNormalization)
+            : s / Math.Sqrt(SobelImpulseNormalization);
+        double intensity = baseline.Intensity == 0.0
+            ? 0.0
+            : OptionTuning.ScaleFiniteNonNegative(baseline.Intensity * impulseCompensation);
+        double blurSigma = baseline.BlurSigma == 0.0
+            ? 0.0
+            : OptionTuning.ScaleFiniteNonNegative(baseline.BlurSigma * s);
+
         return baseline with
         {
-            Intensity = baseline.Intensity * impulseCompensation,
-            BlurSigma = baseline.BlurSigma * s
+            Intensity = intensity,
+            BlurSigma = blurSigma
         };
     }
 
@@ -72,7 +98,9 @@ public sealed record EdgeDarkeningOptions(
     /// </summary>
     /// <param name="image">The input RGB image to analyze.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <returns>
+    /// <see cref="Default"/> unchanged when <paramref name="image"/> is empty; otherwise a validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="image"/>.
+    /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="image"/> has invalid dimensions or <paramref name="referenceDimension"/> is not finite and positive.</exception>
     public static EdgeDarkeningOptions ForImage(
@@ -86,7 +114,9 @@ public sealed record EdgeDarkeningOptions(
     /// <param name="image">The input RGB image to analyze.</param>
     /// <param name="baseline">The baseline edge darkening configuration calibrated at <paramref name="referenceDimension"/>.</param>
     /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
-    /// <returns>A validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="image"/>.</returns>
+    /// <returns>
+    /// <paramref name="baseline"/> unchanged when <paramref name="image"/> is empty; otherwise a validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="image"/>.
+    /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
     public static EdgeDarkeningOptions ForImage(
@@ -94,6 +124,38 @@ public sealed record EdgeDarkeningOptions(
         EdgeDarkeningOptions baseline,
         double referenceDimension = DefaultReferenceDimension) =>
         OptionTuning.TuneForImage(image, baseline, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="EdgeDarkeningOptions"/> tuned from a cached <see cref="ImageAnalysis"/> profile.
+    /// </summary>
+    /// <param name="analysis">The precomputed image analysis profile.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>
+    /// <see cref="Default"/> unchanged when the analyzed image is empty; otherwise a validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="analysis"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="referenceDimension"/> is not finite and positive.</exception>
+    public static EdgeDarkeningOptions ForAnalysis(
+        ImageAnalysis analysis,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis<EdgeDarkeningOptions>(analysis, referenceDimension);
+
+    /// <summary>
+    /// Creates <see cref="EdgeDarkeningOptions"/> tuned from <paramref name="baseline"/> using a cached <see cref="ImageAnalysis"/> profile.
+    /// </summary>
+    /// <param name="analysis">The precomputed image analysis profile.</param>
+    /// <param name="baseline">The baseline edge darkening configuration calibrated at <paramref name="referenceDimension"/>.</param>
+    /// <param name="referenceDimension">The reference linear dimension (<c>sqrt(Width * Height)</c>) corresponding to baseline scale <c>1.0</c>.</param>
+    /// <returns>
+    /// <paramref name="baseline"/> unchanged when the analyzed image is empty; otherwise a validated <see cref="EdgeDarkeningOptions"/> instance tuned for <paramref name="analysis"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="analysis"/> or <paramref name="baseline"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="baseline"/> or <paramref name="referenceDimension"/> is invalid.</exception>
+    public static EdgeDarkeningOptions ForAnalysis(
+        ImageAnalysis analysis,
+        EdgeDarkeningOptions baseline,
+        double referenceDimension = DefaultReferenceDimension) =>
+        OptionTuning.TuneForAnalysis(analysis, baseline, referenceDimension);
 
     static EdgeDarkeningOptions IProfileTunableOptions<EdgeDarkeningOptions>.ForProfile(
         in ImageTuningProfile profile,
@@ -106,7 +168,7 @@ public sealed record EdgeDarkeningOptions(
         EdgeDarkeningOptions baseline,
         double referenceDimension)
     {
-        EdgeDarkeningOptions scaled = ForSize(profile.ImageSize, baseline, referenceDimension);
+        EdgeDarkeningOptions scaled = ForSizeUnchecked(profile.ImageSize, baseline, referenceDimension);
         if (profile.IsEmpty)
         {
             return scaled;
@@ -114,7 +176,8 @@ public sealed record EdgeDarkeningOptions(
 
         return scaled with
         {
-            Intensity = scaled.Intensity / Math.Clamp(profile.ColorSpreadFactor, 0.85, 1.20)
+            Intensity = OptionTuning.ScaleFiniteNonNegative(
+                scaled.Intensity / Math.Clamp(profile.ColorSpreadFactor, MinSpreadDivisor, MaxSpreadDivisor))
         };
     }
 

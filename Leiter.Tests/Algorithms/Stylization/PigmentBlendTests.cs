@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 using static Leiter.Tests.TestUtils.TestConstants;
 
@@ -414,13 +415,25 @@ public class PigmentBlendTests
     [InlineData(double.PositiveInfinity, 0.0)]
     public void ApplyDensityField_NonFiniteFieldSample_ShouldThrowArgumentOutOfRangeException(double invalidSample, double intensity)
     {
-        var image = new SequentialMatrix<Rgb8>(2, 2);
-        image.SetAll(new Rgb8(120, 140, 160));
-        var field = new SequentialMatrix<DoublePixel>(2, 2);
-        field.SetAll(0.25);
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(2, 2, new Rgb8(120, 140, 160));
+        SequentialMatrix<DoublePixel> field = TestMatrices.Constant(2, 2, new DoublePixel(0.25));
         field[1, 1] = invalidSample;
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => PigmentBlend.ApplyDensityField(image, field, intensity));
+        ArgumentOutOfRangeException ex = Assert.Throws<ArgumentOutOfRangeException>(() => PigmentBlend.ApplyDensityField(image, field, intensity));
+        Assert.Equal("densityField", ex.ParamName);
+    }
+
+    /// <summary>
+    /// Verifies that a finite field sample whose scaled product overflows to infinity throws <see cref="ArgumentOutOfRangeException"/> with parameter name <c>densityField</c>.
+    /// </summary>
+    [Fact]
+    public void ApplyDensityField_ScaledOverflow_ShouldThrowArgumentOutOfRangeException()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(2, 2, new Rgb8(120, 140, 160));
+        SequentialMatrix<DoublePixel> field = TestMatrices.Constant(2, 2, new DoublePixel(1e308));
+
+        ArgumentOutOfRangeException ex = Assert.Throws<ArgumentOutOfRangeException>(() => PigmentBlend.ApplyDensityField(image, field, intensity: 2.0));
+        Assert.Equal("densityField", ex.ParamName);
     }
 
     /// <summary>
@@ -429,11 +442,37 @@ public class PigmentBlendTests
     [Fact]
     public void ApplyDensityField_SelectorReturningNaN_ShouldThrowArgumentOutOfRangeException()
     {
-        var image = new SequentialMatrix<Rgb8>(2, 2);
-        image.SetAll(new Rgb8(120, 140, 160));
-        var field = new SequentialMatrix<DoublePixel>(2, 2);
-        field.SetAll(0.5);
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(2, 2, new Rgb8(120, 140, 160));
+        SequentialMatrix<DoublePixel> field = TestMatrices.Constant(2, 2, new DoublePixel(0.5));
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => PigmentBlend.ApplyDensityField(image, field, static _ => double.NaN));
+        ArgumentOutOfRangeException ex = Assert.Throws<ArgumentOutOfRangeException>(() => PigmentBlend.ApplyDensityField(image, field, static _ => double.NaN));
+        Assert.Equal("densityOffset", ex.ParamName);
+    }
+
+    /// <summary>
+    /// Verifies that exceptions thrown by a selector propagate directly without being wrapped in <see cref="AggregateException"/>.
+    /// </summary>
+    [Fact]
+    public void ApplyDensityField_SelectorThrowsCustomException_ShouldPropagateDirectly()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(2, 2, new Rgb8(120, 140, 160));
+        SequentialMatrix<DoublePixel> field = TestMatrices.Constant(2, 2, new DoublePixel(0.5));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            PigmentBlend.ApplyDensityField(image, field, static _ => throw new InvalidOperationException("boom")));
+    }
+
+    /// <summary>
+    /// Verifies that the selector overload passes raw NaN field samples to the selector so callers can clamp them to finite offsets.
+    /// </summary>
+    [Fact]
+    public void ApplyDensityField_SelectorHandlingNaNSample_ShouldSucceed()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(2, 2, new Rgb8(120, 140, 160));
+        SequentialMatrix<DoublePixel> field = TestMatrices.Constant(2, 2, new DoublePixel(0.5));
+        field[1, 1] = double.NaN;
+
+        Matrix<Rgb8> result = PigmentBlend.ApplyDensityField(image, field, static v => ScalarMath.ClampUnitOrDefault(v, 0.5) - 0.5);
+        Assert.Equal(image[1, 1], result[1, 1]);
     }
 }

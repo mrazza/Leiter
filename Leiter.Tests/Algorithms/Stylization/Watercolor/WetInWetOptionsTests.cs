@@ -362,11 +362,6 @@ public class WetInWetOptionsTests : SizeTunableOptionsContractTestsBase<WetInWet
         Assert.True(large.ScatterRadius > refOpts.ScatterRadius);
         Assert.True(large.ColorGradientThreshold < refOpts.ColorGradientThreshold);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            WetInWetOptions.ForSize(size).Validate();
-        }
-
         SequentialMatrix<Rgb8> flat = TestMatrices.Constant(256, 256, new Rgb8(120, 120, 120));
         SequentialMatrix<Rgb8> busy = TestMatrices.Checkerboard(256, 256, new Rgb8(255, 255, 255), Rgb8.Zero, cellSize: 4);
 
@@ -390,9 +385,19 @@ public class WetInWetOptionsTests : SizeTunableOptionsContractTestsBase<WetInWet
         var zeroThresholdBaseline = new WetInWetOptions(ColorGradientThreshold: 0.0);
         Assert.Equal(0.0, WetInWetOptions.ForImage(busy, zeroThresholdBaseline).ColorGradientThreshold, 6);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => WetInWetOptions.ForSize(new Size(-1, 10)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => WetInWetOptions.ForSize(new Size(10, 10), double.NaN));
+        ImageAnalysis busyAnalysis = ImageAnalysis.Analyze(busy);
+        Assert.Equal(WetInWetOptions.ForImage(busy), WetInWetOptions.ForAnalysis(busyAnalysis));
+        Assert.Equal(customBusy, WetInWetOptions.ForAnalysis(busyAnalysis, customBaseline));
+
+        var overflowBaseline = new WetInWetOptions(ColorGradientThreshold: 1e300);
+        WetInWetOptions overflowScaled = WetInWetOptions.ForSize(new Size(1, 1), overflowBaseline, referenceDimension: 100_000.0);
+        overflowScaled.Validate();
+        Assert.True(double.IsFinite(overflowScaled.ColorGradientThreshold));
+
         Assert.Throws<ArgumentNullException>(() => WetInWetOptions.ForImage(null!));
         Assert.Throws<ArgumentNullException>(() => WetInWetOptions.ForImage(busy, null!));
+        Assert.Throws<ArgumentNullException>(() => WetInWetOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>(() => WetInWetOptions.ForAnalysis(busyAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WetInWetOptions.ForAnalysis(busyAnalysis, 0.0));
     }
 }

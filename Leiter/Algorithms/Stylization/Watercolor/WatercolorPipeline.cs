@@ -22,8 +22,8 @@ public static class WatercolorPipeline
     /// Executes the full watercolorization pipeline on <paramref name="image"/> and returns the final painting alongside intermediate stage outputs.
     /// </summary>
     /// <param name="image">The input RGB photograph to watercolorize.</param>
-    /// <param name="options">Optional pipeline configuration parameters controlling each stage.</param>
     /// <param name="paperHeightMap">Optional custom normalized [0, 1] paper height map used during Stage 6 granulation.</param>
+    /// <param name="options">Optional pipeline configuration parameters controlling each stage.</param>
     /// <param name="onStageCompleted">Optional callback invoked as each major pipeline stage completes (not invoked when <paramref name="image"/> is empty).</param>
     /// <returns>A <see cref="WatercolorResult"/> containing the final rendered painting and stage intermediates.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
@@ -31,13 +31,13 @@ public static class WatercolorPipeline
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> contains invalid parameters.</exception>
     public static WatercolorResult RenderDetailed(
         IReadOnlyMatrix<Rgb8> image,
-        WatercolorOptions? options = null,
         IReadOnlyMatrix<DoublePixel>? paperHeightMap = null,
+        WatercolorOptions? options = null,
         Action<WatercolorStageProgress>? onStageCompleted = null)
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        WatercolorOptions opts = OptionsResolver.Resolve(options, WatercolorOptions.Default);
+        WatercolorOptions opts = OptionsResolver.Resolve(options);
         Guard.ThrowIfSizeMismatchIfNotNull(image, paperHeightMap);
 
         if (image.Count == 0)
@@ -60,7 +60,7 @@ public static class WatercolorPipeline
         // Stage 2: Regional Contrast Saliency & Saliency Distance Field
         Matrix<Rgb8> blurred = Blur.GaussianBlur(colorTransferred, opts.EgbiBlurSigma);
         Matrix<Lab32> labBlurred = blurred.ToLab32(RgbColorSpace.SRgb);
-        EgbiOptions resolvedEgbi = opts.Egbi ?? WatercolorOptions.ResolveDefaultEgbi(image.Count);
+        EgbiOptions resolvedEgbi = opts.Egbi ?? WatercolorOptions.DefaultSaliencyEgbi;
         IDisjointSet egbiSeg = EgbiSegmentation.Segment(labBlurred, resolvedEgbi);
         Matrix<DoublePixel> saliencyMap = RegionalContrastSaliency.ComputeSaliency(colorTransferred, egbiSeg, opts.RegionalContrastSaliency);
         (MaskMatrix salientMask, Matrix<DoublePixel> distanceField) = SaliencyDistanceField.Compute(
@@ -71,9 +71,9 @@ public static class WatercolorPipeline
         CompleteStage(onStageCompleted, WatercolorStage.Saliency, ref stageStart);
 
         // Stage 3: Mean-Shift Segmentation & Saliency-Guided LOD Abstraction
-        MeanShiftOptions resolvedMeanShift = opts.MeanShift ?? WatercolorOptions.ResolveDefaultMeanShift(image.Count);
+        MeanShiftOptions resolvedMeanShift = opts.MeanShift ?? MeanShiftOptions.Default;
         (Matrix<Rgb8> meanShiftFiltered, IDisjointSet meanShiftSeg) = MeanShiftSegmentation.FilterAndSegment(colorTransferred, resolvedMeanShift);
-        RegionGraph regionGraph = RegionGraph.FromDisjointSet(meanShiftSeg, resolvedMeanShift.Connectivity);
+        RegionGraph regionGraph = meanShiftSeg.ToRegionGraph(resolvedMeanShift.Connectivity);
         double[] salientFractions = regionGraph.ComputeRegionFractions(salientMask);
         CompleteStage(onStageCompleted, WatercolorStage.Segmentation, ref stageStart);
 
@@ -89,7 +89,7 @@ public static class WatercolorPipeline
 
         // Stage 4: Wet-in-Wet Bleeding
         WetInWetOptions resolvedWetInWet = opts.WetInWet ?? WetInWetOptions.Default;
-        WetInWetResult wetInWet = WetInWetFilter.ApplyDetailedCore(
+        WetInWetResult wetInWet = WetInWet.ApplyDetailedCore(
             lodAbstracted,
             regionGraph,
             salientMask: null,
@@ -99,7 +99,7 @@ public static class WatercolorPipeline
 
         // Stage 5: Hand Tremor Distortion
         HandTremorOptions resolvedHandTremor = opts.HandTremor ?? HandTremorOptions.Default;
-        Matrix<Rgb8> handTremor = HandTremorFilter.ApplyCore(
+        Matrix<Rgb8> handTremor = HandTremor.ApplyCore(
             wetInWet.Image,
             regionGraph,
             distanceField,
@@ -111,32 +111,32 @@ public static class WatercolorPipeline
         EdgeDarkeningOptions edgeOpts = opts.EdgeDarkening ?? EdgeDarkeningOptions.Default;
         TurbulenceFlowOptions turbOpts = opts.TurbulenceFlow ?? TurbulenceFlowOptions.Default;
 
-        Matrix<Rgb8> preTone;
-        if (edgeOpts.Intensity == 0.0 && turbOpts.Intensity == 0.0)
+        Matrix<DoublePixel>? densityField = edgeOpts.Intensity > 0.0
+            ? EdgeDarkening.ComputeDensityField(handTremor, edgeOpts)
+            : null;
+
+        if (turbOpts.Intensity > 0.0)
         {
-            preTone = handTremor;
-        }
-        else if (edgeOpts.Intensity == 0.0)
-        {
-            preTone = TurbulenceFlow.Apply(handTremor, turbOpts);
-        }
-        else if (turbOpts.Intensity == 0.0)
-        {
-            preTone = EdgeDarkening.Apply(handTremor, edgeOpts);
-        }
-        else
-        {
-            Matrix<DoublePixel> edgeDensity = EdgeDarkening.ComputeDensityField(handTremor, edgeOpts);
             Matrix<DoublePixel> turbulenceDensity = TurbulenceFlow.ComputeDensityField(handTremor.Size, turbOpts);
-            Matrix<DoublePixel> combinedDensity = edgeDensity.Zip(
-                turbulenceDensity,
-                static (edge, turbulence) => new DoublePixel(edge.Value + turbulence.Value));
-
-            preTone = PigmentBlend.ApplyDensityField(handTremor, combinedDensity);
+            if (densityField is null)
+            {
+                densityField = turbulenceDensity;
+            }
+            else
+            {
+                for (int i = 0; i < densityField.Count; i++)
+                {
+                    densityField[i] = new DoublePixel(densityField[i].Value + turbulenceDensity[i].Value);
+                }
+            }
         }
 
-        Matrix<Rgb8> toneAdjusted = PiecewiseToneCurve.Apply(preTone, opts.ToneCurve);
-        Matrix<Rgb8> granulated = PaperGranulation.Apply(toneAdjusted, opts.PaperGranulation, paperHeightMap);
+        Matrix<Rgb8> densityAdjusted = densityField is not null
+            ? PigmentBlend.ApplyDensityField(handTremor, densityField)
+            : handTremor;
+
+        Matrix<Rgb8> toneAdjusted = PiecewiseToneCurve.Apply(densityAdjusted, opts.ToneCurve);
+        Matrix<Rgb8> granulated = PaperGranulation.Apply(toneAdjusted, paperHeightMap, opts.PaperGranulation);
         Matrix<Rgb8> output = opts.EnableFxaa
             ? Fxaa.Apply(granulated, opts.Fxaa)
             : granulated;
@@ -149,10 +149,14 @@ public static class WatercolorPipeline
             saliencyMap,
             salientMask,
             distanceField,
+            meanShiftFiltered,
             regionGraph,
             lodAbstracted,
             wetInWet,
-            handTremor);
+            handTremor,
+            densityAdjusted,
+            toneAdjusted,
+            granulated);
     }
 
     private static void CompleteStage(
@@ -171,8 +175,8 @@ public static class WatercolorPipeline
     /// Executes the full watercolorization pipeline on <paramref name="image"/> and returns the final rendered watercolor painting.
     /// </summary>
     /// <param name="image">The input RGB photograph to watercolorize.</param>
-    /// <param name="options">Optional pipeline configuration parameters controlling each stage.</param>
     /// <param name="paperHeightMap">Optional custom normalized [0, 1] paper height map used during Stage 6 granulation.</param>
+    /// <param name="options">Optional pipeline configuration parameters controlling each stage.</param>
     /// <param name="onStageCompleted">Optional callback invoked as each major pipeline stage completes (not invoked when <paramref name="image"/> is empty).</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the final rendered watercolor painting.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
@@ -180,10 +184,10 @@ public static class WatercolorPipeline
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> contains invalid parameters.</exception>
     public static Matrix<Rgb8> Render(
         IReadOnlyMatrix<Rgb8> image,
-        WatercolorOptions? options = null,
         IReadOnlyMatrix<DoublePixel>? paperHeightMap = null,
+        WatercolorOptions? options = null,
         Action<WatercolorStageProgress>? onStageCompleted = null) =>
-        RenderDetailed(image, options, paperHeightMap, onStageCompleted).Image;
+        RenderDetailed(image, paperHeightMap, options, onStageCompleted).Image;
 
     private static WatercolorResult CreateEmptyResult(Size size, WatercolorOptions options)
     {
@@ -201,9 +205,13 @@ public static class WatercolorPipeline
             emptyDouble,
             emptyMask,
             emptyDouble,
+            emptyRgb,
             emptyGraph,
             emptyRgb,
             emptyWetInWet,
+            emptyRgb,
+            emptyRgb,
+            emptyRgb,
             emptyRgb);
     }
 }
