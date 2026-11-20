@@ -583,4 +583,75 @@ public class HandTremorFilterTests
 
         Assert.True(checkedGapLocation);
     }
+
+    /// <summary>
+    /// Verifies that huge <see cref="HandTremorOptions.Amplitude"/> values do not overflow band radius or produce black fallback pixels.
+    /// </summary>
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(0.5)]
+    public void Apply_HugeAmplitude_ShouldNotOverflowOrProduceBlackFallbackPixels(double paperGapBias)
+    {
+        const int width = 16;
+        const int height = 16;
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(220, 40, 40),
+            new Rgb8(40, 220, 220));
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
+        var options = new HandTremorOptions(
+            Amplitude: 1e12,
+            PaperGapBias: paperGapBias,
+            PaperColor: new Rgb8(250, 248, 242));
+
+        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+
+        Assert.Equal(image.Size, result.Size);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                Assert.NotEqual(new Rgb8(0, 0, 0), result[x, y]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies that outer-rim diagonal boundary normals remain symmetric and stable when neighboring pixels lie outside the band.
+    /// </summary>
+    [Fact]
+    public void Apply_OuterRimDiagonalBoundary_ShouldPreserveDiagonalNormalStability()
+    {
+        const int size = 20;
+        SequentialMatrix<int> labels = TestMatrices.Create(size, size, (x, y) => x + y < size ? 0 : 1);
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            size,
+            size,
+            (x, y) => x + y < size
+                ? new Rgb8((byte)(170 + (x + y)), 30, 30)
+                : new Rgb8(30, (byte)(170 + (40 - x - y)), 220));
+        var graph = RegionGraph.FromLabels(labels);
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(size, size, new DoublePixel(1.0));
+
+        // Tiny frequency isolates normal-driven PaperGapBias from random Perlin asymmetry across the diagonal.
+        var nearZeroNoise = new PerlinNoiseOptions(Seed: 101, Frequency: 1e-18, Octaves: 1);
+        var options = new HandTremorOptions(
+            Amplitude: 2.0,
+            PaperGapBias: 0.37,
+            PrimaryNoise: nearZeroNoise,
+            SecondaryNoise: nearZeroNoise);
+
+        Matrix<Rgb8> result = HandTremorFilter.Apply(image, graph, dist, options: options);
+
+        // innerRadius = Ceil(2 * 1.37) = 3, bandRadius = 6
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                Assert.Equal(result[y, x], result[x, y]);
+                Assert.NotEqual(new Rgb8(0, 0, 0), result[x, y]);
+            }
+        }
+    }
 }

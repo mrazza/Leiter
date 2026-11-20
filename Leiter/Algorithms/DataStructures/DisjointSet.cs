@@ -103,6 +103,7 @@ public class DisjointSet<T> : IDisjointSet
     /// </summary>
     /// <param name="image">The image to segment into disjoint sets.</param>
     /// <param name="initialValueFunc">The function to be used to initialize the value of each partition.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="initialValueFunc"/> is <see langword="null"/>.</exception>
     public DisjointSet(IUntypedMatrix image, Func<int, T> initialValueFunc)
     {
         ArgumentNullException.ThrowIfNull(image);
@@ -157,8 +158,12 @@ public class DisjointSet<T> : IDisjointSet
     {
         int rootIndex = FindRootReadOnly(index);
         var region = new Region<Coord>(elements[rootIndex].Size);
-        foreach (int currIndex in EnumeratePartitionIndices(rootIndex))
+        int currIndex = rootIndex;
+        do
+        {
             region.Pixels.Add(image.CoordFromIndex(currIndex));
+            currIndex = elements[currIndex].NextIndex;
+        } while (currIndex != rootIndex);
         return region;
     }
 
@@ -180,10 +185,8 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="unionValue">The value to assign to the unioned partition.</param>
     /// <returns>The partition that the two partitions were unioned into.</returns>
     /// <exception cref="ArgumentException">Thrown when the two partitions are the same.</exception>
-    public Partition Union(Partition firstPartition, Partition secondPartition, T unionValue)
-    {
-        return Union(firstPartition.RootIndex, secondPartition.RootIndex, unionValue);
-    }
+    public Partition Union(Partition firstPartition, Partition secondPartition, T unionValue) =>
+        UnionCore(firstPartition.RootIndex, secondPartition.RootIndex, unionValue, nameof(secondPartition));
 
     /// <summary>
     /// Unions the two partitions containing the specified coordinates.
@@ -193,10 +196,8 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="unionValue">The value to assign to the unioned partition.</param>
     /// <returns>The partition that the two partitions were unioned into.</returns>
     /// <exception cref="ArgumentException">Thrown when the two coordinates are already in the same partition.</exception>
-    public Partition Union(Coord firstCoord, Coord secondCoord, T unionValue)
-    {
-        return Union(image.IndexFromCoord(firstCoord), image.IndexFromCoord(secondCoord), unionValue);
-    }
+    public Partition Union(Coord firstCoord, Coord secondCoord, T unionValue) =>
+        UnionCore(image.IndexFromCoord(firstCoord), image.IndexFromCoord(secondCoord), unionValue, nameof(secondCoord));
 
     /// <summary>
     /// Unions the two partitions containing the specified indices.
@@ -206,12 +207,15 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="unionValue">The value to assign to the unioned partition.</param>
     /// <returns>The partition that the two partitions were unioned into.</returns>
     /// <exception cref="ArgumentException">Thrown when the two indices are already in the same partition.</exception>
-    public Partition Union(int firstIndex, int secondIndex, T unionValue)
+    public Partition Union(int firstIndex, int secondIndex, T unionValue) =>
+        UnionCore(firstIndex, secondIndex, unionValue, nameof(secondIndex));
+
+    private Partition UnionCore(int firstIndex, int secondIndex, T unionValue, string secondParamName)
     {
         int firstSetRoot = Find(firstIndex);
         int secondSetRoot = Find(secondIndex);
         if (firstSetRoot == secondSetRoot)
-            throw new ArgumentException("The two indices are already in the same set.", nameof(secondIndex));
+            throw new ArgumentException("The two elements are already in the same set.", secondParamName);
 
         return MergeRoots(firstSetRoot, secondSetRoot, unionValue);
     }

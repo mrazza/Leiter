@@ -28,6 +28,16 @@ public class CoordTests
     }
 
     [Fact]
+    public void Distance_ExtremeCoordinates_ShouldRemainFiniteAndAccurate()
+    {
+        double minDist = new Coord(int.MinValue, int.MinValue).Distance(new Coord(0, 0));
+        Assert.True(double.IsFinite(minDist));
+        Assert.Equal(3037000499.9760504, minDist, 1e-4);
+
+        Assert.Equal(4294967295.0, new Coord(int.MaxValue, 0).Distance(new Coord(int.MinValue, 0)));
+    }
+
+    [Fact]
     public void DistanceSquared_ShouldComputeExactSquaredDistanceWithoutOverflow()
     {
         var c1 = new Coord(0, 0);
@@ -37,5 +47,7 @@ public class CoordTests
         var extremeA = new Coord(100_000, 0);
         var extremeB = new Coord(0, 0);
         Assert.Equal(10_000_000_000L, extremeA.DistanceSquared(extremeB));
+
+        Assert.Throws<OverflowException>(() => new Coord(int.MinValue, int.MinValue).DistanceSquared(new Coord(0, 0)));
     }
 }

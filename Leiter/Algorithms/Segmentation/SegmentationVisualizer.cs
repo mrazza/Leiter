@@ -135,7 +135,7 @@ public static class SegmentationVisualizer
     /// <summary>
     /// Renders a new <see cref="Matrix{Rgb8}"/> where every region in <paramref name="regionGraph"/> is filled with a random color.
     /// </summary>
-    /// <param name="image">The source image providing output dimensions and fallback values for uncovered pixels.</param>
+    /// <param name="image">The source image providing output dimensions.</param>
     /// <param name="regionGraph">The region graph defining regions to color.</param>
     /// <param name="seed">An optional seed for deterministic random colors.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> with colored regions.</returns>
@@ -167,7 +167,7 @@ public static class SegmentationVisualizer
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
         ArgumentNullException.ThrowIfNull(colorAssigner);
-        Guard.ThrowIfSizeMismatch(image, regionGraph.Labels);
+        Guard.ThrowIfSizeMismatch(image, regionGraph.Labels, nameof(regionGraph));
 
         return ColorRegions(image, regionGraph.Regions, colorAssigner);
     }
@@ -175,7 +175,7 @@ public static class SegmentationVisualizer
     /// <summary>
     /// Renders a new <see cref="Matrix{Rgb8}"/> where every partition in <paramref name="segmentation"/> is filled with a random color.
     /// </summary>
-    /// <param name="image">The source image providing output dimensions and fallback values for uncovered pixels.</param>
+    /// <param name="image">The source image providing output dimensions.</param>
     /// <param name="segmentation">The disjoint-set segmentation defining regions to color.</param>
     /// <param name="seed">An optional seed for deterministic random colors.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> with colored regions.</returns>
@@ -209,6 +209,26 @@ public static class SegmentationVisualizer
         ArgumentNullException.ThrowIfNull(colorAssigner);
         Guard.ThrowIfSizeMismatch(image, segmentation);
 
-        return ColorRegions(image, segmentation.ToRegions(), colorAssigner);
+        int width = segmentation.Width;
+        int height = segmentation.Height;
+        var regionsByRoot = new Dictionary<long, Region<Coord>>();
+        var orderedRegions = new List<Region<Coord>>();
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                long root = segmentation[x, y].Value;
+                if (!regionsByRoot.TryGetValue(root, out Region<Coord>? region))
+                {
+                    region = new Region<Coord> { Id = unchecked((int)root) };
+                    regionsByRoot[root] = region;
+                    orderedRegions.Add(region);
+                }
+
+                region.Pixels.Add(new Coord(x, y));
+            }
+        }
+
+        return ColorRegions(image, orderedRegions, colorAssigner);
     }
 }

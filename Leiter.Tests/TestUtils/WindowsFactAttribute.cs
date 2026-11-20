@@ -14,7 +14,7 @@ public sealed class WindowsFactAttribute : FactAttribute
     {
         if (!OperatingSystem.IsWindows())
         {
-            Skip = "Windows GDI+ tests run only on Windows.";
+            Skip = "Windows platform tests run only on Windows.";
         }
     }
 }

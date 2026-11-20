@@ -237,7 +237,7 @@ public static class ColorTransfer
     /// <returns>The recolored <see cref="Matrix{Rgb8}"/> image and the selected <see cref="ColorTransferProfile"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/>, <paramref name="profiles"/>, or any profile entry is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="profiles"/> is empty.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> is undefined, <paramref name="strength"/> is outside <c>[0, 1]</c>, or any feature weight is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> or any profile's illuminant is undefined, <paramref name="strength"/> is outside <c>[0, 1]</c>, or any feature weight is negative.</exception>
     public static (Matrix<Rgb8> Result, ColorTransferProfile SelectedProfile) TransferToClosestProfile(
         IReadOnlyMatrix<Rgb8> source,
         IReadOnlyList<ColorTransferProfile> profiles,
@@ -253,6 +253,9 @@ public static class ColorTransfer
         Matrix<Lab32> sourceLabE = source.Map(pixel => pixel.ToLab32(colorSpace, Illuminant.E));
         LabColorStatistics sourceStats = ComputeStatistics(sourceLabE);
         ColorTransferProfile selected = SelectClosestProfile(sourceStats, profiles, featureWeights);
+
+        for (int i = 0; i < profiles.Count; i++)
+            Guard.ThrowIfUndefinedEnum(profiles[i].Illuminant, nameof(profiles));
 
         if (source.Count == 0 || strength == 0.0)
             return (source.Clone(), selected);

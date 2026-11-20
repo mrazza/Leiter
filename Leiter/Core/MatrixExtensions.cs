@@ -142,6 +142,9 @@ public static class MatrixExtensions
     /// Applies a coordinate-aware transformation function to each element of a read-only matrix in parallel,
     /// returning a new matrix of the mapped type.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="selector"/> is invoked concurrently from multiple threads and must be thread-safe.
+    /// </remarks>
     /// <typeparam name="T">The element type of the source matrix.</typeparam>
     /// <typeparam name="R">The element type of the resulting matrix.</typeparam>
     /// <param name="matrix">The source matrix to transform.</param>

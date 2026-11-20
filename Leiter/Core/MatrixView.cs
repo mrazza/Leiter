@@ -1,7 +1,6 @@
 namespace Leiter.Core;
 
 using System.Collections;
-using System.Diagnostics;
 
 /// <summary>
 /// A zero-allocation, read-only view into a sub-region or border-extended region of an underlying matrix.
@@ -20,9 +19,11 @@ public readonly struct MatrixView<T> : IReadOnlyMatrix<T>
     /// <param name="height">The height of the view.</param>
     /// <param name="edgeHandling">The border handling strategy when coordinates fall outside <paramref name="matrix"/>.</param>
     /// <exception cref="ArgumentNullException"><paramref name="matrix"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="edgeHandling"/> is not a defined <see cref="Core.EdgeHandling"/> value.</exception>
     public MatrixView(IReadOnlyMatrix<T> matrix, int offsetX, int offsetY, int width, int height, EdgeHandling edgeHandling)
     {
         ArgumentNullException.ThrowIfNull(matrix);
+        Guard.ThrowIfUndefinedEnum(edgeHandling);
         Matrix = matrix;
         Width = width;
         Height = height;
@@ -113,16 +114,15 @@ public readonly struct MatrixView<T> : IReadOnlyMatrix<T>
     /// <param name="x">The zero-based column coordinate.</param>
     /// <param name="y">The zero-based row coordinate.</param>
     /// <returns>The element at the specified coordinates.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The underlying matrix has non-positive dimensions or <see cref="EdgeHandling"/> is unsupported.</exception>
     public T GetElement(int x, int y)
     {
-        var underLyingX = x + OffsetX;
+        var underlyingX = x + OffsetX;
         var underlyingY = y + OffsetY;
 
-        return EdgeHandling switch
-        {
-            EdgeHandling.Extend => Matrix.GetClamped(underLyingX, underlyingY),
-            _ => throw new UnreachableException("Code should be unreachable, switch statement exhaustive."),
-        };
+        return Matrix[
+            EdgeHandling.ResolveIndex(underlyingX, Matrix.Width),
+            EdgeHandling.ResolveIndex(underlyingY, Matrix.Height)];
     }
 
     /// <summary>

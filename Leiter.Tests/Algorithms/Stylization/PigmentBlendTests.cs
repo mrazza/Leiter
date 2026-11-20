@@ -12,7 +12,6 @@ using static Leiter.Tests.TestUtils.TestConstants;
 /// </summary>
 public class PigmentBlendTests
 {
-
     /// <summary>
     /// Verifies that paper white (1.0) and pure black (0.0) remain invariant under positive and negative density offsets.
     /// </summary>
@@ -401,5 +400,40 @@ public class PigmentBlendTests
         Assert.Throws<ArgumentNullException>(() => PigmentBlend.ApplyDensityField(image, field, null!));
         Assert.Throws<ArgumentException>(() => PigmentBlend.ApplyDensityField(image, new SequentialMatrix<DoublePixel>(3, 2)));
         Assert.Throws<ArgumentOutOfRangeException>(() => PigmentBlend.ApplyDensityField(image, field, double.NaN));
+    }
+
+    /// <summary>
+    /// Verifies that non-finite samples in <c>densityField</c> throw <see cref="ArgumentOutOfRangeException"/> even when intensity is zero or non-zero.
+    /// </summary>
+    /// <param name="invalidSample">The non-finite density field value.</param>
+    /// <param name="intensity">The field intensity multiplier.</param>
+    [Theory]
+    [InlineData(double.NaN, 1.0)]
+    [InlineData(double.PositiveInfinity, 1.0)]
+    [InlineData(double.NaN, 0.0)]
+    [InlineData(double.PositiveInfinity, 0.0)]
+    public void ApplyDensityField_NonFiniteFieldSample_ShouldThrowArgumentOutOfRangeException(double invalidSample, double intensity)
+    {
+        var image = new SequentialMatrix<Rgb8>(2, 2);
+        image.SetAll(new Rgb8(120, 140, 160));
+        var field = new SequentialMatrix<DoublePixel>(2, 2);
+        field.SetAll(0.25);
+        field[1, 1] = invalidSample;
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => PigmentBlend.ApplyDensityField(image, field, intensity));
+    }
+
+    /// <summary>
+    /// Verifies that a selector returning a non-finite density offset throws <see cref="ArgumentOutOfRangeException"/> directly rather than <see cref="AggregateException"/>.
+    /// </summary>
+    [Fact]
+    public void ApplyDensityField_SelectorReturningNaN_ShouldThrowArgumentOutOfRangeException()
+    {
+        var image = new SequentialMatrix<Rgb8>(2, 2);
+        image.SetAll(new Rgb8(120, 140, 160));
+        var field = new SequentialMatrix<DoublePixel>(2, 2);
+        field.SetAll(0.5);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => PigmentBlend.ApplyDensityField(image, field, static _ => double.NaN));
     }
 }

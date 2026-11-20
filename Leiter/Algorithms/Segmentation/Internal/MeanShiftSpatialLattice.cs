@@ -241,9 +241,13 @@ internal sealed partial class MeanShiftSpatialLattice
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static ColorKey3D QuantizeColor(Lab32 color, double rangeCellWidth) =>
         new(
-            (int)Math.Floor(color.L / rangeCellWidth),
-            (int)Math.Floor(color.A / rangeCellWidth),
-            (int)Math.Floor(color.B / rangeCellWidth));
+            QuantizeChannel(color.L, rangeCellWidth),
+            QuantizeChannel(color.A, rangeCellWidth),
+            QuantizeChannel(color.B, rangeCellWidth));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int QuantizeChannel(float value, double rangeCellWidth) =>
+        (int)Math.Clamp(Math.Floor(value / rangeCellWidth), int.MinValue + 1.0, int.MaxValue - 1.0);
 
     private static int FindFirstBucketAtOrAboveLightness(
         ColorBucket[] buckets,

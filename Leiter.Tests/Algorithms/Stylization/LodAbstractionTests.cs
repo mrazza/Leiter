@@ -434,4 +434,63 @@ public class LodAbstractionTests
         Assert.Equal((byte)100, result[3, 3].R);
         Assert.Equal((byte)110, result[4, 3].R);
     }
+
+    /// <summary>
+    /// Verifies that huge <see cref="LodAbstractionOptions.DistanceKernelScale"/> values clamp in <see cref="double"/>
+    /// to <see cref="LodAbstractionOptions.MaxNonSalientKernelSize"/> without overflowing to <see cref="LodAbstractionOptions.MinNonSalientKernelSize"/>.
+    /// </summary>
+    [Fact]
+    public void Apply_HugeDistanceKernelScale_ShouldClampToMaxKernelSizeWithoutOverflow()
+    {
+        const int width = 15;
+        const int height = 15;
+        var labels = new SequentialMatrix<int>(width, height);
+        var regionGraph = RegionGraph.FromLabels(labels);
+        var salientMask = new MaskMatrix(width, height);
+
+        var image = new SequentialMatrix<Rgb8>(width, height);
+        image[7, 7] = new Rgb8(255, 255, 255);
+        SequentialMatrix<DoublePixel> distanceField = TestMatrices.Constant(width, height, new DoublePixel(1.0));
+
+        var expectedOptions = new LodAbstractionOptions(
+            MinNonSalientKernelSize: 3,
+            MaxNonSalientKernelSize: 9,
+            DistanceKernelScale: 100.0);
+        var hugeScaleOptions = expectedOptions with { DistanceKernelScale = 1e12 };
+
+        Matrix<Rgb8> expected = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask, expectedOptions);
+        Matrix<Rgb8> actual = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask, hugeScaleOptions);
+
+        MatrixAssert.Equal(expected, actual);
+        Assert.True(actual[11, 7].R > 0);
+        Assert.Equal((byte)0, actual[12, 7].R);
+    }
+
+    /// <summary>
+    /// Verifies that the <see cref="IDisjointSet"/> overload validates mismatched <c>salientMask</c>,
+    /// invalid <c>options</c>, and empty images.
+    /// </summary>
+    [Fact]
+    public void Apply_DisjointSetOverload_ValidationAndEmptyImages_ShouldBehaveAsExpected()
+    {
+        var image = new SequentialMatrix<Rgb8>(4, 4);
+        var segmentation = new DisjointSet<int>(new SequentialMatrix<int>(4, 4), i => i);
+        var distanceField = new SequentialMatrix<DoublePixel>(4, 4);
+        var badMask = new MaskMatrix(5, 5);
+        var invalidOptions = new LodAbstractionOptions(SalientKernelSize: 0);
+
+        Assert.Throws<ArgumentException>(() => LodAbstraction.Apply(image, segmentation, distanceField, badMask));
+        Assert.Throws<ArgumentOutOfRangeException>(() => LodAbstraction.Apply(image, segmentation, distanceField, options: invalidOptions));
+
+        foreach (Size emptySize in new[] { new Size(0, 0), new Size(0, 5), new Size(5, 0) })
+        {
+            var emptyImage = new SequentialMatrix<Rgb8>(emptySize);
+            var emptySeg = new DisjointSet<int>(new SequentialMatrix<int>(emptySize), i => i);
+            var emptyDist = new SequentialMatrix<DoublePixel>(emptySize);
+
+            Matrix<Rgb8> emptyResult = LodAbstraction.Apply(emptyImage, emptySeg, emptyDist);
+            Assert.Equal(emptySize, emptyResult.Size);
+            Assert.Empty(emptyResult);
+        }
+    }
 }

@@ -73,32 +73,32 @@ public static class WatercolorPipeline
         // Stage 3: Mean-Shift Segmentation & Saliency-Guided LOD Abstraction
         MeanShiftOptions resolvedMeanShift = opts.MeanShift ?? WatercolorOptions.ResolveDefaultMeanShift(image.Count);
         (Matrix<Rgb8> meanShiftFiltered, IDisjointSet meanShiftSeg) = MeanShiftSegmentation.FilterAndSegment(colorTransferred, resolvedMeanShift);
-        RegionGraph regionGraph = RegionGraph.FromDisjointSet(meanShiftSeg);
+        RegionGraph regionGraph = RegionGraph.FromDisjointSet(meanShiftSeg, resolvedMeanShift.Connectivity);
         double[] salientFractions = regionGraph.ComputeRegionFractions(salientMask);
         CompleteStage(onStageCompleted, WatercolorStage.Segmentation, ref stageStart);
 
-        LodAbstractionOptions resolvedLod = OptionsResolver.Resolve(opts.LodAbstraction, LodAbstractionOptions.Default);
+        LodAbstractionOptions resolvedLod = opts.LodAbstraction ?? LodAbstractionOptions.Default;
         Matrix<Rgb8> lodAbstracted = LodAbstraction.ApplyCore(
             meanShiftFiltered,
             regionGraph,
             distanceField,
-            salientMask,
+            salientMask: null,
             salientFractions,
             resolvedLod);
         CompleteStage(onStageCompleted, WatercolorStage.LodAbstraction, ref stageStart);
 
         // Stage 4: Wet-in-Wet Bleeding
-        WetInWetOptions resolvedWetInWet = OptionsResolver.Resolve(opts.WetInWet, WetInWetOptions.Default);
+        WetInWetOptions resolvedWetInWet = opts.WetInWet ?? WetInWetOptions.Default;
         WetInWetResult wetInWet = WetInWetFilter.ApplyDetailedCore(
             lodAbstracted,
             regionGraph,
-            salientMask,
+            salientMask: null,
             salientFractions,
             resolvedWetInWet);
         CompleteStage(onStageCompleted, WatercolorStage.WetInWet, ref stageStart);
 
         // Stage 5: Hand Tremor Distortion
-        HandTremorOptions resolvedHandTremor = OptionsResolver.Resolve(opts.HandTremor, HandTremorOptions.Default);
+        HandTremorOptions resolvedHandTremor = opts.HandTremor ?? HandTremorOptions.Default;
         Matrix<Rgb8> handTremor = HandTremorFilter.ApplyCore(
             wetInWet.Image,
             regionGraph,
@@ -174,6 +174,7 @@ public static class WatercolorPipeline
     /// <param name="image">The input RGB photograph to watercolorize.</param>
     /// <param name="options">Optional pipeline configuration parameters controlling each stage.</param>
     /// <param name="paperHeightMap">Optional custom normalized [0, 1] paper height map used during Stage 6 granulation.</param>
+    /// <param name="onStageCompleted">Optional callback invoked as each major pipeline stage completes (not invoked when <paramref name="image"/> is empty).</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the final rendered watercolor painting.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="paperHeightMap"/> dimensions do not match <paramref name="image"/>.</exception>
@@ -181,15 +182,17 @@ public static class WatercolorPipeline
     public static Matrix<Rgb8> Render(
         IReadOnlyMatrix<Rgb8> image,
         WatercolorOptions? options = null,
-        IReadOnlyMatrix<DoublePixel>? paperHeightMap = null) =>
-        RenderDetailed(image, options, paperHeightMap).Image;
+        IReadOnlyMatrix<DoublePixel>? paperHeightMap = null,
+        Action<WatercolorStageProgress>? onStageCompleted = null) =>
+        RenderDetailed(image, options, paperHeightMap, onStageCompleted).Image;
 
     private static WatercolorResult CreateEmptyResult(Size size, WatercolorOptions options)
     {
         var emptyRgb = new SequentialMatrix<Rgb8>(size);
         var emptyDouble = new SequentialMatrix<DoublePixel>(size);
         var emptyMask = new MaskMatrix(size);
-        var emptyGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(size));
+        GridConnectivity connectivity = options.MeanShift?.Connectivity ?? GridConnectivity.EightConnected;
+        var emptyGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(size), connectivity);
         var emptyWetInWet = new WetInWetResult(emptyRgb, emptyMask, []);
 
         return new WatercolorResult(

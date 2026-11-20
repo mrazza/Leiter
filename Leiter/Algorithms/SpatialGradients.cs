@@ -142,20 +142,6 @@ public static class SpatialGradients
         Rgb8 vM1M1, Rgb8 v0M1, Rgb8 vP1M1,
         Rgb8 vM10,            Rgb8 vP10,
         Rgb8 vM1P1, Rgb8 v0P1, Rgb8 vP1P1,
-        GradientOperator gradientOperator = GradientOperator.Sobel)
-    {
-        var (w0, w1, w2, scale) = GetKernelWeights(gradientOperator);
-        return ComputeRgb8GradientAt(
-            vM1M1, v0M1, vP1M1,
-            vM10,        vP10,
-            vM1P1, v0P1, vP1P1,
-            w0, w1, w2, scale / 255.0);
-    }
-
-    internal static (Rgb64 Gx, Rgb64 Gy) ComputeRgb8GradientAt(
-        Rgb8 vM1M1, Rgb8 v0M1, Rgb8 vP1M1,
-        Rgb8 vM10,            Rgb8 vP10,
-        Rgb8 vM1P1, Rgb8 v0P1, Rgb8 vP1P1,
         double w0, double w1, double w2, double normalizedScale)
     {
         var (gxR, gyR) = ComputeGradientAt(

@@ -50,7 +50,14 @@ public class SequentialMatrixTests
     public void Constructor_DataMismatch_ShouldThrow()
     {
         var values = new DoublePixel[] { 1.0, 2.0 };
-        Assert.Throws<ArgumentException>(() => new SequentialMatrix<DoublePixel>(new Size(2, 2), values));
+        ArgumentException ex2 = Assert.Throws<ArgumentException>(() => new SequentialMatrix<DoublePixel>(new Size(2, 2), values));
+        Assert.Equal("values", ex2.ParamName);
+
+        ArgumentException ex3 = Assert.Throws<ArgumentException>(() => new SequentialMatrix<DoublePixel>(new Size(2, 2), new DoublePixel[3]));
+        Assert.Equal("values", ex3.ParamName);
+
+        ArgumentNullException nullEx = Assert.Throws<ArgumentNullException>(() => new SequentialMatrix<DoublePixel>(new Size(2, 2), null!));
+        Assert.Equal("values", nullEx.ParamName);
     }
 
     [Fact]

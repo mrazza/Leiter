@@ -56,10 +56,7 @@ public static class WetInWetFilter
         int boundaryCount = regionGraph.Boundaries.Count;
         if (image.Count == 0 || opts.Mode == WetInWetMode.Disabled || boundaryCount == 0)
         {
-            return new WetInWetResult(
-                image.Clone(),
-                new MaskMatrix(image.Size),
-                new bool[boundaryCount]);
+            return CreateUnmodifiedResult(image, boundaryCount);
         }
 
         bool[]? salientRegions;
@@ -144,7 +141,8 @@ public static class WetInWetFilter
             boundaryPolarity[bi] = (brighterId, darkerId);
         }
 
-        int maxBand = Math.Max(opts.ScatterRadius, (int)Math.Ceiling(Math.Max(filterOpts.MajorRadius, filterOpts.MinorRadius)));
+        double filterRadius = Math.Ceiling(Math.Max(filterOpts.MajorRadius, filterOpts.MinorRadius));
+        int maxBand = Math.Max(opts.ScatterRadius, (int)Math.Min(filterRadius, width + height));
 
         RegionBoundaryBand band = regionGraph.ComputeBoundaryBand(
             maxBand,
@@ -207,26 +205,29 @@ public static class WetInWetFilter
                 int dist = band.Distances[x, y];
                 if (dist <= maxBand)
                 {
+                    int bi = band.NearestBoundaryIndices[x, y];
+                    int brighterId = boundaryPolarity[bi].BrighterId;
+                    bool isBrighterSide = regionGraph.Labels[x, y] == brighterId;
+
+                    if (!isBrighterSide && dist > 1)
+                    {
+                        continue;
+                    }
+
                     wetAreaMask[x, y] = true;
                     if (dist > 0)
                     {
                         orientations[x, y] = orientations[band.NearestSeedIndices[x, y]];
                     }
 
-                    if (dist <= opts.ScatterRadius)
+                    if (isBrighterSide && dist <= opts.ScatterRadius)
                     {
-                        int bi = band.NearestBoundaryIndices[x, y];
-                        int brighterId = boundaryPolarity[bi].BrighterId;
-
-                        if (regionGraph.Labels[x, y] == brighterId)
+                        double falloff = 1.0 - ((double)dist / (opts.ScatterRadius + 1));
+                        double effectiveProbability = opts.SeedProbability * falloff * falloff;
+                        double hash = SplitMix64.HashToUnitDouble(opts.Seed, x, y);
+                        if (hash < effectiveProbability)
                         {
-                            double falloff = 1.0 - ((double)dist / (opts.ScatterRadius + 1));
-                            double effectiveProbability = opts.SeedProbability * falloff * falloff;
-                            double hash = SplitMix64.HashToUnitDouble(opts.Seed, x, y);
-                            if (hash < effectiveProbability)
-                            {
-                                seeded[x, y] = seedDarkerColors[band.NearestSeedIndices[x, y]];
-                            }
+                            seeded[x, y] = seedDarkerColors[band.NearestSeedIndices[x, y]];
                         }
                     }
                 }
@@ -302,9 +303,21 @@ public static class WetInWetFilter
         Guard.ThrowIfSizeMismatch(image, distanceField);
 
         WetInWetOptions opts = OptionsResolver.Resolve(options, WetInWetOptions.Default);
+        int boundaryCount = regionGraph.Boundaries.Count;
+        if (image.Count == 0 || opts.Mode == WetInWetMode.Disabled || boundaryCount == 0)
+        {
+            return CreateUnmodifiedResult(image, boundaryCount);
+        }
+
         MaskMatrix salientMask = SaliencyDistanceField.ExtractSalientMask(distanceField);
         return ApplyDetailedCore(image, regionGraph, salientMask, precomputedSalientFractions: null, opts);
     }
+
+    private static WetInWetResult CreateUnmodifiedResult(IReadOnlyMatrix<Rgb8> image, int boundaryCount) =>
+        new(
+            image.Clone(),
+            new MaskMatrix(image.Size),
+            new bool[boundaryCount]);
 
     /// <summary>
     /// Applies wet-in-wet edge bleeding to an image and returns the filtered RGB result matrix.

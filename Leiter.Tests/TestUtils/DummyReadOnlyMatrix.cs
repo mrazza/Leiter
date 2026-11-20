@@ -100,7 +100,7 @@ public sealed class DummyReadOnlyMatrix<T> : IReadOnlyMatrix<T>
     public T GetElement(int index) => data[index];
 
     /// <inheritdoc/>
-    public T GetElement(int width, int height) => this[width, height];
+    public T GetElement(int x, int y) => this[x, y];
 
     /// <inheritdoc/>
     public IEnumerator<T> GetEnumerator() => ((IEnumerable<T>)data).GetEnumerator();

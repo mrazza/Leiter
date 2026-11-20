@@ -96,8 +96,8 @@ public static class LodAbstraction
                 else
                 {
                     double d = ScalarMath.ClampUnitOrDefault(distanceField[x, y].Value);
-                    int computedSize = (int)Math.Round(resolvedOptions.DistanceKernelScale * (d + resolvedOptions.DistanceKernelBias));
-                    kernelSize = Math.Clamp(computedSize, resolvedOptions.MinNonSalientKernelSize, resolvedOptions.MaxNonSalientKernelSize);
+                    double rawSize = Math.Round(resolvedOptions.DistanceKernelScale * (d + resolvedOptions.DistanceKernelBias));
+                    kernelSize = (int)Math.Clamp(rawSize, resolvedOptions.MinNonSalientKernelSize, resolvedOptions.MaxNonSalientKernelSize);
                     double colorThreshold = resolvedOptions.CrossSegmentColorScale * d;
                     colorThresholdSq = colorThreshold * colorThreshold;
                 }

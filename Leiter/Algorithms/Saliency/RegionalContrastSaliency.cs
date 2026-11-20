@@ -38,6 +38,7 @@ public static class RegionalContrastSaliency
     /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="segmentation"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> and <paramref name="segmentation"/> dimensions do not match.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> contains invalid parameters.</exception>
     public static Matrix<DoublePixel> ComputeSaliency(
         IReadOnlyMatrix<Rgb8> image,
         IDisjointSet segmentation,

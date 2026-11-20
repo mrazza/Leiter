@@ -116,13 +116,158 @@ public class MeanShiftSpatialLatticeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new MeanShiftSpatialLattice(sample, 1, 1, 5.0, double.NaN));
     }
 
+    [Fact]
+    public void ComputeMeanStep_UltraSmallRangeRadius_ShouldFindSelfAndMatchingPixelsWithoutOverflow()
+    {
+        const int width = 6;
+        const int height = 6;
+        const double spatialRadius = 2.0;
+        const double rangeRadius = 1e-12;
+        double spatialRadiusSq = spatialRadius * spatialRadius;
+        double rangeRadiusSq = rangeRadius * rangeRadius;
+
+        var pixels = new Lab32[width * height];
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                pixels[(y * width) + x] = new Lab32(20.0f + x, -30.0f + y, 40.0f - (x + y));
+            }
+        }
+
+        // Large positive and negative channels exercise both QuantizeChannel clamp bounds
+        var positiveLNegativeBColor = new Lab32(55.0f, 30.0f, -40.0f);
+        pixels[(2 * width) + 2] = positiveLNegativeBColor;
+        pixels[(2 * width) + 3] = positiveLNegativeBColor;
+
+        var negativeAColor = new Lab32(80.0f, -25.0f, 45.0f);
+        pixels[(4 * width) + 4] = negativeAColor;
+
+        var lattice = new MeanShiftSpatialLattice(pixels, width, height, spatialRadius, rangeRadius);
+
+        // Offset queries must match pixels in the lattice rather than falling back to current
+        var pairQuery = new MeanShiftMode(2.2, 2.3, positiveLNegativeBColor);
+        MeanShiftMode pairActual = lattice.ComputeMeanStep(pairQuery, spatialRadiusSq, rangeRadiusSq);
+        Assert.Equal(2.5, pairActual.X, 9);
+        Assert.Equal(2.0, pairActual.Y, 9);
+        Assert.Equal(positiveLNegativeBColor, pairActual.Color);
+
+        var selfQuery = new MeanShiftMode(4.3, 4.4, negativeAColor);
+        MeanShiftMode selfActual = lattice.ComputeMeanStep(selfQuery, spatialRadiusSq, rangeRadiusSq);
+        Assert.Equal(4.0, selfActual.X, 9);
+        Assert.Equal(4.0, selfActual.Y, 9);
+        Assert.Equal(negativeAColor, selfActual.Color);
+    }
+
+    [Fact]
+    public void Create_WithSampleStride2_ShouldMatchStridedBruteForceScan()
+    {
+        const int width = 15;
+        const int height = 13;
+        const int sampleStride = 2;
+        const double spatialRadius = 4.5;
+        const double rangeRadius = 20.0;
+        double spatialRadiusSq = spatialRadius * spatialRadius;
+        double rangeRadiusSq = rangeRadius * rangeRadius;
+
+        var pixels = new Lab32[width * height];
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                bool isStridedSample = (x % sampleStride == 0) && (y % sampleStride == 0);
+                pixels[(y * width) + x] = isStridedSample
+                    ? new Lab32(30.0f + x + y, -10.0f + x, 20.0f - y)
+                    : new Lab32(95.0f, 60.0f, -60.0f);
+            }
+        }
+
+        MeanShiftSpatialLattice lattice = MeanShiftSpatialLattice.Create(
+            pixels,
+            width,
+            height,
+            spatialRadius,
+            rangeRadius,
+            sampleStride: sampleStride);
+
+        var oddColorQuery = new MeanShiftMode(5.0, 5.0, new Lab32(95.0f, 60.0f, -60.0f));
+        MeanShiftMode oddResult = lattice.ComputeMeanStep(oddColorQuery, spatialRadiusSq, 1.0);
+        Assert.Equal(oddColorQuery, oddResult);
+
+        MeanShiftMode[] testModes =
+        [
+            new(0.0, 0.0, pixels[0]),
+            new(6.3, 4.7, new Lab32(40.0f, -4.0f, 15.0f)),
+            new(width - 1.0, height - 1.0, pixels[((height - 1) * width) + (width - 1)]),
+        ];
+
+        foreach (MeanShiftMode query in testModes)
+        {
+            MeanShiftMode expected = DirectBruteForceScan(pixels, width, height, query, spatialRadiusSq, rangeRadiusSq, sampleStride);
+            MeanShiftMode actual = lattice.ComputeMeanStep(query, spatialRadiusSq, rangeRadiusSq);
+
+            Assert.Equal(expected.X, actual.X, 4);
+            Assert.Equal(expected.Y, actual.Y, 4);
+            Assert.Equal(expected.Color.L, actual.Color.L, 3);
+            Assert.Equal(expected.Color.A, actual.Color.A, 3);
+            Assert.Equal(expected.Color.B, actual.Color.B, 3);
+        }
+    }
+
+    [Fact]
+    public void ComputeMeanStep_ParallelBuildPath_ShouldMatchDirectBruteForceScan()
+    {
+        const int width = 256;
+        const int height = 256;
+        const double spatialRadius = 6.0;
+        const double rangeRadius = 12.0;
+        double spatialRadiusSq = spatialRadius * spatialRadius;
+        double rangeRadiusSq = rangeRadius * rangeRadius;
+
+        var pixels = new Lab32[width * height];
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float l = 20.0f + ((x + y) * 0.125f);
+                float a = -30.0f + (x * 0.25f);
+                float b = 30.0f - (y * 0.25f);
+                pixels[(y * width) + x] = new Lab32(l, a, b);
+            }
+        }
+
+        // 256 * 256 == 65536 triggers ParallelBuildPixelThreshold
+        var lattice = new MeanShiftSpatialLattice(pixels, width, height, spatialRadius, rangeRadius);
+
+        MeanShiftMode[] testModes =
+        [
+            new(0.0, 0.0, pixels[0]),
+            new(127.4, 128.6, pixels[(128 * width) + 127]),
+            new(255.0, 255.0, pixels[(width * height) - 1]),
+            new(64.25, 192.75, pixels[(193 * width) + 64]),
+        ];
+
+        foreach (MeanShiftMode query in testModes)
+        {
+            MeanShiftMode expected = DirectBruteForceScan(pixels, width, height, query, spatialRadiusSq, rangeRadiusSq);
+            MeanShiftMode actual = lattice.ComputeMeanStep(query, spatialRadiusSq, rangeRadiusSq);
+
+            Assert.Equal(expected.X, actual.X, 4);
+            Assert.Equal(expected.Y, actual.Y, 4);
+            Assert.Equal(expected.Color.L, actual.Color.L, 3);
+            Assert.Equal(expected.Color.A, actual.Color.A, 3);
+            Assert.Equal(expected.Color.B, actual.Color.B, 3);
+        }
+    }
+
     private static MeanShiftMode DirectBruteForceScan(
         ReadOnlySpan<Lab32> pixels,
         int width,
         int height,
         MeanShiftMode current,
         double spatialRadiusSq,
-        double rangeRadiusSq)
+        double rangeRadiusSq,
+        int sampleStride = 1)
     {
         double sumX = 0;
         double sumY = 0;
@@ -131,12 +276,12 @@ public class MeanShiftSpatialLatticeTests
         double sumB = 0;
         int count = 0;
 
-        for (int y = 0; y < height; y++)
+        for (int y = 0; y < height; y += sampleStride)
         {
             double dy = y - current.Y;
             double dySq = dy * dy;
             int rowOffset = y * width;
-            for (int x = 0; x < width; x++)
+            for (int x = 0; x < width; x += sampleStride)
             {
                 double dx = x - current.X;
                 double distSqSpatial = (dx * dx) + dySq;

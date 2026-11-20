@@ -206,4 +206,25 @@ public class FxaaTests
         // Along the thin vertical line (x=8), FXAA must soften horizontally toward neighbors (< 255).
         Assert.True(result[8, 8].R < 255, $"Expected thin vertical line pixel (8,8) to blend below 255, got {result[8, 8].R}");
     }
+
+    /// <summary>
+    /// Verifies that zero contrast thresholds on uniform images (all-black with zero absolute threshold,
+    /// and uniform gray where maxLuma * RelativeContrastThreshold underflows to zero) stay unchanged without NaN or exceptions.
+    /// </summary>
+    [Fact]
+    public void Apply_UniformImagesWithZeroContrastThreshold_ShouldStayUnchangedWithoutExceptions()
+    {
+        var blackImage = TestMatrices.Constant(8, 8, new Rgb8(0, 0, 0));
+        var zeroAbsOptions = new FxaaOptions(AbsoluteContrastThreshold: 0.0);
+        Matrix<Rgb8> blackResult = Fxaa.Apply(blackImage, zeroAbsOptions);
+        MatrixAssert.Equal(blackImage, blackResult);
+
+        var uniformGrayImage = TestMatrices.Constant(8, 8, new Rgb8(64, 64, 64));
+        var underflowOptions = new FxaaOptions(RelativeContrastThreshold: double.Epsilon, AbsoluteContrastThreshold: 0.0);
+        Matrix<Rgb8> grayResult = Fxaa.Apply(uniformGrayImage, underflowOptions);
+        MatrixAssert.Equal(uniformGrayImage, grayResult);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Fxaa.Apply(uniformGrayImage, new FxaaOptions(RelativeContrastThreshold: 0.0, AbsoluteContrastThreshold: 0.0)));
+    }
 }

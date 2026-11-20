@@ -178,6 +178,18 @@ public sealed record WatercolorOptions(
         Guard.ThrowIfNotFiniteInRange(ColorTransferStrength, 0.0, 1.0);
         Guard.ThrowIfNotFiniteNonNegative(EgbiBlurSigma);
 
+        if (TargetPalette is not null)
+        {
+            Guard.ThrowIfUndefinedEnum(TargetPalette.Illuminant, nameof(TargetPalette));
+            LabColorStatistics stats = TargetPalette.Statistics;
+            Guard.ThrowIfNotFinite(stats.MeanL, nameof(TargetPalette));
+            Guard.ThrowIfNotFinite(stats.MeanA, nameof(TargetPalette));
+            Guard.ThrowIfNotFinite(stats.MeanB, nameof(TargetPalette));
+            Guard.ThrowIfNotFiniteNonNegative(stats.StdDevL, nameof(TargetPalette));
+            Guard.ThrowIfNotFiniteNonNegative(stats.StdDevA, nameof(TargetPalette));
+            Guard.ThrowIfNotFiniteNonNegative(stats.StdDevB, nameof(TargetPalette));
+        }
+
         Egbi?.Validate();
         RegionalContrastSaliency?.Validate();
         SaliencyCut?.Validate();

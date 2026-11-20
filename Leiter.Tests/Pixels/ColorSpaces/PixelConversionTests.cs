@@ -208,6 +208,32 @@ public class PixelConversionTests
         Assert.Equal(new Rgb8(40, 50, 60), custom[0, 0]);
         Assert.Equal(new Rgb8(10, 20, 30), custom[1, 0]);
 
+        var view = new MatrixView<bool>(mask, 1, 0, 2, 2, EdgeHandling.Extend);
+        Matrix<Rgb8> viewGray = view.ToGrayscaleRgb8();
+        Assert.Equal(new Size(2, 2), viewGray.Size);
+        Assert.Equal(new Rgb8(255, 255, 255), viewGray[0, 0]);
+        Assert.Equal(new Rgb8(255, 255, 255), viewGray[1, 0]);
+        Assert.Equal(new Rgb8(0, 0, 0), viewGray[0, 1]);
+        Assert.Equal(new Rgb8(0, 0, 0), viewGray[1, 1]);
+
+        Matrix<Rgb8> viewCustom = view.ToRgb8(new Rgb8(10, 20, 30), new Rgb8(40, 50, 60));
+        Assert.Equal(new Rgb8(10, 20, 30), viewCustom[0, 0]);
+        Assert.Equal(new Rgb8(10, 20, 30), viewCustom[1, 0]);
+        Assert.Equal(new Rgb8(40, 50, 60), viewCustom[0, 1]);
+        Assert.Equal(new Rgb8(40, 50, 60), viewCustom[1, 1]);
+
+        foreach (Size emptySize in new[] { new Size(0, 0), new Size(0, 3), new Size(3, 0) })
+        {
+            var emptyMask = new MaskMatrix(emptySize);
+            Matrix<Rgb8> emptyGray = emptyMask.ToGrayscaleRgb8();
+            Assert.Equal(emptySize, emptyGray.Size);
+            Assert.Empty(emptyGray);
+
+            Matrix<Rgb8> emptyCustom = emptyMask.ToRgb8(new Rgb8(10, 20, 30), new Rgb8(40, 50, 60));
+            Assert.Equal(emptySize, emptyCustom.Size);
+            Assert.Empty(emptyCustom);
+        }
+
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ToGrayscaleRgb8());
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ToRgb8(Rgb8.Zero, Rgb8.Zero));
     }

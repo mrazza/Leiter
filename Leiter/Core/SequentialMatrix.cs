@@ -36,9 +36,10 @@ public class SequentialMatrix<T> : Matrix<T>
     /// </summary>
     /// <param name="size">The dimensions of the matrix.</param>
     /// <param name="values">The array of elements to copy into the matrix.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The length of <paramref name="values"/> does not equal the total number of elements specified by <paramref name="size"/>.</exception>
     public SequentialMatrix(Size size, T[] values)
-        : this(size.Width, size.Height, values.ToArray()) { }
+        : this(size.Width, size.Height, (values ?? throw new ArgumentNullException(nameof(values))).ToArray(), nameof(values)) { }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SequentialMatrix{T}"/> class, taking direct ownership of the provided data array without copying.
@@ -46,12 +47,17 @@ public class SequentialMatrix<T> : Matrix<T>
     /// <param name="width">The number of columns in the matrix.</param>
     /// <param name="height">The number of rows in the matrix.</param>
     /// <param name="data">The contiguous row-major data array to take direct ownership of.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The length of <paramref name="data"/> does not match <paramref name="width"/> * <paramref name="height"/>.</exception>
     internal SequentialMatrix(int width, int height, T[] data)
+        : this(width, height, data, nameof(data)) { }
+
+    private SequentialMatrix(int width, int height, T[] data, string dataParamName)
         : base(width, height)
     {
+        ArgumentNullException.ThrowIfNull(data, dataParamName);
         if (data.Length != width * height)
-            throw new ArgumentException("Data length does not match matrix size.", nameof(data));
+            throw new ArgumentException("Data length does not match matrix size.", dataParamName);
 
         this.data = data;
     }

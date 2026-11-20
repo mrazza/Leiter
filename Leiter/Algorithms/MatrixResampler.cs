@@ -318,8 +318,8 @@ public static class MatrixResampler
         if (weightSum <= 0.0)
             return fallback;
 
-        double invScale = 1.0 / (weightSum * 255.0);
-        return new Rgb64(sumR * invScale, sumG * invScale, sumB * invScale);
+        double denom = weightSum * 255.0;
+        return new Rgb64(sumR / denom, sumG / denom, sumB / denom);
     }
 
     /// <summary>
@@ -447,8 +447,10 @@ public static class MatrixResampler
         EdgeHandling edgeHandling = EdgeHandling.Extend)
         where T : struct
     {
-        int ix = edgeHandling.ResolveIndex((int)Math.Round(x, MidpointRounding.AwayFromZero), source.Width);
-        int iy = edgeHandling.ResolveIndex((int)Math.Round(y, MidpointRounding.AwayFromZero), source.Height);
+        double resolvedX = edgeHandling.ResolveCoordinate(x, source.Width);
+        double resolvedY = edgeHandling.ResolveCoordinate(y, source.Height);
+        int ix = edgeHandling.ResolveIndex((int)Math.Round(resolvedX, MidpointRounding.AwayFromZero), source.Width);
+        int iy = edgeHandling.ResolveIndex((int)Math.Round(resolvedY, MidpointRounding.AwayFromZero), source.Height);
 
         return source[ix, iy];
     }

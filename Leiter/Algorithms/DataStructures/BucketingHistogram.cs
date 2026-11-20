@@ -57,6 +57,7 @@ public class BucketingHistogram<T> : IHistogram<T> where T : notnull
     public int Total() => total;
 
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="mapFunc"/> is <see langword="null"/>.</exception>
     public IReadOnlyHistogram<N> MapBuckets<N>(Func<T, N> mapFunc)
         where N : notnull
     {

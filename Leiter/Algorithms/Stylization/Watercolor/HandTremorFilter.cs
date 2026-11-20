@@ -101,7 +101,9 @@ public static class HandTremorFilter
 
         int width = image.Width;
         int height = image.Height;
-        int innerRadius = (int)Math.Ceiling(opts.Amplitude * (1.0 + Math.Abs(opts.PaperGapBias)));
+        int maxUsefulBandRadius = width + height;
+        double rawInnerRadius = Math.Ceiling(opts.Amplitude * (1.0 + Math.Abs(opts.PaperGapBias)));
+        int innerRadius = (int)Math.Min(rawInnerRadius, maxUsefulBandRadius);
         int bandRadius = innerRadius + 3;
 
         RegionBoundaryBand band = regionGraph.ComputeBoundaryBand(bandRadius, restrictToIncidentRegions: true);
@@ -156,11 +158,14 @@ public static class HandTremorFilter
 
                     if (opts.PaperGapBias != 0.0)
                     {
-                        Vector2D normal = ComputeBoundaryNormalAToB(regionGraph.Labels, band.Distances, x, y, a, bId);
+                        Vector2D normal = ComputeBoundaryNormalAToB(regionGraph.Labels, band.Distances, x, y, a, bId, bandRadius);
                         Vector2D bias = (opts.PaperGapBias * s * opts.Amplitude) * normal;
                         p1 += bias;
                         p2 -= bias;
                     }
+
+                    p1 = ClampToImageBounds(p1, width, height);
+                    p2 = ClampToImageBounds(p2, width, height);
 
                     int label1 = MatrixResampler.SampleNearestUnchecked(regionGraph.Labels, p1.X, p1.Y);
                     int label2 = MatrixResampler.SampleNearestUnchecked(regionGraph.Labels, p2.X, p2.Y);
@@ -170,17 +175,18 @@ public static class HandTremorFilter
 
                     if (hasA && hasB)
                     {
-                        Rgb64 colA = MatrixResampler.SampleBilinearRgb64WhereUnchecked(image, p1.X, p1.Y, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
-                        Rgb64 colB = MatrixResampler.SampleBilinearRgb64WhereUnchecked(image, p2.X, p2.Y, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
+                        Rgb64 fallbackColor = image[x, y].ToRgb64();
+                        Rgb64 colA = MatrixResampler.SampleBilinearRgb64WhereUnchecked(image, p1.X, p1.Y, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId, fallback: fallbackColor);
+                        Rgb64 colB = MatrixResampler.SampleBilinearRgb64WhereUnchecked(image, p2.X, p2.Y, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId, fallback: fallbackColor);
                         result[x, y] = PigmentBlend.MixPigmentsUnchecked(colA, colB, opts.OverlapDarkening).ToRgb8();
                     }
                     else if (hasA)
                     {
-                        result[x, y] = MatrixResampler.SampleBilinearWhereUnchecked(image, p1.X, p1.Y, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
+                        result[x, y] = MatrixResampler.SampleBilinearWhereUnchecked(image, p1.X, p1.Y, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId, fallback: image[x, y]);
                     }
                     else if (hasB)
                     {
-                        result[x, y] = MatrixResampler.SampleBilinearWhereUnchecked(image, p2.X, p2.Y, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
+                        result[x, y] = MatrixResampler.SampleBilinearWhereUnchecked(image, p2.X, p2.Y, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId, fallback: image[x, y]);
                     }
                     else if (label1 == bId && label2 == a)
                     {
@@ -208,18 +214,22 @@ public static class HandTremorFilter
         return result;
     }
 
+    private static Vector2D ClampToImageBounds(Vector2D coord, int width, int height) =>
+        new(Math.Clamp(coord.X, 0.0, width - 1), Math.Clamp(coord.Y, 0.0, height - 1));
+
     private static Vector2D ComputeBoundaryNormalAToB(
         IReadOnlyMatrix<int> labels,
         IReadOnlyMatrix<int> distances,
         int x,
         int y,
         int regionA,
-        int regionB)
+        int regionB,
+        int bandRadius)
     {
-        double sdLeft = SampleSignedDistance(labels, distances, x - 1, y, regionA, regionB);
-        double sdRight = SampleSignedDistance(labels, distances, x + 1, y, regionA, regionB);
-        double sdUp = SampleSignedDistance(labels, distances, x, y - 1, regionA, regionB);
-        double sdDown = SampleSignedDistance(labels, distances, x, y + 1, regionA, regionB);
+        double sdLeft = SampleSignedDistance(labels, distances, x - 1, y, regionA, regionB, bandRadius);
+        double sdRight = SampleSignedDistance(labels, distances, x + 1, y, regionA, regionB, bandRadius);
+        double sdUp = SampleSignedDistance(labels, distances, x, y - 1, regionA, regionB, bandRadius);
+        double sdDown = SampleSignedDistance(labels, distances, x, y + 1, regionA, regionB, bandRadius);
 
         double gx = sdRight - sdLeft;
         double gy = sdDown - sdUp;
@@ -232,15 +242,18 @@ public static class HandTremorFilter
         int x,
         int y,
         int regionA,
-        int regionB)
+        int regionB,
+        int bandRadius)
     {
         int cx = Math.Clamp(x, 0, labels.Width - 1);
         int cy = Math.Clamp(y, 0, labels.Height - 1);
         int lbl = labels[cx, cy];
-        if (lbl == regionA)
-            return distances[cx, cy] + 0.5;
-        if (lbl == regionB)
-            return -(distances[cx, cy] + 0.5);
+        if (lbl == regionA || lbl == regionB)
+        {
+            int dist = distances[cx, cy] == int.MaxValue ? bandRadius + 1 : distances[cx, cy];
+            return lbl == regionA ? dist + 0.5 : -(dist + 0.5);
+        }
+
         return 0.0;
     }
 }

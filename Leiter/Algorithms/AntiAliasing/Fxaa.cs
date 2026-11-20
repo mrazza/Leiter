@@ -51,7 +51,7 @@ public static class Fxaa
                 double range = maxLuma - minLuma;
 
                 double contrastThreshold = Math.Max(opts.AbsoluteContrastThreshold, maxLuma * opts.RelativeContrastThreshold);
-                if (range < contrastThreshold)
+                if (range <= 0.0 || range < contrastThreshold)
                 {
                     result[x, y] = image[x, y];
                     continue;

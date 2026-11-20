@@ -12,7 +12,7 @@ using Leiter.Pixels;
 public static class TurbulenceFlow
 {
     /// <summary>
-    /// Applies turbulence flow displacement to an RGB image using multi-octave fractal noise.
+    /// Applies turbulence flow pigment density variation to an RGB image using multi-octave fractal noise.
     /// </summary>
     /// <param name="image">The input RGB image.</param>
     /// <param name="options">Optional turbulence flow configuration parameters. If <see langword="null"/>, default options are used.</param>

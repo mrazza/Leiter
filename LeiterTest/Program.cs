@@ -182,12 +182,10 @@ internal static class Program
     /// <param name="outputDir">The directory where the output image will be saved.</param>
     /// <param name="fileName">The file name of the saved image.</param>
     /// <param name="action">The function delegate producing the image matrix.</param>
-    /// <returns>The resulting image matrix.</returns>
-    private static Matrix<Rgb8> RunStepAndSave(string label, string outputDir, string fileName, Func<Matrix<Rgb8>> action)
+    private static void RunStepAndSave(string label, string outputDir, string fileName, Func<Matrix<Rgb8>> action)
     {
         Matrix<Rgb8> result = RunStep(label, action);
         SaveOutput(outputDir, fileName, result);
-        return result;
     }
 
     private static void SaveOutput(string outputDir, string fileName, IReadOnlyMatrix<Rgb8> matrix)
@@ -206,10 +204,10 @@ internal static class Program
     {
         if (OperatingSystem.IsWindows())
         {
-            BitmapExtensions.Save(matrix, path);
+            BitmapExtensions.SaveBitmap(matrix, path);
             return;
         }
 
-        ImageExtensions.Save(matrix, path);
+        ImageExtensions.SaveImage(matrix, path);
     }
 }

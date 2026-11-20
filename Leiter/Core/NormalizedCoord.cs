@@ -12,7 +12,7 @@ public readonly record struct NormalizedCoord(double X, double Y)
     /// </summary>
     /// <param name="other">The other normalized coordinate to calculate the squared distance to.</param>
     /// <returns>The squared Euclidean distance between the two coordinates.</returns>
-    public readonly double DistanceSquared(NormalizedCoord other)
+    public double DistanceSquared(NormalizedCoord other)
     {
         double dx = X - other.X;
         double dy = Y - other.Y;
@@ -24,7 +24,7 @@ public readonly record struct NormalizedCoord(double X, double Y)
     /// </summary>
     /// <param name="other">The other normalized coordinate to calculate the distance to.</param>
     /// <returns>The Euclidean distance between the two coordinates.</returns>
-    public readonly double Distance(NormalizedCoord other) =>
+    public double Distance(NormalizedCoord other) =>
         Math.Sqrt(DistanceSquared(other));
 
     /// <summary>

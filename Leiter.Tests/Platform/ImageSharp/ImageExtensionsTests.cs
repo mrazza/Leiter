@@ -1,6 +1,8 @@
 namespace Leiter.Tests.Platform.ImageSharp;
 
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -58,10 +60,13 @@ public class ImageExtensionsTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 5).ToImage());
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(5, 0).ToImage());
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 0).ToImage());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 5).SaveImage("out.png"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(5, 0).SaveImage("out.png"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 0).SaveImage("out.png"));
     }
 
     [Fact]
-    public void LoadRgb8_And_Save_ShouldRoundTripAndValidateArguments()
+    public void LoadRgb8_And_SaveImage_ShouldRoundTripAndValidateArguments()
     {
         var matrix = new SequentialMatrix<Rgb8>(3, 2);
         matrix[0, 0] = new Rgb8(10, 20, 30);
@@ -70,7 +75,7 @@ public class ImageExtensionsTests
         string tempPath = Path.Combine(Path.GetTempPath(), $"leiter_imgsharp_{Guid.NewGuid():N}.png");
         try
         {
-            matrix.Save(tempPath);
+            matrix.SaveImage(tempPath);
             SequentialMatrix<Rgb8> loaded = Leiter.Platform.ImageSharp.ImageExtensions.LoadRgb8(tempPath);
             MatrixAssert.Equal(matrix, loaded);
         }
@@ -83,8 +88,35 @@ public class ImageExtensionsTests
         }
 
         Assert.Throws<ArgumentNullException>(() => Leiter.Platform.ImageSharp.ImageExtensions.LoadRgb8(null!));
+        Assert.Throws<ArgumentException>(() => Leiter.Platform.ImageSharp.ImageExtensions.LoadRgb8(string.Empty));
         Assert.Throws<ArgumentException>(() => Leiter.Platform.ImageSharp.ImageExtensions.LoadRgb8("   "));
-        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb8>)null!).Save("out.png"));
-        Assert.Throws<ArgumentException>(() => Leiter.Platform.ImageSharp.ImageExtensions.Save(matrix, " "));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb8>)null!).SaveImage("out.png"));
+        Assert.Throws<ArgumentNullException>(() => matrix.SaveImage(null!));
+        Assert.Throws<ArgumentException>(() => Leiter.Platform.ImageSharp.ImageExtensions.SaveImage(matrix, string.Empty));
+        Assert.Throws<ArgumentException>(() => Leiter.Platform.ImageSharp.ImageExtensions.SaveImage(matrix, " "));
+    }
+
+    [Fact]
+    public void ToImage_WhenMatrixIndexerThrows_ShouldDisposeAndRethrow()
+    {
+        var throwing = new ThrowingReadOnlyMatrix(2, 2);
+        Assert.Throws<InvalidOperationException>(() => throwing.ToImage());
+    }
+
+    private sealed class ThrowingReadOnlyMatrix(int width, int height) : IReadOnlyMatrix<Rgb8>
+    {
+        public int Width => width;
+        public int Height => height;
+        public Leiter.Core.Size Size => new(Width, Height);
+        public int Count => Width * Height;
+        public Rgb8 this[int index] => throw new InvalidOperationException("Simulated read failure.");
+        public Rgb8 this[int x, int y] => (x == Width - 1 && y == Height - 1)
+            ? throw new InvalidOperationException("Simulated read failure.")
+            : new Rgb8(10, 20, 30);
+        public Rgb8 this[Coord coord] => this[coord.X, coord.Y];
+        public Rgb8 GetElement(int index) => this[index];
+        public Rgb8 GetElement(int x, int y) => this[x, y];
+        public IEnumerator<Rgb8> GetEnumerator() { yield break; }
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
