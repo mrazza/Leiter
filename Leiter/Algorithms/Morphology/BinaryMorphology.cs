@@ -289,8 +289,7 @@ public static class BinaryMorphology
     {
         ArgumentNullException.ThrowIfNull(mask);
         ArgumentOutOfRangeException.ThrowIfNegative(radius);
-        if (!Enum.IsDefined(shape))
-            throw new ArgumentOutOfRangeException(nameof(shape), shape, "Unsupported structuring element shape.");
+        Guard.ThrowIfUndefinedEnum(shape);
     }
 
     private static MaskMatrix CloneMask(IReadOnlyMatrix<bool> mask) =>

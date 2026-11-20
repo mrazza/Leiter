@@ -16,6 +16,17 @@ public readonly record struct LongPixel(long Value) : ITypedPixel<LongPixel, lon
     /// <inheritdoc/>
     public static LongPixel Zero => default;
 
+    /// <summary>
+    /// Linearly interpolates between <paramref name="from"/> and <paramref name="to"/> by <paramref name="amount"/>,
+    /// rounding away from zero to the nearest 64-bit integer.
+    /// </summary>
+    /// <param name="from">The starting value returned when <paramref name="amount"/> is <c>0.0</c>.</param>
+    /// <param name="to">The target value returned when <paramref name="amount"/> is <c>1.0</c>.</param>
+    /// <param name="amount">The interpolation factor, typically in <c>[0.0, 1.0]</c>.</param>
+    /// <returns>The interpolated and rounded <see cref="LongPixel"/> value.</returns>
+    public static LongPixel Lerp(LongPixel from, LongPixel to, double amount) =>
+        new((long)Math.Round(ScalarMath.Lerp(from.Value, to.Value, amount), MidpointRounding.AwayFromZero));
+
     /// <inheritdoc/>
     public LongPixel ColorComponentMap(Func<long, long> func) => new() { Value = func(Value) };
 

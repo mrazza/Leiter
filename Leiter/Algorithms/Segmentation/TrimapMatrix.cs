@@ -126,10 +126,8 @@ public class TrimapMatrix : SequentialMatrix<TrimapLabel>
         TrimapLabel backgroundLabel = TrimapLabel.Background)
     {
         ArgumentNullException.ThrowIfNull(candidateMask);
-        if (!Enum.IsDefined(foregroundLabel))
-            throw new ArgumentOutOfRangeException(nameof(foregroundLabel), foregroundLabel, "Foreground label must be a defined TrimapLabel value.");
-        if (!Enum.IsDefined(backgroundLabel))
-            throw new ArgumentOutOfRangeException(nameof(backgroundLabel), backgroundLabel, "Background label must be a defined TrimapLabel value.");
+        Guard.ThrowIfUndefinedEnum(foregroundLabel);
+        Guard.ThrowIfUndefinedEnum(backgroundLabel);
 
         if (candidateMask.Count == 0)
             return new TrimapMatrix(candidateMask.Size);
@@ -166,11 +164,8 @@ public class TrimapMatrix : SequentialMatrix<TrimapLabel>
         ArgumentNullException.ThrowIfNull(currentMask);
         ArgumentNullException.ThrowIfNull(sureForeground);
         ArgumentNullException.ThrowIfNull(possibleForegroundRegion);
-
-        if (sureForeground.Size != currentMask.Size)
-            throw new ArgumentException("Sure-foreground mask dimensions must match current mask dimensions.", nameof(sureForeground));
-        if (possibleForegroundRegion.Size != currentMask.Size)
-            throw new ArgumentException("Possible-foreground mask dimensions must match current mask dimensions.", nameof(possibleForegroundRegion));
+        Guard.ThrowIfSizeMismatch(currentMask, sureForeground);
+        Guard.ThrowIfSizeMismatch(currentMask, possibleForegroundRegion);
 
         if (currentMask.Count == 0)
             return new TrimapMatrix(currentMask.Size);

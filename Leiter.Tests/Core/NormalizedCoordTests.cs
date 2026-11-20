@@ -35,4 +35,21 @@ public class NormalizedCoordTests
         Assert.Equal(0.5, result.X);
         Assert.Equal(1.5, result.Y);
     }
+
+    [Fact]
+    public void ScalarMultiplicationAndDivision_ShouldScaleComponents()
+    {
+        var coord = new NormalizedCoord(0.25, 0.75);
+
+        NormalizedCoord rightScaled = coord * 2.0;
+        Assert.Equal(0.5, rightScaled.X, 12);
+        Assert.Equal(1.5, rightScaled.Y, 12);
+
+        NormalizedCoord leftScaled = 2.0 * coord;
+        Assert.Equal(rightScaled, leftScaled);
+
+        NormalizedCoord divided = rightScaled / 2.0;
+        Assert.Equal(0.25, divided.X, 12);
+        Assert.Equal(0.75, divided.Y, 12);
+    }
 }

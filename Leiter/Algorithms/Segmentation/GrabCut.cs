@@ -55,10 +55,7 @@ public static class GrabCut
         GrabCutOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
-        ArgumentNullException.ThrowIfNull(trimap);
-
-        if (image.Size != trimap.Size)
-            throw new ArgumentException("Image and trimap dimensions must match.", nameof(trimap));
+        Guard.ThrowIfSizeMismatch(image, trimap);
 
         GrabCutOptions resolvedOptions = options ?? GrabCutOptions.Default;
         resolvedOptions.Validate();

@@ -19,6 +19,19 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
     /// <inheritdoc/>
     public static Xyz32 Zero => default;
 
+    /// <summary>
+    /// Linearly interpolates component-wise between <paramref name="from"/> and <paramref name="to"/> by <paramref name="amount"/>.
+    /// </summary>
+    /// <param name="from">The starting color returned when <paramref name="amount"/> is <c>0.0</c>.</param>
+    /// <param name="to">The target color returned when <paramref name="amount"/> is <c>1.0</c>.</param>
+    /// <param name="amount">The interpolation factor, typically in <c>[0.0, 1.0]</c>.</param>
+    /// <returns>The component-wise linearly interpolated <see cref="Xyz32"/> color.</returns>
+    public static Xyz32 Lerp(Xyz32 from, Xyz32 to, double amount) =>
+        new(
+            (float)ScalarMath.Lerp(from.X, to.X, amount),
+            (float)ScalarMath.Lerp(from.Y, to.Y, amount),
+            (float)ScalarMath.Lerp(from.Z, to.Z, amount));
+
     /// <inheritdoc/>
     public Xyz32 Add(Xyz32 right) =>
         new()

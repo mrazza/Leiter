@@ -41,6 +41,8 @@ public class Xyz32Tests : PixelContractTestsBase<Xyz32, float>
 
     protected override double ExpectedDistance => 3.0;
 
+    protected override Xyz32 ExpectedLerpMidpoint => new(6.0f, 11.0f, 16.0f);
+
     [Fact]
     public void Properties_ShouldWork()
     {

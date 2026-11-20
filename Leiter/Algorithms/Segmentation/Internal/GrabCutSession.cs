@@ -104,8 +104,7 @@ internal sealed class GrabCutSession
             for (int x = 0; x < width; x++)
             {
                 TrimapLabel label = trimap[x, y];
-                if (!Enum.IsDefined(label))
-                    throw new ArgumentOutOfRangeException(nameof(trimap), label, "Trimap entries must be valid TrimapLabel values.");
+                Guard.ThrowIfUndefinedEnum(label, nameof(trimap));
 
                 int p = rowBase + x;
                 trimapLabels[p] = label;

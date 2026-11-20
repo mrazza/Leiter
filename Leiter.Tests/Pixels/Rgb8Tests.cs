@@ -44,6 +44,8 @@ public class Rgb8Tests : PixelContractTestsBase<Rgb8, byte>
 
     protected override double ExpectedDistance => 5.0;
 
+    protected override Rgb8 ExpectedLerpMidpoint => new(8, 15, 23);
+
     [Fact]
     public void Properties_ShouldWork()
     {

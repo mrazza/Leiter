@@ -16,6 +16,16 @@ public readonly record struct DoublePixel(double Value) : ITypedPixel<DoublePixe
     /// <inheritdoc/>
     public static DoublePixel Zero => default;
 
+    /// <summary>
+    /// Linearly interpolates between <paramref name="from"/> and <paramref name="to"/> by <paramref name="amount"/>.
+    /// </summary>
+    /// <param name="from">The starting value returned when <paramref name="amount"/> is <c>0.0</c>.</param>
+    /// <param name="to">The target value returned when <paramref name="amount"/> is <c>1.0</c>.</param>
+    /// <param name="amount">The interpolation factor, typically in <c>[0.0, 1.0]</c>.</param>
+    /// <returns>The linearly interpolated <see cref="DoublePixel"/> value.</returns>
+    public static DoublePixel Lerp(DoublePixel from, DoublePixel to, double amount) =>
+        new(ScalarMath.Lerp(from.Value, to.Value, amount));
+
     /// <inheritdoc/>
     public DoublePixel ColorComponentMap(Func<double, double> func) => new() { Value = func(Value) };
 

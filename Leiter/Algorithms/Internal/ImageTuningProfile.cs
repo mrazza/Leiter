@@ -38,7 +38,7 @@ internal readonly record struct ImageTuningProfile(
             return CreateEmpty(image.Size);
         }
 
-        double geomMean = Math.Sqrt((double)image.Width * image.Height);
+        double geomMean = OptionTuning.GeometricMeanDimension(image.Size);
         IReadOnlyMatrix<Rgb8> thumb = geomMean > CanonicalDimension
             ? image.ResizeBox(ComputeThumbnailSize(image.Size, geomMean))
             : image;
@@ -60,7 +60,7 @@ internal readonly record struct ImageTuningProfile(
             return CreateEmpty(labImage.Size);
         }
 
-        double geomMean = Math.Sqrt((double)labImage.Width * labImage.Height);
+        double geomMean = OptionTuning.GeometricMeanDimension(labImage.Size);
         IReadOnlyMatrix<Lab32> labThumb = geomMean > CanonicalDimension
             ? labImage.ResizeBox(ComputeThumbnailSize(labImage.Size, geomMean))
             : labImage;
@@ -82,13 +82,7 @@ internal readonly record struct ImageTuningProfile(
         }
 
         double alpha = Math.Clamp(strength, 0.0, 1.0);
-        var effectiveStats = new LabColorStatistics(
-            LabStats.MeanL + (alpha * (targetStats.MeanL - LabStats.MeanL)),
-            LabStats.MeanA + (alpha * (targetStats.MeanA - LabStats.MeanA)),
-            LabStats.MeanB + (alpha * (targetStats.MeanB - LabStats.MeanB)),
-            LabStats.StdDevL + (alpha * (targetStats.StdDevL - LabStats.StdDevL)),
-            LabStats.StdDevA + (alpha * (targetStats.StdDevA - LabStats.StdDevA)),
-            LabStats.StdDevB + (alpha * (targetStats.StdDevB - LabStats.StdDevB)));
+        LabColorStatistics effectiveStats = LabColorStatistics.Lerp(LabStats, targetStats, alpha);
 
         return FromStatistics(ImageSize, effectiveStats, ClutterFactor);
     }
@@ -117,13 +111,13 @@ internal readonly record struct ImageTuningProfile(
         }
 
         double meanEdge = sum / count;
-        double thumbGeomMean = Math.Sqrt((double)thumb.Width * thumb.Height);
+        double thumbGeomMean = OptionTuning.GeometricMeanDimension(thumb.Size);
         double normalizedMeanEdge = meanEdge * (thumbGeomMean / CanonicalDimension);
         double rawClutter = Math.Clamp(normalizedMeanEdge / OptionTuning.ReferenceClutterGradient, 0.75, 1.50);
 
-        double origGeomMean = Math.Sqrt((double)originalSize.Width * originalSize.Height);
+        double origGeomMean = OptionTuning.GeometricMeanDimension(originalSize);
         double weight = Math.Clamp((origGeomMean - 16.0) / 48.0, 0.0, 1.0);
-        return 1.0 + (weight * (rawClutter - 1.0));
+        return ScalarMath.Lerp(1.0, rawClutter, weight);
     }
 
     private static Size ComputeThumbnailSize(Size sourceSize, double sourceGeomMean)

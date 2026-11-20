@@ -26,11 +26,7 @@ public sealed record WetInWetResult
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(wetAreaMask);
         ArgumentNullException.ThrowIfNull(qualifyingBoundaries);
-
-        if (image.Size != wetAreaMask.Size)
-        {
-            throw new ArgumentException("Image and WetAreaMask dimensions must match.", nameof(wetAreaMask));
-        }
+        Guard.ThrowIfSizeMismatch(image, wetAreaMask);
 
         Image = image;
         WetAreaMask = wetAreaMask;

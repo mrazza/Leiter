@@ -47,6 +47,8 @@ public abstract class PixelContractTestsBase<TPixel, TComponent>
 
     protected abstract double ExpectedDistance { get; }
 
+    protected abstract TPixel ExpectedLerpMidpoint { get; }
+
     [Fact]
     public void SelfOperations_ShouldWork()
     {
@@ -123,5 +125,13 @@ public abstract class PixelContractTestsBase<TPixel, TComponent>
     public void Distance_ShouldWork()
     {
         Assert.Equal(ExpectedDistance, DistanceFirst.Distance(DistanceSecond), 12);
+    }
+
+    [Fact]
+    public void Lerp_ShouldInterpolateEndpointsAndMidpoint()
+    {
+        Assert.Equal(ArithmeticLeft, TPixel.Lerp(ArithmeticLeft, ArithmeticRight, 0.0));
+        Assert.Equal(ArithmeticRight, TPixel.Lerp(ArithmeticLeft, ArithmeticRight, 1.0));
+        Assert.Equal(ExpectedLerpMidpoint, TPixel.Lerp(ArithmeticLeft, ArithmeticRight, 0.5));
     }
 }

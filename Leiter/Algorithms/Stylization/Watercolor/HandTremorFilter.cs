@@ -123,15 +123,15 @@ public static class HandTremorFilter
                 int a = b.First;
                 int bId = b.Second;
 
-                double px1 = x + (s * t1[x, y].X);
-                double py1 = y + (s * t1[x, y].Y);
+                var basePos = new Vector2D(x, y);
+                Vector2D p1 = basePos + (s * t1[x, y]);
 
                 byte group = boundaryGroup[nearestBoundaryIndex];
                 if (group == 1)
                 {
                     result[x, y] = image.SampleBilinearWhere(
-                        px1,
-                        py1,
+                        p1.X,
+                        p1.Y,
                         (Labels: regionGraph.Labels, First: a, Second: bId),
                         static (cx, cy, state) =>
                         {
@@ -142,38 +142,35 @@ public static class HandTremorFilter
                 }
                 else
                 {
-                    double px2 = x + (s * t2[x, y].X);
-                    double py2 = y + (s * t2[x, y].Y);
+                    Vector2D p2 = basePos + (s * t2[x, y]);
 
                     if (opts.PaperGapBias != 0.0)
                     {
-                        (double nx, double ny) = ComputeBoundaryNormalAToB(regionGraph.Labels, band.Distances, x, y, a, bId);
-                        double biasOffset = opts.PaperGapBias * s * opts.Amplitude;
-                        px1 += biasOffset * nx;
-                        py1 += biasOffset * ny;
-                        px2 -= biasOffset * nx;
-                        py2 -= biasOffset * ny;
+                        Vector2D normal = ComputeBoundaryNormalAToB(regionGraph.Labels, band.Distances, x, y, a, bId);
+                        Vector2D bias = (opts.PaperGapBias * s * opts.Amplitude) * normal;
+                        p1 += bias;
+                        p2 -= bias;
                     }
 
-                    int label1 = regionGraph.Labels.SampleNearest(px1, py1);
-                    int label2 = regionGraph.Labels.SampleNearest(px2, py2);
+                    int label1 = regionGraph.Labels.SampleNearest(p1);
+                    int label2 = regionGraph.Labels.SampleNearest(p2);
 
                     bool hasA = label1 == a;
                     bool hasB = label2 == bId;
 
                     if (hasA && hasB)
                     {
-                        Rgb64 colA = image.SampleBilinearWhere(px1, py1, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId).ToRgb64();
-                        Rgb64 colB = image.SampleBilinearWhere(px2, py2, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId).ToRgb64();
+                        Rgb64 colA = image.SampleBilinearWhere(p1.X, p1.Y, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId).ToRgb64();
+                        Rgb64 colB = image.SampleBilinearWhere(p2.X, p2.Y, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId).ToRgb64();
                         result[x, y] = PigmentBlend.MixPigments(colA, colB, opts.OverlapDarkening).ToRgb8();
                     }
                     else if (hasA)
                     {
-                        result[x, y] = image.SampleBilinearWhere(px1, py1, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
+                        result[x, y] = image.SampleBilinearWhere(p1.X, p1.Y, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
                     }
                     else if (hasB)
                     {
-                        result[x, y] = image.SampleBilinearWhere(px2, py2, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
+                        result[x, y] = image.SampleBilinearWhere(p2.X, p2.Y, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
                     }
                     else if (label1 == bId && label2 == a)
                     {
@@ -192,7 +189,7 @@ public static class HandTremorFilter
                     }
                     else
                     {
-                        result[x, y] = image.SampleBilinear(px1, py1, EdgeHandling.Extend);
+                        result[x, y] = image.SampleBilinear(p1, EdgeHandling.Extend);
                     }
                 }
             }
@@ -201,7 +198,7 @@ public static class HandTremorFilter
         return result;
     }
 
-    private static (double NormalX, double NormalY) ComputeBoundaryNormalAToB(
+    private static Vector2D ComputeBoundaryNormalAToB(
         IReadOnlyMatrix<int> labels,
         IReadOnlyMatrix<int> distances,
         int x,
@@ -219,11 +216,11 @@ public static class HandTremorFilter
         double len = Math.Sqrt((gx * gx) + (gy * gy));
         if (len <= 1e-6)
         {
-            return (0.0, 0.0);
+            return Vector2D.Zero;
         }
 
         double invLen = 1.0 / len;
-        return (-gx * invLen, -gy * invLen);
+        return new Vector2D(-gx * invLen, -gy * invLen);
     }
 
     private static double SampleSignedDistance(

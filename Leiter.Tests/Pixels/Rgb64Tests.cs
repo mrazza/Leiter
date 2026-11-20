@@ -41,6 +41,8 @@ public class Rgb64Tests : PixelContractTestsBase<Rgb64, double>
 
     protected override double ExpectedDistance => 5.0;
 
+    protected override Rgb64 ExpectedLerpMidpoint => new(6.0, 11.0, 16.0);
+
     [Fact]
     public void Properties_ShouldWork()
     {

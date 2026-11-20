@@ -67,4 +67,22 @@ public class LabColorStatisticsTests
         Assert.True(a != c);
         Assert.Equal(a.GetHashCode(), b.GetHashCode());
     }
+
+    [Fact]
+    public void Lerp_ShouldInterpolateAllStatisticsComponents()
+    {
+        var from = new LabColorStatistics(10.0, -20.0, 30.0, 4.0, 8.0, 12.0);
+        var to = new LabColorStatistics(50.0, 20.0, -10.0, 12.0, 16.0, 4.0);
+
+        Assert.Equal(from, LabColorStatistics.Lerp(from, to, 0.0));
+        Assert.Equal(to, LabColorStatistics.Lerp(from, to, 1.0));
+
+        LabColorStatistics quarter = LabColorStatistics.Lerp(from, to, 0.25);
+        Assert.Equal(20.0, quarter.MeanL, 10);
+        Assert.Equal(-10.0, quarter.MeanA, 10);
+        Assert.Equal(20.0, quarter.MeanB, 10);
+        Assert.Equal(6.0, quarter.StdDevL, 10);
+        Assert.Equal(10.0, quarter.StdDevA, 10);
+        Assert.Equal(10.0, quarter.StdDevB, 10);
+    }
 }

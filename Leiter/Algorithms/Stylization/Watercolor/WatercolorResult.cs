@@ -56,13 +56,7 @@ public sealed record WatercolorResult
         Guard.ThrowIfSizeMismatch(image, lodAbstracted);
         Guard.ThrowIfSizeMismatch(image, wetInWet.Image, nameof(wetInWet));
         Guard.ThrowIfSizeMismatch(image, handTremor);
-
-        if (segmentationGraph.Size != image.Size)
-        {
-            throw new ArgumentException(
-                $"RegionGraph dimensions {segmentationGraph.Size} must match expected dimensions {image.Size}.",
-                nameof(segmentationGraph));
-        }
+        Guard.ThrowIfSizeMismatch(image.Size, segmentationGraph.Size, nameof(segmentationGraph));
 
         if (wetInWet.QualifyingBoundaries.Count != segmentationGraph.Boundaries.Count)
         {
