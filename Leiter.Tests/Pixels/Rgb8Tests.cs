@@ -1,7 +1,7 @@
 namespace Leiter.Tests.Pixels;
 
 using System;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Tests.TestUtils;
@@ -21,8 +21,6 @@ public class Rgb8Tests : PixelContractTestsBase<Rgb8, byte>
 
     protected override (Rgb8 Add, Rgb8 Subtract, Rgb8 Multiply, Rgb8 Divide) ExpectedScaledByTwoResults =>
         (new(12, 22, 32), new(8, 18, 28), new(20, 40, 60), new(5, 10, 15));
-
-    protected override int RequiredVectorWidth => 3;
 
     protected override Rgb8 VectorSample => new(255, 255, 255);
 
@@ -108,14 +106,7 @@ public class Rgb8Tests : PixelContractTestsBase<Rgb8, byte>
         Assert.Equal(new Rgb8(20, 200, 255), p.Divide(smallScalar));
 
         // Out-of-range FromDoubleVector
-        if (Vector<double>.Count >= 3)
-        {
-            var vecData = new double[Vector<double>.Count];
-            vecData[0] = -0.5;
-            vecData[1] = 1.5;
-            vecData[2] = double.NaN;
-            Assert.Equal(new Rgb8(0, 255, 0), Rgb8.FromDoubleVector(new Vector<double>(vecData)));
-        }
+        Assert.Equal(new Rgb8(0, 255, 0), Rgb8.FromDoubleVector(Vector256.Create(-0.5, 1.5, double.NaN, 0.0)));
     }
 
     [Fact]
@@ -140,14 +131,7 @@ public class Rgb8Tests : PixelContractTestsBase<Rgb8, byte>
 
         Assert.Equal(new Rgb8(0, 128, 255), Rgb8.FromNormalized(-0.1, 0.5, 1.2));
 
-        if (Vector<double>.Count >= 3)
-        {
-            var vecData = new double[Vector<double>.Count];
-            vecData[0] = 0.5;
-            vecData[1] = double.PositiveInfinity;
-            vecData[2] = double.NegativeInfinity;
-            Assert.Equal(new Rgb8(128, 255, 0), Rgb8.FromDoubleVector(new Vector<double>(vecData)));
-        }
+        Assert.Equal(new Rgb8(128, 255, 0), Rgb8.FromDoubleVector(Vector256.Create(0.5, double.PositiveInfinity, double.NegativeInfinity, 0.0)));
     }
 
     [Fact]
@@ -185,7 +169,7 @@ public class Rgb8Tests : PixelContractTestsBase<Rgb8, byte>
         public MinimalScalarOperable Subtract(double right) => new(Value - right);
         public MinimalScalarOperable Multiply(double right) => new(Value * right);
         public MinimalScalarOperable Divide(double right) => new(Value / right);
-        public Vector<double> ToDoubleVector() => new(Value);
-        public static MinimalScalarOperable FromDoubleVector(Vector<double> vector) => new(vector[0]);
+        public Vector256<double> ToDoubleVector() => Vector256.CreateScalar(Value);
+        public static MinimalScalarOperable FromDoubleVector(Vector256<double> vector) => new(vector[0]);
     }
 }

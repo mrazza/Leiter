@@ -3,7 +3,7 @@ namespace Leiter.Pixels;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using System.Runtime.InteropServices;
 using Leiter.Core;
 
@@ -147,10 +147,10 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
     public Xyz32 ComponentMap(Func<float, float> func) => new() { X = func(X), Y = func(Y), Z = func(Z) };
 
     /// <inheritdoc/>
-    public Vector<double> ToDoubleVector() => Internal.PixelVector.Create(X, Y, Z);
+    public Vector256<double> ToDoubleVector() => Vector256.Create((double)X, Y, Z, 0.0);
 
     /// <inheritdoc/>
-    public static Xyz32 FromDoubleVector(Vector<double> vector) => new((float)vector[0], (float)vector[1], (float)vector[2]);
+    public static Xyz32 FromDoubleVector(Vector256<double> vector) => new((float)vector[0], (float)vector[1], (float)vector[2]);
 
     /// <inheritdoc/>
     public IEnumerator<float> GetEnumerator()

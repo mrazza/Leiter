@@ -1,6 +1,6 @@
 namespace Leiter.Core;
 
-using System.Numerics;
+using System.Runtime.Intrinsics;
 
 /// <summary>
 /// Represents the value of an element in a matrix made up of one or more primitive fields; usually a pixel in an image.
@@ -25,8 +25,8 @@ public interface IPixel<P> : ISelfOperable<P>, INumericOperable<P>, IScalarOpera
     /// <returns>The component-wise linearly interpolated pixel value.</returns>
     static virtual P Lerp(P from, P to, double amount)
     {
-        Vector<double> fromVector = from.ToDoubleVector();
-        Vector<double> toVector = to.ToDoubleVector();
+        Vector256<double> fromVector = from.ToDoubleVector();
+        Vector256<double> toVector = to.ToDoubleVector();
         return P.FromDoubleVector(fromVector + ((toVector - fromVector) * amount));
     }
 }

@@ -1,6 +1,6 @@
 namespace Leiter.Algorithms;
 
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Algorithms.Internal;
 using Leiter.Core;
 
@@ -13,7 +13,7 @@ public static class Blur
     /// Represents a method that applies a one-dimensional filter to a line of SIMD vector samples in place.
     /// </summary>
     /// <param name="line">The line of SIMD vectors to filter in place.</param>
-    private delegate void LineFilter1D(Span<Vector<double>> line);
+    private delegate void LineFilter1D(Span<Vector256<double>> line);
 
     /// <summary>
     /// Performs a Gaussian blur of the specified image using a single standard deviation <paramref name="sigma"/>,
@@ -134,7 +134,7 @@ public static class Blur
     {
         int width = image.Width;
         int height = image.Height;
-        Vector<double>[] buffer = MatrixMath.VectorizeMatrix(image);
+        Vector256<double>[] buffer = MatrixMath.VectorizeMatrix(image);
 
         Parallel.For(0, height, y =>
         {
@@ -146,7 +146,7 @@ public static class Blur
         Parallel.For(
             0,
             width,
-            () => new Vector<double>[height],
+            () => new Vector256<double>[height],
             (x, _, col) =>
             {
                 for (int y = 0; y < height; y++)

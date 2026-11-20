@@ -1,6 +1,6 @@
 namespace Leiter.Algorithms.Internal;
 
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -73,20 +73,20 @@ internal readonly struct YoungVanVlietFilter
     /// Performs a forward causal pass followed by an anti-causal backward pass with Triggs–Sdika boundary condition handling.
     /// </remarks>
     /// <param name="line">The line of SIMD vector samples to filter in place.</param>
-    public void FilterLine(Span<Vector<double>> line)
+    public void FilterLine(Span<Vector256<double>> line)
     {
         int length = line.Length;
-        Vector<double> leftBoundaryValue = line[0];
-        Vector<double> rightBoundaryValue = line[length - 1];
+        Vector256<double> leftBoundaryValue = line[0];
+        Vector256<double> rightBoundaryValue = line[length - 1];
 
         // Causal left-to-right pass assuming constant left extension equal to line[0].
-        Vector<double> prevForward1 = leftBoundaryValue;
-        Vector<double> prevForward2 = leftBoundaryValue;
-        Vector<double> prevForward3 = leftBoundaryValue;
+        Vector256<double> prevForward1 = leftBoundaryValue;
+        Vector256<double> prevForward2 = leftBoundaryValue;
+        Vector256<double> prevForward3 = leftBoundaryValue;
 
         for (int i = 0; i < length; i++)
         {
-            Vector<double> forwardSample =
+            Vector256<double> forwardSample =
                 inputGain * line[i]
                 + feedbackWeight1 * prevForward1
                 + feedbackWeight2 * prevForward2
@@ -109,7 +109,7 @@ internal readonly struct YoungVanVlietFilter
         line[length - 1] = prevBackward1;
         for (int i = length - 2; i >= 0; i--)
         {
-            Vector<double> backwardSample =
+            Vector256<double> backwardSample =
                 inputGain * line[i]
                 + feedbackWeight1 * prevBackward1
                 + feedbackWeight2 * prevBackward2
@@ -130,18 +130,18 @@ internal readonly struct YoungVanVlietFilter
     /// <param name="prevForward2">The second most recent forward pass output sample.</param>
     /// <param name="prevForward3">The third most recent forward pass output sample.</param>
     /// <returns>A tuple containing the backward initial state at the edge and two virtual points beyond the edge.</returns>
-    private (Vector<double> AtEdge, Vector<double> BeyondEdge1, Vector<double> BeyondEdge2) ComputeInitialBackwardState(
-        Vector<double> rightBoundaryValue,
-        Vector<double> prevForward1,
-        Vector<double> prevForward2,
-        Vector<double> prevForward3)
+    private (Vector256<double> AtEdge, Vector256<double> BeyondEdge1, Vector256<double> BeyondEdge2) ComputeInitialBackwardState(
+        Vector256<double> rightBoundaryValue,
+        Vector256<double> prevForward1,
+        Vector256<double> prevForward2,
+        Vector256<double> prevForward3)
     {
-        Vector<double> deviation1 = prevForward1 - rightBoundaryValue;
-        Vector<double> deviation2 = prevForward2 - rightBoundaryValue;
-        Vector<double> deviation3 = prevForward3 - rightBoundaryValue;
+        Vector256<double> deviation1 = prevForward1 - rightBoundaryValue;
+        Vector256<double> deviation2 = prevForward2 - rightBoundaryValue;
+        Vector256<double> deviation3 = prevForward3 - rightBoundaryValue;
         IReadOnlyMatrix<DoublePixel> matrix = rightBoundaryMatrix;
 
-        Vector<double> ComputeRow(int row) =>
+        Vector256<double> ComputeRow(int row) =>
             rightBoundaryValue
             + matrix[0, row].Value * deviation1
             + matrix[1, row].Value * deviation2

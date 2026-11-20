@@ -1,7 +1,7 @@
 namespace Leiter.Tests.Algorithms.Internal;
 
 using System;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Algorithms.Internal;
 using Xunit;
 
@@ -30,14 +30,14 @@ public class YoungVanVlietFilterTests
         var filter = YoungVanVlietFilter.Create(sigma);
         const int length = 32;
         const double constantVal = 42.5;
-        var line = new Vector<double>[length];
-        Array.Fill(line, new Vector<double>(constantVal));
+        var line = new Vector256<double>[length];
+        Array.Fill(line, Vector256.Create(constantVal));
 
         filter.FilterLine(line);
 
         for (int i = 0; i < length; i++)
         {
-            for (int j = 0; j < Vector<double>.Count; j++)
+            for (int j = 0; j < Vector256<double>.Count; j++)
             {
                 Assert.Equal(constantVal, line[i][j], 10);
             }
@@ -52,16 +52,16 @@ public class YoungVanVlietFilterTests
         var filter = YoungVanVlietFilter.Create(sigma);
         const int length = 61;
         const int center = length / 2;
-        var line = new Vector<double>[length];
-        Array.Fill(line, Vector<double>.Zero);
-        line[center] = new Vector<double>(1000.0);
+        var line = new Vector256<double>[length];
+        Array.Fill(line, Vector256<double>.Zero);
+        line[center] = Vector256.Create(1000.0);
 
         filter.FilterLine(line);
 
         // Check zero-phase symmetry around center
         for (int i = 1; i <= center; i++)
         {
-            for (int j = 0; j < Vector<double>.Count; j++)
+            for (int j = 0; j < Vector256<double>.Count; j++)
             {
                 Assert.Equal(line[center - i][j], line[center + i][j], 10);
             }

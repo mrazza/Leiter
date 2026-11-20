@@ -1,7 +1,7 @@
 namespace Leiter.Tests.Core;
 
 using System;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Core;
 using Xunit;
 
@@ -13,9 +13,6 @@ public class IPixelTests
     [Fact]
     public void DefaultLerp_ShouldUseVectorInterpolation()
     {
-        if (Vector<double>.Count < 1)
-            return;
-
         var from = new MinimalPixel(10.0);
         var to = new MinimalPixel(20.0);
 
@@ -45,7 +42,7 @@ public class IPixelTests
         public MinimalPixel Multiply(double right) => new(Value * right);
         public MinimalPixel Divide(double right) => new(Value / right);
         public double Distance(MinimalPixel otherPixel) => Math.Abs(Value - otherPixel.Value);
-        public Vector<double> ToDoubleVector() => new(Value);
-        public static MinimalPixel FromDoubleVector(Vector<double> vector) => new(vector[0]);
+        public Vector256<double> ToDoubleVector() => Vector256.CreateScalar(Value);
+        public static MinimalPixel FromDoubleVector(Vector256<double> vector) => new(vector[0]);
     }
 }

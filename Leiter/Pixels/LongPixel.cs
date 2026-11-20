@@ -2,7 +2,7 @@ namespace Leiter.Pixels;
 
 using System.Collections;
 using System.Collections.Generic;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using System.Runtime.InteropServices;
 using Leiter.Core;
 
@@ -105,10 +105,10 @@ public readonly record struct LongPixel(long Value) : ITypedPixel<LongPixel, lon
     public double AsDouble() => Value;
 
     /// <inheritdoc/>
-    public Vector<double> ToDoubleVector() => Internal.PixelVector.Create(Value);
+    public Vector256<double> ToDoubleVector() => Vector256.CreateScalar((double)Value);
 
     /// <inheritdoc/>
-    public static LongPixel FromDoubleVector(Vector<double> vector) => (long)vector[0];
+    public static LongPixel FromDoubleVector(Vector256<double> vector) => (long)vector[0];
 
     /// <inheritdoc/>
     public IEnumerator<long> GetEnumerator()

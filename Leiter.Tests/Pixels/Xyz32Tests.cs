@@ -19,8 +19,6 @@ public class Xyz32Tests : PixelContractTestsBase<Xyz32, float>
     protected override (Xyz32 Add, Xyz32 Subtract, Xyz32 Multiply, Xyz32 Divide) ExpectedScaledByTwoResults =>
         ExpectedSelfResults;
 
-    protected override int RequiredVectorWidth => 3;
-
     protected override Xyz32 VectorSample => new(1.0f, 2.0f, 3.0f);
 
     protected override double ExpectedVectorFirstComponent => 1.0;

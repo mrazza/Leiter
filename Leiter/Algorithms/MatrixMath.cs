@@ -1,6 +1,6 @@
 namespace Leiter.Algorithms;
 
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using Leiter.Core;
 
 /// <summary>
@@ -214,14 +214,14 @@ public static class MatrixMath
         int halfV = vLen / 2;
 
         var sourceVectors = VectorizeMatrix(self);
-        var temp = new Vector<double>[width * height];
+        var temp = new Vector256<double>[width * height];
 
         Parallel.For(0, height, y =>
         {
             int rowOffset = y * width;
             for (int x = 0; x < width; x++)
             {
-                Vector<double> sum = Vector<double>.Zero;
+                Vector256<double> sum = Vector256<double>.Zero;
                 for (int kx = 0; kx < hLen; kx++)
                     sum += sourceVectors[rowOffset + Math.Clamp(x - halfH + kx, 0, width - 1)] * hKernel[kx];
                 temp[rowOffset + x] = sum;
@@ -236,7 +236,7 @@ public static class MatrixMath
 
             for (int x = 0; x < width; x++)
             {
-                Vector<double> sum = Vector<double>.Zero;
+                Vector256<double> sum = Vector256<double>.Zero;
                 for (int ky = 0; ky < vLen; ky++)
                     sum += temp[rowOffsets[ky] + x] * vKernel[ky];
                 result[x, y] = T.FromDoubleVector(sum);
@@ -265,7 +265,7 @@ public static class MatrixMath
         ArgumentNullException.ThrowIfNull(right);
         Guard.ThrowIfSizeMismatch(self.Size, right.Size, nameof(right));
 
-        Vector<double> sum = Vector<double>.Zero;
+        Vector256<double> sum = Vector256<double>.Zero;
         int width = self.Width;
         int height = self.Height;
         for (int y = 0; y < height; y++)
@@ -296,7 +296,7 @@ public static class MatrixMath
         ArgumentNullException.ThrowIfNull(right);
         Guard.ThrowIfSizeMismatch(self.Size, right.Size, nameof(right));
 
-        Vector<double> sum = Vector<double>.Zero;
+        Vector256<double> sum = Vector256<double>.Zero;
         int width = self.Width;
         int height = self.Height;
         for (int y = 0; y < height; y++)
@@ -312,7 +312,7 @@ public static class MatrixMath
     /// <typeparam name="T">The pixel type of the input matrix.</typeparam>
     /// <param name="matrix">The matrix to vectorize.</param>
     /// <returns>A flattened array of SIMD vectors corresponding to the matrix pixels.</returns>
-    internal static Vector<double>[] VectorizeMatrix<T>(IReadOnlyMatrix<T> matrix)
+    internal static Vector256<double>[] VectorizeMatrix<T>(IReadOnlyMatrix<T> matrix)
         where T : struct, IPixel<T> =>
         matrix.MapToArray(static pixel => pixel.ToDoubleVector());
 }

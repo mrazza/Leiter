@@ -1,6 +1,6 @@
 namespace Leiter.Core;
 
-using System.Numerics;
+using System.Runtime.Intrinsics;
 
 /// <summary>
 /// Defines arithmetic operations with numeric scalars and vector conversions for a type.
@@ -67,14 +67,13 @@ public interface INumericOperable<T>
     /// <summary>
     /// Converts this instance to a double-precision SIMD vector representation.
     /// </summary>
-    /// <returns>A <see cref="Vector{T}"/> of <see cref="double"/> representing the components of this instance.</returns>
-    /// <exception cref="PlatformNotSupportedException">The platform does not support hardware vector operations.</exception>
-    Vector<double> ToDoubleVector();
+    /// <returns>A <see cref="Vector256{T}"/> of <see cref="double"/> representing the components of this instance.</returns>
+    Vector256<double> ToDoubleVector();
 
     /// <summary>
     /// Creates a new instance of <typeparamref name="T"/> from a double-precision SIMD vector.
     /// </summary>
     /// <param name="vector">The SIMD vector containing the component values.</param>
     /// <returns>A new <typeparamref name="T"/> reconstructed from the vector.</returns>
-    static abstract T FromDoubleVector(Vector<double> vector);
+    static abstract T FromDoubleVector(Vector256<double> vector);
 }

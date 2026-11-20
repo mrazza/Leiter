@@ -4,7 +4,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Numerics;
+using System.Runtime.Intrinsics;
 using System.Runtime.InteropServices;
 using Leiter.Core;
 
@@ -148,10 +148,10 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     public Lab32 ComponentMap(Func<float, float> func) => new() { L = func(L), A = func(A), B = func(B) };
 
     /// <inheritdoc/>
-    public Vector<double> ToDoubleVector() => Internal.PixelVector.Create(L, A, B);
+    public Vector256<double> ToDoubleVector() => Vector256.Create((double)L, A, B, 0.0);
 
     /// <inheritdoc/>
-    public static Lab32 FromDoubleVector(Vector<double> vector) => new((float)vector[0], (float)vector[1], (float)vector[2]);
+    public static Lab32 FromDoubleVector(Vector256<double> vector) => new((float)vector[0], (float)vector[1], (float)vector[2]);
 
     /// <inheritdoc/>
     public IEnumerator<float> GetEnumerator()

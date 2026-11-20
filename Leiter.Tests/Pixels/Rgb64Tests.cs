@@ -19,8 +19,6 @@ public class Rgb64Tests : PixelContractTestsBase<Rgb64, double>
     protected override (Rgb64 Add, Rgb64 Subtract, Rgb64 Multiply, Rgb64 Divide) ExpectedScaledByTwoResults =>
         ExpectedSelfResults;
 
-    protected override int RequiredVectorWidth => 3;
-
     protected override Rgb64 VectorSample => new(1.0, 2.0, 3.0);
 
     protected override double ExpectedVectorFirstComponent => 1.0;
