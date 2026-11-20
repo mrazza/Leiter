@@ -2,9 +2,10 @@ namespace Leiter.Algorithms;
 
 using System.Numerics;
 using Leiter.Core;
+using Leiter.Pixels;
 
 /// <summary>
-/// Provides bilinear and nearest-neighbor matrix resizing operations.
+/// Provides bilinear, box, and nearest-neighbor matrix resizing and sampling operations.
 /// </summary>
 public static class MatrixResampler
 {
@@ -22,7 +23,19 @@ public static class MatrixResampler
         double W00,
         double W10,
         double W01,
-        double W11);
+        double W11)
+    {
+        public static BilinearFootprint FromAxes(BilinearSampleAxis xAxis, BilinearSampleAxis yAxis) =>
+            new(
+                xAxis.LowerIndex,
+                xAxis.UpperIndex,
+                yAxis.LowerIndex,
+                yAxis.UpperIndex,
+                xAxis.LowerWeight * yAxis.LowerWeight,
+                xAxis.UpperWeight * yAxis.LowerWeight,
+                xAxis.LowerWeight * yAxis.UpperWeight,
+                xAxis.UpperWeight * yAxis.UpperWeight);
+    }
 
     /// <summary>
     /// Resizes a numeric pixel matrix to <paramref name="targetSize"/> using pixel-center bilinear interpolation.
@@ -44,32 +57,45 @@ public static class MatrixResampler
 
         Parallel.For(0, targetSize.Height, targetY =>
         {
-            BilinearSampleAxis vertical = ComputeBilinearSampleAxis(targetY, source.Height, targetSize.Height);
-            int topY = vertical.LowerIndex;
-            int bottomY = vertical.UpperIndex;
+            BilinearSampleAxis vertical = ComputeResizeBilinearAxis(targetY, source.Height, targetSize.Height);
 
             for (int targetX = 0; targetX < targetSize.Width; targetX++)
             {
-                BilinearSampleAxis horizontal = ComputeBilinearSampleAxis(targetX, source.Width, targetSize.Width);
-                int leftX = horizontal.LowerIndex;
-                int rightX = horizontal.UpperIndex;
-
-                double topLeftWeight = horizontal.LowerWeight * vertical.LowerWeight;
-                double topRightWeight = horizontal.UpperWeight * vertical.LowerWeight;
-                double bottomLeftWeight = horizontal.LowerWeight * vertical.UpperWeight;
-                double bottomRightWeight = horizontal.UpperWeight * vertical.UpperWeight;
-
-                Vector<double> interpolatedPixel =
-                    (source[leftX, topY].ToDoubleVector() * topLeftWeight) +
-                    (source[rightX, topY].ToDoubleVector() * topRightWeight) +
-                    (source[leftX, bottomY].ToDoubleVector() * bottomLeftWeight) +
-                    (source[rightX, bottomY].ToDoubleVector() * bottomRightWeight);
-
-                result[targetX, targetY] = T.FromDoubleVector(interpolatedPixel);
+                BilinearSampleAxis horizontal = ComputeResizeBilinearAxis(targetX, source.Width, targetSize.Width);
+                BilinearFootprint fp = BilinearFootprint.FromAxes(horizontal, vertical);
+                result[targetX, targetY] = SampleFootprint(source, in fp);
             }
         });
 
         return result;
+    }
+
+    /// <summary>
+    /// Resizes a numeric pixel matrix to <paramref name="targetSize"/> using area-averaged box resampling.
+    /// </summary>
+    /// <typeparam name="T">The numeric pixel type stored in the matrix.</typeparam>
+    /// <param name="source">The source matrix to resample.</param>
+    /// <param name="targetSize">The target matrix dimensions.</param>
+    /// <returns>A new <see cref="Matrix{T}"/> with dimensions <paramref name="targetSize"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="targetSize"/> has a negative width or height.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="source"/> is empty while <paramref name="targetSize"/> has positive dimensions.</exception>
+    public static Matrix<T> ResizeBox<T>(this IReadOnlyMatrix<T> source, Size targetSize)
+        where T : struct, IPixel<T>
+    {
+        if (!ValidateResampleInputs(source, targetSize))
+            return new SequentialMatrix<T>(targetSize);
+
+        if (targetSize == source.Size)
+            return source.Clone();
+
+        if (typeof(T) == typeof(Rgb8) && source is IReadOnlyMatrix<Rgb8> rgbSource)
+            return (Matrix<T>)(object)ResizeBoxRgb8(rgbSource, targetSize);
+
+        if (typeof(T) == typeof(Lab32) && source is IReadOnlyMatrix<Lab32> labSource)
+            return (Matrix<T>)(object)ResizeBoxLab32(labSource, targetSize);
+
+        return ResizeBoxGeneric(source, targetSize);
     }
 
     /// <summary>
@@ -139,7 +165,12 @@ public static class MatrixResampler
         where T : struct, IPixel<T>
     {
         BilinearFootprint fp = ComputeBilinearFootprint(source.Width, source.Height, x, y);
+        return SampleFootprint(source, in fp);
+    }
 
+    private static T SampleFootprint<T>(IReadOnlyMatrix<T> source, in BilinearFootprint fp)
+        where T : struct, IPixel<T>
+    {
         Vector<double> interpolatedPixel =
             (source[fp.X0, fp.Y0].ToDoubleVector() * fp.W00) +
             (source[fp.X1, fp.Y0].ToDoubleVector() * fp.W10) +
@@ -369,29 +400,10 @@ public static class MatrixResampler
         Guard.ThrowIfNotFinite(y);
     }
 
-    private static BilinearFootprint ComputeBilinearFootprint(int width, int height, double x, double y)
-    {
-        double cx = Math.Clamp(x, 0.0, width - 1.0);
-        double cy = Math.Clamp(y, 0.0, height - 1.0);
-
-        int x0 = (int)Math.Floor(cx);
-        int x1 = Math.Min(width - 1, x0 + 1);
-        double wx = cx - x0;
-
-        int y0 = (int)Math.Floor(cy);
-        int y1 = Math.Min(height - 1, y0 + 1);
-        double wy = cy - y0;
-
-        return new BilinearFootprint(
-            x0,
-            x1,
-            y0,
-            y1,
-            (1.0 - wx) * (1.0 - wy),
-            wx * (1.0 - wy),
-            (1.0 - wx) * wy,
-            wx * wy);
-    }
+    private static BilinearFootprint ComputeBilinearFootprint(int width, int height, double x, double y) =>
+        BilinearFootprint.FromAxes(
+            ComputeBilinearSampleAxis(x, width),
+            ComputeBilinearSampleAxis(y, height));
 
     private static bool ValidateResampleInputs(IUntypedMatrix source, Size targetSize)
     {
@@ -408,12 +420,17 @@ public static class MatrixResampler
         return true;
     }
 
-    private static BilinearSampleAxis ComputeBilinearSampleAxis(
+    private static BilinearSampleAxis ComputeResizeBilinearAxis(
         int targetCoord,
         int sourceLength,
         int targetLength)
     {
         double sourceCoord = (((targetCoord + 0.5) * sourceLength) / targetLength) - 0.5;
+        return ComputeBilinearSampleAxis(sourceCoord, sourceLength);
+    }
+
+    private static BilinearSampleAxis ComputeBilinearSampleAxis(double sourceCoord, int sourceLength)
+    {
         double clampedCoord = Math.Clamp(sourceCoord, 0.0, sourceLength - 1);
 
         int lowerIndex = (int)Math.Floor(clampedCoord);
@@ -422,6 +439,126 @@ public static class MatrixResampler
         double lowerWeight = 1.0 - upperWeight;
 
         return new BilinearSampleAxis(lowerIndex, upperIndex, lowerWeight, upperWeight);
+    }
+
+    private static (int Start, int End) ComputeBoxAxisSpan(int targetCoord, int sourceLength, int targetLength)
+    {
+        int start = Math.Min((int)((long)targetCoord * sourceLength / targetLength), sourceLength - 1);
+        int end = Math.Clamp((int)((long)(targetCoord + 1) * sourceLength / targetLength), start + 1, sourceLength);
+        return (start, end);
+    }
+
+    private static Matrix<Rgb8> ResizeBoxRgb8(IReadOnlyMatrix<Rgb8> source, Size targetSize)
+    {
+        int srcWidth = source.Width;
+        int srcHeight = source.Height;
+        int dstWidth = targetSize.Width;
+        int dstHeight = targetSize.Height;
+        var result = new SequentialMatrix<Rgb8>(targetSize);
+
+        Parallel.For(0, dstHeight, ty =>
+        {
+            (int y0, int y1) = ComputeBoxAxisSpan(ty, srcHeight, dstHeight);
+            for (int tx = 0; tx < dstWidth; tx++)
+            {
+                (int x0, int x1) = ComputeBoxAxisSpan(tx, srcWidth, dstWidth);
+                long sumR = 0;
+                long sumG = 0;
+                long sumB = 0;
+
+                for (int sy = y0; sy < y1; sy++)
+                {
+                    for (int sx = x0; sx < x1; sx++)
+                    {
+                        Rgb8 pixel = source[sx, sy];
+                        sumR += pixel.R;
+                        sumG += pixel.G;
+                        sumB += pixel.B;
+                    }
+                }
+
+                double invCount = 1.0 / ((double)(x1 - x0) * (y1 - y0));
+                result[tx, ty] = new Rgb8(
+                    Rgb8.ClampRoundedByte(sumR * invCount),
+                    Rgb8.ClampRoundedByte(sumG * invCount),
+                    Rgb8.ClampRoundedByte(sumB * invCount));
+            }
+        });
+
+        return result;
+    }
+
+    private static Matrix<Lab32> ResizeBoxLab32(IReadOnlyMatrix<Lab32> source, Size targetSize)
+    {
+        int srcWidth = source.Width;
+        int srcHeight = source.Height;
+        int dstWidth = targetSize.Width;
+        int dstHeight = targetSize.Height;
+        var result = new SequentialMatrix<Lab32>(targetSize);
+
+        Parallel.For(0, dstHeight, ty =>
+        {
+            (int y0, int y1) = ComputeBoxAxisSpan(ty, srcHeight, dstHeight);
+            for (int tx = 0; tx < dstWidth; tx++)
+            {
+                (int x0, int x1) = ComputeBoxAxisSpan(tx, srcWidth, dstWidth);
+                double sumL = 0.0;
+                double sumA = 0.0;
+                double sumB = 0.0;
+
+                for (int sy = y0; sy < y1; sy++)
+                {
+                    for (int sx = x0; sx < x1; sx++)
+                    {
+                        Lab32 pixel = source[sx, sy];
+                        sumL += pixel.L;
+                        sumA += pixel.A;
+                        sumB += pixel.B;
+                    }
+                }
+
+                double invCount = 1.0 / ((double)(x1 - x0) * (y1 - y0));
+                result[tx, ty] = new Lab32(
+                    (float)(sumL * invCount),
+                    (float)(sumA * invCount),
+                    (float)(sumB * invCount));
+            }
+        });
+
+        return result;
+    }
+
+    private static Matrix<T> ResizeBoxGeneric<T>(IReadOnlyMatrix<T> source, Size targetSize)
+        where T : struct, IPixel<T>
+    {
+        int srcWidth = source.Width;
+        int srcHeight = source.Height;
+        int dstWidth = targetSize.Width;
+        int dstHeight = targetSize.Height;
+        var result = new SequentialMatrix<T>(targetSize);
+
+        Parallel.For(0, dstHeight, ty =>
+        {
+            (int y0, int y1) = ComputeBoxAxisSpan(ty, srcHeight, dstHeight);
+            for (int tx = 0; tx < dstWidth; tx++)
+            {
+                (int x0, int x1) = ComputeBoxAxisSpan(tx, srcWidth, dstWidth);
+                Vector<double> sum = Vector<double>.Zero;
+
+                for (int sy = y0; sy < y1; sy++)
+                {
+                    for (int sx = x0; sx < x1; sx++)
+                    {
+                        sum += source[sx, sy].ToDoubleVector();
+                    }
+                }
+
+                double invCount = 1.0 / ((double)(x1 - x0) * (y1 - y0));
+                result[tx, ty] = T.FromDoubleVector(sum * invCount);
+            }
+        });
+
+        return result;
     }
 
     private static int ComputeNearestSourceIndex(int targetCoord, int sourceLength, int targetLength) =>

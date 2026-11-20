@@ -2,6 +2,7 @@ namespace Leiter.Algorithms.Segmentation.Internal;
 
 using System.Runtime.CompilerServices;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 
 /// <summary>
@@ -14,55 +15,6 @@ internal sealed class GridMinCutSolver
         Free = 0,
         Source = 1,
         Sink = 2,
-    }
-
-    private sealed class ActiveNodeQueue
-    {
-        private readonly int[] items;
-        private readonly bool[] contains;
-        private int head;
-        private int tail;
-
-        public ActiveNodeQueue(int capacity)
-        {
-            items = new int[capacity];
-            contains = new bool[capacity];
-        }
-
-        public int Count { get; private set; }
-
-        public void Clear()
-        {
-            Array.Clear(contains);
-            head = 0;
-            tail = 0;
-            Count = 0;
-        }
-
-        public int Peek() => items[head];
-
-        public void Enqueue(int pixelIndex)
-        {
-            if (contains[pixelIndex])
-                return;
-
-            contains[pixelIndex] = true;
-            items[tail] = pixelIndex;
-            tail++;
-            if (tail == items.Length)
-                tail = 0;
-            Count++;
-        }
-
-        public void DequeueHead()
-        {
-            int pixelIndex = items[head];
-            contains[pixelIndex] = false;
-            head++;
-            if (head == items.Length)
-                head = 0;
-            Count--;
-        }
     }
 
     private const int TerminalParent = -1;
@@ -82,7 +34,7 @@ internal sealed class GridMinCutSolver
     private readonly int[] parentPixel;
     private readonly byte[] directionToParent;
 
-    private readonly ActiveNodeQueue activeQueue;
+    private readonly UniqueIntQueue activeQueue;
     private readonly Queue<int> orphanQueue;
     private readonly long[] originTimestamp;
     private readonly int[] distanceToTerminal;
@@ -113,7 +65,7 @@ internal sealed class GridMinCutSolver
         parentPixel = new int[pixelCount];
         directionToParent = new byte[pixelCount];
 
-        activeQueue = new ActiveNodeQueue(pixelCount);
+        activeQueue = new UniqueIntQueue(pixelCount);
         orphanQueue = new Queue<int>();
         originTimestamp = new long[pixelCount];
         distanceToTerminal = new int[pixelCount];
@@ -266,7 +218,7 @@ internal sealed class GridMinCutSolver
             SearchTree tree = treeMembership[p];
             if (tree == SearchTree.Free)
             {
-                activeQueue.DequeueHead();
+                activeQueue.Dequeue();
                 continue;
             }
 
@@ -306,7 +258,7 @@ internal sealed class GridMinCutSolver
                 }
             }
 
-            activeQueue.DequeueHead();
+            activeQueue.Dequeue();
         }
 
         sourceEndpoint = -1;

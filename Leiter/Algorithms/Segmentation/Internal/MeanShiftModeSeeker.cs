@@ -9,7 +9,7 @@ using Leiter.Pixels;
 /// Performs parallel Mean-Shift mode seeking in 5D joint spatial-CIELAB feature space,
 /// using circle-tightened direct scans, spatial-color lattice acceleration, and deterministic coarse-to-fine refinement.
 /// </summary>
-internal static class MeanShiftModeSeeker
+internal sealed class MeanShiftModeSeeker
 {
     private const int CoarseGridMinSpatialRadius = 12;
     private const int CoarseGridMinImageDimension = 8;
@@ -18,7 +18,17 @@ internal static class MeanShiftModeSeeker
     private const double SourceInterpolationColorToleranceFactor = 0.5;
     private const double CornerMatchColorToleranceFactor = 0.35;
 
-    private readonly struct ModeSeekContext(
+    private readonly Lab32[] sourcePixels;
+    private readonly int width;
+    private readonly int height;
+    private readonly int spatialRadius;
+    private readonly double spatialRadiusSquared;
+    private readonly double rangeRadiusSquared;
+    private readonly double convergenceEpsilonSquared;
+    private readonly int maxIterations;
+    private readonly MeanShiftSpatialLattice? lattice;
+
+    private MeanShiftModeSeeker(
         Lab32[] sourcePixels,
         int width,
         int height,
@@ -28,72 +38,15 @@ internal static class MeanShiftModeSeeker
         int maxIterations,
         MeanShiftSpatialLattice? lattice)
     {
-        public readonly Lab32[] SourcePixels = sourcePixels;
-        public readonly int Width = width;
-        public readonly int Height = height;
-        public readonly int SpatialRadius = spatialRadius;
-        public readonly double SpatialRadiusSquared = (double)spatialRadius * spatialRadius;
-        public readonly double RangeRadiusSquared = rangeRadiusSquared;
-        public readonly double ConvergenceEpsilonSquared = convergenceEpsilonSquared;
-        public readonly int MaxIterations = maxIterations;
-        public readonly MeanShiftSpatialLattice? Lattice = lattice;
-
-        public MeanShiftMode SeekPixelMode(int startX, int startY)
-        {
-            var currentMode = new MeanShiftMode(startX, startY, SourcePixels[(startY * Width) + startX]);
-
-            for (int iteration = 0; iteration < MaxIterations; iteration++)
-            {
-                MeanShiftMode nextMode = Lattice is null
-                    ? ComputeDirectMeanStep(currentMode)
-                    : Lattice.ComputeMeanStep(SourcePixels, currentMode, SpatialRadiusSquared, RangeRadiusSquared);
-
-                double stepDistanceSquared = currentMode.SpatialDistanceSquared(nextMode) +
-                                             nextMode.Color.EuclideanDistanceSquared(currentMode.Color);
-                currentMode = nextMode;
-                if (stepDistanceSquared <= ConvergenceEpsilonSquared)
-                    break;
-            }
-
-            return currentMode;
-        }
-
-        private MeanShiftMode ComputeDirectMeanStep(MeanShiftMode currentMode)
-        {
-            int minY = Math.Max(0, (int)Math.Floor(currentMode.Y - SpatialRadius));
-            int maxY = Math.Min(Height - 1, (int)Math.Ceiling(currentMode.Y + SpatialRadius));
-
-            var accumulator = default(MeanShiftModeAccumulator);
-
-            for (int y = minY; y <= maxY; y++)
-            {
-                double deltaY = y - currentMode.Y;
-                double deltaYSquared = deltaY * deltaY;
-                if (deltaYSquared > SpatialRadiusSquared)
-                    continue;
-
-                double horizontalSpan = Math.Sqrt(SpatialRadiusSquared - deltaYSquared);
-                int rowMinX = Math.Max(0, (int)Math.Floor(currentMode.X - horizontalSpan));
-                int rowMaxX = Math.Min(Width - 1, (int)Math.Ceiling(currentMode.X + horizontalSpan));
-                int rowOffset = y * Width;
-
-                for (int x = rowMinX; x <= rowMaxX; x++)
-                {
-                    double deltaX = x - currentMode.X;
-                    double spatialDistanceSquared = (deltaX * deltaX) + deltaYSquared;
-                    if (spatialDistanceSquared > SpatialRadiusSquared)
-                        continue;
-
-                    Lab32 pixelColor = SourcePixels[rowOffset + x];
-                    if (pixelColor.EuclideanDistanceSquared(currentMode.Color) <= RangeRadiusSquared)
-                    {
-                        accumulator.Add(x, y, pixelColor);
-                    }
-                }
-            }
-
-            return accumulator.ToModeOrFallback(currentMode);
-        }
+        this.sourcePixels = sourcePixels;
+        this.width = width;
+        this.height = height;
+        this.spatialRadius = spatialRadius;
+        spatialRadiusSquared = (double)spatialRadius * spatialRadius;
+        this.rangeRadiusSquared = rangeRadiusSquared;
+        this.convergenceEpsilonSquared = convergenceEpsilonSquared;
+        this.maxIterations = maxIterations;
+        this.lattice = lattice;
     }
 
     private readonly record struct CoarseAxisBracket(int Lower, int Upper, double Fraction, bool IsOnCoarseGrid);
@@ -173,7 +126,7 @@ internal static class MeanShiftModeSeeker
             ? MeanShiftSpatialLattice.Create(sourcePixels, width, height, spatialRadius, rangeRadius, sampleStride)
             : null;
 
-        var context = new ModeSeekContext(
+        var seeker = new MeanShiftModeSeeker(
             sourcePixels,
             width,
             height,
@@ -186,15 +139,72 @@ internal static class MeanShiftModeSeeker
         int coarseStride = ResolveCoarseGridStride(spatialRadius, width, height);
         if (coarseStride == 1)
         {
-            SeekAllPixelsExact(context, modes);
+            seeker.SeekAllPixelsExact(modes);
         }
         else
         {
-            SeekCoarseGrid(context, coarseStride, modes);
-            RefineFinePixels(context, coarseStride, modes);
+            seeker.SeekCoarseGrid(coarseStride, modes);
+            seeker.RefineFinePixels(coarseStride, modes);
         }
 
         return (modes, sourcePixels);
+    }
+
+    private MeanShiftMode SeekPixelMode(int startX, int startY)
+    {
+        var currentMode = new MeanShiftMode(startX, startY, sourcePixels[(startY * width) + startX]);
+
+        for (int iteration = 0; iteration < maxIterations; iteration++)
+        {
+            MeanShiftMode nextMode = lattice is null
+                ? ComputeDirectMeanStep(currentMode)
+                : lattice.ComputeMeanStep(sourcePixels, currentMode, spatialRadiusSquared, rangeRadiusSquared);
+
+            double stepDistanceSquared = currentMode.SpatialDistanceSquared(nextMode) +
+                                         nextMode.Color.EuclideanDistanceSquared(currentMode.Color);
+            currentMode = nextMode;
+            if (stepDistanceSquared <= convergenceEpsilonSquared)
+                break;
+        }
+
+        return currentMode;
+    }
+
+    private MeanShiftMode ComputeDirectMeanStep(MeanShiftMode currentMode)
+    {
+        int minY = Math.Max(0, (int)Math.Floor(currentMode.Y - spatialRadius));
+        int maxY = Math.Min(height - 1, (int)Math.Ceiling(currentMode.Y + spatialRadius));
+
+        var accumulator = default(MeanShiftModeAccumulator);
+
+        for (int y = minY; y <= maxY; y++)
+        {
+            double deltaY = y - currentMode.Y;
+            double deltaYSquared = deltaY * deltaY;
+            if (deltaYSquared > spatialRadiusSquared)
+                continue;
+
+            double horizontalSpan = Math.Sqrt(spatialRadiusSquared - deltaYSquared);
+            int rowMinX = Math.Max(0, (int)Math.Floor(currentMode.X - horizontalSpan));
+            int rowMaxX = Math.Min(width - 1, (int)Math.Ceiling(currentMode.X + horizontalSpan));
+            int rowOffset = y * width;
+
+            for (int x = rowMinX; x <= rowMaxX; x++)
+            {
+                double deltaX = x - currentMode.X;
+                double spatialDistanceSquared = (deltaX * deltaX) + deltaYSquared;
+                if (spatialDistanceSquared > spatialRadiusSquared)
+                    continue;
+
+                Lab32 pixelColor = sourcePixels[rowOffset + x];
+                if (pixelColor.EuclideanDistanceSquared(currentMode.Color) <= rangeRadiusSquared)
+                {
+                    accumulator.Add(x, y, pixelColor);
+                }
+            }
+        }
+
+        return accumulator.ToModeOrFallback(currentMode);
     }
 
     private static int ResolveLatticeSampleStride(int spatialRadius) =>
@@ -209,26 +219,22 @@ internal static class MeanShiftModeSeeker
             ? Math.Clamp(spatialRadius / 6, 2, 4)
             : 1;
 
-    private static void SeekAllPixelsExact(ModeSeekContext context, MeanShiftMode[] modes)
+    private void SeekAllPixelsExact(MeanShiftMode[] modes)
     {
-        int width = context.Width;
-        int height = context.Height;
-
         Parallel.For(0, height, y =>
         {
             int rowStart = y * width;
             for (int x = 0; x < width; x++)
             {
-                modes[rowStart + x] = context.SeekPixelMode(x, y);
+                modes[rowStart + x] = SeekPixelMode(x, y);
             }
         });
     }
 
-    private static void SeekCoarseGrid(ModeSeekContext context, int coarseStride, MeanShiftMode[] modes)
+    private void SeekCoarseGrid(int coarseStride, MeanShiftMode[] modes)
     {
-        int width = context.Width;
         int[] coarseXs = BuildCoarseAxisCoordinates(width, coarseStride);
-        int[] coarseYs = BuildCoarseAxisCoordinates(context.Height, coarseStride);
+        int[] coarseYs = BuildCoarseAxisCoordinates(height, coarseStride);
 
         Parallel.For(0, coarseYs.Length, yi =>
         {
@@ -237,16 +243,13 @@ internal static class MeanShiftModeSeeker
             for (int xi = 0; xi < coarseXs.Length; xi++)
             {
                 int coarseX = coarseXs[xi];
-                modes[rowStart + coarseX] = context.SeekPixelMode(coarseX, coarseY);
+                modes[rowStart + coarseX] = SeekPixelMode(coarseX, coarseY);
             }
         });
     }
 
-    private static void RefineFinePixels(ModeSeekContext context, int coarseStride, MeanShiftMode[] modes)
+    private void RefineFinePixels(int coarseStride, MeanShiftMode[] modes)
     {
-        int width = context.Width;
-        int height = context.Height;
-        double rangeRadiusSquared = context.RangeRadiusSquared;
         double modeColorToleranceSquared = (ModeAgreementColorToleranceFactor * ModeAgreementColorToleranceFactor) * rangeRadiusSquared;
         double sourceColorToleranceSquared = (SourceInterpolationColorToleranceFactor * SourceInterpolationColorToleranceFactor) * rangeRadiusSquared;
         double cornerMatchToleranceSquared = (CornerMatchColorToleranceFactor * CornerMatchColorToleranceFactor) * rangeRadiusSquared;
@@ -263,7 +266,6 @@ internal static class MeanShiftModeSeeker
                     continue;
 
                 modes[rowStart + x] = TryInterpolatePixelMode(
-                    in context,
                     modes,
                     x,
                     y,
@@ -274,7 +276,7 @@ internal static class MeanShiftModeSeeker
                     cornerMatchToleranceSquared,
                     out MeanShiftMode interpolatedMode)
                     ? interpolatedMode
-                    : context.SeekPixelMode(x, y);
+                    : SeekPixelMode(x, y);
             }
         });
     }
@@ -291,8 +293,7 @@ internal static class MeanShiftModeSeeker
         return new CoarseAxisBracket(lower, upper, fraction, IsOnCoarseGrid: coordinate == lower);
     }
 
-    private static bool TryInterpolatePixelMode(
-        in ModeSeekContext context,
+    private bool TryInterpolatePixelMode(
         MeanShiftMode[] modes,
         int x,
         int y,
@@ -303,7 +304,6 @@ internal static class MeanShiftModeSeeker
         double cornerMatchToleranceSquared,
         out MeanShiftMode interpolatedMode)
     {
-        int width = context.Width;
         int upperRowOffset = yBracket.Lower * width;
         int lowerRowOffset = yBracket.Upper * width;
         int index00 = upperRowOffset + xBracket.Lower;
@@ -313,12 +313,12 @@ internal static class MeanShiftModeSeeker
 
         double oneMinusTx = 1.0 - xBracket.Fraction;
         double oneMinusTy = 1.0 - yBracket.Fraction;
-        var corner00 = new CoarseCornerSample(context.SourcePixels[index00], modes[index00], oneMinusTx * oneMinusTy);
-        var corner10 = new CoarseCornerSample(context.SourcePixels[index10], modes[index10], xBracket.Fraction * oneMinusTy);
-        var corner01 = new CoarseCornerSample(context.SourcePixels[index01], modes[index01], oneMinusTx * yBracket.Fraction);
-        var corner11 = new CoarseCornerSample(context.SourcePixels[index11], modes[index11], xBracket.Fraction * yBracket.Fraction);
+        var corner00 = new CoarseCornerSample(sourcePixels[index00], modes[index00], oneMinusTx * oneMinusTy);
+        var corner10 = new CoarseCornerSample(sourcePixels[index10], modes[index10], xBracket.Fraction * oneMinusTy);
+        var corner01 = new CoarseCornerSample(sourcePixels[index01], modes[index01], oneMinusTx * yBracket.Fraction);
+        var corner11 = new CoarseCornerSample(sourcePixels[index11], modes[index11], xBracket.Fraction * yBracket.Fraction);
 
-        Lab32 pixelColor = context.SourcePixels[(y * width) + x];
+        Lab32 pixelColor = sourcePixels[(y * width) + x];
 
         if (CoarseCornersAgree(
             corner00.Mode,
@@ -326,7 +326,7 @@ internal static class MeanShiftModeSeeker
             corner01.Mode,
             corner11.Mode,
             modeColorToleranceSquared,
-            context.SpatialRadiusSquared))
+            spatialRadiusSquared))
         {
             return TryInterpolateAllFourCorners(
                 pixelColor,
@@ -335,7 +335,7 @@ internal static class MeanShiftModeSeeker
                 in corner01,
                 in corner11,
                 sourceColorToleranceSquared,
-                context.RangeRadiusSquared,
+                rangeRadiusSquared,
                 out interpolatedMode);
         }
 
@@ -348,9 +348,9 @@ internal static class MeanShiftModeSeeker
                 in corner01,
                 in corner11,
                 cornerMatchToleranceSquared,
-                context.RangeRadiusSquared,
+                rangeRadiusSquared,
                 modeColorToleranceSquared,
-                context.SpatialRadiusSquared,
+                spatialRadiusSquared,
                 out interpolatedMode);
         }
 
