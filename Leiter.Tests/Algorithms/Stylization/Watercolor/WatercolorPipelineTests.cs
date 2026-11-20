@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Collections.Generic;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
@@ -8,6 +9,7 @@ using Leiter.Algorithms.Stylization;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -197,6 +199,196 @@ public class WatercolorPipelineTests
             new SequentialMatrix<Rgb8>(0, 0),
             onStageCompleted: reported.Add);
         Assert.Empty(reported);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="WatercolorPipeline.RenderDetailed"/> still reports all stages in order when optional stages are disabled.
+    /// </summary>
+    [Fact]
+    public void RenderDetailed_DisabledOptionalStages_ShouldReportAllStagesInOrder()
+    {
+        Matrix<Rgb8> scene = CreateTestScene(20, 20);
+        var reported = new List<WatercolorStage>();
+        var options = new WatercolorOptions(
+            WetInWet: new WetInWetOptions(Mode: WetInWetMode.Disabled),
+            HandTremor: new HandTremorOptions(Amplitude: 0.0),
+            EdgeDarkening: new EdgeDarkeningOptions(Intensity: 0.0),
+            TurbulenceFlow: new TurbulenceFlowOptions(Intensity: 0.0),
+            EnableFxaa: false);
+
+        WatercolorResult result = WatercolorPipeline.RenderDetailed(
+            scene,
+            options,
+            onStageCompleted: p => reported.Add(p.Stage));
+
+        WatercolorStage[] expectedOrder =
+        [
+            WatercolorStage.ColorTransfer,
+            WatercolorStage.Saliency,
+            WatercolorStage.Segmentation,
+            WatercolorStage.LodAbstraction,
+            WatercolorStage.WetInWet,
+            WatercolorStage.HandTremor,
+            WatercolorStage.Finishing
+        ];
+
+        Assert.Equal(expectedOrder, reported);
+        MatrixAssert.Equal(result.LodAbstracted, result.WetInWet.Image);
+        Assert.All(result.WetInWet.QualifyingBoundaries, static q => Assert.False(q));
+        MatrixAssert.Equal(result.WetInWet.Image, result.HandTremor);
+    }
+
+    /// <summary>
+    /// Verifies that throwing from <c>onStageCompleted</c> propagates immediately and short-circuits remaining pipeline stages.
+    /// </summary>
+    [Fact]
+    public void RenderDetailed_OnStageCompletedThrows_ShouldShortCircuitRemainingStages()
+    {
+        Matrix<Rgb8> scene = CreateTestScene(16, 16);
+        var reported = new List<WatercolorStage>();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            WatercolorPipeline.RenderDetailed(
+                scene,
+                onStageCompleted: progress =>
+                {
+                    reported.Add(progress.Stage);
+                    if (progress.Stage == WatercolorStage.Segmentation)
+                    {
+                        throw new InvalidOperationException("Abort pipeline.");
+                    }
+                }));
+
+        Assert.Equal(
+            [WatercolorStage.ColorTransfer, WatercolorStage.Saliency, WatercolorStage.Segmentation],
+            reported);
+    }
+
+    /// <summary>
+    /// Verifies that 0x5 and 5x0 empty images produce empty results of matching dimensions across all artifacts.
+    /// </summary>
+    /// <param name="width">The empty image width.</param>
+    /// <param name="height">The empty image height.</param>
+    [Theory]
+    [InlineData(0, 5)]
+    [InlineData(5, 0)]
+    public void RenderDetailed_And_Render_ZeroAreaImages_ShouldPreserveDimensions(int width, int height)
+    {
+        var empty = new SequentialMatrix<Rgb8>(width, height);
+        var reported = new List<WatercolorStageProgress>();
+
+        WatercolorResult detailed = WatercolorPipeline.RenderDetailed(empty, onStageCompleted: reported.Add);
+        Matrix<Rgb8> rendered = WatercolorPipeline.Render(empty, onStageCompleted: reported.Add);
+
+        Assert.Empty(reported);
+        Assert.Equal(empty.Size, detailed.Image.Size);
+        Assert.Equal(empty.Size, detailed.ColorTransferred.Size);
+        Assert.Equal(empty.Size, detailed.SaliencyMap.Size);
+        Assert.Equal(empty.Size, detailed.SalientMask.Size);
+        Assert.Equal(empty.Size, detailed.SaliencyDistanceField.Size);
+        Assert.Equal(empty.Size, detailed.SegmentationGraph.Size);
+        Assert.Equal(empty.Size, detailed.LodAbstracted.Size);
+        Assert.Equal(empty.Size, detailed.WetInWet.Image.Size);
+        Assert.Equal(empty.Size, detailed.WetInWet.WetAreaMask.Size);
+        Assert.Equal(empty.Size, detailed.HandTremor.Size);
+        Assert.Equal(0, detailed.SegmentationGraph.RegionCount);
+        Assert.Empty(detailed.WetInWet.QualifyingBoundaries);
+        Assert.Equal(empty.Size, rendered.Size);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="WatercolorPipeline.Render"/> forwards <c>onStageCompleted</c> and matches <see cref="WatercolorPipeline.RenderDetailed"/>.
+    /// </summary>
+    [Fact]
+    public void Render_WithStageProgress_ShouldReportStagesInOrderAndMatchDetailedImage()
+    {
+        Matrix<Rgb8> scene = CreateTestScene(20, 20);
+        var reported = new List<WatercolorStage>();
+
+        Matrix<Rgb8> rendered = WatercolorPipeline.Render(
+            scene,
+            onStageCompleted: progress => reported.Add(progress.Stage));
+        WatercolorResult detailed = WatercolorPipeline.RenderDetailed(scene);
+
+        Assert.Equal(
+            [
+                WatercolorStage.ColorTransfer,
+                WatercolorStage.Saliency,
+                WatercolorStage.Segmentation,
+                WatercolorStage.LodAbstraction,
+                WatercolorStage.WetInWet,
+                WatercolorStage.HandTremor,
+                WatercolorStage.Finishing
+            ],
+            reported);
+        MatrixAssert.Equal(detailed.Image, rendered);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="MeanShiftOptions.Connectivity"/> is preserved on the resulting <see cref="WatercolorResult.SegmentationGraph"/>.
+    /// </summary>
+    [Fact]
+    public void RenderDetailed_FourConnectedMeanShift_ShouldPropagateConnectivityToSegmentationGraph()
+    {
+        Matrix<Rgb8> scene = CreateTestScene(16, 16);
+        var options = new WatercolorOptions(
+            MeanShift: new MeanShiftOptions(MinRegionSize: 4, Connectivity: GridConnectivity.FourConnected));
+
+        WatercolorResult result = WatercolorPipeline.RenderDetailed(scene, options);
+
+        Assert.Equal(GridConnectivity.FourConnected, result.SegmentationGraph.Connectivity);
+    }
+
+    /// <summary>
+    /// Verifies bit-identical parity between <see cref="WatercolorPipeline"/>'s shared <c>salientFractions</c> optimization
+    /// and direct stage calls when <see cref="LodAbstractionOptions.SalientOverlapThreshold"/> differs from <see cref="WetInWetOptions.SalientOverlapThreshold"/>.
+    /// </summary>
+    [Fact]
+    public void RenderDetailed_DifferingSalientOverlapThresholds_ShouldMatchDirectStageResultsBitIdentically()
+    {
+        var scene = new SequentialMatrix<Rgb8>(24, 24);
+        for (int y = 0; y < 24; y++)
+        {
+            for (int x = 0; x < 24; x++)
+            {
+                bool centerBox = x >= 6 && x < 18 && y >= 6 && y < 18;
+                scene[x, y] = centerBox
+                    ? new Rgb8((byte)(210 + (x % 12)), (byte)(40 + (y % 12)), 35)
+                    : new Rgb8(35, 85, 190);
+            }
+        }
+
+        var meanShiftOpts = new MeanShiftOptions(SpatialRadius: 8, RangeRadius: 45.0, MinRegionSize: 4);
+        var lodOpts = new LodAbstractionOptions(SalientOverlapThreshold: 0.2);
+        var wetOpts = new WetInWetOptions(
+            SalientOverlapThreshold: 0.85,
+            Mode: WetInWetMode.ExcludeSalientBoundaries);
+        var options = new WatercolorOptions(
+            MeanShift: meanShiftOpts,
+            LodAbstraction: lodOpts,
+            WetInWet: wetOpts);
+
+        WatercolorResult result = WatercolorPipeline.RenderDetailed(scene, options);
+
+        (Matrix<Rgb8> meanShiftFiltered, IDisjointSet meanShiftSeg) =
+            MeanShiftSegmentation.FilterAndSegment(result.ColorTransferred, meanShiftOpts);
+        var graph = RegionGraph.FromDisjointSet(meanShiftSeg, meanShiftOpts.Connectivity);
+        Matrix<Rgb8> expectedLod = LodAbstraction.Apply(
+            meanShiftFiltered,
+            graph,
+            result.SaliencyDistanceField,
+            result.SalientMask,
+            lodOpts);
+        WetInWetResult expectedWet = WetInWetFilter.ApplyDetailed(
+            expectedLod,
+            graph,
+            result.SalientMask,
+            wetOpts);
+
+        MatrixAssert.Equal(expectedLod, result.LodAbstracted);
+        MatrixAssert.Equal(expectedWet.Image, result.WetInWet.Image);
+        MatrixAssert.Equal(expectedWet.WetAreaMask, result.WetInWet.WetAreaMask);
+        Assert.Equal(expectedWet.QualifyingBoundaries, result.WetInWet.QualifyingBoundaries);
     }
 
     private static Matrix<Rgb8> CreateTestScene(int width, int height)

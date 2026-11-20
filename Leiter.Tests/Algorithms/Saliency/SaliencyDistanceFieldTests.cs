@@ -115,6 +115,31 @@ public class SaliencyDistanceFieldTests
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, new SaliencyDistanceFieldOptions(DefaultSigmaScale: -0.1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, new SaliencyDistanceFieldOptions(SmoothingSigma: -1.0)));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyDistanceField.Compute(allBg, new SaliencyDistanceFieldOptions(SmoothingSigma: double.NaN)));
+
+        var image = new SequentialMatrix<Rgb8>(4, 4);
+        var saliency = new SequentialMatrix<DoublePixel>(4, 4);
+        var mismatchedSaliency = new SequentialMatrix<DoublePixel>(2, 2);
+
+        ArgumentNullException nullImageEx = Assert.Throws<ArgumentNullException>(() =>
+            SaliencyDistanceField.Compute(null!, saliency, SaliencyCutOptions.Default, SaliencyDistanceFieldOptions.Default));
+        Assert.Equal("image", nullImageEx.ParamName);
+
+        ArgumentNullException nullSaliencyEx = Assert.Throws<ArgumentNullException>(() =>
+            SaliencyDistanceField.Compute(image, (IReadOnlyMatrix<DoublePixel>)null!, SaliencyCutOptions.Default, SaliencyDistanceFieldOptions.Default));
+        Assert.Equal("saliencyMap", nullSaliencyEx.ParamName);
+
+        ArgumentException mismatchEx = Assert.Throws<ArgumentException>(() =>
+            SaliencyDistanceField.Compute(image, mismatchedSaliency, SaliencyCutOptions.Default, SaliencyDistanceFieldOptions.Default));
+        Assert.Equal("saliencyMap", mismatchEx.ParamName);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            SaliencyDistanceField.Compute(image, saliency, SaliencyCutOptions.Default, new SaliencyDistanceFieldOptions(SmoothingSigma: -1.0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            SaliencyDistanceField.Compute(image, saliency, SaliencyCutOptions.Default, new SaliencyDistanceFieldOptions(DefaultSigmaScale: -0.1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            SaliencyDistanceField.Compute(image, saliency, SaliencyCutOptions.Default, new SaliencyDistanceFieldOptions(SmoothingSigma: double.NaN)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            SaliencyDistanceField.Compute(image, saliency, new SaliencyCutOptions(MaxOuterIterations: 0), SaliencyDistanceFieldOptions.Default));
     }
 
     [Fact]

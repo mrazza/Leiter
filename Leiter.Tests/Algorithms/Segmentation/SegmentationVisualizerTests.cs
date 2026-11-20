@@ -135,9 +135,105 @@ public class SegmentationVisualizerTests
         var wrongSize = new SequentialMatrix<Rgb8>(2, 2);
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(null!, graph));
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, (RegionGraph)null!));
-        Assert.Throws<ArgumentException>(() => SegmentationVisualizer.ColorRegions(wrongSize, graph));
+        ArgumentException graphSizeEx = Assert.Throws<ArgumentException>(() => SegmentationVisualizer.ColorRegions(wrongSize, graph));
+        Assert.Equal("regionGraph", graphSizeEx.ParamName);
+        ArgumentException graphCustomSizeEx = Assert.Throws<ArgumentException>(() =>
+            SegmentationVisualizer.ColorRegions(wrongSize, graph, SegmentationVisualizer.AverageColorAssigner()));
+        Assert.Equal("regionGraph", graphCustomSizeEx.ParamName);
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(null!, dsu));
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, (IDisjointSet)null!));
         Assert.Throws<ArgumentException>(() => SegmentationVisualizer.ColorRegions(wrongSize, dsu));
+    }
+
+    [Fact]
+    public void ColorRegions_DisjointSetWithMultipleRegions_ShouldBeDeterministicAcrossCalls()
+    {
+        var img = new SequentialMatrix<Rgb8>(4, 4);
+        img.SetAll(new Rgb8(100, 100, 100));
+        DisjointSet<byte> dsu = DisjointSet.CreateSingletons(img);
+
+        // Merge into 4 distinct multi-pixel regions with non-trivial union order
+        dsu.Union(new Coord(0, 0), new Coord(1, 0), 0);
+        dsu.Union(new Coord(0, 0), new Coord(0, 1), 0);
+        dsu.Union(new Coord(0, 0), new Coord(1, 1), 0);
+
+        dsu.Union(new Coord(2, 0), new Coord(3, 0), 0);
+        dsu.Union(new Coord(2, 0), new Coord(2, 1), 0);
+        dsu.Union(new Coord(2, 0), new Coord(3, 1), 0);
+
+        dsu.Union(new Coord(1, 3), new Coord(0, 3), 0);
+        dsu.Union(new Coord(1, 3), new Coord(1, 2), 0);
+        dsu.Union(new Coord(1, 3), new Coord(0, 2), 0);
+
+        dsu.Union(new Coord(3, 3), new Coord(2, 3), 0);
+        dsu.Union(new Coord(3, 3), new Coord(3, 2), 0);
+        dsu.Union(new Coord(3, 3), new Coord(2, 2), 0);
+
+        Matrix<Rgb8> baseline = SegmentationVisualizer.ColorRegions(img, dsu, seed: 11);
+        for (int i = 0; i < 5; i++)
+        {
+            Matrix<Rgb8> repeated = SegmentationVisualizer.ColorRegions(img, dsu, seed: 11);
+            MatrixAssert.Equal(baseline, repeated);
+        }
+
+        var longImg = new SequentialMatrix<LongPixel>(img.Size);
+        Matrix<LongPixel> firstIds = SegmentationVisualizer.ColorRegions(longImg, dsu, SegmentationVisualizer.IntegerColorAssigner());
+        Matrix<LongPixel> secondIds = SegmentationVisualizer.ColorRegions(longImg, dsu, SegmentationVisualizer.IntegerColorAssigner());
+        MatrixAssert.Equal(firstIds, secondIds);
+
+        Assert.Equal(0L, firstIds[0, 0].Value);
+        Assert.Equal(1L, firstIds[2, 0].Value);
+        Assert.Equal(2L, firstIds[0, 2].Value);
+        Assert.Equal(3L, firstIds[2, 2].Value);
+    }
+
+    [Fact]
+    public void ColorRegions_RegionGraphAndDisjointSetOverloads_NullAssignerAndEmptyMatrices_ShouldBehaveCorrectly()
+    {
+        var img = new SequentialMatrix<Rgb8>(2, 2);
+        DisjointSet<byte> dsu = DisjointSet.CreateSingletons(img);
+        RegionGraph graph = RegionGraph.FromDisjointSet(dsu);
+
+        ArgumentNullException graphNullAssigner = Assert.Throws<ArgumentNullException>(() =>
+            SegmentationVisualizer.ColorRegions(img, graph, (SegmentationVisualizer.ColorAssigner<Rgb8>)null!));
+        Assert.Equal("colorAssigner", graphNullAssigner.ParamName);
+
+        ArgumentNullException dsuNullAssigner = Assert.Throws<ArgumentNullException>(() =>
+            SegmentationVisualizer.ColorRegions(img, dsu, (SegmentationVisualizer.ColorAssigner<Rgb8>)null!));
+        Assert.Equal("colorAssigner", dsuNullAssigner.ParamName);
+
+        Assert.Throws<ArgumentNullException>(() =>
+            SegmentationVisualizer.ColorRegions(null!, graph, SegmentationVisualizer.AverageColorAssigner()));
+        Assert.Throws<ArgumentNullException>(() =>
+            SegmentationVisualizer.ColorRegions(img, (RegionGraph)null!, SegmentationVisualizer.AverageColorAssigner()));
+        Assert.Throws<ArgumentNullException>(() =>
+            SegmentationVisualizer.ColorRegions(null!, dsu, SegmentationVisualizer.AverageColorAssigner()));
+        Assert.Throws<ArgumentNullException>(() =>
+            SegmentationVisualizer.ColorRegions(img, (IDisjointSet)null!, SegmentationVisualizer.AverageColorAssigner()));
+
+        var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
+        DisjointSet<byte> emptyDsu = DisjointSet.CreateSingletons(emptyImg);
+        RegionGraph emptyGraph = RegionGraph.FromDisjointSet(emptyDsu);
+        bool assignerCalled = false;
+        SegmentationVisualizer.ColorAssigner<Rgb8> trackingAssigner = (_, _) =>
+        {
+            assignerCalled = true;
+            return new Rgb8(1, 2, 3);
+        };
+
+        Matrix<Rgb8> emptyFromGraphSeed = SegmentationVisualizer.ColorRegions(emptyImg, emptyGraph, seed: 11);
+        Matrix<Rgb8> emptyFromGraphAssigner = SegmentationVisualizer.ColorRegions(emptyImg, emptyGraph, trackingAssigner);
+        Matrix<Rgb8> emptyFromDsuSeed = SegmentationVisualizer.ColorRegions(emptyImg, emptyDsu, seed: 11);
+        Matrix<Rgb8> emptyFromDsuAssigner = SegmentationVisualizer.ColorRegions(emptyImg, emptyDsu, trackingAssigner);
+
+        Assert.Empty(emptyFromGraphSeed);
+        Assert.Equal(new Size(0, 0), emptyFromGraphSeed.Size);
+        Assert.Empty(emptyFromGraphAssigner);
+        Assert.Equal(new Size(0, 0), emptyFromGraphAssigner.Size);
+        Assert.Empty(emptyFromDsuSeed);
+        Assert.Equal(new Size(0, 0), emptyFromDsuSeed.Size);
+        Assert.Empty(emptyFromDsuAssigner);
+        Assert.Equal(new Size(0, 0), emptyFromDsuAssigner.Size);
+        Assert.False(assignerCalled);
     }
 }

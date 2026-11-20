@@ -286,7 +286,8 @@ public static class MatrixMath
     {
         if (self is null)
             throw new ArgumentNullException(nameof(self));
-        Guard.ThrowIfSizeMismatch(self, right);
+        ArgumentNullException.ThrowIfNull(right);
+        Guard.ThrowIfSizeMismatch(self.Size, right.Size, nameof(right));
 
         Vector<double> sum = Vector<double>.Zero;
         int width = self.Width;
@@ -316,7 +317,8 @@ public static class MatrixMath
     {
         if (self is null)
             throw new ArgumentNullException(nameof(self));
-        Guard.ThrowIfSizeMismatch(self, right);
+        ArgumentNullException.ThrowIfNull(right);
+        Guard.ThrowIfSizeMismatch(self.Size, right.Size, nameof(right));
 
         Vector<double> sum = Vector<double>.Zero;
         int width = self.Width;

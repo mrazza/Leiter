@@ -327,10 +327,13 @@ public class RegionalContrastSaliencyTests
 
         var mismatchedSeg = EgbiSegmentation.Segment(new SequentialMatrix<Rgb8>(1, 1));
         Assert.Throws<ArgumentException>(() => RegionalContrastSaliency.ComputeSaliency(emptyImg, mismatchedSeg));
+
+        var mismatchedGraph = RegionGraph.FromDisjointSet(mismatchedSeg);
+        Assert.Throws<ArgumentException>(() => RegionalContrastSaliency.ComputeSaliency(emptyImg, mismatchedGraph));
     }
 
     /// <summary>
-    /// Verifies argument validation for null arguments and dimension mismatches.
+    /// Verifies argument validation for null arguments, dimension mismatches, and invalid options.
     /// </summary>
     [Fact]
     public void ComputeSaliency_Validation_ShouldThrowOnNullOrDimensionMismatch()
@@ -351,12 +354,64 @@ public class RegionalContrastSaliencyTests
         Assert.Throws<ArgumentException>(() => RegionalContrastSaliency.ComputeSaliency(img, mismatchedSeg));
         Assert.Throws<ArgumentException>(() => RegionalContrastSaliency.ComputeSaliency(img, mismatchedGraph));
 
+        // Invalid options on both overloads
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            RegionalContrastSaliency.ComputeSaliency(img, graph, new RegionalContrastSaliencyOptions(CenterPriorWeight: -0.1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            RegionalContrastSaliency.ComputeSaliency(img, graph, new RegionalContrastSaliencyOptions(CenterPriorWeight: double.NaN)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            RegionalContrastSaliency.ComputeSaliency(img, graph, new RegionalContrastSaliencyOptions(CenterPriorWeight: double.PositiveInfinity)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            RegionalContrastSaliency.ComputeSaliency(img, seg, new RegionalContrastSaliencyOptions(CenterPriorWeight: -0.1)));
+
         // Non-Matrix IReadOnlyMatrix (MatrixView) input and RegionGraph overload parity
         var view = new MatrixView<Rgb8>(img, 0, 0, 10, 10, EdgeHandling.Extend);
         Matrix<DoublePixel> viewSaliency = RegionalContrastSaliency.ComputeSaliency(view, seg);
         Matrix<DoublePixel> graphSaliency = RegionalContrastSaliency.ComputeSaliency(view, graph);
         Assert.Equal(img.Size, viewSaliency.Size);
         MatrixAssert.Equal(viewSaliency, graphSaliency);
+    }
+
+    [Fact]
+    public void ComputeSaliency_MultiRegionNonTrivialImage_DisjointSetAndRegionGraphOverloadsShouldMatchAcrossOptions()
+    {
+        var img = new SequentialMatrix<Rgb8>(24, 24);
+        for (int by = 0; by < 4; by++)
+        {
+            for (int bx = 0; bx < 4; bx++)
+            {
+                var color = new Rgb8((byte)((bx * 70) + 15), (byte)((by * 70) + 15), (byte)(((bx + by) % 4) * 70));
+                for (int y = by * 6; y < (by + 1) * 6; y++)
+                {
+                    for (int x = bx * 6; x < (bx + 1) * 6; x++)
+                    {
+                        img[x, y] = color;
+                    }
+                }
+            }
+        }
+
+        IDisjointSet segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 5));
+        RegionGraph graph = RegionGraph.FromDisjointSet(segmentation);
+        Assert.True(graph.RegionCount >= 4);
+
+        RegionalContrastSaliencyOptions[] optionVariants =
+        [
+            new(EnableSmoothing: false, ComputeBorderRegions: false, CenterPriorWeight: 0.0),
+            new(EnableSmoothing: true, ComputeBorderRegions: false, CenterPriorWeight: 2.5),
+            new(EnableSmoothing: false, ComputeBorderRegions: true, CenterPriorWeight: 4.0),
+        ];
+
+        foreach (RegionalContrastSaliencyOptions options in optionVariants)
+        {
+            Matrix<DoublePixel> fromDisjointSet = RegionalContrastSaliency.ComputeSaliency(img, segmentation, options);
+            Matrix<DoublePixel> fromGraph = RegionalContrastSaliency.ComputeSaliency(img, graph, options);
+
+            MatrixAssert.Equal(fromDisjointSet, fromGraph);
+            Assert.Equal(0.0, fromGraph.Min(p => p.Value), 4);
+            Assert.Equal(1.0, fromGraph.Max(p => p.Value), 4);
+            Assert.Contains(fromGraph, p => p.Value > 0.0 && p.Value < 1.0);
+        }
     }
 
     [Fact]

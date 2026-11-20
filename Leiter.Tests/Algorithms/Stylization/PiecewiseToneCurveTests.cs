@@ -13,7 +13,6 @@ using static Leiter.Tests.TestUtils.TestConstants;
 /// </summary>
 public class PiecewiseToneCurveTests
 {
-
     /// <summary>
     /// Verifies that Evaluate correctly maps the domain endpoints to MinTone and MaxTone.
     /// </summary>

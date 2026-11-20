@@ -91,10 +91,15 @@ public class DisjointSetTests
         var indices = pCombined.GetIndices().ToList();
         Assert.Equal(4, indices.Count);
 
-        // Already in same set should throw
-        Assert.Throws<ArgumentException>(() => dsu.Union(0, 3, 400));
-        Assert.Throws<ArgumentException>(() => dsu.Union(new Coord(0, 0), new Coord(3, 0), 400));
-        Assert.Throws<ArgumentException>(() => dsu.Union(dsu.GetPartition(0), dsu.GetPartition(3), 400));
+        // Already in same set should throw with the expected second parameter name
+        var sameIndexEx = Assert.Throws<ArgumentException>(() => dsu.Union(0, 3, 400));
+        Assert.Equal("secondIndex", sameIndexEx.ParamName);
+
+        var sameCoordEx = Assert.Throws<ArgumentException>(() => dsu.Union(new Coord(0, 0), new Coord(3, 0), 400));
+        Assert.Equal("secondCoord", sameCoordEx.ParamName);
+
+        var samePartitionEx = Assert.Throws<ArgumentException>(() => dsu.Union(dsu.GetPartition(0), dsu.GetPartition(3), 400));
+        Assert.Equal("secondPartition", samePartitionEx.ParamName);
     }
 
     [Fact]
@@ -269,9 +274,16 @@ public class DisjointSetTests
         Assert.Equal((byte)7, merged.Value);
         Assert.False(dsu.TryUnion(0, 1, 9, out var alreadySame));
         Assert.Equal(merged.RootIndex, alreadySame.RootIndex);
+        Assert.Equal((byte)7, alreadySame.Value);
 
         var sameSetEx = Assert.Throws<ArgumentException>(() => dsu.Union(0, 1, 9));
         Assert.Equal("secondIndex", sameSetEx.ParamName);
+
+        var sameCoordEx = Assert.Throws<ArgumentException>(() => dsu.Union(new Coord(0, 0), new Coord(1, 0), 9));
+        Assert.Equal("secondCoord", sameCoordEx.ParamName);
+
+        var samePartitionEx = Assert.Throws<ArgumentException>(() => dsu.Union(dsu.GetPartition(0), dsu.GetPartition(1), 9));
+        Assert.Equal("secondPartition", samePartitionEx.ParamName);
 
         RegionGraph graph = dsu.ToRegionGraph(GridConnectivity.FourConnected);
         Assert.Equal(2, graph.RegionCount);

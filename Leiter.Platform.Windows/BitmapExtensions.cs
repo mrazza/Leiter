@@ -71,33 +71,40 @@ public static class BitmapExtensions
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(height, 0, nameof(matrix));
 
         var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
-
-        var rect = new Rectangle(0, 0, width, height);
-        BitmapData bitmapData = bitmap.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
         try
         {
-            byte* scan0 = (byte*)bitmapData.Scan0;
-            int stride = bitmapData.Stride;
-
-            for (int y = 0; y < height; y++)
+            var rect = new Rectangle(0, 0, width, height);
+            BitmapData bitmapData = bitmap.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+            try
             {
-                byte* row = scan0 + ((nint)y * stride);
-                for (int x = 0; x < width; x++)
+                byte* scan0 = (byte*)bitmapData.Scan0;
+                int stride = bitmapData.Stride;
+
+                for (int y = 0; y < height; y++)
                 {
-                    Rgb8 pixel = matrix[x, y];
-                    int offset = x * 3;
-                    row[offset] = pixel.B;
-                    row[offset + 1] = pixel.G;
-                    row[offset + 2] = pixel.R;
+                    byte* row = scan0 + ((nint)y * stride);
+                    for (int x = 0; x < width; x++)
+                    {
+                        Rgb8 pixel = matrix[x, y];
+                        int offset = x * 3;
+                        row[offset] = pixel.B;
+                        row[offset + 1] = pixel.G;
+                        row[offset + 2] = pixel.R;
+                    }
                 }
             }
-        }
-        finally
-        {
-            bitmap.UnlockBits(bitmapData);
-        }
+            finally
+            {
+                bitmap.UnlockBits(bitmapData);
+            }
 
-        return bitmap;
+            return bitmap;
+        }
+        catch
+        {
+            bitmap.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -118,25 +125,35 @@ public static class BitmapExtensions
     /// <summary>
     /// Saves an <see cref="IReadOnlyMatrix{Rgb8}"/> to disk at <paramref name="path"/>, determining the <see cref="ImageFormat"/> from the file extension.
     /// </summary>
+    /// <remarks>
+    /// Supported file extensions (case-insensitive) are <c>.png</c>, <c>.jpg</c>, <c>.jpeg</c>, <c>.bmp</c>, <c>.gif</c>, <c>.tif</c>, and <c>.tiff</c>.
+    /// </remarks>
     /// <param name="matrix">The image matrix to save.</param>
     /// <param name="path">The destination file path.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="path"/> is empty or contains only white-space characters.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="matrix"/> has a width or height less than or equal to zero.</exception>
-    public static void Save(this IReadOnlyMatrix<Rgb8> matrix, string path)
+    /// <exception cref="NotSupportedException">Thrown when <paramref name="path"/> does not have a supported image file extension.</exception>
+    public static void SaveBitmap(this IReadOnlyMatrix<Rgb8> matrix, string path)
     {
         ArgumentNullException.ThrowIfNull(matrix);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(matrix.Width, 0, nameof(matrix));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(matrix.Height, 0, nameof(matrix));
 
-        using Bitmap bitmap = matrix.ToBitmap();
-        ImageFormat format = Path.GetExtension(path).ToLowerInvariant() switch
+        string extension = Path.GetExtension(path);
+        ImageFormat format = extension.ToLowerInvariant() switch
         {
+            ".png" => ImageFormat.Png,
             ".jpg" or ".jpeg" => ImageFormat.Jpeg,
             ".bmp" => ImageFormat.Bmp,
             ".gif" => ImageFormat.Gif,
             ".tif" or ".tiff" => ImageFormat.Tiff,
-            _ => ImageFormat.Png
+            _ => throw new NotSupportedException(
+                $"Unsupported image file extension '{extension}'. Supported extensions: .png, .jpg, .jpeg, .bmp, .gif, .tif, .tiff.")
         };
+
+        using Bitmap bitmap = matrix.ToBitmap();
         bitmap.Save(path, format);
     }
 }

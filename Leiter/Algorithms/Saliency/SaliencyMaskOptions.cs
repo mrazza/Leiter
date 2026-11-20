@@ -24,7 +24,7 @@ public sealed record SaliencyMaskOptions(
     /// <summary>
     /// The default minimum connected-component area fraction (<c>0.01</c>).
     /// </summary>
-    public const double DefaultMinAreaFraction = 0.01;
+    public const double DefaultMinAreaFraction = BinaryMorphology.DefaultMinAreaFraction;
 
     /// <summary>
     /// Gets the default <see cref="SaliencyMaskOptions"/> instance.

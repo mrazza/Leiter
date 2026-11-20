@@ -12,11 +12,15 @@ public readonly record struct Coord(int X, int Y)
     /// </summary>
     /// <param name="other">The other coordinate to calculate the squared distance to.</param>
     /// <returns>The squared Euclidean distance between the two coordinates.</returns>
-    public readonly long DistanceSquared(Coord other)
+    /// <exception cref="OverflowException">Thrown when the squared distance exceeds <see cref="long.MaxValue"/>.</exception>
+    public long DistanceSquared(Coord other)
     {
-        long dx = (long)X - other.X;
-        long dy = (long)Y - other.Y;
-        return (dx * dx) + (dy * dy);
+        checked
+        {
+            long dx = (long)X - other.X;
+            long dy = (long)Y - other.Y;
+            return (dx * dx) + (dy * dy);
+        }
     }
 
     /// <summary>
@@ -24,8 +28,12 @@ public readonly record struct Coord(int X, int Y)
     /// </summary>
     /// <param name="other">The other coordinate to calculate the distance to.</param>
     /// <returns>The Euclidean distance between the two coordinates.</returns>
-    public readonly double Distance(Coord other) =>
-        Math.Sqrt(DistanceSquared(other));
+    public double Distance(Coord other)
+    {
+        double dx = (double)X - other.X;
+        double dy = (double)Y - other.Y;
+        return Math.Sqrt((dx * dx) + (dy * dy));
+    }
 
     /// <summary>
     /// Adds two coordinates together component-wise.

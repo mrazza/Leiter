@@ -29,6 +29,21 @@ public class MatrixViewTests
     }
 
     [Fact]
+    public void Constructor_InvalidArguments_ShouldThrow()
+    {
+        var baseMat = new SequentialMatrix<DoublePixel>(2, 2);
+
+        ArgumentNullException nullEx = Assert.Throws<ArgumentNullException>(() => new MatrixView<DoublePixel>(null!, 0, 0, 2, 2, EdgeHandling.Extend));
+        Assert.Equal("matrix", nullEx.ParamName);
+
+        ArgumentOutOfRangeException enumEx = Assert.Throws<ArgumentOutOfRangeException>(() => new MatrixView<DoublePixel>(baseMat, 0, 0, 2, 2, (EdgeHandling)999));
+        Assert.Equal("edgeHandling", enumEx.ParamName);
+
+        var emptyView = new MatrixView<DoublePixel>(new SequentialMatrix<DoublePixel>(0, 0), 0, 0, 1, 1, EdgeHandling.Extend);
+        Assert.Throws<ArgumentOutOfRangeException>(() => emptyView[0, 0]);
+    }
+
+    [Fact]
     public void Indexers_AndGetElement_WithBoundaryHandling()
     {
         // Setup 3x3 base matrix:

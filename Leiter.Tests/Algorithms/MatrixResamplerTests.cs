@@ -389,4 +389,64 @@ public class MatrixResamplerTests
         Assert.Throws<ArgumentOutOfRangeException>(() => source.ResizeBox(new Size(2, -1)));
         Assert.Throws<ArgumentException>(() => empty.ResizeBox(new Size(2, 2)));
     }
+
+    /// <summary>
+    /// Verifies <see cref="MatrixResampler.SampleBilinearRgb64WhereUnchecked{TState}"/> for normal blending,
+    /// fallback when no corners match, and subnormal tiny positive weights without division overflow or NaN.
+    /// </summary>
+    [Fact]
+    public void SampleBilinearRgb64WhereUnchecked_ShouldBlendFallbackAndHandleTinySubnormalWeights()
+    {
+        var image = new SequentialMatrix<Rgb8>(2, 2);
+        image[0, 0] = new Rgb8(51, 102, 153);
+        image[1, 0] = new Rgb8(153, 204, 255);
+        image[0, 1] = new Rgb8(10, 20, 30);
+        image[1, 1] = new Rgb8(0, 153, 255);
+
+        // Normal blend of top row corners (0,0) and (1,0) at x=0.25, y=0.5
+        Rgb64 blended = MatrixResampler.SampleBilinearRgb64WhereUnchecked(
+            image, 0.25, 0.5, 0, static (_, cy, _) => cy == 0);
+        Assert.Equal(((0.75 * 51) + (0.25 * 153)) / 255.0, blended.R, 12);
+        Assert.Equal(((0.75 * 102) + (0.25 * 204)) / 255.0, blended.G, 12);
+        Assert.Equal(((0.75 * 153) + (0.25 * 255)) / 255.0, blended.B, 12);
+
+        // Fallback when no corner matches
+        var fallback = new Rgb64(0.125, 0.375, 0.625);
+        Rgb64 noneMatched = MatrixResampler.SampleBilinearRgb64WhereUnchecked(
+            image, 0.5, 0.5, 0, static (_, _, _) => false, fallback);
+        Assert.Equal(fallback, noneMatched);
+
+        // Subnormal weight (1e-156 * 1e-156 = 1e-312) where only (1, 1) matches
+        Rgb64 tinyWeight = MatrixResampler.SampleBilinearRgb64WhereUnchecked(
+            image, 1e-156, 1e-156, 0, static (cx, cy, _) => cx == 1 && cy == 1, fallback);
+        Assert.True(double.IsFinite(tinyWeight.R) && !double.IsNaN(tinyWeight.R));
+        Assert.True(double.IsFinite(tinyWeight.G) && !double.IsNaN(tinyWeight.G));
+        Assert.True(double.IsFinite(tinyWeight.B) && !double.IsNaN(tinyWeight.B));
+        Assert.Equal(0.0, tinyWeight.R, 12);
+        Assert.Equal(153.0 / 255.0, tinyWeight.G, 12);
+        Assert.Equal(1.0, tinyWeight.B, 12);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="MatrixResampler.SampleNearest{T}(IReadOnlyMatrix{T}, double, double, EdgeHandling)"/>
+    /// clamps large finite coordinates outside <see cref="int"/> range without integer overflow.
+    /// </summary>
+    [Fact]
+    public void SampleNearest_LargeOutOfIntRangeCoordinates_ShouldClampWithoutOverflow()
+    {
+        var source = new SequentialMatrix<DoublePixel>(3, 2);
+        source[0, 0] = 1.0;
+        source[1, 0] = 2.0;
+        source[2, 0] = 3.0;
+        source[0, 1] = 4.0;
+        source[1, 1] = 5.0;
+        source[2, 1] = 6.0;
+
+        Assert.Equal(source[2, 0].Value, source.SampleNearest(3e9, 0.0).Value, 9);
+        Assert.Equal(source[0, 0].Value, source.SampleNearest(-3e9, 0.0).Value, 9);
+        Assert.Equal(source[2, 1].Value, source.SampleNearest(1e20, 1e20).Value, 9);
+        Assert.Equal(source[0, 0].Value, source.SampleNearest(-1e20, -1e20).Value, 9);
+        Assert.Equal(source[2, 0].Value, source.SampleNearest(3e9, -3e9).Value, 9);
+        Assert.Equal(source[0, 1].Value, source.SampleNearest(-3e9, 1e20).Value, 9);
+    }
 }

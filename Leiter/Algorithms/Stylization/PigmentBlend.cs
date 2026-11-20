@@ -1,6 +1,8 @@
 namespace Leiter.Algorithms.Stylization;
 
 using System;
+using System.Linq;
+using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -158,8 +160,21 @@ public static class PigmentBlend
         Guard.ThrowIfSizeMismatch(image, densityField);
         Guard.ThrowIfNotFinite(intensity);
 
-        if (image.Count == 0 || intensity == 0.0)
+        if (image.Count == 0)
         {
+            return image.Clone();
+        }
+
+        if (intensity == 0.0)
+        {
+            for (int y = 0; y < densityField.Height; y++)
+            {
+                for (int x = 0; x < densityField.Width; x++)
+                {
+                    Guard.ThrowIfNotFinite(densityField[x, y].Value, nameof(densityField));
+                }
+            }
+
             return image.Clone();
         }
 
@@ -196,15 +211,23 @@ public static class PigmentBlend
         int height = image.Height;
         var result = new SequentialMatrix<Rgb8>(width, height);
 
-        Parallel.For(0, height, y =>
+        try
         {
-            for (int x = 0; x < width; x++)
+            Parallel.For(0, height, y =>
             {
-                double densityOffset = densityOffsetSelector(field[x, y].Value);
-                Guard.ThrowIfNotFinite(densityOffset);
-                result[x, y] = AdjustDensityUnchecked(image[x, y], densityOffset);
-            }
-        });
+                for (int x = 0; x < width; x++)
+                {
+                    double densityOffset = densityOffsetSelector(field[x, y].Value);
+                    Guard.ThrowIfNotFinite(densityOffset);
+                    result[x, y] = AdjustDensityUnchecked(image[x, y], densityOffset);
+                }
+            });
+        }
+        catch (AggregateException ex) when (ex.InnerExceptions.FirstOrDefault(static e => e is ArgumentOutOfRangeException) is ArgumentOutOfRangeException inner)
+        {
+            ExceptionDispatchInfo.Capture(inner).Throw();
+            throw;
+        }
 
         return result;
     }

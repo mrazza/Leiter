@@ -1,9 +1,11 @@
 namespace Leiter.Tests.Algorithms.Segmentation.Internal;
 
+using System;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Segmentation.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -92,5 +94,61 @@ public class GrabCutSessionTests
         invalidTrimap[0, 0] = (TrimapLabel)99;
 
         Assert.Throws<ArgumentOutOfRangeException>(() => session.Run(invalidTrimap, iterations: 1));
+    }
+
+    [Fact]
+    public void Run_DefaultOptionsAndSingleArgOverload_ShouldMatchDefaultIterations()
+    {
+        var image = new SequentialMatrix<Rgb8>(16, 16);
+        for (int y = 0; y < image.Height; y++)
+        {
+            for (int x = 0; x < image.Width; x++)
+            {
+                bool inside = x >= 4 && x < 12 && y >= 4 && y < 12;
+                image[x, y] = inside ? new Rgb8(220, 30, 30) : new Rgb8(20, 150, 220);
+            }
+        }
+
+        var trimap = new TrimapMatrix(image.Size);
+        for (int y = 0; y < image.Height; y++)
+        {
+            for (int x = 0; x < image.Width; x++)
+            {
+                if (x < 2 || y < 2 || x >= 14 || y >= 14)
+                    trimap[x, y] = TrimapLabel.Background;
+                else if (x >= 6 && x < 10 && y >= 6 && y < 10)
+                    trimap[x, y] = TrimapLabel.Foreground;
+                else
+                    trimap[x, y] = TrimapLabel.ProbableForeground;
+            }
+        }
+
+        var defaultSession = new GrabCutSession(image, options: null);
+        var explicitSession = new GrabCutSession(image, GrabCutOptions.Default);
+
+        MaskMatrix defaultMask = defaultSession.Run(trimap);
+        MaskMatrix explicitMask = explicitSession.Run(trimap, GrabCutOptions.Default.Iterations);
+
+        MatrixAssert.Equal(explicitMask, defaultMask);
+        Assert.True(defaultMask[8, 8]);
+        Assert.False(defaultMask[0, 0]);
+    }
+
+    [Fact]
+    public void Constructor_InvalidArguments_ShouldThrowExpectedExceptions()
+    {
+        var image = new SequentialMatrix<Rgb8>(4, 4);
+        image.SetAll(new Rgb8(50, 50, 50));
+
+        ArgumentNullException nullImageEx = Assert.Throws<ArgumentNullException>(() => new GrabCutSession(null!));
+        Assert.Equal("image", nullImageEx.ParamName);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(Iterations: 0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(Iterations: -1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(MixtureComponentCount: 0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(MixtureComponentCount: -1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(SmoothnessWeight: -0.1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(SmoothnessWeight: double.NaN)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GrabCutSession(image, new GrabCutOptions(SmoothnessWeight: double.PositiveInfinity)));
     }
 }

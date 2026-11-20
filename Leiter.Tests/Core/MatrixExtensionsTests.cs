@@ -278,6 +278,28 @@ public class MatrixExtensionsTests
         Matrix<DoublePixel> mappedCustom = custom.MapIndexed(static (x, y, p) => new DoublePixel(p.Value + x + y));
         Assert.Equal(7.0, mappedCustom[1, 1].Value);
 
+        var view = new MatrixView<DoublePixel>(source, 1, 0, 2, 2, EdgeHandling.Extend);
+        Matrix<DoublePixel> mappedView = view.MapIndexed(static (x, y, p) => new DoublePixel((p.Value * 10.0) + (y * 2) + x));
+        Assert.Equal(new Size(2, 2), mappedView.Size);
+        Assert.Equal(20.0, mappedView[0, 0].Value);
+        Assert.Equal(21.0, mappedView[1, 0].Value);
+        Assert.Equal(42.0, mappedView[0, 1].Value);
+        Assert.Equal(43.0, mappedView[1, 1].Value);
+
+        foreach (Size emptySize in new[] { new Size(0, 0), new Size(0, 5), new Size(5, 0) })
+        {
+            var empty = new SequentialMatrix<DoublePixel>(emptySize);
+            bool invoked = false;
+            Matrix<DoublePixel> mappedEmpty = empty.MapIndexed((_, _, p) =>
+            {
+                invoked = true;
+                return p;
+            });
+            Assert.Equal(emptySize, mappedEmpty.Size);
+            Assert.Empty(mappedEmpty);
+            Assert.False(invoked);
+        }
+
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).MapIndexed(static (x, y, p) => p));
         Assert.Throws<ArgumentNullException>(() => source.MapIndexed<DoublePixel, DoublePixel>(null!));
     }

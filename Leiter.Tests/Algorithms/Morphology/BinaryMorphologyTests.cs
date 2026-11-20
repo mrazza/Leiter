@@ -202,4 +202,49 @@ public class BinaryMorphologyTests
         Assert.Throws<ArgumentOutOfRangeException>(() => BinaryMorphology.FilterConnectedComponents(mask, minAreaFraction: double.NaN));
         Assert.Throws<ArgumentOutOfRangeException>(() => BinaryMorphology.FilterConnectedComponents(mask, connectivity: (GridConnectivity)99));
     }
+
+    [Fact]
+    public void Erode_BorderIsBackgroundWithDisk_ShouldErodeBordersWithDiskShape()
+    {
+        var mask = new MaskMatrix(5, 5);
+        mask.SetAll(true);
+        // Clearing (0, 0) removes a corner outside the radius-2 disk centered at (2, 2),
+        // distinguishing Disk from Square while verifying borderIsBackground: true behavior.
+        mask[0, 0] = false;
+
+        MaskMatrix erodedDisk = BinaryMorphology.Erode(
+            mask,
+            radius: 2,
+            shape: StructuringElementShape.Disk,
+            borderIsBackground: true);
+
+        for (int y = 0; y < 5; y++)
+        {
+            for (int x = 0; x < 5; x++)
+            {
+                bool expected = x == 2 && y == 2;
+                Assert.Equal(expected, erodedDisk[x, y]);
+            }
+        }
+    }
+
+    [Fact]
+    public void Dilate_And_Erode_SinglePixelMask_ShouldHandleAllModes()
+    {
+        var singleTrue = new MaskMatrix(1, 1);
+        singleTrue[0, 0] = true;
+
+        var singleFalse = new MaskMatrix(1, 1);
+
+        Assert.True(BinaryMorphology.Dilate(singleTrue, 1, StructuringElementShape.Disk)[0, 0]);
+        Assert.True(BinaryMorphology.Dilate(singleTrue, 2, StructuringElementShape.Square)[0, 0]);
+        Assert.False(BinaryMorphology.Dilate(singleFalse, 1, StructuringElementShape.Disk)[0, 0]);
+
+        Assert.True(BinaryMorphology.Erode(singleTrue, 1, StructuringElementShape.Disk, borderIsBackground: false)[0, 0]);
+        Assert.True(BinaryMorphology.Erode(singleTrue, 2, StructuringElementShape.Square, borderIsBackground: false)[0, 0]);
+        Assert.False(BinaryMorphology.Erode(singleTrue, 1, StructuringElementShape.Disk, borderIsBackground: true)[0, 0]);
+        Assert.False(BinaryMorphology.Erode(singleTrue, 1, StructuringElementShape.Square, borderIsBackground: true)[0, 0]);
+        Assert.True(BinaryMorphology.Erode(singleTrue, 0, StructuringElementShape.Disk, borderIsBackground: true)[0, 0]);
+        Assert.False(BinaryMorphology.Erode(singleFalse, 1, StructuringElementShape.Disk, borderIsBackground: false)[0, 0]);
+    }
 }

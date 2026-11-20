@@ -59,7 +59,7 @@ public static class OrientedEllipticalFilter
         double invTwoSigmaVSq = 0.5 / (sigmaV * sigmaV);
         double invASq = 1.0 / (a * a);
         double invBSq = 1.0 / (b * b);
-        int maxR = (int)Math.Ceiling(Math.Max(a, b));
+        int maxR = (int)Math.Min(Math.Ceiling(Math.Max(a, b)), Math.Max(width, height));
 
         var result = new SequentialMatrix<Rgb8>(image.Size);
 

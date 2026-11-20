@@ -10,6 +10,7 @@ using Leiter.Algorithms.Stylization;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Pixels.ColorSpaces;
 using Leiter.Tests.TestUtils;
 using Xunit;
 
@@ -80,6 +81,8 @@ public class WatercolorOptionsTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new WatercolorOptions(Egbi: new EgbiOptions(KFactor: -1.0)).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(RegionalContrastSaliency: new RegionalContrastSaliencyOptions(CenterPriorWeight: -0.1)).Validate());
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new WatercolorOptions(SaliencyCut: new SaliencyCutOptions(Mask: new SaliencyMaskOptions(FixedThreshold: 1.5))).Validate());
         Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -251,5 +254,45 @@ public class WatercolorOptionsTests
         Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForImage(largeScene, 0.0));
         Assert.Throws<ArgumentException>(() => WatercolorOptions.ForImage(largeScene, candidatePalettes: []));
         Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForImage(largeScene, candidatePalettes: [null!]));
+    }
+
+    /// <summary>
+    /// Verifies that invalid <see cref="WatercolorOptions.TargetPalette"/> illuminants or CIELAB statistics fail validation.
+    /// </summary>
+    [Fact]
+    public void Validate_InvalidTargetPalette_ShouldThrowArgumentOutOfRangeException()
+    {
+        ColorTransferProfile[] invalidPalettes =
+        [
+            new("BadIlluminant", WatercolorPalettes.BalancedWash.Statistics, (Illuminant)999),
+            new("NaNMeanL", new LabColorStatistics(double.NaN, 0.0, 0.0, 1.0, 1.0, 1.0)),
+            new("NaNMeanA", new LabColorStatistics(50.0, double.NaN, 0.0, 1.0, 1.0, 1.0)),
+            new("InfMeanB", new LabColorStatistics(50.0, 0.0, double.PositiveInfinity, 1.0, 1.0, 1.0)),
+            new("NaNStdDevL", new LabColorStatistics(50.0, 0.0, 0.0, double.NaN, 1.0, 1.0)),
+            new("NegStdDevA", new LabColorStatistics(50.0, 0.0, 0.0, 1.0, -0.1, 1.0)),
+            new("InfStdDevB", new LabColorStatistics(50.0, 0.0, 0.0, 1.0, 1.0, double.PositiveInfinity))
+        ];
+
+        foreach (ColorTransferProfile invalidPalette in invalidPalettes)
+        {
+            var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new WatercolorOptions(TargetPalette: invalidPalette).Validate());
+            Assert.Equal(nameof(WatercolorOptions.TargetPalette), ex.ParamName);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that all public default static option properties across watercolor stages are valid.
+    /// </summary>
+    [Fact]
+    public void PublicDefaultStaticProperties_ShouldAllBeValid()
+    {
+        WatercolorOptions.DefaultSaliencyEgbi.Validate();
+        Assert.Equal(new Rgb8(250, 248, 242), HandTremorOptions.DefaultPaperColor);
+        HandTremorOptions.DefaultPrimaryNoise.Validate();
+        HandTremorOptions.DefaultSecondaryNoise.Validate();
+        WetInWetOptions.DefaultEllipticalFilter.Validate();
+        PaperGranulationOptions.DefaultGrainNoise.Validate();
+        TurbulenceFlowOptions.DefaultNoise.Validate();
     }
 }

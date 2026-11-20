@@ -50,18 +50,26 @@ public static class ImageExtensions
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(matrix.Height, 0, nameof(matrix));
 
         var image = new Image<Rgb24>(matrix.Width, matrix.Height);
-        image.ProcessPixelRows(accessor =>
+        try
         {
-            for (int y = 0; y < accessor.Height; y++)
+            image.ProcessPixelRows(accessor =>
             {
-                var pixelRow = accessor.GetRowSpan(y);
-                for (int x = 0; x < pixelRow.Length; x++)
+                for (int y = 0; y < accessor.Height; y++)
                 {
-                    pixelRow[x] = matrix[x, y].ToRgb24();
+                    var pixelRow = accessor.GetRowSpan(y);
+                    for (int x = 0; x < pixelRow.Length; x++)
+                    {
+                        pixelRow[x] = matrix[x, y].ToRgb24();
+                    }
                 }
-            }
-        });
-        return image;
+            });
+            return image;
+        }
+        catch
+        {
+            image.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -87,7 +95,7 @@ public static class ImageExtensions
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="path"/> is empty or contains only white-space characters.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="matrix"/> has a width or height less than or equal to zero.</exception>
-    public static void Save(this IReadOnlyMatrix<Rgb8> matrix, string path)
+    public static void SaveImage(this IReadOnlyMatrix<Rgb8> matrix, string path)
     {
         ArgumentNullException.ThrowIfNull(matrix);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);

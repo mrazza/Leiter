@@ -59,5 +59,20 @@ public class Xyz32Tests : PixelContractTestsBase<Xyz32, float>
         var a = new Xyz32(1.0f, 2.0f, 3.0f);
         var b = new Xyz32(4.0f, 6.0f, 3.0f);
         Assert.Equal(25.0, a.DistanceSquared(b), 6);
+
+        var c = new Xyz32(4.0f, 6.0f, 15.0f);
+        Assert.Equal(169.0, a.DistanceSquared(c), 6);
+        Assert.Equal(13.0, a.Distance(c), 6);
+    }
+
+    [Fact]
+    public void Distance_ExtremeFloatValues_ShouldRemainFinite()
+    {
+        var a = new Xyz32(3e38f, 0.0f, 0.0f);
+        var b = new Xyz32(-3e38f, 0.0f, 0.0f);
+
+        double distance = a.Distance(b);
+        Assert.True(double.IsFinite(distance));
+        Assert.Equal((double)a.X - b.X, distance, 1e25);
     }
 }

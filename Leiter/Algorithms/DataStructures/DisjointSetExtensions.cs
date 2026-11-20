@@ -1,6 +1,6 @@
-using Leiter.Core;
-
 namespace Leiter.Algorithms.DataStructures;
+
+using Leiter.Core;
 
 /// <summary>
 /// Extension methods for <see cref="IDisjointSet"/> segmentations.

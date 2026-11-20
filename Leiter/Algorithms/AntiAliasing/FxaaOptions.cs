@@ -86,8 +86,7 @@ public sealed record FxaaOptions(
     /// <exception cref="ArgumentOutOfRangeException">Thrown when any parameter is non-finite or outside its valid range.</exception>
     public void Validate()
     {
-        Guard.ThrowIfNotFinitePositive(RelativeContrastThreshold);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(RelativeContrastThreshold, 1.0);
+        Guard.ThrowIfNotFiniteInHalfOpenRange(RelativeContrastThreshold, 0.0, 1.0);
         Guard.ThrowIfNotFiniteNonNegative(AbsoluteContrastThreshold);
         Guard.ThrowIfNotFiniteInRange(SubpixelBlendStrength, 0.0, 1.0);
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxSpanSearchSteps, 1);

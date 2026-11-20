@@ -531,4 +531,64 @@ public class WetInWetFilterTests
         Assert.True(result.Image[5, 1].R > result.Image[5, 1].B);
         Assert.True(result.Image[5, 10].B > result.Image[5, 10].R);
     }
+
+    /// <summary>
+    /// Verifies that darker-side pixels at distance 2 or greater are excluded from <see cref="WetInWetResult.WetAreaMask"/>
+    /// while distance 0 and 1 darker-side pixels remain included.
+    /// </summary>
+    [Fact]
+    public void ApplyDetailed_DarkerSideAtDistanceTwoOrGreater_ShouldHaveFalseWetAreaMask()
+    {
+        const int width = 12;
+        const int height = 6;
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(30, 30, 30),
+            new Rgb8(220, 220, 220),
+            splitX: 6);
+        var options = new WetInWetOptions(
+            ScatterRadius: 4,
+            SeedProbability: 1.0,
+            EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: 4.0, MinorRadius: 1.5));
+
+        WetInWetResult result = WetInWetFilter.ApplyDetailed(image, graph, options: options);
+
+        Assert.True(result.QualifyingBoundaries[0]);
+        Assert.True(result.WetAreaMask[5, 3]);  // darker side, dist == 0
+        Assert.True(result.WetAreaMask[4, 3]);  // darker side, dist == 1
+        Assert.False(result.WetAreaMask[3, 3]); // darker side, dist == 2
+        Assert.False(result.WetAreaMask[2, 3]); // darker side, dist == 3
+        Assert.False(result.WetAreaMask[0, 3]); // darker side, dist == 5
+        Assert.Equal(image[3, 3], result.Image[3, 3]);
+
+        Assert.True(result.WetAreaMask[6, 3]);  // brighter side, dist == 0
+        Assert.True(result.WetAreaMask[8, 3]);  // brighter side, dist == 2
+        Assert.True(result.WetAreaMask[10, 3]); // brighter side, dist == 4
+    }
+
+    /// <summary>
+    /// Verifies that huge elliptical filter radii do not overflow <c>maxBand</c> during boundary band construction.
+    /// </summary>
+    [Fact]
+    public void ApplyDetailed_HugeMajorRadius_ShouldNotOverflowMaxBand()
+    {
+        const int width = 10;
+        const int height = 6;
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(30, 30, 30),
+            new Rgb8(220, 220, 220),
+            splitX: 5);
+        var options = new WetInWetOptions(
+            ScatterRadius: 1,
+            EllipticalFilter: new OrientedEllipticalFilterOptions(MajorRadius: 1e12, MinorRadius: 1.0));
+
+        WetInWetResult result = WetInWetFilter.ApplyDetailed(image, graph, options: options);
+
+        Assert.Equal(image.Size, result.Image.Size);
+        Assert.True(result.WetAreaMask[width - 1, height / 2]);
+        Assert.False(result.WetAreaMask[0, height / 2]);
+    }
 }

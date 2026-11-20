@@ -64,7 +64,7 @@ public class IReadOnlyMatrixTests
         public DoublePixel this[Coord coord] => this[coord.X, coord.Y];
         public DoublePixel this[int index] => new(index);
         public DoublePixel GetElement(int index) => new(index);
-        public DoublePixel GetElement(int width, int height) => new(width + height);
+        public DoublePixel GetElement(int x, int y) => new(x + y);
         public IEnumerator<DoublePixel> GetEnumerator() { yield break; }
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }

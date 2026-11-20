@@ -246,4 +246,30 @@ public class ColorTransferTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(emptyRgb, profile, colorSpace: (RgbColorSpace)999));
         Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.TransferToClosestProfile(emptyRgb, [profile], colorSpace: (RgbColorSpace)999));
     }
+
+    [Fact]
+    public void Transfer_And_TransferToClosestProfile_WithUndefinedProfileIlluminant_ShouldThrowWithExpectedParamName()
+    {
+        var emptyRgb = new SequentialMatrix<Rgb8>(0, 0);
+        var sampleRgb = new SequentialMatrix<Rgb8>(2, 2);
+        sampleRgb.SetAll(new Rgb8(100, 120, 140));
+
+        var badIlluminantProfile = new ColorTransferProfile("Invalid", new LabColorStatistics(50, 0, 0, 10, 5, 5), (Illuminant)999);
+        var validProfile = WatercolorPalettes.BalancedWash;
+
+        var transferEx = Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(emptyRgb, badIlluminantProfile));
+        Assert.Equal("profile", transferEx.ParamName);
+
+        var closestEmptyEx = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ColorTransfer.TransferToClosestProfile(emptyRgb, [badIlluminantProfile]));
+        Assert.Equal("profiles", closestEmptyEx.ParamName);
+
+        var closestZeroStrengthEx = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ColorTransfer.TransferToClosestProfile(sampleRgb, [validProfile, badIlluminantProfile], strength: 0.0));
+        Assert.Equal("profiles", closestZeroStrengthEx.ParamName);
+
+        var closestNonEmptyEx = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ColorTransfer.TransferToClosestProfile(sampleRgb, [validProfile, badIlluminantProfile]));
+        Assert.Equal("profiles", closestNonEmptyEx.ParamName);
+    }
 }

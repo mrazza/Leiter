@@ -84,8 +84,9 @@ public static class PaperGranulation
         bool isProcedural = paperHeightMap is null;
         IReadOnlyMatrix<DoublePixel> heightMap = paperHeightMap ?? GeneratePaperHeightMap(image.Size, grainOpts);
 
+        double warpScale = Math.Clamp(PaperGranulationOptions.DefaultGrainNoise.Frequency / grainOpts.Frequency, 0.25, 16.0);
         double effectiveWarpAmplitude = isProcedural
-            ? opts.WarpAmplitude * Math.Clamp(PaperGranulationOptions.DefaultGrainNoise.Frequency / grainOpts.Frequency, 0.25, 16.0)
+            ? (opts.WarpAmplitude > double.MaxValue / warpScale ? double.MaxValue : opts.WarpAmplitude * warpScale)
             : opts.WarpAmplitude;
 
         Matrix<Rgb8>? warped = effectiveWarpAmplitude > 0.0

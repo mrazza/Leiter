@@ -182,9 +182,9 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
     /// <returns>The squared Euclidean distance in color between the two pixels.</returns>
     public double DistanceSquared(Xyz32 otherPixel)
     {
-        double dx = X - otherPixel.X;
-        double dy = Y - otherPixel.Y;
-        double dz = Z - otherPixel.Z;
+        double dx = (double)X - otherPixel.X;
+        double dy = (double)Y - otherPixel.Y;
+        double dz = (double)Z - otherPixel.Z;
         return (dx * dx) + (dy * dy) + (dz * dz);
     }
 

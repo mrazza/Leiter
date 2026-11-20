@@ -17,7 +17,7 @@ public class DictionaryHistogramTests
         Assert.Equal(0, hist.BucketCount);
         Assert.Equal(0, hist.Total());
         Assert.Equal(0, hist["apple"]);
-        // Empty histogram density returns 0.0 cleanly (Defect 0.6 fix)
+        // Empty histogram density returns 0.0 cleanly
         Assert.Equal(0.0, hist.GetDensity("apple"));
 
         hist.Increment("apple");

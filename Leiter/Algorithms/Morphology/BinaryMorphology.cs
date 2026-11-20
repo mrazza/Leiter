@@ -1,7 +1,6 @@
 namespace Leiter.Algorithms.Morphology;
 
 using Leiter.Algorithms.DataStructures;
-using Leiter.Algorithms.Saliency;
 using Leiter.Core;
 
 /// <summary>
@@ -10,6 +9,11 @@ using Leiter.Core;
 /// </summary>
 public static class BinaryMorphology
 {
+    /// <summary>
+    /// The default minimum connected-component area fraction (<c>0.01</c>).
+    /// </summary>
+    public const double DefaultMinAreaFraction = 0.01;
+
     /// <summary>
     /// Dilates foreground (<see langword="true"/>) pixels in a boolean mask using a structuring element of the specified radius and shape.
     /// </summary>
@@ -158,7 +162,7 @@ public static class BinaryMorphology
     public static MaskMatrix FilterConnectedComponents(
         IReadOnlyMatrix<bool> mask,
         ComponentRetentionPolicy retentionPolicy = ComponentRetentionPolicy.MinimumAreaFraction,
-        double minAreaFraction = SaliencyMaskOptions.DefaultMinAreaFraction,
+        double minAreaFraction = DefaultMinAreaFraction,
         GridConnectivity connectivity = GridConnectivity.EightConnected)
     {
         ArgumentNullException.ThrowIfNull(mask);

@@ -12,7 +12,6 @@ using static Leiter.Tests.TestUtils.TestConstants;
 /// </summary>
 public class PiecewiseToneCurveOptionsTests
 {
-
     /// <summary>
     /// Verifies that default options match the paper specifications and pass validation.
     /// </summary>
