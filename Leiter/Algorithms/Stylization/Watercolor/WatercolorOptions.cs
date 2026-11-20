@@ -32,6 +32,14 @@ using Leiter.Pixels;
 /// <param name="Fxaa">Optional configuration for final full-screen FXAA anti-aliasing in Stage 6.</param>
 /// <param name="EnableFxaa">Whether to apply final FXAA boundary smoothing (default <see langword="true"/>).</param>
 /// <param name="EgbiBlurSigma">The standard deviation for the Stage 2 Gaussian pre-blur applied before EGBI segmentation (default 0.8; set to 0.0 to disable pre-blur).</param>
+/// <param name="EnableColorTransfer">Whether to apply Stage 1 Reinhard color transfer (default <see langword="true"/>).</param>
+/// <param name="EnableLodAbstraction">Whether to apply Stage 3b saliency-guided level-of-detail abstraction (default <see langword="true"/>).</param>
+/// <param name="EnableWetInWet">Whether to apply Stage 4 wet-in-wet edge bleeding (default <see langword="true"/>).</param>
+/// <param name="EnableHandTremor">Whether to apply Stage 5 hand-tremor boundary perturbation (default <see langword="true"/>).</param>
+/// <param name="EnableEdgeDarkening">Whether to apply Stage 6a pigment edge darkening (default <see langword="true"/>).</param>
+/// <param name="EnableTurbulenceFlow">Whether to apply Stage 6a low-frequency turbulence flow wash variation (default <see langword="true"/>).</param>
+/// <param name="EnableToneCurve">Whether to apply Stage 6b piecewise tone-curve adjustment (default <see langword="true"/>).</param>
+/// <param name="EnablePaperGranulation">Whether to apply Stage 6c paper fiber granulation and micro-warp (default <see langword="true"/>).</param>
 public sealed record WatercolorOptions(
     ColorTransferProfile? TargetPalette = null,
     double ColorTransferStrength = 1.0,
@@ -49,7 +57,15 @@ public sealed record WatercolorOptions(
     PaperGranulationOptions? PaperGranulation = null,
     FxaaOptions? Fxaa = null,
     bool EnableFxaa = true,
-    double EgbiBlurSigma = OptionTuning.DefaultBaseBlurSigma) : ISizeTunableOptions<WatercolorOptions>
+    double EgbiBlurSigma = OptionTuning.DefaultBaseBlurSigma,
+    bool EnableColorTransfer = true,
+    bool EnableLodAbstraction = true,
+    bool EnableWetInWet = true,
+    bool EnableHandTremor = true,
+    bool EnableEdgeDarkening = true,
+    bool EnableTurbulenceFlow = true,
+    bool EnableToneCurve = true,
+    bool EnablePaperGranulation = true) : ISizeTunableOptions<WatercolorOptions>
 {
     private const double MinSrcChromaDenominator = 1.0;
     private const double HighChromaGainThreshold = 2.0;

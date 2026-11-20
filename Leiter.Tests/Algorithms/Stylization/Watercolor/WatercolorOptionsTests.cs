@@ -93,7 +93,15 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
                 SubpixelBlendStrength: 0.5,
                 MaxSpanSearchSteps: 12),
             EnableFxaa: false,
-            EgbiBlurSigma: 1.2);
+            EgbiBlurSigma: 1.2,
+            EnableColorTransfer: false,
+            EnableLodAbstraction: false,
+            EnableWetInWet: false,
+            EnableHandTremor: false,
+            EnableEdgeDarkening: false,
+            EnableTurbulenceFlow: false,
+            EnableToneCurve: false,
+            EnablePaperGranulation: false);
 
     /// <inheritdoc/>
     protected override WatercolorOptions CreateInvalidOptions() =>
@@ -123,6 +131,14 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
         Assert.Null(options.Fxaa);
         Assert.True(options.EnableFxaa);
         Assert.Equal(0.8, options.EgbiBlurSigma, 6);
+        Assert.True(options.EnableColorTransfer);
+        Assert.True(options.EnableLodAbstraction);
+        Assert.True(options.EnableWetInWet);
+        Assert.True(options.EnableHandTremor);
+        Assert.True(options.EnableEdgeDarkening);
+        Assert.True(options.EnableTurbulenceFlow);
+        Assert.True(options.EnableToneCurve);
+        Assert.True(options.EnablePaperGranulation);
         Assert.Equal(WatercolorOptions.Default, options);
 
         options.Validate();
@@ -238,6 +254,14 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
         Assert.Equal(PaperGranulationOptions.ForSize(size), opts.PaperGranulation);
         Assert.Equal(FxaaOptions.ForSize(size), opts.Fxaa);
         Assert.True(opts.EnableFxaa);
+        Assert.True(opts.EnableColorTransfer);
+        Assert.True(opts.EnableLodAbstraction);
+        Assert.True(opts.EnableWetInWet);
+        Assert.True(opts.EnableHandTremor);
+        Assert.True(opts.EnableEdgeDarkening);
+        Assert.True(opts.EnableTurbulenceFlow);
+        Assert.True(opts.EnableToneCurve);
+        Assert.True(opts.EnablePaperGranulation);
         Assert.Equal(0.8 * Math.Sqrt((double)(width * height) / (800.0 * 800.0)), opts.EgbiBlurSigma, 6);
     }
 
@@ -421,5 +445,96 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
         WetInWetOptions.DefaultEllipticalFilter.Validate();
         PaperGranulationOptions.DefaultGrainNoise.Validate();
         TurbulenceFlowOptions.DefaultNoise.Validate();
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="WatercolorOptions.ForSize(Size, WatercolorOptions, double)"/>,
+    /// <see cref="WatercolorOptions.ForImage(IReadOnlyMatrix{Rgb8}, WatercolorOptions, double, IReadOnlyList{ColorTransferProfile}?)"/>,
+    /// and <see cref="WatercolorOptions.ForAnalysis(ImageAnalysis, WatercolorOptions, double, IReadOnlyList{ColorTransferProfile}?)"/>
+    /// preserve all nine <c>Enable*</c> stage toggles from the baseline across both non-empty and empty inputs.
+    /// </summary>
+    [Fact]
+    public void TuningFactories_ShouldPreserveAllEnableFlagsFromBaseline()
+    {
+        var allDisabled = new WatercolorOptions(
+            EnableFxaa: false,
+            EnableColorTransfer: false,
+            EnableLodAbstraction: false,
+            EnableWetInWet: false,
+            EnableHandTremor: false,
+            EnableEdgeDarkening: false,
+            EnableTurbulenceFlow: false,
+            EnableToneCurve: false,
+            EnablePaperGranulation: false);
+
+        var mixed = new WatercolorOptions(
+            EnableFxaa: false,
+            EnableColorTransfer: true,
+            EnableLodAbstraction: false,
+            EnableWetInWet: true,
+            EnableHandTremor: false,
+            EnableEdgeDarkening: true,
+            EnableTurbulenceFlow: false,
+            EnableToneCurve: true,
+            EnablePaperGranulation: false);
+
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(64, 48, static (x, y) =>
+            new Rgb8((byte)(40 + (x * 3)), (byte)(80 + (y * 2)), 160));
+        var emptyImage = new SequentialMatrix<Rgb8>(0, 0);
+        ImageAnalysis analysis = ImageAnalysis.Analyze(image);
+        ImageAnalysis emptyAnalysis = ImageAnalysis.Analyze(emptyImage);
+
+        foreach (WatercolorOptions baseline in new[] { allDisabled, mixed })
+        {
+            WatercolorOptions[] tunedVariants =
+            [
+                WatercolorOptions.ForSize(image.Size, baseline),
+                WatercolorOptions.ForSize(emptyImage.Size, baseline),
+                WatercolorOptions.ForImage(image, baseline),
+                WatercolorOptions.ForImage(emptyImage, baseline),
+                WatercolorOptions.ForAnalysis(analysis, baseline),
+                WatercolorOptions.ForAnalysis(emptyAnalysis, baseline)
+            ];
+
+            foreach (WatercolorOptions tuned in tunedVariants)
+            {
+                tuned.Validate();
+                Assert.Equal(baseline.EnableFxaa, tuned.EnableFxaa);
+                Assert.Equal(baseline.EnableColorTransfer, tuned.EnableColorTransfer);
+                Assert.Equal(baseline.EnableLodAbstraction, tuned.EnableLodAbstraction);
+                Assert.Equal(baseline.EnableWetInWet, tuned.EnableWetInWet);
+                Assert.Equal(baseline.EnableHandTremor, tuned.EnableHandTremor);
+                Assert.Equal(baseline.EnableEdgeDarkening, tuned.EnableEdgeDarkening);
+                Assert.Equal(baseline.EnableTurbulenceFlow, tuned.EnableTurbulenceFlow);
+                Assert.Equal(baseline.EnableToneCurve, tuned.EnableToneCurve);
+                Assert.Equal(baseline.EnablePaperGranulation, tuned.EnablePaperGranulation);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="WatercolorOptions.Validate"/> still validates nested stage options even when their corresponding <c>Enable*</c> flag is <see langword="false"/>.
+    /// </summary>
+    [Fact]
+    public void Validate_DisabledStagesWithInvalidNestedOptions_ShouldStillThrow()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(EnableColorTransfer: false, ColorTransferStrength: 1.5).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(EnableLodAbstraction: false, LodAbstraction: new LodAbstractionOptions(SalientKernelSize: 0)).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(EnableWetInWet: false, WetInWet: new WetInWetOptions(ScatterRadius: 0)).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(EnableHandTremor: false, HandTremor: new HandTremorOptions(Amplitude: -1.0)).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(EnableEdgeDarkening: false, EdgeDarkening: new EdgeDarkeningOptions(Intensity: -1.0)).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(EnableTurbulenceFlow: false, TurbulenceFlow: new TurbulenceFlowOptions(Intensity: -1.0)).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(EnableToneCurve: false, ToneCurve: new PiecewiseToneCurveOptions(MinTone: 0.9, MaxTone: 0.1)).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(EnablePaperGranulation: false, PaperGranulation: new PaperGranulationOptions(WarpAmplitude: -1.0)).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WatercolorOptions(EnableFxaa: false, Fxaa: new FxaaOptions(MaxSpanSearchSteps: 0)).Validate());
     }
 }

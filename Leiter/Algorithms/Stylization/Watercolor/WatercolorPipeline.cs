@@ -1,6 +1,8 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Leiter.Algorithms;
 using Leiter.Algorithms.AntiAliasing;
@@ -18,6 +20,8 @@ using Leiter.Pixels.ColorSpaces;
 /// </summary>
 public static class WatercolorPipeline
 {
+    private const int TotalStepCount = 18;
+
     /// <summary>
     /// Executes the full watercolorization pipeline on <paramref name="image"/> and returns the final painting alongside intermediate stage outputs.
     /// </summary>
@@ -45,130 +49,235 @@ public static class WatercolorPipeline
             return CreateEmptyResult(image.Size, opts);
         }
 
-        long stageStart = onStageCompleted is not null ? Stopwatch.GetTimestamp() : 0;
+        long initialTimestamp = Stopwatch.GetTimestamp();
+        long stageStart = onStageCompleted is not null ? initialTimestamp : 0;
+        long stepStart = initialTimestamp;
+        var stepTimings = new Dictionary<WatercolorStep, WatercolorStepTiming>(TotalStepCount);
 
         // Stage 1: Reinhard Color Transfer
-        (Matrix<Rgb8> colorTransferred, ColorTransferProfile selectedPalette) = opts.TargetPalette is not null
-            ? (ColorTransfer.Transfer(image, opts.TargetPalette, strength: opts.ColorTransferStrength), opts.TargetPalette)
-            : ColorTransfer.TransferToClosestProfile(
+        bool colorTransferBypassed = !opts.EnableColorTransfer || opts.ColorTransferStrength == 0.0;
+        Matrix<Rgb8> colorTransferred;
+        ColorTransferProfile selectedPalette;
+        if (!opts.EnableColorTransfer)
+        {
+            colorTransferred = image.Clone();
+            selectedPalette = opts.TargetPalette ?? ColorTransfer.SelectClosestProfile(
+                ColorTransfer.ComputeStatistics(image, RgbColorSpace.SRgb, Illuminant.E),
+                WatercolorPalettes.Defaults,
+                WatercolorPalettes.DefaultFeatureWeights);
+        }
+        else if (opts.TargetPalette is not null)
+        {
+            colorTransferred = ColorTransfer.Transfer(image, opts.TargetPalette, strength: opts.ColorTransferStrength);
+            selectedPalette = opts.TargetPalette;
+        }
+        else
+        {
+            (colorTransferred, selectedPalette) = ColorTransfer.TransferToClosestProfile(
                 image,
                 WatercolorPalettes.Defaults,
                 featureWeights: WatercolorPalettes.DefaultFeatureWeights,
                 strength: opts.ColorTransferStrength);
-        CompleteStage(onStageCompleted, WatercolorStage.ColorTransfer, ref stageStart);
+        }
+
+        RecordStep(stepTimings, WatercolorStep.ColorTransfer, ref stepStart, bypassed: colorTransferBypassed);
+        CompleteStage(onStageCompleted, WatercolorStage.ColorTransfer, ref stageStart, ref stepStart);
 
         // Stage 2: Regional Contrast Saliency & Saliency Distance Field
-        Matrix<Rgb8> blurred = Blur.GaussianBlur(colorTransferred, opts.EgbiBlurSigma);
-        Matrix<Lab32> labBlurred = blurred.ToLab32(RgbColorSpace.SRgb);
+        Matrix<Rgb8> egbiPreBlurred = Blur.GaussianBlur(colorTransferred, opts.EgbiBlurSigma);
+        Matrix<Lab32> labBlurred = egbiPreBlurred.ToLab32(RgbColorSpace.SRgb);
+        RecordStep(stepTimings, WatercolorStep.EgbiPreBlur, ref stepStart, bypassed: opts.EgbiBlurSigma == 0.0);
+
         EgbiOptions resolvedEgbi = opts.Egbi ?? WatercolorOptions.DefaultSaliencyEgbi;
         IDisjointSet egbiSeg = EgbiSegmentation.Segment(labBlurred, resolvedEgbi);
-        Matrix<DoublePixel> saliencyMap = RegionalContrastSaliency.ComputeSaliency(colorTransferred, egbiSeg, opts.RegionalContrastSaliency);
-        (MaskMatrix salientMask, Matrix<DoublePixel> distanceField) = SaliencyDistanceField.Compute(
-            colorTransferred,
-            saliencyMap,
-            opts.SaliencyCut,
-            opts.SaliencyDistanceField);
-        CompleteStage(onStageCompleted, WatercolorStage.Saliency, ref stageStart);
+        RegionGraph egbiGraph = egbiSeg.ToRegionGraph(resolvedEgbi.Connectivity);
+        RecordStep(stepTimings, WatercolorStep.EgbiSegmentation, ref stepStart, bypassed: false);
 
-        // Stage 3: Mean-Shift Segmentation & Saliency-Guided LOD Abstraction
+        Matrix<DoublePixel> saliencyMap = RegionalContrastSaliency.ComputeSaliency(colorTransferred, egbiGraph, opts.RegionalContrastSaliency);
+        RecordStep(stepTimings, WatercolorStep.RegionalContrastSaliency, ref stepStart, bypassed: false);
+
+        MaskMatrix salientMask = SaliencyCut.Extract(colorTransferred, saliencyMap, opts.SaliencyCut);
+        RecordStep(stepTimings, WatercolorStep.SaliencyCut, ref stepStart, bypassed: false);
+
+        SaliencyDistanceFieldOptions resolvedDistanceOpts = opts.SaliencyDistanceField ?? SaliencyDistanceFieldOptions.Default;
+        Matrix<DoublePixel> rawDistanceField = SaliencyDistanceField.ComputeNormalizedField(salientMask);
+        double resolvedSigma = resolvedDistanceOpts.SmoothingSigma ?? (resolvedDistanceOpts.DefaultSigmaScale * Math.Min(salientMask.Width, salientMask.Height));
+        Matrix<DoublePixel> distanceField = resolvedSigma <= 0.0
+            ? rawDistanceField
+            : SaliencyDistanceField.Compute(salientMask, resolvedDistanceOpts);
+        RecordStep(stepTimings, WatercolorStep.SaliencyDistanceField, ref stepStart, bypassed: false);
+        CompleteStage(onStageCompleted, WatercolorStage.Saliency, ref stageStart, ref stepStart);
+
+        // Stage 3a: Mean-Shift Segmentation
         MeanShiftOptions resolvedMeanShift = opts.MeanShift ?? MeanShiftOptions.Default;
         (Matrix<Rgb8> meanShiftFiltered, IDisjointSet meanShiftSeg) = MeanShiftSegmentation.FilterAndSegment(colorTransferred, resolvedMeanShift);
+        RecordStep(stepTimings, WatercolorStep.MeanShiftFiltering, ref stepStart, bypassed: false);
+
         RegionGraph regionGraph = meanShiftSeg.ToRegionGraph(resolvedMeanShift.Connectivity);
         double[] salientFractions = regionGraph.ComputeRegionFractions(salientMask);
-        CompleteStage(onStageCompleted, WatercolorStage.Segmentation, ref stageStart);
+        RecordStep(stepTimings, WatercolorStep.MeanShiftClustering, ref stepStart, bypassed: false);
+        CompleteStage(onStageCompleted, WatercolorStage.Segmentation, ref stageStart, ref stepStart);
 
+        // Stage 3b: Saliency-Guided LOD Abstraction
         LodAbstractionOptions resolvedLod = opts.LodAbstraction ?? LodAbstractionOptions.Default;
-        Matrix<Rgb8> lodAbstracted = LodAbstraction.ApplyCore(
-            meanShiftFiltered,
-            regionGraph,
-            distanceField,
-            salientMask: null,
-            salientFractions,
-            resolvedLod);
-        CompleteStage(onStageCompleted, WatercolorStage.LodAbstraction, ref stageStart);
+        Matrix<Rgb8> lodAbstracted = opts.EnableLodAbstraction
+            ? LodAbstraction.ApplyCore(
+                meanShiftFiltered,
+                regionGraph,
+                distanceField,
+                salientMask: null,
+                salientFractions,
+                resolvedLod)
+            : meanShiftFiltered;
+        RecordStep(stepTimings, WatercolorStep.LodAbstraction, ref stepStart, bypassed: !opts.EnableLodAbstraction);
+        CompleteStage(onStageCompleted, WatercolorStage.LodAbstraction, ref stageStart, ref stepStart);
 
         // Stage 4: Wet-in-Wet Bleeding
         WetInWetOptions resolvedWetInWet = opts.WetInWet ?? WetInWetOptions.Default;
-        WetInWetResult wetInWet = WetInWet.ApplyDetailedCore(
-            lodAbstracted,
-            regionGraph,
-            salientMask: null,
-            salientFractions,
-            resolvedWetInWet);
-        CompleteStage(onStageCompleted, WatercolorStage.WetInWet, ref stageStart);
+        bool wetInWetBypassed = !opts.EnableWetInWet || resolvedWetInWet.Mode == WetInWetMode.Disabled;
+        WetInWetResult wetInWet = opts.EnableWetInWet
+            ? WetInWet.ApplyDetailedCore(
+                lodAbstracted,
+                regionGraph,
+                salientMask: null,
+                salientFractions,
+                resolvedWetInWet)
+            : new WetInWetResult(lodAbstracted, new MaskMatrix(image.Size), new bool[regionGraph.Boundaries.Count]);
+        RecordStep(stepTimings, WatercolorStep.WetInWet, ref stepStart, bypassed: wetInWetBypassed);
+        CompleteStage(onStageCompleted, WatercolorStage.WetInWet, ref stageStart, ref stepStart);
 
         // Stage 5: Hand Tremor Distortion
         HandTremorOptions resolvedHandTremor = opts.HandTremor ?? HandTremorOptions.Default;
-        Matrix<Rgb8> handTremor = HandTremor.ApplyCore(
-            wetInWet.Image,
-            regionGraph,
-            distanceField,
-            wetInWet,
-            resolvedHandTremor);
-        CompleteStage(onStageCompleted, WatercolorStage.HandTremor, ref stageStart);
+        bool handTremorBypassed = !opts.EnableHandTremor || resolvedHandTremor.Amplitude == 0.0;
+        Matrix<Rgb8> handTremor = opts.EnableHandTremor
+            ? HandTremor.ApplyCore(
+                wetInWet.Image,
+                regionGraph,
+                distanceField,
+                wetInWet,
+                resolvedHandTremor)
+            : wetInWet.Image;
+        RecordStep(stepTimings, WatercolorStep.HandTremor, ref stepStart, bypassed: handTremorBypassed);
+        CompleteStage(onStageCompleted, WatercolorStage.HandTremor, ref stageStart, ref stepStart);
 
         // Stage 6: Secondary Watercolor Effects & FXAA
         EdgeDarkeningOptions edgeOpts = opts.EdgeDarkening ?? EdgeDarkeningOptions.Default;
+        bool edgeBypassed = !opts.EnableEdgeDarkening || edgeOpts.Intensity == 0.0;
+        Matrix<DoublePixel>? edgeDensityField = edgeBypassed
+            ? null
+            : EdgeDarkening.ComputeDensityField(handTremor, edgeOpts);
+        RecordStep(stepTimings, WatercolorStep.EdgeDarkening, ref stepStart, bypassed: edgeBypassed);
+
         TurbulenceFlowOptions turbOpts = opts.TurbulenceFlow ?? TurbulenceFlowOptions.Default;
+        bool turbulenceBypassed = !opts.EnableTurbulenceFlow || turbOpts.Intensity == 0.0;
+        Matrix<DoublePixel>? turbulenceDensityField = turbulenceBypassed
+            ? null
+            : TurbulenceFlow.ComputeDensityField(handTremor.Size, turbOpts);
+        RecordStep(stepTimings, WatercolorStep.TurbulenceFlow, ref stepStart, bypassed: turbulenceBypassed);
 
-        Matrix<DoublePixel>? densityField = edgeOpts.Intensity > 0.0
-            ? EdgeDarkening.ComputeDensityField(handTremor, edgeOpts)
-            : null;
-
-        if (turbOpts.Intensity > 0.0)
+        bool pigmentBypassed = edgeDensityField is null && turbulenceDensityField is null;
+        Matrix<Rgb8> densityAdjusted;
+        if (pigmentBypassed)
         {
-            Matrix<DoublePixel> turbulenceDensity = TurbulenceFlow.ComputeDensityField(handTremor.Size, turbOpts);
-            if (densityField is null)
+            densityAdjusted = handTremor;
+        }
+        else
+        {
+            IReadOnlyMatrix<DoublePixel> combinedDensity;
+            if (edgeDensityField is not null && turbulenceDensityField is not null)
             {
-                densityField = turbulenceDensity;
+                var summed = new SequentialMatrix<DoublePixel>(handTremor.Size);
+                for (int i = 0; i < summed.Count; i++)
+                {
+                    summed[i] = new DoublePixel(edgeDensityField[i].Value + turbulenceDensityField[i].Value);
+                }
+
+                combinedDensity = summed;
             }
             else
             {
-                for (int i = 0; i < densityField.Count; i++)
-                {
-                    densityField[i] = new DoublePixel(densityField[i].Value + turbulenceDensity[i].Value);
-                }
+                combinedDensity = edgeDensityField ?? turbulenceDensityField!;
             }
+
+            densityAdjusted = PigmentBlend.ApplyDensityField(handTremor, combinedDensity);
         }
 
-        Matrix<Rgb8> densityAdjusted = densityField is not null
-            ? PigmentBlend.ApplyDensityField(handTremor, densityField)
-            : handTremor;
+        RecordStep(stepTimings, WatercolorStep.PigmentCombine, ref stepStart, bypassed: pigmentBypassed);
 
-        Matrix<Rgb8> toneAdjusted = PiecewiseToneCurve.Apply(densityAdjusted, opts.ToneCurve);
-        Matrix<Rgb8> granulated = PaperGranulation.Apply(toneAdjusted, paperHeightMap, opts.PaperGranulation);
+        Matrix<Rgb8> toneAdjusted = opts.EnableToneCurve
+            ? PiecewiseToneCurve.Apply(densityAdjusted, opts.ToneCurve)
+            : densityAdjusted;
+        RecordStep(stepTimings, WatercolorStep.ToneCurve, ref stepStart, bypassed: !opts.EnableToneCurve);
+
+        PaperGranulationOptions granOpts = opts.PaperGranulation ?? PaperGranulationOptions.Default;
+        bool granActive = opts.EnablePaperGranulation && (granOpts.DensityStrength > 0.0 || granOpts.WarpAmplitude > 0.0);
+        bool generateProceduralHeightMap = granActive && paperHeightMap is null;
+        IReadOnlyMatrix<DoublePixel>? resolvedPaperHeightMap = granActive
+            ? paperHeightMap ?? PaperGranulation.GeneratePaperHeightMap(image.Size, granOpts.GrainNoise)
+            : null;
+        RecordStep(stepTimings, WatercolorStep.PaperHeightMap, ref stepStart, bypassed: !generateProceduralHeightMap);
+
+        Matrix<Rgb8> granulated = granActive
+            ? PaperGranulation.Apply(toneAdjusted, paperHeightMap, granOpts)
+            : toneAdjusted;
+        RecordStep(stepTimings, WatercolorStep.PaperGranulation, ref stepStart, bypassed: !granActive);
+
         Matrix<Rgb8> output = opts.EnableFxaa
             ? Fxaa.Apply(granulated, opts.Fxaa)
             : granulated;
-        CompleteStage(onStageCompleted, WatercolorStage.Finishing, ref stageStart);
+        RecordStep(stepTimings, WatercolorStep.Fxaa, ref stepStart, bypassed: !opts.EnableFxaa);
+        CompleteStage(onStageCompleted, WatercolorStage.Finishing, ref stageStart, ref stepStart);
 
         return new WatercolorResult(
             output,
             colorTransferred,
             selectedPalette,
+            egbiPreBlurred,
+            egbiGraph,
             saliencyMap,
             salientMask,
+            rawDistanceField,
             distanceField,
             meanShiftFiltered,
             regionGraph,
             lodAbstracted,
             wetInWet,
             handTremor,
+            edgeDensityField,
+            turbulenceDensityField,
             densityAdjusted,
             toneAdjusted,
-            granulated);
+            resolvedPaperHeightMap,
+            granulated,
+            stepTimings);
+    }
+
+    private static void RecordStep(
+        Dictionary<WatercolorStep, WatercolorStepTiming> stepTimings,
+        WatercolorStep step,
+        ref long stepStart,
+        bool bypassed)
+    {
+        stepTimings[step] = new WatercolorStepTiming(
+            Stopwatch.GetElapsedTime(stepStart),
+            FromCache: false,
+            Bypassed: bypassed);
+        stepStart = Stopwatch.GetTimestamp();
     }
 
     private static void CompleteStage(
         Action<WatercolorStageProgress>? callback,
         WatercolorStage stage,
-        ref long stageStart)
+        ref long stageStart,
+        ref long stepStart)
     {
         if (callback is null)
             return;
 
         callback(new WatercolorStageProgress(stage, Stopwatch.GetElapsedTime(stageStart)));
-        stageStart = Stopwatch.GetTimestamp();
+        long now = Stopwatch.GetTimestamp();
+        stageStart = now;
+        stepStart = now;
     }
 
     /// <summary>
@@ -194,24 +303,35 @@ public static class WatercolorPipeline
         var emptyRgb = new SequentialMatrix<Rgb8>(size);
         var emptyDouble = new SequentialMatrix<DoublePixel>(size);
         var emptyMask = new MaskMatrix(size);
-        GridConnectivity connectivity = options.MeanShift?.Connectivity ?? GridConnectivity.EightConnected;
-        var emptyGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(size), connectivity);
+        GridConnectivity egbiConnectivity = (options.Egbi ?? WatercolorOptions.DefaultSaliencyEgbi).Connectivity;
+        var emptyEgbiGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(size), egbiConnectivity);
+        GridConnectivity meanShiftConnectivity = options.MeanShift?.Connectivity ?? GridConnectivity.EightConnected;
+        RegionGraph emptyGraph = meanShiftConnectivity == egbiConnectivity
+            ? emptyEgbiGraph
+            : RegionGraph.FromLabels(new SequentialMatrix<int>(size), meanShiftConnectivity);
         var emptyWetInWet = new WetInWetResult(emptyRgb, emptyMask, []);
 
         return new WatercolorResult(
             emptyRgb,
             emptyRgb,
             options.TargetPalette ?? WatercolorPalettes.Defaults[0],
+            emptyRgb,
+            emptyEgbiGraph,
             emptyDouble,
             emptyMask,
+            emptyDouble,
             emptyDouble,
             emptyRgb,
             emptyGraph,
             emptyRgb,
             emptyWetInWet,
             emptyRgb,
+            edgeDensityField: null,
+            turbulenceDensityField: null,
             emptyRgb,
             emptyRgb,
-            emptyRgb);
+            paperHeightMap: null,
+            emptyRgb,
+            ReadOnlyDictionary<WatercolorStep, WatercolorStepTiming>.Empty);
     }
 }
