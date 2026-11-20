@@ -1,7 +1,9 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms;
+using Leiter.Algorithms.Stylization;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -193,5 +195,99 @@ public class EdgeDarkeningTests
 
         Assert.Equal(custom.Size, result.Size);
         Assert.Equal(new Rgb8(150, 150, 150), result[4, 4]);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="EdgeDarkening.ComputeDensityField"/> validates null images and invalid options.
+    /// </summary>
+    [Fact]
+    public void ComputeDensityField_InvalidInputs_ShouldThrowExpectedExceptions()
+    {
+        var image = new SequentialMatrix<Rgb8>(4, 4);
+
+        Assert.Throws<ArgumentNullException>(() => EdgeDarkening.ComputeDensityField(null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            EdgeDarkening.ComputeDensityField(image, new EdgeDarkeningOptions(Intensity: -0.1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            EdgeDarkening.ComputeDensityField(image, new EdgeDarkeningOptions(BlurSigma: -1.0)));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="EdgeDarkening.ComputeDensityField"/> handles empty images and zero intensity cleanly.
+    /// </summary>
+    /// <param name="width">The image width.</param>
+    /// <param name="height">The image height.</param>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 5)]
+    [InlineData(5, 0)]
+    public void ComputeDensityField_EmptyImage_ShouldReturnEmptyMatrix(int width, int height)
+    {
+        var empty = new SequentialMatrix<Rgb8>(width, height);
+        Matrix<DoublePixel> field = EdgeDarkening.ComputeDensityField(empty);
+
+        Assert.Empty(field);
+        Assert.Equal(width, field.Width);
+        Assert.Equal(height, field.Height);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="EdgeDarkening.ComputeDensityField"/> returns an all-zero field when intensity is zero.
+    /// </summary>
+    [Fact]
+    public void ComputeDensityField_ZeroIntensity_ShouldReturnZeroField()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(12, 12, new Rgb8(220, 220, 220), new Rgb8(30, 30, 30), splitX: 6);
+        Matrix<DoublePixel> field = EdgeDarkening.ComputeDensityField(image, new EdgeDarkeningOptions(Intensity: 0.0));
+
+        Assert.Equal(image.Size, field.Size);
+        MatrixAssert.AllInRange(field, 0.0, 0.0);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="EdgeDarkening.ComputeDensityField"/> produces positive edge densities and matches
+    /// <see cref="EdgeDarkening.Apply"/> bit-for-bit when blended via <see cref="PigmentBlend.ApplyDensityField(IReadOnlyMatrix{Rgb8}, IReadOnlyMatrix{DoublePixel}, double, CancellationToken)"/>.
+    /// </summary>
+    [Fact]
+    public void ComputeDensityField_ShouldProduceEdgeResponseAndMatchApplyBitForBit()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(24, 16, new Rgb8(210, 190, 170), new Rgb8(50, 70, 90), splitX: 12);
+
+        // Default options (null)
+        Matrix<DoublePixel> defaultField = EdgeDarkening.ComputeDensityField(image);
+        Assert.Equal(image.Size, defaultField.Size);
+        Assert.Equal(0.0, defaultField[0, 8].Value);
+        Assert.True(defaultField[11, 8].Value > 0.0);
+        MatrixAssert.Equal(
+            EdgeDarkening.Apply(image),
+            PigmentBlend.ApplyDensityField(image, defaultField));
+
+        // Custom options (Scharr + BlurSigma)
+        var customOptions = new EdgeDarkeningOptions(Intensity: 1.2, BlurSigma: 1.5, GradientOperator: GradientOperator.Scharr);
+        Matrix<DoublePixel> customField = EdgeDarkening.ComputeDensityField(image, customOptions);
+        MatrixAssert.Equal(
+            EdgeDarkening.Apply(image, customOptions),
+            PigmentBlend.ApplyDensityField(image, customField));
+    }
+
+    /// <summary>
+    /// Verifies that a pre-canceled <see cref="CancellationToken"/> throws <see cref="OperationCanceledException"/>
+    /// for both <see cref="EdgeDarkening.Apply"/> and <see cref="EdgeDarkening.ComputeDensityField"/>,
+    /// and that an active uncanceled token matches default execution bit-for-bit.
+    /// </summary>
+    [Fact]
+    public void Apply_And_ComputeDensityField_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(16, 16, new Rgb8(200, 200, 200), new Rgb8(60, 60, 60), splitX: 8);
+        var canceledToken = new CancellationToken(canceled: true);
+
+        Assert.Throws<OperationCanceledException>(() => EdgeDarkening.Apply(image, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() => EdgeDarkening.Apply(image, new EdgeDarkeningOptions(Intensity: 0.0), canceledToken));
+        Assert.Throws<OperationCanceledException>(() => EdgeDarkening.ComputeDensityField(image, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() => EdgeDarkening.ComputeDensityField(image, new EdgeDarkeningOptions(Intensity: 0.0), canceledToken));
+
+        using var cts = new CancellationTokenSource();
+        MatrixAssert.Equal(EdgeDarkening.ComputeDensityField(image), EdgeDarkening.ComputeDensityField(image, cancellationToken: cts.Token));
+        MatrixAssert.Equal(EdgeDarkening.Apply(image), EdgeDarkening.Apply(image, cancellationToken: cts.Token));
     }
 }

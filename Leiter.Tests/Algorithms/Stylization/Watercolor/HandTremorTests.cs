@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization.Watercolor;
@@ -19,8 +20,8 @@ public class HandTremorTests
     private static readonly PerlinNoiseOptions HighFreqSecondaryNoise = new(Seed: 202, Frequency: 0.25, Octaves: 3);
 
     /// <summary>
-    /// Verifies that null arguments passed to <see cref="HandTremor.Apply(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{DoublePixel}, WetInWetResult?, HandTremorOptions?)"/>
-    /// and <see cref="HandTremor.Apply(IReadOnlyMatrix{Rgb8}, IDisjointSet, IReadOnlyMatrix{DoublePixel}, WetInWetResult?, HandTremorOptions?)"/> throw <see cref="ArgumentNullException"/>.
+    /// Verifies that null arguments passed to <see cref="HandTremor.Apply(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{DoublePixel}, WetInWetResult?, HandTremorOptions?, CancellationToken)"/>
+    /// and <see cref="HandTremor.Apply(IReadOnlyMatrix{Rgb8}, IDisjointSet, IReadOnlyMatrix{DoublePixel}, WetInWetResult?, HandTremorOptions?, CancellationToken)"/> throw <see cref="ArgumentNullException"/>.
     /// </summary>
     [Fact]
     public void Apply_NullArguments_ShouldThrowArgumentNullException()
@@ -657,6 +658,39 @@ public class HandTremorTests
         Matrix<Rgb8> fromGraph = HandTremor.Apply(image, graph, dist, options: options);
 
         MatrixAssert.Equal(fromGraph, fromDisjointSet);
+    }
+
+    /// <summary>
+    /// Verifies that a pre-canceled <see cref="CancellationToken"/> throws <see cref="OperationCanceledException"/>
+    /// across all overloads and that an active uncanceled token matches default execution bit-for-bit.
+    /// </summary>
+    [Fact]
+    public void Apply_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        const int width = 16;
+        const int height = 16;
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(width, height, new Rgb8(220, 20, 20), new Rgb8(20, 220, 220));
+        DisjointSet<int> disjointSet = CreateVerticalSplitDisjointSet(width, height);
+        RegionGraph graph = disjointSet.ToRegionGraph();
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(0.8));
+        var options = new HandTremorOptions(
+            Amplitude: 4.0,
+            OverlapDarkening: 0.6,
+            PrimaryNoise: HighFreqPrimaryNoise,
+            SecondaryNoise: HighFreqSecondaryNoise);
+        var canceledToken = new CancellationToken(canceled: true);
+
+        Assert.Throws<OperationCanceledException>(() =>
+            HandTremor.Apply(image, graph, dist, options: options, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            HandTremor.Apply(image, disjointSet, dist, options: options, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            HandTremor.ApplyCore(image, graph, dist, wetInWet: null, options, canceledToken));
+
+        using var cts = new CancellationTokenSource();
+        Matrix<Rgb8> expected = HandTremor.Apply(image, graph, dist, options: options);
+        Matrix<Rgb8> actual = HandTremor.Apply(image, graph, dist, options: options, cancellationToken: cts.Token);
+        MatrixAssert.Equal(expected, actual);
     }
 
     private static DisjointSet<int> CreateVerticalSplitDisjointSet(int width, int height)

@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
@@ -438,7 +439,7 @@ public class LodAbstractionTests
 
     /// <summary>
     /// Verifies that <see cref="LodAbstraction.ApplyCore"/> with precomputed salient fractions produces identical output
-    /// to <see cref="LodAbstraction.Apply(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{DoublePixel}, IReadOnlyMatrix{bool}?, LodAbstractionOptions?)"/>
+    /// to <see cref="LodAbstraction.Apply(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{DoublePixel}, IReadOnlyMatrix{bool}?, LodAbstractionOptions?, CancellationToken)"/>
     /// including exact overlap threshold boundaries.
     /// </summary>
     [Fact]
@@ -465,5 +466,35 @@ public class LodAbstractionTests
         MatrixAssert.Equal(fromMask, fromFractions);
         Assert.Equal((byte)100, fromFractions[3, 3].R);
         Assert.Equal((byte)110, fromFractions[4, 3].R);
+    }
+
+    /// <summary>
+    /// Verifies that a pre-canceled <see cref="CancellationToken"/> throws <see cref="OperationCanceledException"/>
+    /// across all overloads, and that an active uncanceled token produces identical output.
+    /// </summary>
+    [Fact]
+    public void Apply_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        (SequentialMatrix<Rgb8> image, RegionGraph regionGraph) = TestMatrices.VerticalSplitWithGraph(
+            8,
+            8,
+            new Rgb8(100, 100, 100),
+            new Rgb8(110, 110, 110));
+        var segmentation = new DisjointSet<int>(new SequentialMatrix<int>(8, 8), i => i);
+        SequentialMatrix<DoublePixel> distanceField = TestMatrices.Constant(8, 8, new DoublePixel(0.6));
+        var salientMask = new MaskMatrix(8, 8);
+        var canceledToken = new CancellationToken(canceled: true);
+
+        Assert.Throws<OperationCanceledException>(() =>
+            LodAbstraction.Apply(image, regionGraph, distanceField, salientMask, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            LodAbstraction.Apply(image, segmentation, distanceField, salientMask, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            LodAbstraction.ApplyCore(image, regionGraph, distanceField, salientMask, null, LodAbstractionOptions.Default, canceledToken));
+
+        using var cts = new CancellationTokenSource();
+        Matrix<Rgb8> expected = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask);
+        Matrix<Rgb8> actual = LodAbstraction.Apply(image, regionGraph, distanceField, salientMask, cancellationToken: cts.Token);
+        MatrixAssert.Equal(expected, actual);
     }
 }

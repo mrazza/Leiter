@@ -1,6 +1,8 @@
 namespace Leiter.Algorithms.Stylization;
 
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Leiter.Algorithms.Color;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -91,14 +93,20 @@ public static class PiecewiseToneCurve
     /// </summary>
     /// <param name="image">The input RGB image.</param>
     /// <param name="options">Optional tone curve options. If <see langword="null"/>, default options are used.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the tone-mapped image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> are invalid.</exception>
-    public static Matrix<Rgb8> Apply(IReadOnlyMatrix<Rgb8> image, PiecewiseToneCurveOptions? options = null)
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
+    public static Matrix<Rgb8> Apply(
+        IReadOnlyMatrix<Rgb8> image,
+        PiecewiseToneCurveOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
 
         PiecewiseToneCurveOptions resolvedOptions = OptionsResolver.Resolve(options);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (image.Count == 0)
         {
@@ -106,7 +114,27 @@ public static class PiecewiseToneCurve
         }
 
         byte[] toneLookupTable = ChannelLut.Build(normalized => EvaluateCore(normalized, resolvedOptions));
-        return ChannelLut.Apply(image, toneLookupTable);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!cancellationToken.CanBeCanceled)
+        {
+            return ChannelLut.Apply(image, toneLookupTable);
+        }
+
+        int width = image.Width;
+        int height = image.Height;
+        var result = new SequentialMatrix<Rgb8>(width, height);
+
+        Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, y =>
+        {
+            for (int x = 0; x < width; x++)
+            {
+                Rgb8 pixel = image[x, y];
+                result[x, y] = new Rgb8(toneLookupTable[pixel.R], toneLookupTable[pixel.G], toneLookupTable[pixel.B]);
+            }
+        });
+
+        return result;
     }
 
     private static double EvaluateCubicHermite(

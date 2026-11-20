@@ -1,6 +1,7 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Stylization.Watercolor;
@@ -15,7 +16,7 @@ using Xunit;
 public class WetInWetTests
 {
     /// <summary>
-    /// Verifies that null arguments passed to <see cref="WetInWet.ApplyDetailed(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{bool}?, WetInWetOptions?)"/>
+    /// Verifies that null arguments passed to <see cref="WetInWet.ApplyDetailed(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{bool}?, WetInWetOptions?, CancellationToken)"/>
     /// and related overloads throw <see cref="ArgumentNullException"/>.
     /// </summary>
     [Fact]
@@ -40,7 +41,7 @@ public class WetInWetTests
     }
 
     /// <summary>
-    /// Verifies that null arguments passed to <see cref="WetInWet.Apply(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{bool}?, WetInWetOptions?)"/>
+    /// Verifies that null arguments passed to <see cref="WetInWet.Apply(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{bool}?, WetInWetOptions?, CancellationToken)"/>
     /// and related overloads throw <see cref="ArgumentNullException"/>.
     /// </summary>
     [Fact]
@@ -403,8 +404,8 @@ public class WetInWetTests
     }
 
     /// <summary>
-    /// Verifies that the convenience <see cref="WetInWet.Apply(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{DoublePixel}, WetInWetOptions?)"/>
-    /// method produces the same image as <see cref="WetInWet.ApplyDetailed(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{DoublePixel}, WetInWetOptions?)"/>.
+    /// Verifies that the convenience <see cref="WetInWet.Apply(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{DoublePixel}, WetInWetOptions?, CancellationToken)"/>
+    /// method produces the same image as <see cref="WetInWet.ApplyDetailed(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{DoublePixel}, WetInWetOptions?, CancellationToken)"/>.
     /// </summary>
     [Fact]
     public void Apply_ConvenienceMethod_ShouldMatchDetailedImageOutput()
@@ -545,7 +546,7 @@ public class WetInWetTests
 
     /// <summary>
     /// Verifies that <see cref="WetInWet.ApplyDetailedCore"/> with precomputed salient fractions matches
-    /// <see cref="WetInWet.ApplyDetailed(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{bool}?, WetInWetOptions?)"/>
+    /// <see cref="WetInWet.ApplyDetailed(IReadOnlyMatrix{Rgb8}, RegionGraph, IReadOnlyMatrix{bool}?, WetInWetOptions?, CancellationToken)"/>
     /// and executes deterministically across multiple gradient-bearing regions.
     /// </summary>
     [Fact]
@@ -617,6 +618,42 @@ public class WetInWetTests
         MatrixAssert.Equal(distGraph.WetAreaMask, distDisjoint.WetAreaMask);
         Assert.Equal(distGraph.QualifyingBoundaries, distDisjoint.QualifyingBoundaries);
         MatrixAssert.Equal(distGraph.Image, WetInWet.Apply(image, disjointSet, distanceField, options));
+    }
+
+    /// <summary>
+    /// Verifies that a pre-canceled <see cref="CancellationToken"/> throws <see cref="OperationCanceledException"/>
+    /// across all <see cref="WetInWet"/> overloads and that an active uncanceled token matches default execution bit-for-bit.
+    /// </summary>
+    [Fact]
+    public void Apply_And_ApplyDetailed_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        const int width = 10;
+        const int height = 10;
+        SequentialMatrix<Rgb8> image = TestMatrices.VerticalSplit(width, height, new Rgb8(30, 30, 30), new Rgb8(220, 220, 220));
+        DisjointSet<int> disjointSet = CreateVerticalSplitDisjointSet(width, height);
+        RegionGraph graph = disjointSet.ToRegionGraph();
+        SequentialMatrix<bool> salientMask = TestMatrices.CenteredBox(width, height, 0, 0, 4, height - 1, true, false);
+        SequentialMatrix<DoublePixel> distanceField = TestMatrices.Create(width, height, static (x, _) => new DoublePixel(x < 5 ? 0.0 : 0.8));
+        var options = new WetInWetOptions(Mode: WetInWetMode.ExcludeSalientBoundaries, Seed: 123);
+        var canceledToken = new CancellationToken(canceled: true);
+
+        Assert.Throws<OperationCanceledException>(() => WetInWet.ApplyDetailed(image, graph, salientMask, options, canceledToken));
+        Assert.Throws<OperationCanceledException>(() => WetInWet.ApplyDetailed(image, graph, distanceField, options, canceledToken));
+        Assert.Throws<OperationCanceledException>(() => WetInWet.ApplyDetailed(image, disjointSet, salientMask, options, canceledToken));
+        Assert.Throws<OperationCanceledException>(() => WetInWet.ApplyDetailed(image, disjointSet, distanceField, options, canceledToken));
+        Assert.Throws<OperationCanceledException>(() => WetInWet.Apply(image, graph, salientMask, options, canceledToken));
+        Assert.Throws<OperationCanceledException>(() => WetInWet.Apply(image, graph, distanceField, options, canceledToken));
+        Assert.Throws<OperationCanceledException>(() => WetInWet.Apply(image, disjointSet, salientMask, options, canceledToken));
+        Assert.Throws<OperationCanceledException>(() => WetInWet.Apply(image, disjointSet, distanceField, options, canceledToken));
+        Assert.Throws<OperationCanceledException>(() =>
+            WetInWet.ApplyDetailedCore(image, graph, salientMask, null, options, cancellationToken: canceledToken));
+
+        using var cts = new CancellationTokenSource();
+        WetInWetResult expected = WetInWet.ApplyDetailed(image, graph, salientMask, options);
+        WetInWetResult actual = WetInWet.ApplyDetailed(image, graph, salientMask, options, cts.Token);
+        MatrixAssert.Equal(expected.Image, actual.Image);
+        MatrixAssert.Equal(expected.WetAreaMask, actual.WetAreaMask);
+        Assert.Equal(expected.QualifyingBoundaries, actual.QualifyingBoundaries);
     }
 
     private static DisjointSet<int> CreateVerticalSplitDisjointSet(int width, int height)

@@ -2,6 +2,7 @@ namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Color;
@@ -30,15 +31,18 @@ public static class WetInWet
     /// <param name="regionGraph">The region adjacency graph representing the image partition.</param>
     /// <param name="salientMask">Optional boolean salient mask; when <see langword="null"/>, no regions are treated as salient.</param>
     /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A <see cref="WetInWetResult"/> containing the filtered image, wet area mask, and qualifying boundaries.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="regionGraph"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="regionGraph"/> or <paramref name="salientMask"/> do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static WetInWetResult ApplyDetailed(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph regionGraph,
         IReadOnlyMatrix<bool>? salientMask = null,
-        WetInWetOptions? options = null)
+        WetInWetOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
@@ -46,7 +50,7 @@ public static class WetInWet
         Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
 
         WetInWetOptions opts = OptionsResolver.Resolve(options);
-        return ApplyDetailedCore(image, regionGraph, salientMask, precomputedSalientFractions: null, opts);
+        return ApplyDetailedCore(image, regionGraph, salientMask, precomputedSalientFractions: null, opts, cancellationToken: cancellationToken);
     }
 
     internal static WetInWetResult ApplyDetailedCore(
@@ -55,8 +59,11 @@ public static class WetInWet
         IReadOnlyMatrix<bool>? salientMask,
         double[]? precomputedSalientFractions,
         WetInWetOptions opts,
-        IReadOnlyMatrix<DoublePixel>? distanceField = null)
+        IReadOnlyMatrix<DoublePixel>? distanceField = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         OrientedEllipticalFilterOptions filterOpts = opts.EllipticalFilter ?? WetInWetOptions.DefaultEllipticalFilter;
 
         int boundaryCount = regionGraph.Boundaries.Count;
@@ -73,15 +80,25 @@ public static class WetInWet
             : resolvedSalientMask is null
                 ? null
                 : regionGraph.ComputeRegionFlags(resolvedSalientMask, opts.SalientOverlapThreshold);
+        cancellationToken.ThrowIfCancellationRequested();
+
         RegionColorStatistics<Rgb64>[] stats = RegionColorStatistics.Compute(regionGraph, image);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var (avgGradX, avgGradY) = ComputeAverageRegionGradients(regionGraph, image);
+        var (avgGradX, avgGradY) = ComputeAverageRegionGradients(regionGraph, image, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
+        bool canCancel = cancellationToken.CanBeCanceled;
         bool[] qualifying = new bool[boundaryCount];
         bool hasQualifying = false;
 
         for (int bi = 0; bi < boundaryCount; bi++)
         {
+            if (canCancel && (bi & 4095) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             RegionBoundary b = regionGraph.Boundaries[bi];
             bool isSalientA = salientRegions is not null && salientRegions[b.First];
             bool isSalientB = salientRegions is not null && salientRegions[b.Second];
@@ -121,6 +138,8 @@ public static class WetInWet
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!hasQualifying)
         {
             return new WetInWetResult(
@@ -148,10 +167,12 @@ public static class WetInWet
         int maxBand = Math.Max(opts.ScatterRadius, (int)Math.Min(filterRadius, width + height));
         ArgumentOutOfRangeException.ThrowIfLessThan(maxBand, opts.ScatterRadius);
 
+        cancellationToken.ThrowIfCancellationRequested();
         RegionBoundaryBand band = regionGraph.ComputeBoundaryBand(
             maxBand,
             boundaryIndex => qualifying[boundaryIndex],
             restrictToIncidentRegions: true);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var orientations = new SequentialMatrix<Vector2D>(size);
         var seedDarkerColors = new Rgb8[size.Count];
@@ -159,6 +180,11 @@ public static class WetInWet
         ReadOnlySpan<Coord> seedPixels = band.SeedPixels.Span;
         for (int s = 0; s < seedPixels.Length; s++)
         {
+            if (canCancel && (s & 4095) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             Coord p = seedPixels[s];
             int bi = band.NearestBoundaryIndices[p];
             (int brighterId, int darkerId) = boundaryPolarity[bi];
@@ -199,11 +225,14 @@ public static class WetInWet
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         Matrix<Rgb8> seeded = image.Clone();
         var wetAreaMask = new MaskMatrix(size);
 
         for (int y = 0; y < height; y++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             for (int x = 0; x < width; x++)
             {
                 int dist = band.Distances[x, y];
@@ -238,14 +267,17 @@ public static class WetInWet
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         Matrix<Rgb8> filtered = OrientedEllipticalFilter.ApplyCore(
             seeded,
             orientations,
             filterOpts,
             wetAreaMask);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var composited = new SequentialMatrix<Rgb8>(size);
-        Parallel.For(0, height, y =>
+        ParallelFor(height, cancellationToken, y =>
         {
             for (int x = 0; x < width; x++)
             {
@@ -282,15 +314,18 @@ public static class WetInWet
     /// <param name="regionGraph">The region adjacency graph representing the image partition.</param>
     /// <param name="distanceField">The normalized saliency distance field.</param>
     /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A <see cref="WetInWetResult"/> containing the filtered image, wet area mask, and qualifying boundaries.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="regionGraph"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="regionGraph"/> or <paramref name="distanceField"/> do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static WetInWetResult ApplyDetailed(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph regionGraph,
         IReadOnlyMatrix<DoublePixel> distanceField,
-        WetInWetOptions? options = null)
+        WetInWetOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
@@ -298,7 +333,7 @@ public static class WetInWet
         Guard.ThrowIfSizeMismatch(image, distanceField);
 
         WetInWetOptions opts = OptionsResolver.Resolve(options);
-        return ApplyDetailedCore(image, regionGraph, salientMask: null, precomputedSalientFractions: null, opts, distanceField);
+        return ApplyDetailedCore(image, regionGraph, salientMask: null, precomputedSalientFractions: null, opts, distanceField, cancellationToken);
     }
 
     /// <summary>
@@ -308,22 +343,26 @@ public static class WetInWet
     /// <param name="segmentation">The segmented pixel partition.</param>
     /// <param name="salientMask">Optional boolean salient mask; when <see langword="null"/>, no regions are treated as salient.</param>
     /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A <see cref="WetInWetResult"/> containing the filtered image, wet area mask, and qualifying boundaries.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="segmentation"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="segmentation"/> or <paramref name="salientMask"/> do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static WetInWetResult ApplyDetailed(
         IReadOnlyMatrix<Rgb8> image,
         IDisjointSet segmentation,
         IReadOnlyMatrix<bool>? salientMask = null,
-        WetInWetOptions? options = null)
+        WetInWetOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         Guard.ThrowIfSizeMismatch(image, segmentation);
         Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
 
         WetInWetOptions opts = OptionsResolver.Resolve(options);
+        cancellationToken.ThrowIfCancellationRequested();
         RegionGraph regionGraph = segmentation.ToRegionGraph();
-        return ApplyDetailedCore(image, regionGraph, salientMask, precomputedSalientFractions: null, opts);
+        return ApplyDetailedCore(image, regionGraph, salientMask, precomputedSalientFractions: null, opts, cancellationToken: cancellationToken);
     }
 
     /// <summary>
@@ -334,22 +373,26 @@ public static class WetInWet
     /// <param name="segmentation">The segmented pixel partition.</param>
     /// <param name="distanceField">The normalized saliency distance field.</param>
     /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A <see cref="WetInWetResult"/> containing the filtered image, wet area mask, and qualifying boundaries.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="segmentation"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="segmentation"/> or <paramref name="distanceField"/> do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static WetInWetResult ApplyDetailed(
         IReadOnlyMatrix<Rgb8> image,
         IDisjointSet segmentation,
         IReadOnlyMatrix<DoublePixel> distanceField,
-        WetInWetOptions? options = null)
+        WetInWetOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         Guard.ThrowIfSizeMismatch(image, segmentation);
         Guard.ThrowIfSizeMismatch(image, distanceField);
 
         WetInWetOptions opts = OptionsResolver.Resolve(options);
+        cancellationToken.ThrowIfCancellationRequested();
         RegionGraph regionGraph = segmentation.ToRegionGraph();
-        return ApplyDetailedCore(image, regionGraph, salientMask: null, precomputedSalientFractions: null, opts, distanceField);
+        return ApplyDetailedCore(image, regionGraph, salientMask: null, precomputedSalientFractions: null, opts, distanceField, cancellationToken);
     }
 
     private static WetInWetResult CreateUnmodifiedResult(IReadOnlyMatrix<Rgb8> image, int boundaryCount) =>
@@ -365,16 +408,19 @@ public static class WetInWet
     /// <param name="regionGraph">The region adjacency graph representing the image partition.</param>
     /// <param name="salientMask">Optional boolean salient mask; when <see langword="null"/>, no regions are treated as salient.</param>
     /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the edge-bled image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="regionGraph"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="regionGraph"/> or <paramref name="salientMask"/> do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static Matrix<Rgb8> Apply(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph regionGraph,
         IReadOnlyMatrix<bool>? salientMask = null,
-        WetInWetOptions? options = null) =>
-        ApplyDetailed(image, regionGraph, salientMask, options).Image;
+        WetInWetOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        ApplyDetailed(image, regionGraph, salientMask, options, cancellationToken).Image;
 
     /// <summary>
     /// Applies wet-in-wet edge bleeding to an image using a saliency distance field (thresholded at <c>1e-6</c>)
@@ -384,16 +430,19 @@ public static class WetInWet
     /// <param name="regionGraph">The region adjacency graph representing the image partition.</param>
     /// <param name="distanceField">The normalized saliency distance field.</param>
     /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the edge-bled image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="regionGraph"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="regionGraph"/> or <paramref name="distanceField"/> do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static Matrix<Rgb8> Apply(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph regionGraph,
         IReadOnlyMatrix<DoublePixel> distanceField,
-        WetInWetOptions? options = null) =>
-        ApplyDetailed(image, regionGraph, distanceField, options).Image;
+        WetInWetOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        ApplyDetailed(image, regionGraph, distanceField, options, cancellationToken).Image;
 
     /// <summary>
     /// Applies wet-in-wet edge bleeding to an image using a disjoint-set pixel partition and returns the filtered RGB result matrix.
@@ -402,16 +451,19 @@ public static class WetInWet
     /// <param name="segmentation">The segmented pixel partition.</param>
     /// <param name="salientMask">Optional boolean salient mask; when <see langword="null"/>, no regions are treated as salient.</param>
     /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the edge-bled image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="segmentation"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="segmentation"/> or <paramref name="salientMask"/> do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static Matrix<Rgb8> Apply(
         IReadOnlyMatrix<Rgb8> image,
         IDisjointSet segmentation,
         IReadOnlyMatrix<bool>? salientMask = null,
-        WetInWetOptions? options = null) =>
-        ApplyDetailed(image, segmentation, salientMask, options).Image;
+        WetInWetOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        ApplyDetailed(image, segmentation, salientMask, options, cancellationToken).Image;
 
     /// <summary>
     /// Applies wet-in-wet edge bleeding to an image using a disjoint-set pixel partition and saliency distance field (thresholded at <c>1e-6</c>),
@@ -421,20 +473,24 @@ public static class WetInWet
     /// <param name="segmentation">The segmented pixel partition.</param>
     /// <param name="distanceField">The normalized saliency distance field.</param>
     /// <param name="options">Optional wet-in-wet configuration options.</param>
+    /// <param name="cancellationToken">Optional token used to cancel the operation.</param>
     /// <returns>A new <see cref="Matrix{Rgb8}"/> containing the edge-bled image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="segmentation"/>, or <paramref name="distanceField"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="segmentation"/> or <paramref name="distanceField"/> do not match <paramref name="image"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> parameters are invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/>.</exception>
     public static Matrix<Rgb8> Apply(
         IReadOnlyMatrix<Rgb8> image,
         IDisjointSet segmentation,
         IReadOnlyMatrix<DoublePixel> distanceField,
-        WetInWetOptions? options = null) =>
-        ApplyDetailed(image, segmentation, distanceField, options).Image;
+        WetInWetOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        ApplyDetailed(image, segmentation, distanceField, options, cancellationToken).Image;
 
     private static (double[] AvgGradX, double[] AvgGradY) ComputeAverageRegionGradients(
         RegionGraph regionGraph,
-        IReadOnlyMatrix<Rgb8> image)
+        IReadOnlyMatrix<Rgb8> image,
+        CancellationToken cancellationToken)
     {
         Size size = image.Size;
         int width = size.Width;
@@ -453,7 +509,7 @@ public static class WetInWet
         var pixelGradX = new double[totalPixels];
         var pixelGradY = new double[totalPixels];
 
-        Parallel.For(0, height, y =>
+        ParallelFor(height, cancellationToken, y =>
         {
             int rowOffset = size.IndexOf(0, y);
             for (int x = 0; x < width; x++)
@@ -481,10 +537,18 @@ public static class WetInWet
             }
         });
 
+        cancellationToken.ThrowIfCancellationRequested();
+
+        bool canCancel = cancellationToken.CanBeCanceled;
         if (labels.TryGetReadOnlySpan(out ReadOnlySpan<int> labelSpan))
         {
             for (int i = 0; i < totalPixels; i++)
             {
+                if (canCancel && (i & 4095) == 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
                 int r = labelSpan[i];
                 avgGradX[r] += pixelGradX[i];
                 avgGradY[r] += pixelGradY[i];
@@ -494,6 +558,7 @@ public static class WetInWet
         {
             for (int y = 0; y < height; y++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 int rowOffset = size.IndexOf(0, y);
                 for (int x = 0; x < width; x++)
                 {
@@ -517,6 +582,18 @@ public static class WetInWet
         }
 
         return (avgGradX, avgGradY);
+    }
+
+    private static void ParallelFor(int toExclusive, CancellationToken cancellationToken, Action<int> body)
+    {
+        if (cancellationToken.CanBeCanceled)
+        {
+            Parallel.For(0, toExclusive, new ParallelOptions { CancellationToken = cancellationToken }, body);
+        }
+        else
+        {
+            Parallel.For(0, toExclusive, body);
+        }
     }
 
     private static Rgb8 SampleRegionClamped(

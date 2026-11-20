@@ -1,7 +1,9 @@
 namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Threading;
 using Leiter.Algorithms.Noise;
+using Leiter.Algorithms.Stylization;
 using Leiter.Algorithms.Stylization.Watercolor;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -223,5 +225,108 @@ public class TurbulenceFlowTests
         Matrix<Rgb8> result = TurbulenceFlow.Apply(custom);
 
         Assert.Equal(custom.Size, result.Size);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="TurbulenceFlow.ComputeDensityField"/> validates negative sizes and invalid options.
+    /// </summary>
+    [Fact]
+    public void ComputeDensityField_InvalidInputs_ShouldThrowArgumentOutOfRangeException()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => TurbulenceFlow.ComputeDensityField(new Size(-1, 8)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TurbulenceFlow.ComputeDensityField(new Size(8, -1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            TurbulenceFlow.ComputeDensityField(new Size(8, 8), new TurbulenceFlowOptions(Intensity: -0.2)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            TurbulenceFlow.ComputeDensityField(
+                new Size(8, 8),
+                new TurbulenceFlowOptions(Intensity: 0.0, Noise: new PerlinNoiseOptions(Frequency: -1.0))));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="TurbulenceFlow.ComputeDensityField"/> returns an empty matrix for zero dimensions.
+    /// </summary>
+    /// <param name="width">The width dimension.</param>
+    /// <param name="height">The height dimension.</param>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 8)]
+    [InlineData(8, 0)]
+    public void ComputeDensityField_ZeroDimensions_ShouldReturnEmptyMatrix(int width, int height)
+    {
+        Matrix<DoublePixel> field = TurbulenceFlow.ComputeDensityField(new Size(width, height));
+
+        Assert.Empty(field);
+        Assert.Equal(width, field.Width);
+        Assert.Equal(height, field.Height);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="TurbulenceFlow.ComputeDensityField"/> returns an all-zero field when intensity is zero.
+    /// </summary>
+    [Fact]
+    public void ComputeDensityField_ZeroIntensity_ShouldReturnZeroField()
+    {
+        Matrix<DoublePixel> field = TurbulenceFlow.ComputeDensityField(new Size(12, 12), new TurbulenceFlowOptions(Intensity: 0.0));
+
+        Assert.Equal(new Size(12, 12), field.Size);
+        MatrixAssert.AllInRange(field, 0.0, 0.0);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="TurbulenceFlow.ComputeDensityField"/> matches scaled Perlin fractal noise
+    /// and reproduces <see cref="TurbulenceFlow.Apply"/> bit-for-bit when applied via <see cref="PigmentBlend"/>.
+    /// </summary>
+    [Fact]
+    public void ComputeDensityField_ShouldMatchPerlinFormulaAndApplyBitForBit()
+    {
+        var size = new Size(24, 24);
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(size.Width, size.Height, new Rgb8(128, 140, 152));
+
+        // Default options (null)
+        Matrix<DoublePixel> defaultField = TurbulenceFlow.ComputeDensityField(size);
+        Matrix<DoublePixel> expectedFractal = PerlinNoise.GenerateFractalField(size, TurbulenceFlowOptions.DefaultNoise);
+        double defaultIntensity = TurbulenceFlowOptions.Default.Intensity;
+        for (int y = 0; y < size.Height; y++)
+        {
+            for (int x = 0; x < size.Width; x++)
+            {
+                Assert.Equal(defaultIntensity * expectedFractal[x, y].Value, defaultField[x, y].Value, 12);
+            }
+        }
+
+        MatrixAssert.Equal(
+            TurbulenceFlow.Apply(image),
+            PigmentBlend.ApplyDensityField(image, defaultField));
+
+        // Custom options
+        var customOptions = new TurbulenceFlowOptions(
+            Intensity: 0.55,
+            Noise: new PerlinNoiseOptions(Seed: 777, Frequency: 0.06, Octaves: 3));
+        Matrix<DoublePixel> customField = TurbulenceFlow.ComputeDensityField(size, customOptions);
+        MatrixAssert.Equal(
+            TurbulenceFlow.Apply(image, customOptions),
+            PigmentBlend.ApplyDensityField(image, customField));
+    }
+
+    /// <summary>
+    /// Verifies that a pre-canceled <see cref="CancellationToken"/> throws <see cref="OperationCanceledException"/>
+    /// for both <see cref="TurbulenceFlow.Apply"/> and <see cref="TurbulenceFlow.ComputeDensityField"/>,
+    /// and that an active uncanceled token matches default execution bit-for-bit.
+    /// </summary>
+    [Fact]
+    public void Apply_And_ComputeDensityField_CanceledToken_ShouldThrowOperationCanceledException()
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(16, 16, new Rgb8(128, 128, 128));
+        var canceledToken = new CancellationToken(canceled: true);
+
+        Assert.Throws<OperationCanceledException>(() => TurbulenceFlow.Apply(image, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() => TurbulenceFlow.Apply(image, new TurbulenceFlowOptions(Intensity: 0.0), canceledToken));
+        Assert.Throws<OperationCanceledException>(() => TurbulenceFlow.ComputeDensityField(image.Size, cancellationToken: canceledToken));
+        Assert.Throws<OperationCanceledException>(() => TurbulenceFlow.ComputeDensityField(image.Size, new TurbulenceFlowOptions(Intensity: 0.0), canceledToken));
+
+        using var cts = new CancellationTokenSource();
+        MatrixAssert.Equal(TurbulenceFlow.ComputeDensityField(image.Size), TurbulenceFlow.ComputeDensityField(image.Size, cancellationToken: cts.Token));
+        MatrixAssert.Equal(TurbulenceFlow.Apply(image), TurbulenceFlow.Apply(image, cancellationToken: cts.Token));
     }
 }
