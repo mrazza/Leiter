@@ -186,9 +186,7 @@ public class MatrixMathTests
         var expected = img.Convolve(kernel2D);
         var actual = img.ConvolveSeparable(hKernel, vKernel);
 
-        for (int y = 0; y < img.Height; y++)
-            for (int x = 0; x < img.Width; x++)
-                Assert.Equal(expected[x, y].Value, actual[x, y].Value, 10);
+        Leiter.Tests.TestUtils.MatrixAssert.ApproxEqual(expected, actual, 1e-10);
     }
 
     [Fact]
@@ -262,5 +260,10 @@ public class MatrixMathTests
 
         Matrix<DoublePixel> convolvedSepView = view.ConvolveSeparable([1.0], [1.0]);
         Assert.Equal(2.0, convolvedSepView[1, 0].Value);
+
+        var leftMismatch = new SequentialMatrix<DoublePixel>(2, 3);
+        var rightMismatch = new SequentialMatrix<DoublePixel>(2, 4);
+        var mulMismatchEx = Assert.Throws<ArgumentException>(() => leftMismatch.Multiply(rightMismatch));
+        Assert.Equal("right", mulMismatchEx.ParamName);
     }
 }

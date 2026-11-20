@@ -17,7 +17,7 @@ public sealed record EgbiOptions(
     double KFactor = 100.0,
     double Epsilon = 1.0,
     int MinRegionSize = 100,
-    GridConnectivity Connectivity = GridConnectivity.EightConnected)
+    GridConnectivity Connectivity = GridConnectivity.EightConnected) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which baseline parameters apply unscaled.

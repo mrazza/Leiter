@@ -30,8 +30,7 @@ public static class SaliencyCut
         ArgumentNullException.ThrowIfNull(image);
         Guard.ThrowIfSizeMismatch(image, saliencyMap);
 
-        SaliencyCutOptions resolvedOptions = options ?? SaliencyCutOptions.Default;
-        resolvedOptions.Validate();
+        SaliencyCutOptions resolvedOptions = OptionsResolver.Resolve(options, SaliencyCutOptions.Default);
 
         if (image.Count == 0)
             return new MaskMatrix(image.Size);
@@ -96,12 +95,12 @@ public static class SaliencyCut
         SaliencyMaskOptions maskOptions = options.Mask ?? SaliencyCutOptions.DefaultMask;
 
         TrimapMatrix trimap = TrimapMatrix.FromCandidateMask(candidateMask);
-        var session = new GrabCutSession(image, grabCutOptions.MixtureComponentCount, grabCutOptions.SmoothnessWeight);
+        var session = new GrabCutSession(image, grabCutOptions);
         MaskMatrix? previousMask = null;
 
         for (int outer = 0; outer < options.MaxOuterIterations; outer++)
         {
-            MaskMatrix rawMask = session.Run(trimap, grabCutOptions.Iterations);
+            MaskMatrix rawMask = session.Run(trimap);
             MaskMatrix currentMask = BinaryMorphology.FilterConnectedComponents(
                 rawMask,
                 maskOptions.RetentionPolicy,

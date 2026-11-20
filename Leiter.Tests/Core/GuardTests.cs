@@ -88,4 +88,36 @@ public class GuardTests
         Assert.Throws<ArgumentNullException>(() => Guard.ThrowIfSizeMismatchIfNotNull(null!, b));
         Assert.Throws<ArgumentException>(() => Guard.ThrowIfSizeMismatchIfNotNull(a, c));
     }
+
+    [Fact]
+    public void ThrowIfNegative_Size_ShouldValidateDimensions()
+    {
+        Guard.ThrowIfNegative(new Size(0, 0));
+        Guard.ThrowIfNegative(new Size(3, 4));
+
+        Size negativeWidth = new(-1, 2);
+        var widthEx = Assert.Throws<ArgumentOutOfRangeException>(() => Guard.ThrowIfNegative(negativeWidth));
+        Assert.Equal(nameof(negativeWidth), widthEx.ParamName);
+
+        Size negativeHeight = new(2, -1);
+        var heightEx = Assert.Throws<ArgumentOutOfRangeException>(() => Guard.ThrowIfNegative(negativeHeight));
+        Assert.Equal(nameof(negativeHeight), heightEx.ParamName);
+    }
+
+    [Fact]
+    public void ThrowIfNotFiniteInHalfOpenRange_ShouldValidateHalfOpenInterval()
+    {
+        Guard.ThrowIfNotFiniteInHalfOpenRange(0.001, 0.0, 1.0);
+        Guard.ThrowIfNotFiniteInHalfOpenRange(1.0, 0.0, 1.0);
+
+        double atMin = 0.0;
+        var minEx = Assert.Throws<ArgumentOutOfRangeException>(() => Guard.ThrowIfNotFiniteInHalfOpenRange(atMin, 0.0, 1.0));
+        Assert.Equal(nameof(atMin), minEx.ParamName);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => Guard.ThrowIfNotFiniteInHalfOpenRange(-0.01, 0.0, 1.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Guard.ThrowIfNotFiniteInHalfOpenRange(1.01, 0.0, 1.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Guard.ThrowIfNotFiniteInHalfOpenRange(double.NaN, 0.0, 1.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Guard.ThrowIfNotFiniteInHalfOpenRange(double.PositiveInfinity, 0.0, 1.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Guard.ThrowIfNotFiniteInHalfOpenRange(double.NegativeInfinity, 0.0, 1.0));
+    }
 }

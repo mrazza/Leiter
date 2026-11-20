@@ -38,8 +38,7 @@ internal static class OptionTuning
     /// </summary>
     public static void ValidateSizeAndReference(Size size, double referenceDimension)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
-        ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
+        Guard.ThrowIfNegative(size);
         Guard.ThrowIfNotFinitePositive(referenceDimension);
     }
 

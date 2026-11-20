@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
 using Leiter.Algorithms.Color;
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Stylization;
 using Leiter.Algorithms.Stylization.Watercolor;
@@ -137,6 +138,65 @@ public class WatercolorPipelineTests
         WatercolorResult recursiveBlurResult = WatercolorPipeline.RenderDetailed(scene, new WatercolorOptions(EgbiBlurSigma: 2.5));
         Assert.Equal(scene.Size, noBlurResult.Image.Size);
         Assert.Equal(scene.Size, recursiveBlurResult.Image.Size);
+    }
+
+    /// <summary>
+    /// Verifies stage progress reporting order, empty-image non-invocation, and 10-element result deconstruction.
+    /// </summary>
+    [Fact]
+    public void RenderDetailed_WithStageProgress_ShouldReportStagesInOrderAndSupportDeconstruct()
+    {
+        Matrix<Rgb8> scene = CreateTestScene(24, 24);
+        var reported = new System.Collections.Generic.List<WatercolorStageProgress>();
+
+        WatercolorResult result = WatercolorPipeline.RenderDetailed(
+            scene,
+            WatercolorOptions.ForImage(scene),
+            onStageCompleted: reported.Add);
+
+        WatercolorStage[] expectedOrder =
+        [
+            WatercolorStage.ColorTransfer,
+            WatercolorStage.Saliency,
+            WatercolorStage.Segmentation,
+            WatercolorStage.LodAbstraction,
+            WatercolorStage.WetInWet,
+            WatercolorStage.HandTremor,
+            WatercolorStage.Finishing
+        ];
+
+        Assert.Equal(expectedOrder, Array.ConvertAll(reported.ToArray(), static p => p.Stage));
+        Assert.All(reported, static p => Assert.True(p.Elapsed >= TimeSpan.Zero));
+
+        (
+            Matrix<Rgb8> image,
+            Matrix<Rgb8> colorTransferred,
+            ColorTransferProfile selectedPalette,
+            Matrix<DoublePixel> saliencyMap,
+            MaskMatrix salientMask,
+            Matrix<DoublePixel> distanceField,
+            RegionGraph graph,
+            Matrix<Rgb8> lodAbstracted,
+            WetInWetResult wetInWet,
+            Matrix<Rgb8> handTremor
+        ) = result;
+
+        Assert.Same(result.Image, image);
+        Assert.Same(result.ColorTransferred, colorTransferred);
+        Assert.Same(result.SelectedPalette, selectedPalette);
+        Assert.Same(result.SaliencyMap, saliencyMap);
+        Assert.Same(result.SalientMask, salientMask);
+        Assert.Same(result.SaliencyDistanceField, distanceField);
+        Assert.Same(result.SegmentationGraph, graph);
+        Assert.Same(result.LodAbstracted, lodAbstracted);
+        Assert.Same(result.WetInWet, wetInWet);
+        Assert.Same(result.HandTremor, handTremor);
+
+        reported.Clear();
+        WatercolorPipeline.RenderDetailed(
+            new SequentialMatrix<Rgb8>(0, 0),
+            onStageCompleted: reported.Add);
+        Assert.Empty(reported);
     }
 
     private static Matrix<Rgb8> CreateTestScene(int width, int height)

@@ -351,8 +351,7 @@ public sealed class RegionGraph
         Func<int, bool>? boundaryPredicate = null,
         bool restrictToIncidentRegions = false)
     {
-        if (maxRadius < 0)
-            throw new ArgumentOutOfRangeException(nameof(maxRadius), maxRadius, "Maximum band radius must be non-negative.");
+        ArgumentOutOfRangeException.ThrowIfNegative(maxRadius);
 
         int width = Width;
         int height = Height;

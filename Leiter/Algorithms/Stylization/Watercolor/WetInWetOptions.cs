@@ -29,9 +29,12 @@ public sealed record WetInWetOptions(
     int ScatterRadius = 4,
     double SeedProbability = 0.45,
     OrientedEllipticalFilterOptions? EllipticalFilter = null,
-    int Seed = 1337)
+    int Seed = 1337) : IValidatableOptions
 {
-    internal static readonly OrientedEllipticalFilterOptions DefaultEllipticalFilter =
+    /// <summary>
+    /// Gets the default oriented elliptical smoothing options used when <see cref="EllipticalFilter"/> is <see langword="null"/>.
+    /// </summary>
+    public static OrientedEllipticalFilterOptions DefaultEllipticalFilter { get; } =
         new(MajorRadius: 6.0, MinorRadius: 2.5, SigmaScale: 0.55);
 
     /// <summary>

@@ -12,8 +12,7 @@ using Leiter.Pixels;
 /// </summary>
 public sealed class PerlinNoise
 {
-    private static readonly double Sqrt2 = Math.Sqrt(2.0);
-    private static readonly double InvSqrt2 = 1.0 / Math.Sqrt(2.0);
+    private const int YAxisSeedOffset = 0x7F4A7C15;
 
     private static readonly (double X, double Y)[] Gradients =
     [
@@ -21,10 +20,10 @@ public sealed class PerlinNoise
         (-1.0, 0.0),
         (0.0, 1.0),
         (0.0, -1.0),
-        (InvSqrt2, InvSqrt2),
-        (-InvSqrt2, InvSqrt2),
-        (InvSqrt2, -InvSqrt2),
-        (-InvSqrt2, -InvSqrt2)
+        (ScalarMath.InvSqrt2, ScalarMath.InvSqrt2),
+        (-ScalarMath.InvSqrt2, ScalarMath.InvSqrt2),
+        (ScalarMath.InvSqrt2, -ScalarMath.InvSqrt2),
+        (-ScalarMath.InvSqrt2, -ScalarMath.InvSqrt2)
     ];
 
     private readonly byte[] _permutation;
@@ -107,7 +106,7 @@ public sealed class PerlinNoise
         double nx1 = ScalarMath.Lerp(n01, n11, u);
         double n = ScalarMath.Lerp(nx0, nx1, v);
 
-        return Math.Clamp(n * Sqrt2, -1.0, 1.0);
+        return Math.Clamp(n * ScalarMath.Sqrt2, -1.0, 1.0);
     }
 
     /// <summary>
@@ -222,11 +221,9 @@ public sealed class PerlinNoise
         PerlinNoiseOptions? options,
         bool absolute)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
-        ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
+        Guard.ThrowIfNegative(size);
 
-        PerlinNoiseOptions opts = options ?? PerlinNoiseOptions.Default;
-        opts.Validate();
+        PerlinNoiseOptions opts = OptionsResolver.Resolve(options, PerlinNoiseOptions.Default);
 
         if (size.Width == 0 || size.Height == 0)
             return new SequentialMatrix<DoublePixel>(size);
@@ -257,18 +254,16 @@ public sealed class PerlinNoise
     /// <exception cref="ArgumentOutOfRangeException">Thrown when dimensions, amplitude, or options are invalid.</exception>
     public static Matrix<Vector2D> GenerateDisplacementField(Size size, double amplitude, PerlinNoiseOptions? options = null)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
-        ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
+        Guard.ThrowIfNegative(size);
         Guard.ThrowIfNotFiniteNonNegative(amplitude);
 
-        PerlinNoiseOptions opts = options ?? PerlinNoiseOptions.Default;
-        opts.Validate();
+        PerlinNoiseOptions opts = OptionsResolver.Resolve(options, PerlinNoiseOptions.Default);
 
         if (size.Width == 0 || size.Height == 0)
             return new SequentialMatrix<Vector2D>(size);
 
         var noiseX = new PerlinNoise(opts.Seed);
-        var noiseY = new PerlinNoise(unchecked(opts.Seed + (int)0x7F4A7C15));
+        var noiseY = new PerlinNoise(unchecked(opts.Seed + YAxisSeedOffset));
         var result = new SequentialMatrix<Vector2D>(size);
 
         Parallel.For(0, size.Height, y =>
@@ -298,8 +293,8 @@ public sealed class PerlinNoise
     {
         Guard.ThrowIfNotFinite(x);
         Guard.ThrowIfNotFinite(y);
-        if (octaves is < 1 or > 16)
-            throw new ArgumentOutOfRangeException(nameof(octaves), octaves, "Octaves must be between 1 and 16 inclusive.");
+        ArgumentOutOfRangeException.ThrowIfLessThan(octaves, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(octaves, PerlinNoiseOptions.MaxOctaves);
         Guard.ThrowIfNotFinitePositive(lacunarity);
         Guard.ThrowIfNotFiniteNonNegative(persistence);
     }

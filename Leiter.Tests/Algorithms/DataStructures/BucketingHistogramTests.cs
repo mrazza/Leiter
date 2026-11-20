@@ -43,4 +43,17 @@ public class BucketingHistogramTests
         Assert.True(enumerator.MoveNext());
         Assert.NotNull(enumerator.Current);
     }
+
+    [Fact]
+    public void GetDensity_WhenEmpty_ShouldReturnZero_And_NullCallbacksShouldThrow()
+    {
+        var emptyHist = new BucketingHistogram<int>(static val => val);
+        Assert.Equal(0.0, emptyHist.GetDensity(123));
+
+        var exCtor = Assert.Throws<ArgumentNullException>(() => new BucketingHistogram<int>(null!));
+        Assert.Equal("bucketer", exCtor.ParamName);
+
+        var exMap = Assert.Throws<ArgumentNullException>(() => emptyHist.MapBuckets<string>(null!));
+        Assert.Equal("mapFunc", exMap.ParamName);
+    }
 }

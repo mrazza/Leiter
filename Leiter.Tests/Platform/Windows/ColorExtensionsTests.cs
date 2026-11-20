@@ -3,6 +3,7 @@ namespace Leiter.Tests.Platform.Windows;
 using System;
 using System.Runtime.Versioning;
 using Leiter.Platform.Windows;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -11,11 +12,9 @@ using Xunit;
 [SupportedOSPlatform("windows")]
 public class ColorExtensionsTests
 {
-    [Fact]
+    [WindowsFact]
     public void ColorExtensions_ShouldConvertCorrectly()
     {
-        if (!OperatingSystem.IsWindows()) return;
-
         RunColorExtensionsTest();
     }
 

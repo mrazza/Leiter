@@ -14,7 +14,7 @@ using Leiter.Pixels;
 public sealed record GrabCutOptions(
     int Iterations = 5,
     int MixtureComponentCount = 5,
-    double SmoothnessWeight = 50.0)
+    double SmoothnessWeight = 50.0) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default smoothness weights apply unscaled.

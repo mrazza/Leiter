@@ -12,10 +12,20 @@ using Leiter.Core;
 /// <param name="MinAreaFraction">The minimum component area fraction in <c>[0, 1]</c> used by <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/> (default <c>0.01</c>).</param>
 public sealed record SaliencyMaskOptions(
     SaliencyThresholdMethod Method = SaliencyThresholdMethod.Otsu,
-    double FixedThreshold = 70.0 / 255.0,
+    double FixedThreshold = SaliencyMaskOptions.DefaultFixedThreshold,
     ComponentRetentionPolicy RetentionPolicy = ComponentRetentionPolicy.MinimumAreaFraction,
-    double MinAreaFraction = 0.01)
+    double MinAreaFraction = SaliencyMaskOptions.DefaultMinAreaFraction) : IValidatableOptions
 {
+    /// <summary>
+    /// The default fixed saliency threshold (<c>70 / 255</c>).
+    /// </summary>
+    public const double DefaultFixedThreshold = 70.0 / 255.0;
+
+    /// <summary>
+    /// The default minimum connected-component area fraction (<c>0.01</c>).
+    /// </summary>
+    public const double DefaultMinAreaFraction = 0.01;
+
     /// <summary>
     /// Gets the default <see cref="SaliencyMaskOptions"/> instance.
     /// </summary>

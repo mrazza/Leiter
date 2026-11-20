@@ -2,10 +2,12 @@ namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
 using System.Linq;
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -313,11 +315,18 @@ public class RegionalContrastSaliencyTests
     public void ComputeSaliency_EmptyImage_ShouldReturnEmptyMatrix()
     {
         var emptyImg = new SequentialMatrix<Rgb8>(0, 0);
-        var dummySeg = EgbiSegmentation.Segment(new SequentialMatrix<Rgb8>(1, 1));
-        Matrix<DoublePixel> regionalEmpty = RegionalContrastSaliency.ComputeSaliency(emptyImg, dummySeg);
+        var emptySeg = EgbiSegmentation.Segment(emptyImg);
+        Matrix<DoublePixel> regionalEmpty = RegionalContrastSaliency.ComputeSaliency(emptyImg, emptySeg);
         Assert.Empty(regionalEmpty);
         Assert.Equal(0, regionalEmpty.Width);
         Assert.Equal(0, regionalEmpty.Height);
+
+        var emptyGraph = RegionGraph.FromDisjointSet(emptySeg);
+        Matrix<DoublePixel> graphEmpty = RegionalContrastSaliency.ComputeSaliency(emptyImg, emptyGraph);
+        Assert.Empty(graphEmpty);
+
+        var mismatchedSeg = EgbiSegmentation.Segment(new SequentialMatrix<Rgb8>(1, 1));
+        Assert.Throws<ArgumentException>(() => RegionalContrastSaliency.ComputeSaliency(emptyImg, mismatchedSeg));
     }
 
     /// <summary>
@@ -328,19 +337,26 @@ public class RegionalContrastSaliencyTests
     {
         var img = new SequentialMatrix<Rgb8>(10, 10);
         var seg = EgbiSegmentation.Segment(img);
+        var graph = RegionGraph.FromDisjointSet(seg);
 
         // Null checks
         Assert.Throws<ArgumentNullException>(() => RegionalContrastSaliency.ComputeSaliency(null!, seg));
-        Assert.Throws<ArgumentNullException>(() => RegionalContrastSaliency.ComputeSaliency(img, null!));
+        Assert.Throws<ArgumentNullException>(() => RegionalContrastSaliency.ComputeSaliency(img, (IDisjointSet)null!));
+        Assert.Throws<ArgumentNullException>(() => RegionalContrastSaliency.ComputeSaliency(null!, graph));
+        Assert.Throws<ArgumentNullException>(() => RegionalContrastSaliency.ComputeSaliency(img, (RegionGraph)null!));
 
         // Dimension mismatch with non-empty image
         var mismatchedSeg = EgbiSegmentation.Segment(new SequentialMatrix<Rgb8>(5, 5));
+        var mismatchedGraph = RegionGraph.FromDisjointSet(mismatchedSeg);
         Assert.Throws<ArgumentException>(() => RegionalContrastSaliency.ComputeSaliency(img, mismatchedSeg));
+        Assert.Throws<ArgumentException>(() => RegionalContrastSaliency.ComputeSaliency(img, mismatchedGraph));
 
-        // Non-Matrix IReadOnlyMatrix (MatrixView) input
+        // Non-Matrix IReadOnlyMatrix (MatrixView) input and RegionGraph overload parity
         var view = new MatrixView<Rgb8>(img, 0, 0, 10, 10, EdgeHandling.Extend);
         Matrix<DoublePixel> viewSaliency = RegionalContrastSaliency.ComputeSaliency(view, seg);
+        Matrix<DoublePixel> graphSaliency = RegionalContrastSaliency.ComputeSaliency(view, graph);
         Assert.Equal(img.Size, viewSaliency.Size);
+        MatrixAssert.Equal(viewSaliency, graphSaliency);
     }
 
     [Fact]

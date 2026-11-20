@@ -24,8 +24,7 @@ public static class Fxaa
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        FxaaOptions opts = options ?? FxaaOptions.Default;
-        opts.Validate();
+        FxaaOptions opts = OptionsResolver.Resolve(options, FxaaOptions.Default);
 
         if (image.Count == 0)
             return new SequentialMatrix<Rgb8>(image.Size);
@@ -142,7 +141,7 @@ public static class Fxaa
                 {
                     double sampleX = x + (isHorizontal ? 0.0 : stepSign * finalOffset);
                     double sampleY = y + (isHorizontal ? stepSign * finalOffset : 0.0);
-                    result[x, y] = image.SampleBilinear(sampleX, sampleY, EdgeHandling.Extend);
+                    result[x, y] = MatrixResampler.SampleBilinearUnchecked(image, sampleX, sampleY, EdgeHandling.Extend);
                 }
             }
         });

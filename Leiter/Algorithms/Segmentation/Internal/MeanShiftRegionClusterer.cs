@@ -48,7 +48,7 @@ internal static class MeanShiftRegionClusterer
         int width = targetImage.Width;
         int height = targetImage.Height;
         int pixelCount = width * height;
-        var disjointSet = new DisjointSet<byte>(targetImage, static _ => 0);
+        var disjointSet = DisjointSet.CreateSingletons(targetImage);
 
         if (pixelCount <= 1)
             return disjointSet;

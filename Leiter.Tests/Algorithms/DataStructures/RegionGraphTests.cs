@@ -5,6 +5,7 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -67,14 +68,7 @@ public class RegionGraphTests
     [Fact]
     public void FromDisjointSet_ShouldConstructGraphWithDenseLabels()
     {
-        var img = new SequentialMatrix<Rgb8>(4, 4);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                img[x, y] = x < 2 ? new Rgb8(255, 0, 0) : new Rgb8(0, 255, 0);
-            }
-        }
+        var img = TestMatrices.VerticalSplit(4, 4, new Rgb8(255, 0, 0), new Rgb8(0, 255, 0), splitX: 2);
 
         IDisjointSet segmentation = EgbiSegmentation.Segment(img, new EgbiOptions(KFactor: 1.0, Epsilon: 1.0, MinRegionSize: 4));
         var graph = RegionGraph.FromDisjointSet(segmentation);
@@ -125,16 +119,9 @@ public class RegionGraphTests
     [Fact]
     public void Boundaries_DeduplicationAndRowMajorSorting()
     {
-        var labels = new SequentialMatrix<int>(4, 2);
         // Row 0: 0, 0, 1, 1
         // Row 1: 0, 0, 1, 1
-        for (int y = 0; y < 2; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                labels[x, y] = x < 2 ? 0 : 1;
-            }
-        }
+        var labels = TestMatrices.Create(4, 2, static (x, _) => x < 2 ? 0 : 1);
 
         var graph = RegionGraph.FromLabels(labels);
 
@@ -283,14 +270,7 @@ public class RegionGraphTests
     [Fact]
     public void ComputeRegionStatistics_ShouldComputePerRegionValues()
     {
-        var labels = new SequentialMatrix<int>(4, 2);
-        for (int y = 0; y < 2; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                labels[x, y] = x < 2 ? 0 : 1;
-            }
-        }
+        var labels = TestMatrices.Create(4, 2, static (x, _) => x < 2 ? 0 : 1);
 
         var graph = RegionGraph.FromLabels(labels);
 
@@ -536,5 +516,36 @@ public class RegionGraphTests
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeRegionFlags(mask, -0.01));
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeRegionFlags(mask, 1.01));
         Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeRegionFlags(mask, double.NaN));
+    }
+
+    [Fact]
+    public void ComputeRegionFractions_ShouldReturnExactFractionsAndValidateInputs()
+    {
+        var labels = new SequentialMatrix<int>(4, 2);
+        for (int x = 0; x < 4; x++)
+        {
+            labels[x, 0] = 0;
+            labels[x, 1] = 1;
+        }
+
+        var graph = RegionGraph.FromLabels(labels);
+        var mask = new MaskMatrix(4, 2);
+        mask[0, 0] = true; // 1/4 = 0.25
+        mask[0, 1] = true;
+        mask[1, 1] = true; // 2/4 = 0.50
+
+        double[] fractions = graph.ComputeRegionFractions(mask);
+        Assert.Equal(2, fractions.Length);
+        Assert.Equal(0.25, fractions[0], 10);
+        Assert.Equal(0.50, fractions[1], 10);
+
+        RegionGraph emptyGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(0, 0));
+        Assert.Empty(emptyGraph.ComputeRegionFractions(new MaskMatrix(0, 0)));
+
+        var nullEx = Assert.Throws<ArgumentNullException>(() => graph.ComputeRegionFractions(null!));
+        Assert.Equal("mask", nullEx.ParamName);
+
+        var mismatchEx = Assert.Throws<ArgumentException>(() => graph.ComputeRegionFractions(new MaskMatrix(2, 2)));
+        Assert.Equal("mask", mismatchEx.ParamName);
     }
 }

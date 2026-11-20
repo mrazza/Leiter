@@ -32,9 +32,17 @@ public static class OrientedEllipticalFilter
         Guard.ThrowIfSizeMismatch(image, orientations);
         Guard.ThrowIfSizeMismatchIfNotNull(image, activeMask);
 
-        OrientedEllipticalFilterOptions opts = options ?? OrientedEllipticalFilterOptions.Default;
-        opts.Validate();
+        OrientedEllipticalFilterOptions opts = OptionsResolver.Resolve(options, OrientedEllipticalFilterOptions.Default);
 
+        return ApplyCore(image, orientations, opts, activeMask);
+    }
+
+    internal static Matrix<Rgb8> ApplyCore(
+        IReadOnlyMatrix<Rgb8> image,
+        IReadOnlyMatrix<Vector2D> orientations,
+        OrientedEllipticalFilterOptions opts,
+        IReadOnlyMatrix<bool>? activeMask = null)
+    {
         if (image.Count == 0)
             return new SequentialMatrix<Rgb8>(image.Size);
 

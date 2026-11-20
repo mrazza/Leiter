@@ -141,18 +141,15 @@ internal sealed partial class MeanShiftSpatialLattice
     /// <summary>
     /// Computes one Mean-Shift mode-seeking step using the 5D spatial-range lattice.
     /// </summary>
-    /// <param name="sourceLab">The source CIELAB pixel buffer.</param>
     /// <param name="current">The current mode coordinate.</param>
     /// <param name="spatialRadiusSq">The squared spatial radius threshold.</param>
     /// <param name="rangeRadiusSq">The squared color range radius threshold.</param>
     /// <returns>The updated mode coordinate, or <paramref name="current"/> if no points were within the window.</returns>
     public MeanShiftMode ComputeMeanStep(
-        ReadOnlySpan<Lab32> sourceLab,
         MeanShiftMode current,
         double spatialRadiusSq,
         double rangeRadiusSq)
     {
-        _ = sourceLab;
         if (points.Length == 0)
             return current;
 

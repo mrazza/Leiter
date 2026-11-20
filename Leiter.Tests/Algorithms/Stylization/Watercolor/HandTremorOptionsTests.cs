@@ -92,11 +92,7 @@ public class HandTremorOptionsTests
     /// </summary>
     /// <param name="degrees">The invalid hue threshold in degrees.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(180.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidHueDegrees), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSimilarHueThresholdDegrees_ShouldThrowArgumentOutOfRangeException(double degrees)
     {
         var options = new HandTremorOptions(SimilarHueThresholdDegrees: degrees);
@@ -196,11 +192,7 @@ public class HandTremorOptionsTests
     /// </summary>
     /// <param name="bias">The invalid paper gap bias.</param>
     [Theory]
-    [InlineData(-1.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidSignedUnitDoubles), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidPaperGapBias_ShouldThrowArgumentOutOfRangeException(double bias)
     {
         var options = new HandTremorOptions(PaperGapBias: bias);

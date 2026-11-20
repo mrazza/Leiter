@@ -87,8 +87,10 @@ internal sealed class GridMinCutSolver
 
     public double Solve(ReadOnlySpan<double> sourceCapacities, ReadOnlySpan<double> sinkCapacities)
     {
-        if (sourceCapacities.Length != pixelCount || sinkCapacities.Length != pixelCount)
-            throw new ArgumentException("Terminal capacity spans must match the grid pixel count.");
+        if (sourceCapacities.Length != pixelCount)
+            throw new ArgumentException("Source capacity span length must match the grid pixel count.", nameof(sourceCapacities));
+        if (sinkCapacities.Length != pixelCount)
+            throw new ArgumentException("Sink capacity span length must match the grid pixel count.", nameof(sinkCapacities));
 
         Array.Copy(baseNeighborCapacities, residualCapacities, residualCapacities.Length);
         Array.Clear(originTimestamp);

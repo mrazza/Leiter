@@ -3,13 +3,28 @@ namespace Leiter.Algorithms.Saliency;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Leiter.Algorithms.Quantization;
+using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
-/// Shared color-space saliency smoothing helper for contrast-based saliency algorithms.
+/// Shared color-space saliency smoothing and quantization helpers for contrast-based saliency algorithms.
 /// </summary>
 internal static class SaliencyColorSmoother
 {
+    internal const int DefaultQuantizationLevels = 12;
+
+    /// <summary>
+    /// Quantizes <paramref name="image"/> into <see cref="DefaultQuantizationLevels"/> buckets per channel,
+    /// truncates to the most frequent buckets, and builds the CIELAB lookup table used by saliency algorithms.
+    /// </summary>
+    public static QuantizedPalette<Rgb8, Lab32> QuantizeForSaliency(IReadOnlyMatrix<Rgb8> image) =>
+        PaletteQuantizer.QuantizeAndTruncate(
+            image,
+            static color => UniformQuantizer.QuantizeToMidpoint(color, DefaultQuantizationLevels),
+            static color => color.ToLab32(RgbColorSpace.SRgb));
+
     /// <summary>
     /// Smooths per-color saliency values across nearest neighbors in CIELAB space.
     /// </summary>
@@ -22,10 +37,7 @@ internal static class SaliencyColorSmoother
         IReadOnlyDictionary<Rgb8, Lab32> rgbToLabLookupTable,
         int neighborDivisor)
     {
-        if (neighborDivisor <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(neighborDivisor), "Neighbor divisor must be positive.");
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(neighborDivisor, 0);
 
         int nearestColorCount = colorSaliencyMap.Count / neighborDivisor;
         if (nearestColorCount <= 1)

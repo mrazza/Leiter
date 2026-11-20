@@ -53,9 +53,18 @@ public static class HandTremorFilter
             }
         }
 
-        HandTremorOptions opts = options ?? HandTremorOptions.Default;
-        opts.Validate();
+        HandTremorOptions opts = OptionsResolver.Resolve(options, HandTremorOptions.Default);
 
+        return ApplyCore(image, regionGraph, distanceField, wetInWet, opts);
+    }
+
+    internal static Matrix<Rgb8> ApplyCore(
+        IReadOnlyMatrix<Rgb8> image,
+        RegionGraph regionGraph,
+        IReadOnlyMatrix<DoublePixel> distanceField,
+        WetInWetResult? wetInWet,
+        HandTremorOptions opts)
+    {
         int boundaryCount = regionGraph.Boundaries.Count;
         if (image.Count == 0 || opts.Amplitude == 0.0 || boundaryCount == 0)
         {
@@ -64,7 +73,7 @@ public static class HandTremorFilter
 
         PerlinNoiseOptions primaryNoise = opts.PrimaryNoise ?? HandTremorOptions.DefaultPrimaryNoise;
         PerlinNoiseOptions secondaryNoise = opts.SecondaryNoise ?? HandTremorOptions.DefaultSecondaryNoise;
-        Rgb8 paperColor = opts.PaperColor ?? new Rgb8(250, 248, 242);
+        Rgb8 paperColor = opts.PaperColor ?? HandTremorOptions.DefaultPaperColor;
 
         RegionColorStatistics<Rgb64>[] stats = RegionColorStatistics.Compute(regionGraph, image);
 
@@ -117,7 +126,7 @@ public static class HandTremorFilter
 
                 double bandWeight = ScalarMath.OuterBandSmoothstepWeight(band.Distances[x, y], innerRadius, bandRadius);
                 double clampedD = ScalarMath.ClampUnitOrDefault(distanceField[x, y].Value);
-                double s = (opts.SalientAmplitudeScale + ((1.0 - opts.SalientAmplitudeScale) * clampedD)) * bandWeight;
+                double s = ScalarMath.Lerp(opts.SalientAmplitudeScale, 1.0, clampedD) * bandWeight;
 
                 RegionBoundary b = regionGraph.Boundaries[nearestBoundaryIndex];
                 int a = b.First;
@@ -129,7 +138,8 @@ public static class HandTremorFilter
                 byte group = boundaryGroup[nearestBoundaryIndex];
                 if (group == 1)
                 {
-                    result[x, y] = image.SampleBilinearWhere(
+                    result[x, y] = MatrixResampler.SampleBilinearWhereUnchecked(
+                        image,
                         p1.X,
                         p1.Y,
                         (Labels: regionGraph.Labels, First: a, Second: bId),
@@ -152,25 +162,25 @@ public static class HandTremorFilter
                         p2 -= bias;
                     }
 
-                    int label1 = regionGraph.Labels.SampleNearest(p1);
-                    int label2 = regionGraph.Labels.SampleNearest(p2);
+                    int label1 = MatrixResampler.SampleNearestUnchecked(regionGraph.Labels, p1.X, p1.Y);
+                    int label2 = MatrixResampler.SampleNearestUnchecked(regionGraph.Labels, p2.X, p2.Y);
 
                     bool hasA = label1 == a;
                     bool hasB = label2 == bId;
 
                     if (hasA && hasB)
                     {
-                        Rgb64 colA = image.SampleBilinearWhere(p1.X, p1.Y, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId).ToRgb64();
-                        Rgb64 colB = image.SampleBilinearWhere(p2.X, p2.Y, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId).ToRgb64();
-                        result[x, y] = PigmentBlend.MixPigments(colA, colB, opts.OverlapDarkening).ToRgb8();
+                        Rgb64 colA = MatrixResampler.SampleBilinearRgb64WhereUnchecked(image, p1.X, p1.Y, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
+                        Rgb64 colB = MatrixResampler.SampleBilinearRgb64WhereUnchecked(image, p2.X, p2.Y, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
+                        result[x, y] = PigmentBlend.MixPigmentsUnchecked(colA, colB, opts.OverlapDarkening).ToRgb8();
                     }
                     else if (hasA)
                     {
-                        result[x, y] = image.SampleBilinearWhere(p1.X, p1.Y, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
+                        result[x, y] = MatrixResampler.SampleBilinearWhereUnchecked(image, p1.X, p1.Y, (Labels: regionGraph.Labels, RegionId: a), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
                     }
                     else if (hasB)
                     {
-                        result[x, y] = image.SampleBilinearWhere(p2.X, p2.Y, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
+                        result[x, y] = MatrixResampler.SampleBilinearWhereUnchecked(image, p2.X, p2.Y, (Labels: regionGraph.Labels, RegionId: bId), static (cx, cy, state) => state.Labels[cx, cy] == state.RegionId);
                     }
                     else if (label1 == bId && label2 == a)
                     {
@@ -189,7 +199,7 @@ public static class HandTremorFilter
                     }
                     else
                     {
-                        result[x, y] = image.SampleBilinear(p1, EdgeHandling.Extend);
+                        result[x, y] = MatrixResampler.SampleBilinearUnchecked(image, p1.X, p1.Y, EdgeHandling.Extend);
                     }
                 }
             }
@@ -213,14 +223,7 @@ public static class HandTremorFilter
 
         double gx = sdRight - sdLeft;
         double gy = sdDown - sdUp;
-        double len = Math.Sqrt((gx * gx) + (gy * gy));
-        if (len <= 1e-6)
-        {
-            return Vector2D.Zero;
-        }
-
-        double invLen = 1.0 / len;
-        return new Vector2D(-gx * invLen, -gy * invLen);
+        return new Vector2D(-gx, -gy).Normalize();
     }
 
     private static double SampleSignedDistance(

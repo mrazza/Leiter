@@ -23,8 +23,7 @@ public static class TurbulenceFlow
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        TurbulenceFlowOptions opts = options ?? TurbulenceFlowOptions.Default;
-        opts.Validate();
+        TurbulenceFlowOptions opts = OptionsResolver.Resolve(options, TurbulenceFlowOptions.Default);
 
         if (image.Count == 0 || opts.Intensity == 0.0)
         {

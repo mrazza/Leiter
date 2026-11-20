@@ -6,6 +6,7 @@ using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -76,9 +77,9 @@ public class SegmentationVisualizerTests
         var assigner = SegmentationVisualizer.AverageColorAssigner();
 
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(null!, regions, seed: 1));
-        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, null!, seed: 1));
+        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, (IEnumerable<Region<Coord>>)null!, seed: 1));
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(null!, regions, assigner));
-        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, null!, assigner));
+        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, (IEnumerable<Region<Coord>>)null!, assigner));
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, regions, (SegmentationVisualizer.ColorAssigner<Rgb8>)null!));
         Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, new Region<Coord>[] { null! }, assigner));
     }
@@ -86,20 +87,13 @@ public class SegmentationVisualizerTests
     [Fact]
     public void ColorRegions_WithRegionGraphRegions_ShouldColorRegions()
     {
-        var labels = new SequentialMatrix<int>(4, 4);
-        for (int y = 0; y < 4; y++)
-        {
-            for (int x = 0; x < 4; x++)
-            {
-                labels[x, y] = x < 2 ? 0 : 1;
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
+        (SequentialMatrix<Rgb8> img, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            4,
+            4,
+            new Rgb8(0, 0, 0),
+            new Rgb8(0, 0, 0),
+            splitX: 2);
         IReadOnlyList<Region<Coord>> regions = graph.Regions;
-
-        var img = new SequentialMatrix<Rgb8>(4, 4);
-        img.SetAll(new Rgb8(0, 0, 0));
 
         Matrix<Rgb8> colored = SegmentationVisualizer.ColorRegions(
             img,
@@ -114,5 +108,36 @@ public class SegmentationVisualizerTests
         Matrix<Rgb8> randomColored = SegmentationVisualizer.ColorRegions(img, regions, seed: 7);
         Assert.Equal(randomColored[0, 0], randomColored[1, 3]);
         Assert.Equal(randomColored[2, 0], randomColored[3, 3]);
+
+        // RegionGraph and IDisjointSet overloads
+        Matrix<Rgb8> fromGraphCustom = SegmentationVisualizer.ColorRegions(
+            img,
+            graph,
+            (matrix, region) => region.Id == 0 ? new Rgb8(10, 20, 30) : new Rgb8(40, 50, 60));
+        Assert.Equal(new Rgb8(10, 20, 30), fromGraphCustom[0, 0]);
+        Assert.Equal(new Rgb8(40, 50, 60), fromGraphCustom[3, 3]);
+
+        Matrix<Rgb8> fromGraphSeed = SegmentationVisualizer.ColorRegions(img, graph, seed: 7);
+        MatrixAssert.Equal(randomColored, fromGraphSeed);
+
+        DisjointSet<byte> dsu = DisjointSet.CreateSingletons(img);
+        dsu.Union(0, 1, 0);
+        Matrix<Rgb8> fromDsuSeed = SegmentationVisualizer.ColorRegions(img, dsu, seed: 11);
+        Assert.Equal(fromDsuSeed[0, 0], fromDsuSeed[1, 0]);
+
+        Matrix<Rgb8> fromDsuCustom = SegmentationVisualizer.ColorRegions(
+            img,
+            dsu,
+            (_, region) => new Rgb8((byte)region.Pixels.Count, 0, 0));
+        Assert.Equal(new Rgb8(2, 0, 0), fromDsuCustom[0, 0]);
+        Assert.Equal(new Rgb8(1, 0, 0), fromDsuCustom[3, 3]);
+
+        var wrongSize = new SequentialMatrix<Rgb8>(2, 2);
+        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(null!, graph));
+        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, (RegionGraph)null!));
+        Assert.Throws<ArgumentException>(() => SegmentationVisualizer.ColorRegions(wrongSize, graph));
+        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(null!, dsu));
+        Assert.Throws<ArgumentNullException>(() => SegmentationVisualizer.ColorRegions(img, (IDisjointSet)null!));
+        Assert.Throws<ArgumentException>(() => SegmentationVisualizer.ColorRegions(wrongSize, dsu));
     }
 }

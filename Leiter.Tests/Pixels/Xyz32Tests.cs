@@ -52,4 +52,12 @@ public class Xyz32Tests : PixelContractTestsBase<Xyz32, float>
         Assert.Equal(3.0f, p.Z);
         Assert.Equal(0.0f, Xyz32.Zero.X);
     }
+
+    [Fact]
+    public void DistanceSquared_ShouldComputeSquaredEuclideanDistance()
+    {
+        var a = new Xyz32(1.0f, 2.0f, 3.0f);
+        var b = new Xyz32(4.0f, 6.0f, 3.0f);
+        Assert.Equal(25.0, a.DistanceSquared(b), 6);
+    }
 }

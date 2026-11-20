@@ -51,7 +51,7 @@ public class SequentialMatrix<T> : Matrix<T>
         : base(width, height)
     {
         if (data.Length != width * height)
-            throw new ArgumentException("Data length does not match matrix size.");
+            throw new ArgumentException("Data length does not match matrix size.", nameof(data));
 
         this.data = data;
     }

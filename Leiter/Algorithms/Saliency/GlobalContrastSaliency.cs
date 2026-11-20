@@ -2,10 +2,8 @@ namespace Leiter.Algorithms.Saliency;
 
 using System.Collections.Generic;
 using System.Linq;
-using Leiter.Algorithms.Quantization;
 using Leiter.Core;
 using Leiter.Pixels;
-using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
 /// Global contrast saliency algorithm.
@@ -41,10 +39,7 @@ public static class GlobalContrastSaliency
         }
 
         // Quantize the image into 12 buckets per channel and truncate the histogram to the top 95% of pixels.
-        var (paletteImage, truncatedHistogram, rgbToLabLookupTable) = PaletteQuantizer.QuantizeAndTruncate(
-            image,
-            static color => UniformQuantizer.QuantizeToMidpoint(color, 12),
-            static color => color.ToLab32(RgbColorSpace.SRgb));
+        var (paletteImage, truncatedHistogram, rgbToLabLookupTable) = SaliencyColorSmoother.QuantizeForSaliency(image);
 
         // Compute the saliency for each bucket based on the distance to all other buckets.
         Dictionary<Rgb8, double> saliencyMap = [];

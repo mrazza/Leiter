@@ -158,7 +158,7 @@ internal sealed class MeanShiftModeSeeker
         {
             MeanShiftMode nextMode = lattice is null
                 ? ComputeDirectMeanStep(currentMode)
-                : lattice.ComputeMeanStep(sourcePixels, currentMode, spatialRadiusSquared, rangeRadiusSquared);
+                : lattice.ComputeMeanStep(currentMode, spatialRadiusSquared, rangeRadiusSquared);
 
             double stepDistanceSquared = currentMode.SpatialDistanceSquared(nextMode) +
                                          nextMode.Color.EuclideanDistanceSquared(currentMode.Color);

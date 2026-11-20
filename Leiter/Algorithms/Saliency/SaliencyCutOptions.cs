@@ -20,7 +20,7 @@ public sealed record SaliencyCutOptions(
     int TrimapBandRadius = 10,
     GrabCutOptions? GrabCut = null,
     SaliencyMaskOptions? Mask = null,
-    int? MaxWorkingDimension = null)
+    int? MaxWorkingDimension = null) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default band radii and smoothness weights apply unscaled.
@@ -32,13 +32,19 @@ public sealed record SaliencyCutOptions(
     /// </summary>
     public static SaliencyCutOptions Default { get; } = new();
 
-    internal static readonly GrabCutOptions DefaultGrabCut = new(Iterations: 2, MixtureComponentCount: 5, SmoothnessWeight: 50.0);
+    /// <summary>
+    /// Gets the default inner GrabCut options used when <see cref="GrabCut"/> is <see langword="null"/>.
+    /// </summary>
+    public static GrabCutOptions DefaultGrabCut { get; } = new(Iterations: 2, MixtureComponentCount: 5, SmoothnessWeight: 50.0);
 
-    internal static readonly SaliencyMaskOptions DefaultMask = new(
+    /// <summary>
+    /// Gets the default initial binarization and component retention options used when <see cref="Mask"/> is <see langword="null"/>.
+    /// </summary>
+    public static SaliencyMaskOptions DefaultMask { get; } = new(
         Method: SaliencyThresholdMethod.Fixed,
-        FixedThreshold: 70.0 / 255.0,
+        FixedThreshold: SaliencyMaskOptions.DefaultFixedThreshold,
         RetentionPolicy: ComponentRetentionPolicy.MinimumAreaFraction,
-        MinAreaFraction: 0.01);
+        MinAreaFraction: SaliencyMaskOptions.DefaultMinAreaFraction);
 
     /// <summary>
     /// Creates <see cref="SaliencyCutOptions"/> with trimap band radius and inner GrabCut smoothness scaled linearly for full-resolution execution on <paramref name="size"/>.

@@ -29,8 +29,10 @@ public class BucketingHistogram<T> : IHistogram<T> where T : notnull
     /// Initializes a new instance of the <see cref="BucketingHistogram{T}"/> class using the specified bucketing delegate.
     /// </summary>
     /// <param name="bucketer">The delegate that maps elements to bucket keys.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="bucketer"/> is <see langword="null"/>.</exception>
     public BucketingHistogram(Bucketer<T> bucketer)
     {
+        ArgumentNullException.ThrowIfNull(bucketer);
         histogram = [];
         this.bucketer = bucketer;
     }
@@ -41,7 +43,7 @@ public class BucketingHistogram<T> : IHistogram<T> where T : notnull
 
     /// <inheritdoc/>
     public double GetDensity(T value)
-        => GetCount(value) / (double)total;
+        => total == 0 ? 0.0 : GetCount(value) / (double)total;
 
     /// <inheritdoc/>
     public int Increment(T value, int count = 1)
@@ -58,6 +60,7 @@ public class BucketingHistogram<T> : IHistogram<T> where T : notnull
     public IReadOnlyHistogram<N> MapBuckets<N>(Func<T, N> mapFunc)
         where N : notnull
     {
+        ArgumentNullException.ThrowIfNull(mapFunc);
         var result = new DictionaryHistogram<N>();
 
         foreach (var element in histogram)

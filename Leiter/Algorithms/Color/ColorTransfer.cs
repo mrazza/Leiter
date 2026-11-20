@@ -75,12 +75,15 @@ public static class ColorTransfer
     /// <param name="colorSpace">The RGB color space of <paramref name="image"/>.</param>
     /// <param name="illuminant">The reference white illuminant for CIELAB conversion (defaults to <see cref="Illuminant.E"/>).</param>
     /// <returns>The 6D <see cref="LabColorStatistics"/> feature vector.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> or <paramref name="illuminant"/> is undefined.</exception>
     public static LabColorStatistics ComputeStatistics(
         IReadOnlyMatrix<Rgb8> image,
         RgbColorSpace colorSpace = RgbColorSpace.SRgb,
         Illuminant illuminant = Illuminant.E)
     {
         ArgumentNullException.ThrowIfNull(image);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        Guard.ThrowIfUndefinedEnum(illuminant);
 
         if (image.Count == 0)
             return default;
@@ -172,7 +175,7 @@ public static class ColorTransfer
     /// <param name="illuminant">The reference white illuminant for CIELAB conversion (defaults to <see cref="Illuminant.E"/>).</param>
     /// <param name="strength">Blending strength in <c>[0, 1]</c>.</param>
     /// <returns>A recolored <see cref="Matrix{Rgb8}"/> image.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="strength"/> is outside <c>[0, 1]</c>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> or <paramref name="illuminant"/> is undefined, or <paramref name="strength"/> is outside <c>[0, 1]</c>.</exception>
     public static Matrix<Rgb8> Transfer(
         IReadOnlyMatrix<Rgb8> source,
         IReadOnlyMatrix<Rgb8> reference,
@@ -182,6 +185,8 @@ public static class ColorTransfer
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(reference);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        Guard.ThrowIfUndefinedEnum(illuminant);
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         if (source.Count == 0 || strength == 0.0)
@@ -201,7 +206,7 @@ public static class ColorTransfer
     /// <param name="strength">Blending strength in <c>[0, 1]</c>.</param>
     /// <returns>A recolored <see cref="Matrix{Rgb8}"/> image.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="profile"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="strength"/> is outside <c>[0, 1]</c>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> or <paramref name="profile"/>'s illuminant is undefined, or <paramref name="strength"/> is outside <c>[0, 1]</c>.</exception>
     public static Matrix<Rgb8> Transfer(
         IReadOnlyMatrix<Rgb8> source,
         ColorTransferProfile profile,
@@ -210,6 +215,8 @@ public static class ColorTransfer
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(profile);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
+        Guard.ThrowIfUndefinedEnum(profile.Illuminant, nameof(profile));
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         if (source.Count == 0 || strength == 0.0)
@@ -230,7 +237,7 @@ public static class ColorTransfer
     /// <returns>The recolored <see cref="Matrix{Rgb8}"/> image and the selected <see cref="ColorTransferProfile"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/>, <paramref name="profiles"/>, or any profile entry is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="profiles"/> is empty.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="strength"/> is outside <c>[0, 1]</c> or any feature weight is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="colorSpace"/> is undefined, <paramref name="strength"/> is outside <c>[0, 1]</c>, or any feature weight is negative.</exception>
     public static (Matrix<Rgb8> Result, ColorTransferProfile SelectedProfile) TransferToClosestProfile(
         IReadOnlyMatrix<Rgb8> source,
         IReadOnlyList<ColorTransferProfile> profiles,
@@ -240,6 +247,7 @@ public static class ColorTransfer
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(profiles);
+        Guard.ThrowIfUndefinedEnum(colorSpace);
         Guard.ThrowIfNotFiniteInRange(strength, 0.0, 1.0);
 
         Matrix<Lab32> sourceLabE = source.Map(pixel => pixel.ToLab32(colorSpace, Illuminant.E));

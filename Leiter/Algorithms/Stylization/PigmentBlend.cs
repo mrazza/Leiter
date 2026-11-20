@@ -27,6 +27,11 @@ public static class PigmentBlend
         Guard.ThrowIfNotFinite(channel);
         Guard.ThrowIfNotFinite(densityOffset);
 
+        return AdjustChannelDensityUnchecked(channel, densityOffset);
+    }
+
+    internal static double AdjustChannelDensityUnchecked(double channel, double densityOffset)
+    {
         double c = Math.Clamp(channel, 0.0, 1.0);
         return Math.Clamp(c - (c * (1.0 - c) * densityOffset), 0.0, 1.0);
     }
@@ -43,11 +48,14 @@ public static class PigmentBlend
         ValidateFiniteColor(color, nameof(color));
         Guard.ThrowIfNotFinite(densityOffset);
 
-        return new Rgb64(
-            AdjustChannelDensity(color.R, densityOffset),
-            AdjustChannelDensity(color.G, densityOffset),
-            AdjustChannelDensity(color.B, densityOffset));
+        return AdjustDensityUnchecked(color, densityOffset);
     }
+
+    internal static Rgb64 AdjustDensityUnchecked(Rgb64 color, double densityOffset) =>
+        new(
+            AdjustChannelDensityUnchecked(color.R, densityOffset),
+            AdjustChannelDensityUnchecked(color.G, densityOffset),
+            AdjustChannelDensityUnchecked(color.B, densityOffset));
 
     /// <summary>
     /// Adjusts the pigment density of an 8-bit RGB color.
@@ -60,8 +68,11 @@ public static class PigmentBlend
     {
         Guard.ThrowIfNotFinite(densityOffset);
 
-        return AdjustDensity(color.ToRgb64(), densityOffset).ToRgb8();
+        return AdjustDensityUnchecked(color, densityOffset);
     }
+
+    internal static Rgb8 AdjustDensityUnchecked(Rgb8 color, double densityOffset) =>
+        AdjustDensityUnchecked(color.ToRgb64(), densityOffset).ToRgb8();
 
     /// <summary>
     /// Blends two pigment colors using a subtractive-like multiplicative glaze model with an overlap darkening factor.
@@ -82,6 +93,11 @@ public static class PigmentBlend
         ValidateFiniteColor(second, nameof(second));
         Guard.ThrowIfNotFiniteInRange(overlapDarkening, 0.0, 1.0);
 
+        return MixPigmentsUnchecked(first, second, overlapDarkening);
+    }
+
+    internal static Rgb64 MixPigmentsUnchecked(Rgb64 first, Rgb64 second, double overlapDarkening = 0.5)
+    {
         Rgb64 c1 = new(
             Math.Clamp(first.R, 0.0, 1.0),
             Math.Clamp(first.G, 0.0, 1.0),
@@ -120,7 +136,7 @@ public static class PigmentBlend
     {
         Guard.ThrowIfNotFiniteInRange(overlapDarkening, 0.0, 1.0);
 
-        return MixPigments(first.ToRgb64(), second.ToRgb64(), overlapDarkening).ToRgb8();
+        return MixPigmentsUnchecked(first.ToRgb64(), second.ToRgb64(), overlapDarkening).ToRgb8();
     }
 
     /// <summary>
@@ -173,7 +189,7 @@ public static class PigmentBlend
 
         if (image.Count == 0)
         {
-            return new SequentialMatrix<Rgb8>(image.Size);
+            return image.Clone();
         }
 
         int width = image.Width;
@@ -184,7 +200,9 @@ public static class PigmentBlend
         {
             for (int x = 0; x < width; x++)
             {
-                result[x, y] = AdjustDensity(image[x, y], densityOffsetSelector(field[x, y].Value));
+                double densityOffset = densityOffsetSelector(field[x, y].Value);
+                Guard.ThrowIfNotFinite(densityOffset);
+                result[x, y] = AdjustDensityUnchecked(image[x, y], densityOffset);
             }
         });
 

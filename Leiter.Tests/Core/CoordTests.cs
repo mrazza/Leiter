@@ -26,4 +26,16 @@ public class CoordTests
         Assert.Equal(4, result.X);
         Assert.Equal(6, result.Y);
     }
+
+    [Fact]
+    public void DistanceSquared_ShouldComputeExactSquaredDistanceWithoutOverflow()
+    {
+        var c1 = new Coord(0, 0);
+        var c2 = new Coord(-3, 4);
+        Assert.Equal(25L, c1.DistanceSquared(c2));
+
+        var extremeA = new Coord(100_000, 0);
+        var extremeB = new Coord(0, 0);
+        Assert.Equal(10_000_000_000L, extremeA.DistanceSquared(extremeB));
+    }
 }

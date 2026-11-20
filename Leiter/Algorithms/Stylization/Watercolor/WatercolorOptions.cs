@@ -48,7 +48,7 @@ public sealed record WatercolorOptions(
     PaperGranulationOptions? PaperGranulation = null,
     FxaaOptions? Fxaa = null,
     bool EnableFxaa = true,
-    double EgbiBlurSigma = 0.8)
+    double EgbiBlurSigma = 0.8) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which pipeline stage parameters apply unscaled.
@@ -60,7 +60,16 @@ public sealed record WatercolorOptions(
     /// </summary>
     public static WatercolorOptions Default { get; } = new();
 
-    internal static readonly EgbiOptions SaliencyEgbiBaseline = new(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200);
+    /// <summary>
+    /// Gets the baseline EGBI segmentation options used in Stage 2 regional contrast saliency when <see cref="Egbi"/> is <see langword="null"/>.
+    /// </summary>
+    public static EgbiOptions DefaultSaliencyEgbi { get; } = new(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200);
+
+    internal static EgbiOptions ResolveDefaultEgbi(int pixelCount) =>
+        DefaultSaliencyEgbi with { MinRegionSize = Math.Min(DefaultSaliencyEgbi.MinRegionSize, Math.Max(1, pixelCount / 16)) };
+
+    internal static MeanShiftOptions ResolveDefaultMeanShift(int pixelCount) =>
+        new(MinRegionSize: Math.Min(MeanShiftOptions.Default.MinRegionSize, Math.Max(1, pixelCount / 32)));
 
     /// <summary>
     /// Creates <see cref="WatercolorOptions"/> with every pipeline stage tuned geometrically for <paramref name="size"/> by delegating to each stage option type's <c>ForSize</c> factory.
@@ -79,7 +88,7 @@ public sealed record WatercolorOptions(
         return new WatercolorOptions(
             TargetPalette: null,
             ColorTransferStrength: 1.0,
-            Egbi: EgbiOptions.ForSize(size, SaliencyEgbiBaseline, referenceDimension),
+            Egbi: EgbiOptions.ForSize(size, DefaultSaliencyEgbi, referenceDimension),
             RegionalContrastSaliency: RegionalContrastSaliencyOptions.Default,
             SaliencyCut: SaliencyCutOptions.ForSize(size, referenceDimension),
             SaliencyDistanceField: SaliencyDistanceFieldOptions.Default,
@@ -143,7 +152,7 @@ public sealed record WatercolorOptions(
         return new WatercolorOptions(
             TargetPalette: selectedPalette,
             ColorTransferStrength: transferStrength,
-            Egbi: EgbiOptions.ForProfile(in postTransferProfile, SaliencyEgbiBaseline, referenceDimension),
+            Egbi: EgbiOptions.ForProfile(in postTransferProfile, DefaultSaliencyEgbi, referenceDimension),
             RegionalContrastSaliency: RegionalContrastSaliencyOptions.Default,
             SaliencyCut: SaliencyCutOptions.ForProfile(in postTransferProfile, referenceDimension),
             SaliencyDistanceField: SaliencyDistanceFieldOptions.Default,

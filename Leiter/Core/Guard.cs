@@ -104,4 +104,28 @@ internal static class Guard
         if (actual is not null && expected.Size != actual.Size)
             throw new ArgumentException($"Matrix dimensions {actual.Size} must match expected dimensions {expected.Size}.", paramName);
     }
+
+    /// <summary>
+    /// Throws <see cref="ArgumentOutOfRangeException"/> if <paramref name="size"/> has a negative width or height.
+    /// </summary>
+    public static void ThrowIfNegative(
+        Size size,
+        [CallerArgumentExpression(nameof(size))] string? paramName = null)
+    {
+        if (size.Width < 0 || size.Height < 0)
+            throw new ArgumentOutOfRangeException(paramName, size, $"{paramName} dimensions must be non-negative.");
+    }
+
+    /// <summary>
+    /// Throws <see cref="ArgumentOutOfRangeException"/> if <paramref name="value"/> is non-finite or outside <c>(minExclusive, maxInclusive]</c>.
+    /// </summary>
+    public static void ThrowIfNotFiniteInHalfOpenRange(
+        double value,
+        double minExclusive,
+        double maxInclusive,
+        [CallerArgumentExpression(nameof(value))] string? paramName = null)
+    {
+        if (!double.IsFinite(value) || value <= minExclusive || value > maxInclusive)
+            throw new ArgumentOutOfRangeException(paramName, value, $"{paramName} must be finite and within ({minExclusive}, {maxInclusive}].");
+    }
 }

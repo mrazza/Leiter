@@ -1,9 +1,11 @@
 namespace Leiter.Tests.Platform.ImageSharp;
 
 using System;
+using System.IO;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Platform.ImageSharp;
+using Leiter.Tests.TestUtils;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
@@ -56,5 +58,33 @@ public class ImageExtensionsTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 5).ToImage());
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(5, 0).ToImage());
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 0).ToImage());
+    }
+
+    [Fact]
+    public void LoadRgb8_And_Save_ShouldRoundTripAndValidateArguments()
+    {
+        var matrix = new SequentialMatrix<Rgb8>(3, 2);
+        matrix[0, 0] = new Rgb8(10, 20, 30);
+        matrix[2, 1] = new Rgb8(200, 150, 100);
+
+        string tempPath = Path.Combine(Path.GetTempPath(), $"leiter_imgsharp_{Guid.NewGuid():N}.png");
+        try
+        {
+            matrix.Save(tempPath);
+            SequentialMatrix<Rgb8> loaded = Leiter.Platform.ImageSharp.ImageExtensions.LoadRgb8(tempPath);
+            MatrixAssert.Equal(matrix, loaded);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+
+        Assert.Throws<ArgumentNullException>(() => Leiter.Platform.ImageSharp.ImageExtensions.LoadRgb8(null!));
+        Assert.Throws<ArgumentException>(() => Leiter.Platform.ImageSharp.ImageExtensions.LoadRgb8("   "));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb8>)null!).Save("out.png"));
+        Assert.Throws<ArgumentException>(() => Leiter.Platform.ImageSharp.ImageExtensions.Save(matrix, " "));
     }
 }

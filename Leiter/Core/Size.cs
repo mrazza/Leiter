@@ -8,6 +8,33 @@ namespace Leiter.Core;
 public readonly record struct Size(int Width, int Height)
 {
     /// <summary>
+    /// Gets the total number of elements (<c>Width * Height</c>) in a matrix of this size.
+    /// </summary>
+    public int Count => Width * Height;
+
+    /// <summary>
+    /// Computes the row-major linear index corresponding to the specified coordinates.
+    /// </summary>
+    /// <param name="x">The zero-based horizontal X-coordinate.</param>
+    /// <param name="y">The zero-based vertical Y-coordinate.</param>
+    /// <returns>The zero-based row-major linear index.</returns>
+    public int IndexOf(int x, int y) => (y * Width) + x;
+
+    /// <summary>
+    /// Computes the row-major linear index corresponding to <paramref name="coord"/>.
+    /// </summary>
+    /// <param name="coord">The two-dimensional coordinate.</param>
+    /// <returns>The zero-based row-major linear index.</returns>
+    public int IndexOf(Coord coord) => (coord.Y * Width) + coord.X;
+
+    /// <summary>
+    /// Computes the two-dimensional coordinate corresponding to a row-major linear index.
+    /// </summary>
+    /// <param name="index">The zero-based row-major linear index.</param>
+    /// <returns>The <see cref="Coord"/> corresponding to <paramref name="index"/>.</returns>
+    public Coord CoordOf(int index) => new(index % Width, index / Width);
+
+    /// <summary>
     /// Determines whether the specified integer coordinates lie within the bounds <c>[0, Width)</c> and <c>[0, Height)</c>.
     /// </summary>
     /// <param name="x">The zero-based horizontal X-coordinate.</param>

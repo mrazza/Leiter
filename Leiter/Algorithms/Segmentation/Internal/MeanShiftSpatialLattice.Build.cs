@@ -15,12 +15,14 @@ internal sealed partial class MeanShiftSpatialLattice
         public readonly Dictionary<ColorKey3D, int> ColorCounts = new();
         public readonly List<ColorKey3D> SortedKeys = [];
         public readonly Dictionary<ColorKey3D, int> WriteOffsets = new();
+        public readonly List<(int X, int Y, Lab32 Color, ColorKey3D Key)> CellSamples = [];
 
         public void Clear()
         {
             ColorCounts.Clear();
             SortedKeys.Clear();
             WriteOffsets.Clear();
+            CellSamples.Clear();
         }
     }
 
@@ -204,8 +206,9 @@ internal sealed partial class MeanShiftSpatialLattice
         scratch.Clear();
         Dictionary<ColorKey3D, int> colorCounts = scratch.ColorCounts;
         List<ColorKey3D> sortedKeys = scratch.SortedKeys;
+        List<(int X, int Y, Lab32 Color, ColorKey3D Key)> cellSamples = scratch.CellSamples;
 
-        CountCellColors(sourcePixels, width, rangeCellWidth, xSpan, ySpan, sampleStride, colorCounts, sortedKeys);
+        CountCellColors(sourcePixels, width, rangeCellWidth, xSpan, ySpan, sampleStride, colorCounts, sortedKeys, cellSamples);
         if (sortedKeys.Count == 0)
             return [];
 
@@ -213,7 +216,7 @@ internal sealed partial class MeanShiftSpatialLattice
 
         Dictionary<ColorKey3D, int> writeOffsets = scratch.WriteOffsets;
         ColorBucket[] cellBuckets = BuildSortedBucketSpans(sortedKeys, colorCounts, cellPointOffset, writeOffsets);
-        ScatterCellPoints(sourcePixels, width, rangeCellWidth, xSpan, ySpan, sampleStride, writeOffsets, points);
+        ScatterCellPoints(cellSamples, writeOffsets, points);
         return cellBuckets;
     }
 
@@ -225,7 +228,8 @@ internal sealed partial class MeanShiftSpatialLattice
         AxisCellSpan ySpan,
         int sampleStride,
         Dictionary<ColorKey3D, int> colorCounts,
-        List<ColorKey3D> sortedKeys)
+        List<ColorKey3D> sortedKeys,
+        List<(int X, int Y, Lab32 Color, ColorKey3D Key)> cellSamples)
     {
         for (int y = ySpan.FirstSample; y < ySpan.ExclusiveEnd; y += sampleStride)
         {
@@ -236,7 +240,9 @@ internal sealed partial class MeanShiftSpatialLattice
                 if ((uint)pixelIndex >= (uint)sourcePixels.Length)
                     continue;
 
-                ColorKey3D colorKey = QuantizeColor(sourcePixels[pixelIndex], rangeCellWidth);
+                Lab32 color = sourcePixels[pixelIndex];
+                ColorKey3D colorKey = QuantizeColor(color, rangeCellWidth);
+                cellSamples.Add((x, y, color, colorKey));
                 if (!colorCounts.TryGetValue(colorKey, out int count))
                 {
                     colorCounts[colorKey] = 1;
@@ -272,30 +278,16 @@ internal sealed partial class MeanShiftSpatialLattice
     }
 
     private static void ScatterCellPoints(
-        Lab32[] sourcePixels,
-        int width,
-        double rangeCellWidth,
-        AxisCellSpan xSpan,
-        AxisCellSpan ySpan,
-        int sampleStride,
+        List<(int X, int Y, Lab32 Color, ColorKey3D Key)> cellSamples,
         Dictionary<ColorKey3D, int> writeOffsets,
         PackedPoint[] points)
     {
-        for (int y = ySpan.FirstSample; y < ySpan.ExclusiveEnd; y += sampleStride)
+        for (int i = 0; i < cellSamples.Count; i++)
         {
-            int rowStart = y * width;
-            for (int x = xSpan.FirstSample; x < xSpan.ExclusiveEnd; x += sampleStride)
-            {
-                int pixelIndex = rowStart + x;
-                if ((uint)pixelIndex >= (uint)sourcePixels.Length)
-                    continue;
-
-                Lab32 color = sourcePixels[pixelIndex];
-                ColorKey3D colorKey = QuantizeColor(color, rangeCellWidth);
-                int destinationIndex = writeOffsets[colorKey];
-                writeOffsets[colorKey] = destinationIndex + 1;
-                points[destinationIndex] = new PackedPoint(x, y, color);
-            }
+            (int x, int y, Lab32 color, ColorKey3D colorKey) = cellSamples[i];
+            int destinationIndex = writeOffsets[colorKey];
+            writeOffsets[colorKey] = destinationIndex + 1;
+            points[destinationIndex] = new PackedPoint(x, y, color);
         }
     }
 

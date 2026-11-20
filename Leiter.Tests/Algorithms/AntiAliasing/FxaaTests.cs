@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms.AntiAliasing;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -33,16 +34,10 @@ public class FxaaTests
         }
 
         Matrix<Rgb8> solidResult = Fxaa.Apply(solidImage);
-        for (int i = 0; i < solidImage.Count; i++)
-        {
-            Assert.Equal(solidImage[i], solidResult[i]);
-        }
+        MatrixAssert.Equal(solidImage, solidResult);
 
         Matrix<Rgb8> lowContrastResult = Fxaa.Apply(lowContrastImage);
-        for (int i = 0; i < lowContrastImage.Count; i++)
-        {
-            Assert.Equal(lowContrastImage[i], lowContrastResult[i]);
-        }
+        MatrixAssert.Equal(lowContrastImage, lowContrastResult);
     }
 
     /// <summary>
@@ -98,17 +93,8 @@ public class FxaaTests
     public void Apply_HorizontalAndVerticalEdges_ShouldAntiAliasBothOrientations()
     {
         int size = 16;
-        var horizontalImage = new SequentialMatrix<Rgb8>(size, size);
-        var verticalImage = new SequentialMatrix<Rgb8>(size, size);
-
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                horizontalImage[x, y] = y < 8 ? new Rgb8(0, 0, 0) : new Rgb8(255, 255, 255);
-                verticalImage[x, y] = x < 8 ? new Rgb8(0, 0, 0) : new Rgb8(255, 255, 255);
-            }
-        }
+        var horizontalImage = TestMatrices.HorizontalSplit(size, size, new Rgb8(0, 0, 0), new Rgb8(255, 255, 255), splitY: 8);
+        var verticalImage = TestMatrices.VerticalSplit(size, size, new Rgb8(0, 0, 0), new Rgb8(255, 255, 255), splitX: 8);
 
         Matrix<Rgb8> horizontalResult = Fxaa.Apply(horizontalImage);
         Matrix<Rgb8> verticalResult = Fxaa.Apply(verticalImage);
@@ -145,17 +131,9 @@ public class FxaaTests
     [Fact]
     public void Apply_SubpixelBlendStrength_ShouldAffectAntiAliasing()
     {
-        int size = 16;
-        var image = new SequentialMatrix<Rgb8>(size, size);
-
         // Isolated high-contrast point in flat background to maximize subpixel blend
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                image[x, y] = new Rgb8(0, 0, 0);
-            }
-        }
+        int size = 16;
+        var image = TestMatrices.Constant(size, size, new Rgb8(0, 0, 0));
 
         image[8, 8] = new Rgb8(255, 255, 255);
 

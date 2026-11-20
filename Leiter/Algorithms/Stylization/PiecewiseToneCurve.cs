@@ -36,8 +36,7 @@ public static class PiecewiseToneCurve
     {
         Guard.ThrowIfNotFinite(value);
 
-        PiecewiseToneCurveOptions resolvedOptions = options ?? PiecewiseToneCurveOptions.Default;
-        resolvedOptions.Validate();
+        PiecewiseToneCurveOptions resolvedOptions = OptionsResolver.Resolve(options, PiecewiseToneCurveOptions.Default);
 
         return EvaluateCore(value, resolvedOptions);
     }
@@ -99,8 +98,7 @@ public static class PiecewiseToneCurve
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        PiecewiseToneCurveOptions resolvedOptions = options ?? PiecewiseToneCurveOptions.Default;
-        resolvedOptions.Validate();
+        PiecewiseToneCurveOptions resolvedOptions = OptionsResolver.Resolve(options, PiecewiseToneCurveOptions.Default);
 
         if (image.Count == 0)
         {

@@ -21,7 +21,7 @@ public static class SaliencyMask
     public static double ComputeThreshold(
         IReadOnlyMatrix<DoublePixel> saliencyMap,
         SaliencyThresholdMethod method = SaliencyThresholdMethod.Otsu,
-        double fixedThreshold = 70.0 / 255.0)
+        double fixedThreshold = SaliencyMaskOptions.DefaultFixedThreshold)
     {
         ArgumentNullException.ThrowIfNull(saliencyMap);
         Guard.ThrowIfUndefinedEnum(method);
@@ -52,11 +52,10 @@ public static class SaliencyMask
     {
         ArgumentNullException.ThrowIfNull(saliencyMap);
 
-        SaliencyMaskOptions resolvedOptions = options ?? SaliencyMaskOptions.Default;
-        resolvedOptions.Validate();
+        SaliencyMaskOptions resolvedOptions = OptionsResolver.Resolve(options, SaliencyMaskOptions.Default);
 
         double threshold = ComputeThreshold(saliencyMap, resolvedOptions.Method, resolvedOptions.FixedThreshold);
-        MaskMatrix rawMask = saliencyMap.ToMaskMatrix(pixel => ClampUnit(pixel.Value) > threshold);
+        MaskMatrix rawMask = saliencyMap.ToMaskMatrix(pixel => ScalarMath.ClampUnitOrDefault(pixel.Value) > threshold);
         return BinaryMorphology.FilterConnectedComponents(rawMask, resolvedOptions.RetentionPolicy, resolvedOptions.MinAreaFraction);
     }
 
@@ -66,7 +65,7 @@ public static class SaliencyMask
         for (int y = 0; y < saliencyMap.Height; y++)
         {
             for (int x = 0; x < saliencyMap.Width; x++)
-                sum += ClampUnit(saliencyMap[x, y].Value);
+                sum += ScalarMath.ClampUnitOrDefault(saliencyMap[x, y].Value);
         }
 
         double mean = sum / saliencyMap.Count;
@@ -82,7 +81,7 @@ public static class SaliencyMask
         {
             for (int x = 0; x < saliencyMap.Width; x++)
             {
-                int bin = (int)Math.Round(ClampUnit(saliencyMap[x, y].Value) * 255.0);
+                int bin = (int)Math.Round(ScalarMath.ClampUnitOrDefault(saliencyMap[x, y].Value) * 255.0);
                 histogram[bin]++;
                 totalSum += bin;
             }
@@ -136,7 +135,4 @@ public static class SaliencyMask
 
         return 0.0;
     }
-
-    private static double ClampUnit(double value) =>
-        double.IsFinite(value) ? Math.Clamp(value, 0.0, 1.0) : 0.0;
 }

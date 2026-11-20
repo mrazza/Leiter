@@ -56,7 +56,7 @@ public class MeanShiftSpatialLatticeTests
         foreach (MeanShiftMode query in testModes)
         {
             MeanShiftMode directExpected = DirectBruteForceScan(pixels, width, height, query, spatialRadiusSq, rangeRadiusSq);
-            MeanShiftMode latticeActual = lattice.ComputeMeanStep(pixels, query, spatialRadiusSq, rangeRadiusSq);
+            MeanShiftMode latticeActual = lattice.ComputeMeanStep(query, spatialRadiusSq, rangeRadiusSq);
 
             Assert.Equal(directExpected.X, latticeActual.X, 4);
             Assert.Equal(directExpected.Y, latticeActual.Y, 4);
@@ -81,7 +81,7 @@ public class MeanShiftSpatialLatticeTests
 
         // Color is far outside the pixel colors
         var query = new MeanShiftMode(5.0, 5.0, new Lab32(90.0f, 50.0f, -50.0f));
-        MeanShiftMode result = lattice.ComputeMeanStep(pixels, query, spatialRadius * spatialRadius, rangeRadius * rangeRadius);
+        MeanShiftMode result = lattice.ComputeMeanStep(query, spatialRadius * spatialRadius, rangeRadius * rangeRadius);
 
         Assert.Equal(query.X, result.X);
         Assert.Equal(query.Y, result.Y);
@@ -94,7 +94,7 @@ public class MeanShiftSpatialLatticeTests
         var lattice = new MeanShiftSpatialLattice([], 0, 0, 5.0, 5.0);
         var query = new MeanShiftMode(2.0, 3.0, new Lab32(50.0f, 0.0f, 0.0f));
 
-        MeanShiftMode result = lattice.ComputeMeanStep([], query, 25.0, 25.0);
+        MeanShiftMode result = lattice.ComputeMeanStep(query, 25.0, 25.0);
 
         Assert.Equal(query.X, result.X);
         Assert.Equal(query.Y, result.Y);

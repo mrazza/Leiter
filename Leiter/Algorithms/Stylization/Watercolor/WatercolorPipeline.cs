@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
+using System.Diagnostics;
 using Leiter.Algorithms;
 using Leiter.Algorithms.AntiAliasing;
 using Leiter.Algorithms.Color;
@@ -23,6 +24,7 @@ public static class WatercolorPipeline
     /// <param name="image">The input RGB photograph to watercolorize.</param>
     /// <param name="options">Optional pipeline configuration parameters controlling each stage.</param>
     /// <param name="paperHeightMap">Optional custom normalized [0, 1] paper height map used during Stage 6 granulation.</param>
+    /// <param name="onStageCompleted">Optional callback invoked as each major pipeline stage completes (not invoked when <paramref name="image"/> is empty).</param>
     /// <returns>A <see cref="WatercolorResult"/> containing the final rendered painting and stage intermediates.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="paperHeightMap"/> dimensions do not match <paramref name="image"/>.</exception>
@@ -30,18 +32,20 @@ public static class WatercolorPipeline
     public static WatercolorResult RenderDetailed(
         IReadOnlyMatrix<Rgb8> image,
         WatercolorOptions? options = null,
-        IReadOnlyMatrix<DoublePixel>? paperHeightMap = null)
+        IReadOnlyMatrix<DoublePixel>? paperHeightMap = null,
+        Action<WatercolorStageProgress>? onStageCompleted = null)
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        WatercolorOptions opts = options ?? WatercolorOptions.Default;
-        opts.Validate();
+        WatercolorOptions opts = OptionsResolver.Resolve(options, WatercolorOptions.Default);
         Guard.ThrowIfSizeMismatchIfNotNull(image, paperHeightMap);
 
         if (image.Count == 0)
         {
             return CreateEmptyResult(image.Size, opts);
         }
+
+        long stageStart = onStageCompleted is not null ? Stopwatch.GetTimestamp() : 0;
 
         // Stage 1: Reinhard Color Transfer
         (Matrix<Rgb8> colorTransferred, ColorTransferProfile selectedPalette) = opts.TargetPalette is not null
@@ -51,15 +55,12 @@ public static class WatercolorPipeline
                 WatercolorPalettes.Defaults,
                 featureWeights: WatercolorPalettes.DefaultFeatureWeights,
                 strength: opts.ColorTransferStrength);
+        CompleteStage(onStageCompleted, WatercolorStage.ColorTransfer, ref stageStart);
 
         // Stage 2: Regional Contrast Saliency & Saliency Distance Field
         Matrix<Rgb8> blurred = Blur.GaussianBlur(colorTransferred, opts.EgbiBlurSigma);
         Matrix<Lab32> labBlurred = blurred.Map(static pixel => pixel.ToLab32(RgbColorSpace.SRgb));
-        EgbiOptions resolvedEgbi = opts.Egbi ??
-            new EgbiOptions(
-                KFactor: 50.0,
-                Epsilon: 1.0,
-                MinRegionSize: Math.Min(200, Math.Max(1, image.Count / 16)));
+        EgbiOptions resolvedEgbi = opts.Egbi ?? WatercolorOptions.ResolveDefaultEgbi(image.Count);
         IDisjointSet egbiSeg = EgbiSegmentation.Segment(labBlurred, resolvedEgbi);
         Matrix<DoublePixel> saliencyMap = RegionalContrastSaliency.ComputeSaliency(colorTransferred, egbiSeg, opts.RegionalContrastSaliency);
         (MaskMatrix salientMask, Matrix<DoublePixel> distanceField) = SaliencyDistanceField.Compute(
@@ -67,33 +68,44 @@ public static class WatercolorPipeline
             saliencyMap,
             opts.SaliencyCut,
             opts.SaliencyDistanceField);
+        CompleteStage(onStageCompleted, WatercolorStage.Saliency, ref stageStart);
 
         // Stage 3: Mean-Shift Segmentation & Saliency-Guided LOD Abstraction
-        MeanShiftOptions resolvedMeanShift = opts.MeanShift ??
-            new MeanShiftOptions(MinRegionSize: Math.Min(50, Math.Max(1, image.Count / 32)));
+        MeanShiftOptions resolvedMeanShift = opts.MeanShift ?? WatercolorOptions.ResolveDefaultMeanShift(image.Count);
         (Matrix<Rgb8> meanShiftFiltered, IDisjointSet meanShiftSeg) = MeanShiftSegmentation.FilterAndSegment(colorTransferred, resolvedMeanShift);
         RegionGraph regionGraph = RegionGraph.FromDisjointSet(meanShiftSeg);
-        Matrix<Rgb8> lodAbstracted = LodAbstraction.Apply(
+        double[] salientFractions = regionGraph.ComputeRegionFractions(salientMask);
+        CompleteStage(onStageCompleted, WatercolorStage.Segmentation, ref stageStart);
+
+        LodAbstractionOptions resolvedLod = OptionsResolver.Resolve(opts.LodAbstraction, LodAbstractionOptions.Default);
+        Matrix<Rgb8> lodAbstracted = LodAbstraction.ApplyCore(
             meanShiftFiltered,
             regionGraph,
             distanceField,
             salientMask,
-            opts.LodAbstraction);
+            salientFractions,
+            resolvedLod);
+        CompleteStage(onStageCompleted, WatercolorStage.LodAbstraction, ref stageStart);
 
         // Stage 4: Wet-in-Wet Bleeding
-        WetInWetResult wetInWet = WetInWetFilter.ApplyDetailed(
+        WetInWetOptions resolvedWetInWet = OptionsResolver.Resolve(opts.WetInWet, WetInWetOptions.Default);
+        WetInWetResult wetInWet = WetInWetFilter.ApplyDetailedCore(
             lodAbstracted,
             regionGraph,
             salientMask,
-            opts.WetInWet);
+            salientFractions,
+            resolvedWetInWet);
+        CompleteStage(onStageCompleted, WatercolorStage.WetInWet, ref stageStart);
 
         // Stage 5: Hand Tremor Distortion
-        Matrix<Rgb8> handTremor = HandTremorFilter.Apply(
+        HandTremorOptions resolvedHandTremor = OptionsResolver.Resolve(opts.HandTremor, HandTremorOptions.Default);
+        Matrix<Rgb8> handTremor = HandTremorFilter.ApplyCore(
             wetInWet.Image,
             regionGraph,
             distanceField,
             wetInWet,
-            opts.HandTremor);
+            resolvedHandTremor);
+        CompleteStage(onStageCompleted, WatercolorStage.HandTremor, ref stageStart);
 
         // Stage 6: Secondary Watercolor Effects & FXAA
         EdgeDarkeningOptions edgeOpts = opts.EdgeDarkening ?? EdgeDarkeningOptions.Default;
@@ -129,6 +141,7 @@ public static class WatercolorPipeline
         Matrix<Rgb8> output = opts.EnableFxaa
             ? Fxaa.Apply(granulated, opts.Fxaa)
             : granulated;
+        CompleteStage(onStageCompleted, WatercolorStage.Finishing, ref stageStart);
 
         return new WatercolorResult(
             output,
@@ -141,6 +154,18 @@ public static class WatercolorPipeline
             lodAbstracted,
             wetInWet,
             handTremor);
+    }
+
+    private static void CompleteStage(
+        Action<WatercolorStageProgress>? callback,
+        WatercolorStage stage,
+        ref long stageStart)
+    {
+        if (callback is null)
+            return;
+
+        callback(new WatercolorStageProgress(stage, Stopwatch.GetElapsedTime(stageStart)));
+        stageStart = Stopwatch.GetTimestamp();
     }
 
     /// <summary>
