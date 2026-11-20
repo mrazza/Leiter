@@ -76,11 +76,7 @@ public static class PaperGranulation
 
         PaperGranulationOptions opts = options ?? PaperGranulationOptions.Default;
         opts.Validate();
-
-        if (paperHeightMap is not null && paperHeightMap.Size != image.Size)
-        {
-            throw new ArgumentException("The paper height map dimensions must match the image dimensions.", nameof(paperHeightMap));
-        }
+        Guard.ThrowIfSizeMismatchIfNotNull(image, paperHeightMap);
 
         if (image.Count == 0 || (opts.DensityStrength == 0.0 && opts.WarpAmplitude == 0.0))
         {
@@ -109,7 +105,7 @@ public static class PaperGranulation
             heightMap,
             rawHeight =>
             {
-                double h = double.IsFinite(rawHeight) ? Math.Clamp(rawHeight, 0.0, 1.0) : 0.5;
+                double h = ScalarMath.ClampUnitOrDefault(rawHeight, fallback: 0.5);
                 return opts.DensityStrength * ((0.5 - h) * 2.0);
             });
     }

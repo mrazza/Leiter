@@ -100,9 +100,7 @@ internal static class Program
             () =>
             {
                 double egbiSigma = WatercolorOptions.ForSize(colorTransferred.Size).EgbiBlurSigma;
-                Matrix<Rgb8> blurredTransferred = egbiSigma <= 2.0
-                    ? Blur.GaussianBlur(colorTransferred, egbiSigma, Math.Max(1, (int)Math.Ceiling(2.5 * egbiSigma)))
-                    : Blur.GaussianBlurRecursive(colorTransferred, egbiSigma);
+                Matrix<Rgb8> blurredTransferred = Blur.GaussianBlur(colorTransferred, egbiSigma);
                 Matrix<Lab32> labImage = blurredTransferred.Map(pixel => pixel.ToLab32(RgbColorSpace.SRgb));
                 EgbiOptions egbiOptions = EgbiOptions.ForImage(labImage, new EgbiOptions(KFactor: 50.0, Epsilon: 1.0, MinRegionSize: 200));
                 return EgbiSegmentation.Segment(labImage, egbiOptions);

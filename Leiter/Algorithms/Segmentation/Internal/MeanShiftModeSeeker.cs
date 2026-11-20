@@ -63,12 +63,7 @@ internal static class MeanShiftModeSeeker
             int minY = Math.Max(0, (int)Math.Floor(currentMode.Y - SpatialRadius));
             int maxY = Math.Min(Height - 1, (int)Math.Ceiling(currentMode.Y + SpatialRadius));
 
-            double sumX = 0;
-            double sumY = 0;
-            double sumL = 0;
-            double sumA = 0;
-            double sumB = 0;
-            int count = 0;
+            var accumulator = default(MeanShiftModeAccumulator);
 
             for (int y = minY; y <= maxY; y++)
             {
@@ -92,24 +87,12 @@ internal static class MeanShiftModeSeeker
                     Lab32 pixelColor = SourcePixels[rowOffset + x];
                     if (pixelColor.EuclideanDistanceSquared(currentMode.Color) <= RangeRadiusSquared)
                     {
-                        sumX += x;
-                        sumY += y;
-                        sumL += pixelColor.L;
-                        sumA += pixelColor.A;
-                        sumB += pixelColor.B;
-                        count++;
+                        accumulator.Add(x, y, pixelColor);
                     }
                 }
             }
 
-            if (count == 0)
-                return currentMode;
-
-            double invCount = 1.0 / count;
-            return new MeanShiftMode(
-                sumX * invCount,
-                sumY * invCount,
-                new Lab32((float)(sumL * invCount), (float)(sumA * invCount), (float)(sumB * invCount)));
+            return accumulator.ToModeOrFallback(currentMode);
         }
     }
 
@@ -119,17 +102,11 @@ internal static class MeanShiftModeSeeker
 
     private struct MatchingCornerAccumulator
     {
-        public int MatchCount;
-        public MeanShiftMode ReferenceMode;
-        public bool AllAgree;
-        public double WeightSum;
-        public double WeightedX;
-        public double WeightedY;
-        public double WeightedL;
-        public double WeightedA;
-        public double WeightedB;
+        private MeanShiftModeAccumulator modeAccumulator;
+        private MeanShiftMode referenceMode;
+        private bool allAgree;
 
-        public static MatchingCornerAccumulator Create() => new() { AllAgree = true };
+        public static MatchingCornerAccumulator Create() => new() { allAgree = true };
 
         public void TryAdd(
             in CoarseCornerSample corner,
@@ -139,7 +116,7 @@ internal static class MeanShiftModeSeeker
             double modeColorToleranceSquared,
             double spatialRadiusSquared)
         {
-            if (!AllAgree)
+            if (!allAgree)
                 return;
 
             if (pixelColor.EuclideanDistanceSquared(corner.SourceColor) > cornerMatchToleranceSquared ||
@@ -148,41 +125,29 @@ internal static class MeanShiftModeSeeker
                 return;
             }
 
-            if (MatchCount == 0)
+            if (modeAccumulator.Count == 0)
             {
-                ReferenceMode = corner.Mode;
+                referenceMode = corner.Mode;
             }
-            else if (corner.Mode.Color.EuclideanDistanceSquared(ReferenceMode.Color) > modeColorToleranceSquared ||
-                     corner.Mode.SpatialDistanceSquared(ReferenceMode) > spatialRadiusSquared)
+            else if (corner.Mode.Color.EuclideanDistanceSquared(referenceMode.Color) > modeColorToleranceSquared ||
+                     corner.Mode.SpatialDistanceSquared(referenceMode) > spatialRadiusSquared)
             {
-                AllAgree = false;
+                allAgree = false;
                 return;
             }
 
-            MatchCount++;
-            double weight = corner.BilinearWeight;
-            WeightSum += weight;
-            WeightedX += weight * corner.Mode.X;
-            WeightedY += weight * corner.Mode.Y;
-            WeightedL += weight * corner.Mode.Color.L;
-            WeightedA += weight * corner.Mode.Color.A;
-            WeightedB += weight * corner.Mode.Color.B;
+            modeAccumulator.AddWeighted(corner.Mode, corner.BilinearWeight);
         }
 
         public readonly bool TryBuildAverageMode(out MeanShiftMode mode)
         {
-            if (MatchCount < 2 || !AllAgree || WeightSum <= 0.0)
+            if (modeAccumulator.Count < 2 || !allAgree)
             {
                 mode = default;
                 return false;
             }
 
-            double invWeight = 1.0 / WeightSum;
-            mode = new MeanShiftMode(
-                WeightedX * invWeight,
-                WeightedY * invWeight,
-                new Lab32((float)(WeightedL * invWeight), (float)(WeightedA * invWeight), (float)(WeightedB * invWeight)));
-            return true;
+            return modeAccumulator.TryGetMode(out mode);
         }
     }
 

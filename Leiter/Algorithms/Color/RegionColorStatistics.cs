@@ -136,9 +136,7 @@ public static class RegionColorStatistics
         ArgumentNullException.ThrowIfNull(colorConverter);
         ArgumentNullException.ThrowIfNull(hueSelector);
         ArgumentNullException.ThrowIfNull(intensitySelector);
-
-        if (image.Size != graph.Size)
-            throw new ArgumentException($"Image dimensions {image.Size} must match RegionGraph dimensions {graph.Size}.", nameof(image));
+        Guard.ThrowIfSizeMismatch(graph.Size, image.Size, nameof(image));
 
         return graph.ComputeRegionStatistics(region =>
         {

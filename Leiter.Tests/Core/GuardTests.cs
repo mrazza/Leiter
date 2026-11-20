@@ -79,5 +79,13 @@ public class GuardTests
         Assert.Throws<ArgumentNullException>(() => Guard.ThrowIfSizeMismatch(null!, b));
         Assert.Throws<ArgumentNullException>(() => Guard.ThrowIfSizeMismatch(a, null!));
         Assert.Throws<ArgumentException>(() => Guard.ThrowIfSizeMismatch(a, c));
+
+        Guard.ThrowIfSizeMismatch(new Size(2, 3), new Size(2, 3));
+        Assert.Throws<ArgumentException>(() => Guard.ThrowIfSizeMismatch(new Size(2, 3), new Size(3, 2)));
+
+        Guard.ThrowIfSizeMismatchIfNotNull(a, null);
+        Guard.ThrowIfSizeMismatchIfNotNull(a, b);
+        Assert.Throws<ArgumentNullException>(() => Guard.ThrowIfSizeMismatchIfNotNull(null!, b));
+        Assert.Throws<ArgumentException>(() => Guard.ThrowIfSizeMismatchIfNotNull(a, c));
     }
 }

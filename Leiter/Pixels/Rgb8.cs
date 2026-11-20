@@ -60,6 +60,20 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
         new(ClampRoundedByte(r * 255.0), ClampRoundedByte(g * 255.0), ClampRoundedByte(b * 255.0));
 
     /// <summary>
+    /// Linearly interpolates component-wise between <paramref name="from"/> and <paramref name="to"/> by <paramref name="amount"/>,
+    /// rounding away from zero and clamping each channel to <c>[0, 255]</c>.
+    /// </summary>
+    /// <param name="from">The starting color returned when <paramref name="amount"/> is <c>0.0</c>.</param>
+    /// <param name="to">The target color returned when <paramref name="amount"/> is <c>1.0</c>.</param>
+    /// <param name="amount">The interpolation factor, typically in <c>[0.0, 1.0]</c>.</param>
+    /// <returns>The interpolated, rounded, and byte-clamped <see cref="Rgb8"/> color.</returns>
+    public static Rgb8 Lerp(Rgb8 from, Rgb8 to, double amount) =>
+        new(
+            ClampRoundedByte(ScalarMath.Lerp(from.R, to.R, amount)),
+            ClampRoundedByte(ScalarMath.Lerp(from.G, to.G, amount)),
+            ClampRoundedByte(ScalarMath.Lerp(from.B, to.B, amount)));
+
+    /// <summary>
     /// Adds another <see cref="Rgb8"/> pixel to this pixel component-wise, saturating each channel to [0, 255].
     /// </summary>
     /// <param name="right">The pixel to add.</param>

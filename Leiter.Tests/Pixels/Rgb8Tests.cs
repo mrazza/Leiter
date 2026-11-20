@@ -160,6 +160,19 @@ public class Rgb8Tests : PixelContractTestsBase<Rgb8, byte>
         Assert.Equal(5.0, value.Divide(scalar).Value);
     }
 
+    [Fact]
+    public void Lerp_ShouldInterpolateRoundAwayFromZeroAndClamp()
+    {
+        var from = new Rgb8(10, 200, 50);
+        var to = new Rgb8(11, 100, 150);
+
+        Assert.Equal(from, Rgb8.Lerp(from, to, 0.0));
+        Assert.Equal(to, Rgb8.Lerp(from, to, 1.0));
+        Assert.Equal(new Rgb8(11, 150, 100), Rgb8.Lerp(from, to, 0.5));
+        Assert.Equal(new Rgb8(8, 255, 0), Rgb8.Lerp(from, to, -2.0));
+        Assert.Equal(new Rgb8(13, 0, 255), Rgb8.Lerp(from, to, 2.5));
+    }
+
     private readonly record struct MinimalScalarOperable(double Value) : IScalarOperable<MinimalScalarOperable>
     {
         public MinimalScalarOperable Add(decimal right) => new(Value + (double)right);

@@ -29,13 +29,8 @@ public static class OrientedEllipticalFilter
         IReadOnlyMatrix<bool>? activeMask = null)
     {
         ArgumentNullException.ThrowIfNull(image);
-        ArgumentNullException.ThrowIfNull(orientations);
-
-        if (image.Size != orientations.Size)
-            throw new ArgumentException("The orientations matrix size must match the image size.", nameof(orientations));
-
-        if (activeMask is not null && activeMask.Size != image.Size)
-            throw new ArgumentException("The active mask size must match the image size.", nameof(activeMask));
+        Guard.ThrowIfSizeMismatch(image, orientations);
+        Guard.ThrowIfSizeMismatchIfNotNull(image, activeMask);
 
         OrientedEllipticalFilterOptions opts = options ?? OrientedEllipticalFilterOptions.Default;
         opts.Validate();

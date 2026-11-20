@@ -37,16 +37,8 @@ public static class WetInWetFilter
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
-
-        if (regionGraph.Size != image.Size)
-        {
-            throw new ArgumentException("RegionGraph dimensions must match image dimensions.", nameof(regionGraph));
-        }
-
-        if (salientMask is not null && salientMask.Size != image.Size)
-        {
-            throw new ArgumentException("SalientMask dimensions must match image dimensions.", nameof(salientMask));
-        }
+        Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
+        Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
 
         WetInWetOptions opts = options ?? WetInWetOptions.Default;
         opts.Validate();
@@ -61,7 +53,7 @@ public static class WetInWetFilter
                 new bool[boundaryCount]);
         }
 
-        double[]? salientFractions = salientMask is null ? null : regionGraph.ComputeRegionFractions(salientMask);
+        bool[]? salientRegions = salientMask is null ? null : regionGraph.ComputeRegionFlags(salientMask, opts.SalientOverlapThreshold);
         RegionColorStatistics<Rgb64>[] stats = RegionColorStatistics.Compute(regionGraph, image);
 
         var (avgGradX, avgGradY) = ComputeAverageRegionGradients(regionGraph, image);
@@ -72,8 +64,8 @@ public static class WetInWetFilter
         for (int bi = 0; bi < boundaryCount; bi++)
         {
             RegionBoundary b = regionGraph.Boundaries[bi];
-            bool isSalientA = salientFractions is not null && salientFractions[b.First] >= opts.SalientOverlapThreshold;
-            bool isSalientB = salientFractions is not null && salientFractions[b.Second] >= opts.SalientOverlapThreshold;
+            bool isSalientA = salientRegions is not null && salientRegions[b.First];
+            bool isSalientB = salientRegions is not null && salientRegions[b.Second];
 
             if (opts.Mode == WetInWetMode.ExcludeSalientBoundaries && (isSalientA != isSalientB))
             {
@@ -168,9 +160,9 @@ public static class WetInWetFilter
 
                 seedDarkerColors[pIdx] = count > 0
                     ? new Rgb8(
-                        (byte)Math.Round((double)sumR / count, MidpointRounding.AwayFromZero),
-                        (byte)Math.Round((double)sumG / count, MidpointRounding.AwayFromZero),
-                        (byte)Math.Round((double)sumB / count, MidpointRounding.AwayFromZero))
+                        Rgb8.ClampRoundedByte((double)sumR / count),
+                        Rgb8.ClampRoundedByte((double)sumG / count),
+                        Rgb8.ClampRoundedByte((double)sumB / count))
                     : stats[darkerId].MeanColor.ToRgb8();
             }
         }
@@ -235,23 +227,9 @@ public static class WetInWetFilter
                 int brighterId = stats[b.First].MeanIntensity >= stats[b.Second].MeanIntensity ? b.First : b.Second;
                 bool isBrighterSide = regionGraph.Labels[x, y] == brighterId;
 
-                double alpha;
-                if (isBrighterSide)
-                {
-                    if (dist <= opts.ScatterRadius)
-                    {
-                        alpha = 1.0;
-                    }
-                    else
-                    {
-                        double t = (double)(dist - opts.ScatterRadius) / (maxBand - opts.ScatterRadius + 1);
-                        alpha = 1.0 - (t * t * (3.0 - (2.0 * t)));
-                    }
-                }
-                else
-                {
-                    alpha = dist == 0 ? 0.45 : dist == 1 ? 0.15 : 0.0;
-                }
+                double alpha = isBrighterSide
+                    ? ScalarMath.OuterBandSmoothstepWeight(dist, opts.ScatterRadius, maxBand)
+                    : dist == 0 ? 0.45 : dist == 1 ? 0.15 : 0.0;
 
                 if (alpha >= 1.0)
                 {
@@ -263,12 +241,7 @@ public static class WetInWetFilter
                 }
                 else
                 {
-                    Rgb64 orig = image[x, y].ToRgb64();
-                    Rgb64 wet = filtered[x, y].ToRgb64();
-                    composited[x, y] = new Rgb64(
-                        orig.R + (alpha * (wet.R - orig.R)),
-                        orig.G + (alpha * (wet.G - orig.G)),
-                        orig.B + (alpha * (wet.B - orig.B))).ToRgb8();
+                    composited[x, y] = Rgb8.Lerp(image[x, y], filtered[x, y], alpha);
                 }
             }
         }
@@ -297,16 +270,8 @@ public static class WetInWetFilter
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
         ArgumentNullException.ThrowIfNull(distanceField);
-
-        if (regionGraph.Size != image.Size)
-        {
-            throw new ArgumentException("RegionGraph dimensions must match image dimensions.", nameof(regionGraph));
-        }
-
-        if (distanceField.Size != image.Size)
-        {
-            throw new ArgumentException("DistanceField dimensions must match image dimensions.", nameof(distanceField));
-        }
+        Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
+        Guard.ThrowIfSizeMismatch(image, distanceField);
 
         return ApplyDetailed(image, regionGraph, SaliencyDistanceField.ExtractSalientMask(distanceField), options);
     }
@@ -358,7 +323,6 @@ public static class WetInWetFilter
         var sumGradX = new double[regionCount];
         var sumGradY = new double[regionCount];
         IReadOnlyMatrix<int> labels = regionGraph.Labels;
-        const double SobelScale = 1.0 / (8.0 * 255.0);
 
         for (int y = 0; y < height; y++)
         {
@@ -367,25 +331,19 @@ public static class WetInWetFilter
                 int label = labels[x, y];
                 Rgb8 center = image[x, y];
 
-                Rgb8 p_m1_m1 = SampleRegionClamped(image, labels, x - 1, y - 1, width, height, label, center);
-                Rgb8 p_0_m1 = SampleRegionClamped(image, labels, x, y - 1, width, height, label, center);
-                Rgb8 p_p1_m1 = SampleRegionClamped(image, labels, x + 1, y - 1, width, height, label, center);
-                Rgb8 p_m1_0 = SampleRegionClamped(image, labels, x - 1, y, width, height, label, center);
-                Rgb8 p_p1_0 = SampleRegionClamped(image, labels, x + 1, y, width, height, label, center);
-                Rgb8 p_m1_p1 = SampleRegionClamped(image, labels, x - 1, y + 1, width, height, label, center);
-                Rgb8 p_0_p1 = SampleRegionClamped(image, labels, x, y + 1, width, height, label, center);
-                Rgb8 p_p1_p1 = SampleRegionClamped(image, labels, x + 1, y + 1, width, height, label, center);
+                var (gx, gy) = SpatialGradients.ComputeRgb8GradientAt(
+                    SampleRegionClamped(image, labels, x - 1, y - 1, width, height, label, center),
+                    SampleRegionClamped(image, labels, x, y - 1, width, height, label, center),
+                    SampleRegionClamped(image, labels, x + 1, y - 1, width, height, label, center),
+                    SampleRegionClamped(image, labels, x - 1, y, width, height, label, center),
+                    SampleRegionClamped(image, labels, x + 1, y, width, height, label, center),
+                    SampleRegionClamped(image, labels, x - 1, y + 1, width, height, label, center),
+                    SampleRegionClamped(image, labels, x, y + 1, width, height, label, center),
+                    SampleRegionClamped(image, labels, x + 1, y + 1, width, height, label, center),
+                    GradientOperator.Sobel);
 
-                double gxR = ((p_p1_m1.R - p_m1_m1.R) + (2.0 * (p_p1_0.R - p_m1_0.R)) + (p_p1_p1.R - p_m1_p1.R)) * SobelScale;
-                double gxG = ((p_p1_m1.G - p_m1_m1.G) + (2.0 * (p_p1_0.G - p_m1_0.G)) + (p_p1_p1.G - p_m1_p1.G)) * SobelScale;
-                double gxB = ((p_p1_m1.B - p_m1_m1.B) + (2.0 * (p_p1_0.B - p_m1_0.B)) + (p_p1_p1.B - p_m1_p1.B)) * SobelScale;
-
-                double gyR = ((p_m1_p1.R - p_m1_m1.R) + (2.0 * (p_0_p1.R - p_0_m1.R)) + (p_p1_p1.R - p_p1_m1.R)) * SobelScale;
-                double gyG = ((p_m1_p1.G - p_m1_m1.G) + (2.0 * (p_0_p1.G - p_0_m1.G)) + (p_p1_p1.G - p_p1_m1.G)) * SobelScale;
-                double gyB = ((p_m1_p1.B - p_m1_m1.B) + (2.0 * (p_0_p1.B - p_0_m1.B)) + (p_p1_p1.B - p_p1_m1.B)) * SobelScale;
-
-                sumGradX[label] += Math.Sqrt((gxR * gxR) + (gxG * gxG) + (gxB * gxB));
-                sumGradY[label] += Math.Sqrt((gyR * gyR) + (gyG * gyG) + (gyB * gyB));
+                sumGradX[label] += SpatialGradients.ChannelNorm(gx);
+                sumGradY[label] += SpatialGradients.ChannelNorm(gy);
             }
         }
 

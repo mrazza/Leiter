@@ -55,5 +55,13 @@ public class ColorMetricsTests
         Assert.Equal(0.114, new Rgb8(0, 0, 255).GetLuma(), 9);
         Assert.Equal(1.0, new Rgb8(255, 255, 255).GetLuma(), 9);
         Assert.Equal(0.0, Rgb8.Zero.GetLuma(), 9);
+
+        Assert.Equal(0.0, new Rgb64(0.5, 0.5, 0.5).GetChroma(), 9);
+        Assert.Equal(1.0, new Rgb64(1.0, 0.0, 0.0).GetChroma(), 9);
+        Assert.Equal(0.5, new Rgb64(0.8, 0.3, 0.5).GetChroma(), 9);
+
+        Assert.Equal(0.0, new Rgb8(128, 128, 128).GetChroma(), 9);
+        Assert.Equal(1.0, new Rgb8(0, 255, 0).GetChroma(), 9);
+        Assert.Equal(51.0 / 255.0, new Rgb8(204, 153, 170).GetChroma(), 9);
     }
 }

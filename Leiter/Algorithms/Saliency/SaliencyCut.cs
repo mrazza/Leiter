@@ -28,10 +28,7 @@ public static class SaliencyCut
         SaliencyCutOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
-        ArgumentNullException.ThrowIfNull(saliencyMap);
-
-        if (image.Size != saliencyMap.Size)
-            throw new ArgumentException("Image and saliency map dimensions must match.", nameof(saliencyMap));
+        Guard.ThrowIfSizeMismatch(image, saliencyMap);
 
         SaliencyCutOptions resolvedOptions = options ?? SaliencyCutOptions.Default;
         resolvedOptions.Validate();

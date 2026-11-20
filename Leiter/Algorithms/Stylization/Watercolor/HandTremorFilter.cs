@@ -40,23 +40,12 @@ public static class HandTremorFilter
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
         ArgumentNullException.ThrowIfNull(distanceField);
-
-        if (regionGraph.Size != image.Size)
-        {
-            throw new ArgumentException("RegionGraph dimensions must match image dimensions.", nameof(regionGraph));
-        }
-
-        if (distanceField.Size != image.Size)
-        {
-            throw new ArgumentException("DistanceField dimensions must match image dimensions.", nameof(distanceField));
-        }
+        Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
+        Guard.ThrowIfSizeMismatch(image, distanceField);
 
         if (wetInWet is not null)
         {
-            if (wetInWet.WetAreaMask.Size != image.Size)
-            {
-                throw new ArgumentException("WetInWet mask dimensions must match image dimensions.", nameof(wetInWet));
-            }
+            Guard.ThrowIfSizeMismatch(image, wetInWet.WetAreaMask, nameof(wetInWet));
 
             if (wetInWet.QualifyingBoundaries.Count != regionGraph.Boundaries.Count)
             {
@@ -90,10 +79,8 @@ public static class HandTremorFilter
             else
             {
                 RegionBoundary b = regionGraph.Boundaries[bi];
-                Rgb64 colorA = stats[b.First].MeanColor;
-                Rgb64 colorB = stats[b.Second].MeanColor;
-                double chromaA = Math.Max(colorA.R, Math.Max(colorA.G, colorA.B)) - Math.Min(colorA.R, Math.Min(colorA.G, colorA.B));
-                double chromaB = Math.Max(colorB.R, Math.Max(colorB.G, colorB.B)) - Math.Min(colorB.R, Math.Min(colorB.G, colorB.B));
+                double chromaA = stats[b.First].MeanColor.GetChroma();
+                double chromaB = stats[b.Second].MeanColor.GetChroma();
                 double hueDiff = ColorMetrics.HueDifferenceDegrees(stats[b.First].MeanHueDegrees, stats[b.Second].MeanHueDegrees);
                 boundaryGroup[bi] = (chromaA >= minContrastingChroma &&
                                      chromaB >= minContrastingChroma &&
@@ -128,16 +115,8 @@ public static class HandTremorFilter
                     continue;
                 }
 
-                int dist = band.Distances[x, y];
-                double bandWeight = 1.0;
-                if (dist > innerRadius)
-                {
-                    double t = (double)(dist - innerRadius) / (bandRadius - innerRadius + 1);
-                    bandWeight = 1.0 - (t * t * (3.0 - (2.0 * t)));
-                }
-
-                double d = distanceField[x, y].Value;
-                double clampedD = double.IsFinite(d) ? Math.Clamp(d, 0.0, 1.0) : 0.0;
+                double bandWeight = ScalarMath.OuterBandSmoothstepWeight(band.Distances[x, y], innerRadius, bandRadius);
+                double clampedD = ScalarMath.ClampUnitOrDefault(distanceField[x, y].Value);
                 double s = (opts.SalientAmplitudeScale + ((1.0 - opts.SalientAmplitudeScale) * clampedD)) * bandWeight;
 
                 RegionBoundary b = regionGraph.Boundaries[nearestBoundaryIndex];
@@ -208,12 +187,7 @@ public static class HandTremorFilter
                         }
                         else
                         {
-                            Rgb8 src = image[x, y];
-                            double opacity = opts.PaperGapOpacity;
-                            result[x, y] = new Rgb8(
-                                (byte)Math.Clamp(Math.Round(src.R + ((paperColor.R - src.R) * opacity)), 0, 255),
-                                (byte)Math.Clamp(Math.Round(src.G + ((paperColor.G - src.G) * opacity)), 0, 255),
-                                (byte)Math.Clamp(Math.Round(src.B + ((paperColor.B - src.B) * opacity)), 0, 255));
+                            result[x, y] = Rgb8.Lerp(image[x, y], paperColor, opts.PaperGapOpacity);
                         }
                     }
                     else

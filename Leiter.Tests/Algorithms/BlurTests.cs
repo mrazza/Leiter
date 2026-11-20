@@ -185,4 +185,28 @@ public class BlurTests
         Assert.Equal(12.5, Blur.GaussianBlurRecursive(view, 2.0)[2, 2].Value, 10);
         Assert.Equal(12.5, Blur.GaussianBlur(view, 1.0, 0)[2, 2].Value, 10);
     }
+
+    [Fact]
+    public void GaussianBlur_AdaptiveSigmaOverload_ShouldHandleZeroSmallAndLargeSigmas()
+    {
+        SequentialMatrix<DoublePixel> img = TestMatrices.Create(15, 13, (x, y) => new DoublePixel((x * 11.0) + (y * 7.0)));
+
+        Assert.Throws<ArgumentNullException>(() => Blur.GaussianBlur<DoublePixel>(null!, 1.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlur(img, -0.1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Blur.GaussianBlur(img, double.NaN));
+
+        Matrix<DoublePixel> zeroBlurred = Blur.GaussianBlur(img, 0.0);
+        MatrixAssert.ApproxEqual(img, zeroBlurred, 0.0);
+
+        Matrix<DoublePixel> emptyBlurred = Blur.GaussianBlur(new SequentialMatrix<DoublePixel>(0, 4), 1.5);
+        Assert.Equal(0, emptyBlurred.Width);
+
+        Matrix<DoublePixel> firExpected = Blur.GaussianBlur(img, 0.8, 2);
+        Matrix<DoublePixel> firAdaptive = Blur.GaussianBlur(img, 0.8);
+        MatrixAssert.ApproxEqual(firExpected, firAdaptive, 1e-12);
+
+        Matrix<DoublePixel> recursiveExpected = Blur.GaussianBlurRecursive(img, 3.5);
+        Matrix<DoublePixel> recursiveAdaptive = Blur.GaussianBlur(img, 3.5);
+        MatrixAssert.ApproxEqual(recursiveExpected, recursiveAdaptive, 1e-12);
+    }
 }

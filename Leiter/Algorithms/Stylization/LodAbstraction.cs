@@ -35,16 +35,9 @@ public static class LodAbstraction
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
-        ArgumentNullException.ThrowIfNull(distanceField);
-
-        if (image.Size != regionGraph.Size)
-            throw new ArgumentException("The region graph size must match the image size.", nameof(regionGraph));
-
-        if (image.Size != distanceField.Size)
-            throw new ArgumentException("The distance field size must match the image size.", nameof(distanceField));
-
-        if (salientMask is not null && salientMask.Size != image.Size)
-            throw new ArgumentException("The salient mask size must match the image size.", nameof(salientMask));
+        Guard.ThrowIfSizeMismatch(image, distanceField);
+        Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
+        Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
 
         LodAbstractionOptions resolvedOptions = options ?? LodAbstractionOptions.Default;
         resolvedOptions.Validate();
@@ -58,10 +51,7 @@ public static class LodAbstraction
         Rgb64[] normalizedRgb = image.MapToArray(static pixel => pixel.ToRgb64());
 
         IReadOnlyMatrix<bool> effectiveSalientMask = salientMask ?? SaliencyDistanceField.ExtractSalientMask(distanceField);
-        double[] salientFractions = regionGraph.ComputeRegionFractions(effectiveSalientMask);
-        bool[] isSalientRegion = new bool[salientFractions.Length];
-        for (int i = 0; i < salientFractions.Length; i++)
-            isSalientRegion[i] = salientFractions[i] >= resolvedOptions.SalientOverlapThreshold;
+        bool[] isSalientRegion = regionGraph.ComputeRegionFlags(effectiveSalientMask, resolvedOptions.SalientOverlapThreshold);
 
         var result = new SequentialMatrix<Rgb8>(width, height);
 
@@ -85,8 +75,7 @@ public static class LodAbstraction
                 }
                 else
                 {
-                    double rawD = distanceField[x, y].Value;
-                    double d = double.IsFinite(rawD) ? Math.Clamp(rawD, 0.0, 1.0) : 0.0;
+                    double d = ScalarMath.ClampUnitOrDefault(distanceField[x, y].Value);
                     int computedSize = (int)Math.Round(resolvedOptions.DistanceKernelScale * (d + resolvedOptions.DistanceKernelBias));
                     kernelSize = Math.Clamp(computedSize, resolvedOptions.MinNonSalientKernelSize, resolvedOptions.MaxNonSalientKernelSize);
                     double colorThreshold = resolvedOptions.CrossSegmentColorScale * d;
@@ -168,9 +157,7 @@ public static class LodAbstraction
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(segmentation);
         ArgumentNullException.ThrowIfNull(distanceField);
-
-        if (image.Size != segmentation.Size)
-            throw new ArgumentException("The segmentation size must match the image size.", nameof(segmentation));
+        Guard.ThrowIfSizeMismatch(image, segmentation);
 
         RegionGraph regionGraph = RegionGraph.FromDisjointSet(segmentation);
         return Apply(image, regionGraph, distanceField, salientMask, options);

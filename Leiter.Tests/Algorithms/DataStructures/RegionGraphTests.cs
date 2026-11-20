@@ -507,4 +507,34 @@ public class RegionGraphTests
         Assert.Equal(0, emptyBand.SeedPixels.Length);
         Assert.Equal(0, emptyBand.Distances.Count);
     }
+
+    [Fact]
+    public void ComputeRegionFlags_ShouldThresholdOverlapAndValidateInputs()
+    {
+        var labels = new SequentialMatrix<int>(4, 2);
+        for (int x = 0; x < 4; x++)
+        {
+            labels[x, 0] = 0;
+            labels[x, 1] = 1;
+        }
+
+        var graph = RegionGraph.FromLabels(labels);
+        var mask = new MaskMatrix(4, 2);
+        mask[0, 0] = true; // 1/4 = 0.25 in region 0
+        mask[0, 1] = true;
+        mask[1, 1] = true; // 2/4 = 0.50 in region 1
+
+        Assert.Equal([false, true], graph.ComputeRegionFlags(mask, 0.5));
+        Assert.Equal([true, true], graph.ComputeRegionFlags(mask, 0.25));
+        Assert.Equal([false, false], graph.ComputeRegionFlags(mask, 0.75));
+
+        RegionGraph emptyGraph = RegionGraph.FromLabels(new SequentialMatrix<int>(0, 0));
+        Assert.Empty(emptyGraph.ComputeRegionFlags(new MaskMatrix(0, 0), 0.5));
+
+        Assert.Throws<ArgumentNullException>(() => graph.ComputeRegionFlags(null!, 0.5));
+        Assert.Throws<ArgumentException>(() => graph.ComputeRegionFlags(new MaskMatrix(2, 2), 0.5));
+        Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeRegionFlags(mask, -0.01));
+        Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeRegionFlags(mask, 1.01));
+        Assert.Throws<ArgumentOutOfRangeException>(() => graph.ComputeRegionFlags(mask, double.NaN));
+    }
 }

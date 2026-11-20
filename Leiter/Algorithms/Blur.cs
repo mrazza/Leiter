@@ -15,6 +15,31 @@ public static class Blur
     private delegate void LineFilter1D(Span<Vector<double>> line);
 
     /// <summary>
+    /// Performs a Gaussian blur of the specified image using a single standard deviation <paramref name="sigma"/>,
+    /// returning an unchanged clone when <paramref name="sigma"/> is <c>0</c>, an exact separable kernel blur when <paramref name="sigma"/> &lt;= <c>2.0</c>,
+    /// and a constant-time Young–van Vliet recursive blur for larger <paramref name="sigma"/>.
+    /// </summary>
+    /// <typeparam name="T">The pixel type of the input and output matrices.</typeparam>
+    /// <param name="image">The image to blur.</param>
+    /// <param name="sigma">The non-negative Gaussian standard deviation.</param>
+    /// <returns>A new matrix containing the smoothed image.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="sigma"/> is negative or non-finite.</exception>
+    public static Matrix<T> GaussianBlur<T>(IReadOnlyMatrix<T> image, double sigma)
+        where T : struct, IPixel<T>
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        Guard.ThrowIfNotFiniteNonNegative(sigma);
+
+        if (image.Width == 0 || image.Height == 0 || sigma == 0.0)
+            return image.Clone();
+
+        return sigma <= 2.0
+            ? GaussianBlur(image, sigma, Math.Max(1, (int)Math.Ceiling(2.5 * sigma)))
+            : GaussianBlurRecursive(image, sigma);
+    }
+
+    /// <summary>
     /// Performs a Gaussian blur of the specified image using a separable kernel with a given sigma value and radius.
     /// </summary>
     /// <typeparam name="T">The pixel type of the input and output matrices.</typeparam>

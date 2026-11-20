@@ -24,15 +24,8 @@ public static class PigmentBlend
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="channel"/> or <paramref name="densityOffset"/> is not finite.</exception>
     public static double AdjustChannelDensity(double channel, double densityOffset)
     {
-        if (!double.IsFinite(channel))
-        {
-            throw new ArgumentOutOfRangeException(nameof(channel), channel, "Channel value must be finite.");
-        }
-
-        if (!double.IsFinite(densityOffset))
-        {
-            throw new ArgumentOutOfRangeException(nameof(densityOffset), densityOffset, "Density offset must be finite.");
-        }
+        Guard.ThrowIfNotFinite(channel);
+        Guard.ThrowIfNotFinite(densityOffset);
 
         double c = Math.Clamp(channel, 0.0, 1.0);
         return Math.Clamp(c - (c * (1.0 - c) * densityOffset), 0.0, 1.0);
@@ -48,11 +41,7 @@ public static class PigmentBlend
     public static Rgb64 AdjustDensity(Rgb64 color, double densityOffset)
     {
         ValidateFiniteColor(color, nameof(color));
-
-        if (!double.IsFinite(densityOffset))
-        {
-            throw new ArgumentOutOfRangeException(nameof(densityOffset), densityOffset, "Density offset must be finite.");
-        }
+        Guard.ThrowIfNotFinite(densityOffset);
 
         return new Rgb64(
             AdjustChannelDensity(color.R, densityOffset),
@@ -69,10 +58,7 @@ public static class PigmentBlend
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="densityOffset"/> is not finite.</exception>
     public static Rgb8 AdjustDensity(Rgb8 color, double densityOffset)
     {
-        if (!double.IsFinite(densityOffset))
-        {
-            throw new ArgumentOutOfRangeException(nameof(densityOffset), densityOffset, "Density offset must be finite.");
-        }
+        Guard.ThrowIfNotFinite(densityOffset);
 
         return AdjustDensity(color.ToRgb64(), densityOffset).ToRgb8();
     }
@@ -94,11 +80,7 @@ public static class PigmentBlend
     {
         ValidateFiniteColor(first, nameof(first));
         ValidateFiniteColor(second, nameof(second));
-
-        if (!double.IsFinite(overlapDarkening) || overlapDarkening < 0.0 || overlapDarkening > 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(overlapDarkening), overlapDarkening, "Overlap darkening factor must be finite and within [0, 1].");
-        }
+        Guard.ThrowIfNotFiniteInRange(overlapDarkening, 0.0, 1.0);
 
         Rgb64 c1 = new(
             Math.Clamp(first.R, 0.0, 1.0),
@@ -123,11 +105,7 @@ public static class PigmentBlend
         }
 
         Rgb64 glaze = new(darker.R * lighter.R, darker.G * lighter.G, darker.B * lighter.B);
-        double darkerWeight = 1.0 - overlapDarkening;
-        return new Rgb64(
-            (darkerWeight * darker.R) + (overlapDarkening * glaze.R),
-            (darkerWeight * darker.G) + (overlapDarkening * glaze.G),
-            (darkerWeight * darker.B) + (overlapDarkening * glaze.B));
+        return Rgb64.Lerp(darker, glaze, overlapDarkening);
     }
 
     /// <summary>
@@ -140,10 +118,7 @@ public static class PigmentBlend
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="overlapDarkening"/> is not finite or outside [0.0, 1.0].</exception>
     public static Rgb8 MixPigments(Rgb8 first, Rgb8 second, double overlapDarkening = 0.5)
     {
-        if (!double.IsFinite(overlapDarkening) || overlapDarkening < 0.0 || overlapDarkening > 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(overlapDarkening), overlapDarkening, "Overlap darkening factor must be finite and within [0, 1].");
-        }
+        Guard.ThrowIfNotFiniteInRange(overlapDarkening, 0.0, 1.0);
 
         return MixPigments(first.ToRgb64(), second.ToRgb64(), overlapDarkening).ToRgb8();
     }

@@ -60,4 +60,63 @@ internal static class SaliencyColorSmoother
                 nearestNeighbors.Sum(n => (T - n.distance) * unsmoothed[n.color]);
         }
     }
+
+    /// <summary>
+    /// Computes the minimum value and positive span <c>(max - min)</c> across <paramref name="values"/>.
+    /// </summary>
+    /// <returns><see langword="true"/> if <paramref name="values"/> is non-empty and <paramref name="range"/> &gt; 0; otherwise <see langword="false"/>.</returns>
+    public static bool TryGetMinMaxRange(ReadOnlySpan<double> values, out double min, out double range)
+    {
+        if (values.IsEmpty)
+        {
+            min = 0.0;
+            range = 0.0;
+            return false;
+        }
+
+        double minVal = values[0];
+        double maxVal = minVal;
+        for (int i = 1; i < values.Length; i++)
+        {
+            double val = values[i];
+            if (val < minVal)
+                minVal = val;
+            if (val > maxVal)
+                maxVal = val;
+        }
+
+        min = minVal;
+        range = maxVal - minVal;
+        return range > 0.0;
+    }
+
+    /// <summary>
+    /// Computes the minimum value and positive span <c>(max - min)</c> across <paramref name="values"/> in a single pass.
+    /// </summary>
+    /// <returns><see langword="true"/> if <paramref name="values"/> is non-empty and <paramref name="range"/> &gt; 0; otherwise <see langword="false"/>.</returns>
+    public static bool TryGetMinMaxRange(IEnumerable<double> values, out double min, out double range)
+    {
+        using IEnumerator<double> enumerator = values.GetEnumerator();
+        if (!enumerator.MoveNext())
+        {
+            min = 0.0;
+            range = 0.0;
+            return false;
+        }
+
+        double minVal = enumerator.Current;
+        double maxVal = minVal;
+        while (enumerator.MoveNext())
+        {
+            double val = enumerator.Current;
+            if (val < minVal)
+                minVal = val;
+            if (val > maxVal)
+                maxVal = val;
+        }
+
+        min = minVal;
+        range = maxVal - minVal;
+        return range > 0.0;
+    }
 }

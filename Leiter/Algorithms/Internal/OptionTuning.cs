@@ -40,11 +40,7 @@ internal static class OptionTuning
     {
         ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
         ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
-
-        if (!double.IsFinite(referenceDimension) || referenceDimension <= 0.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(referenceDimension), referenceDimension, "Reference dimension must be a finite positive number.");
-        }
+        Guard.ThrowIfNotFinitePositive(referenceDimension);
     }
 
     /// <summary>
