@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.Stylization.Watercolor;
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
@@ -930,6 +931,54 @@ public class WatercolorPipelineTests
             Assert.False(timing.FromCache);
             Assert.Equal(bypassedSet.Contains(step), timing.Bypassed);
         }
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="WatercolorPipeline.RenderDetailed"/> and <see cref="WatercolorPipeline.Render"/>
+    /// honor pre-canceled tokens and mid-run cancellation via <c>onStageCompleted</c>.
+    /// </summary>
+    [Fact]
+    public void RenderDetailed_And_Render_Cancellation_ShouldThrowOperationCanceledException()
+    {
+        Matrix<Rgb8> scene = CreateTestScene(20, 20);
+        var empty = new SequentialMatrix<Rgb8>(0, 0);
+
+        using var preCanceled = new CancellationTokenSource();
+        preCanceled.Cancel();
+
+        int callbackCount = 0;
+        Assert.Throws<OperationCanceledException>(() =>
+            WatercolorPipeline.RenderDetailed(
+                scene,
+                onStageCompleted: _ => callbackCount++,
+                cancellationToken: preCanceled.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            WatercolorPipeline.Render(
+                scene,
+                onStageCompleted: _ => callbackCount++,
+                cancellationToken: preCanceled.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            WatercolorPipeline.RenderDetailed(empty, cancellationToken: preCanceled.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            WatercolorPipeline.Render(empty, cancellationToken: preCanceled.Token));
+        Assert.Equal(0, callbackCount);
+
+        using var midRunCts = new CancellationTokenSource();
+        var completedStages = new List<WatercolorStage>();
+        Assert.Throws<OperationCanceledException>(() =>
+            WatercolorPipeline.RenderDetailed(
+                scene,
+                onStageCompleted: progress =>
+                {
+                    completedStages.Add(progress.Stage);
+                    if (progress.Stage == WatercolorStage.Saliency)
+                    {
+                        midRunCts.Cancel();
+                    }
+                },
+                cancellationToken: midRunCts.Token));
+
+        Assert.Equal([WatercolorStage.ColorTransfer, WatercolorStage.Saliency], completedStages);
     }
 
     private static Matrix<Rgb8> CreateTestScene(int width, int height) =>
