@@ -144,7 +144,7 @@ public class WatercolorOptionsTests
 
         Assert.Null(opts.TargetPalette);
         Assert.Equal(1.0, opts.ColorTransferStrength, 6);
-        Assert.Equal(EgbiOptions.ForSize(size, WatercolorOptions.SaliencyEgbiBaseline), opts.Egbi);
+        Assert.Equal(EgbiOptions.ForSize(size, WatercolorOptions.DefaultSaliencyEgbi), opts.Egbi);
         Assert.Equal(SaliencyCutOptions.ForSize(size), opts.SaliencyCut);
         Assert.Equal(MeanShiftOptions.ForSize(size), opts.MeanShift);
         Assert.Equal(LodAbstractionOptions.ForSize(size), opts.LodAbstraction);

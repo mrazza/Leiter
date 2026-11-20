@@ -256,4 +256,34 @@ public class DisjointSetTests
             Assert.Equal(root, dsu[i]);
         }
     }
+
+    [Fact]
+    public void CreateSingletons_TryUnion_ToRegionGraph_And_NullAndParamNameValidation_ShouldWork()
+    {
+        var matrix = new SequentialMatrix<Rgb8>(3, 1);
+        DisjointSet<byte> dsu = DisjointSet.CreateSingletons(matrix);
+        Assert.Equal(3, dsu.ToRegions().Count);
+
+        Assert.True(dsu.TryUnion(0, 1, 7, out var merged));
+        Assert.Equal(2, merged.Size);
+        Assert.Equal((byte)7, merged.Value);
+        Assert.False(dsu.TryUnion(0, 1, 9, out var alreadySame));
+        Assert.Equal(merged.RootIndex, alreadySame.RootIndex);
+
+        var sameSetEx = Assert.Throws<ArgumentException>(() => dsu.Union(0, 1, 9));
+        Assert.Equal("secondIndex", sameSetEx.ParamName);
+
+        RegionGraph graph = dsu.ToRegionGraph(GridConnectivity.FourConnected);
+        Assert.Equal(2, graph.RegionCount);
+        Assert.Equal(GridConnectivity.FourConnected, graph.Connectivity);
+
+        Assert.Throws<ArgumentNullException>(() => DisjointSet.CreateSingletons(null!));
+        Assert.Throws<ArgumentNullException>(() => ((IDisjointSet)null!).ToRegionGraph());
+
+        var nullImgEx = Assert.Throws<ArgumentNullException>(() => new DisjointSet<int>(null!, static i => i));
+        Assert.Equal("image", nullImgEx.ParamName);
+
+        var nullInitEx = Assert.Throws<ArgumentNullException>(() => new DisjointSet<int>(matrix, null!));
+        Assert.Equal("initialValueFunc", nullInitEx.ParamName);
+    }
 }

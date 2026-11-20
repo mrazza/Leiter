@@ -5,6 +5,10 @@ namespace Leiter.Pixels.ColorSpaces;
 /// </summary>
 public static class ColorMetrics
 {
+    private const double LumaRedWeight = 0.299;
+    private const double LumaGreenWeight = 0.587;
+    private const double LumaBlueWeight = 0.114;
+
     /// <summary>
     /// Computes the HSV/HSL hue angle in degrees in <c>[0, 360)</c> for an <see cref="Rgb64"/> pixel.
     /// </summary>
@@ -62,7 +66,7 @@ public static class ColorMetrics
     /// <param name="pixel">The pixel to evaluate.</param>
     /// <returns>The Rec. 601 luminance value.</returns>
     public static double GetLuma(this Rgb64 pixel) =>
-        (0.299 * pixel.R) + (0.587 * pixel.G) + (0.114 * pixel.B);
+        (LumaRedWeight * pixel.R) + (LumaGreenWeight * pixel.G) + (LumaBlueWeight * pixel.B);
 
     /// <summary>
     /// Computes the normalized Rec. 601 luma in <c>[0, 1]</c> for an <see cref="Rgb8"/> pixel.
@@ -70,7 +74,7 @@ public static class ColorMetrics
     /// <param name="pixel">The pixel to evaluate.</param>
     /// <returns>The normalized Rec. 601 luminance in <c>[0, 1]</c>.</returns>
     public static double GetLuma(this Rgb8 pixel) =>
-        ((0.299 * pixel.R) + (0.587 * pixel.G) + (0.114 * pixel.B)) / 255.0;
+        ((LumaRedWeight * pixel.R) + (LumaGreenWeight * pixel.G) + (LumaBlueWeight * pixel.B)) / 255.0;
 
     /// <summary>
     /// Computes the HSV saturation in <c>[0, 1]</c> for an <see cref="Rgb64"/> pixel.

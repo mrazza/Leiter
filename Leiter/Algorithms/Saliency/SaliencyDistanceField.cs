@@ -110,9 +110,14 @@ public static class SaliencyDistanceField
         SaliencyDistanceFieldOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(salientMask);
-        SaliencyDistanceFieldOptions resolvedOptions = options ?? SaliencyDistanceFieldOptions.Default;
-        resolvedOptions.Validate();
+        SaliencyDistanceFieldOptions resolvedOptions = OptionsResolver.Resolve(options, SaliencyDistanceFieldOptions.Default);
+        return ComputeCore(salientMask, resolvedOptions);
+    }
 
+    private static Matrix<DoublePixel> ComputeCore(
+        IReadOnlyMatrix<bool> salientMask,
+        SaliencyDistanceFieldOptions resolvedOptions)
+    {
         Matrix<DoublePixel> normalizedField = ComputeNormalizedField(salientMask);
         if (normalizedField.Count == 0)
             return normalizedField;
@@ -154,11 +159,11 @@ public static class SaliencyDistanceField
         SaliencyDistanceFieldOptions? distanceFieldOptions = null)
     {
         ArgumentNullException.ThrowIfNull(image);
-        ArgumentNullException.ThrowIfNull(saliencyMap);
-        (distanceFieldOptions ?? SaliencyDistanceFieldOptions.Default).Validate();
+        Guard.ThrowIfSizeMismatch(image, saliencyMap);
+        SaliencyDistanceFieldOptions resolvedDistanceOptions = OptionsResolver.Resolve(distanceFieldOptions, SaliencyDistanceFieldOptions.Default);
 
         MaskMatrix salientMask = SaliencyCut.Extract(image, saliencyMap, saliencyCutOptions);
-        Matrix<DoublePixel> distanceField = Compute(salientMask, distanceFieldOptions);
+        Matrix<DoublePixel> distanceField = ComputeCore(salientMask, resolvedDistanceOptions);
         return (salientMask, distanceField);
     }
 }

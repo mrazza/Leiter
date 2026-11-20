@@ -20,6 +20,7 @@ internal sealed class GrabCutSession
     private readonly Size imageSize;
     private readonly int pixelCount;
     private readonly double smoothnessWeight;
+    private readonly int defaultIterations;
 
     private readonly Rgb8[] pixels;
     private readonly GridMinCutSolver solver;
@@ -32,11 +33,15 @@ internal sealed class GrabCutSession
     private readonly double[] sourceCapacities;
     private readonly double[] sinkCapacities;
 
-    public GrabCutSession(IReadOnlyMatrix<Rgb8> image, int mixtureComponentCount, double smoothnessWeight)
+    public GrabCutSession(IReadOnlyMatrix<Rgb8> image, GrabCutOptions? options = null)
     {
+        ArgumentNullException.ThrowIfNull(image);
+        GrabCutOptions resolvedOptions = OptionsResolver.Resolve(options, GrabCutOptions.Default);
+
         imageSize = image.Size;
         pixelCount = image.Count;
-        this.smoothnessWeight = smoothnessWeight;
+        smoothnessWeight = resolvedOptions.SmoothnessWeight;
+        defaultIterations = resolvedOptions.Iterations;
 
         pixels = image.ToArray();
         double beta = ComputeContrastParameterBeta(image);
@@ -44,8 +49,8 @@ internal sealed class GrabCutSession
         solver = new GridMinCutSolver(image.Size);
         PopulateSmoothnessEdges(solver, image, smoothnessWeight, beta);
 
-        foregroundGmm = new GaussianMixtureModel(mixtureComponentCount);
-        backgroundGmm = new GaussianMixtureModel(mixtureComponentCount);
+        foregroundGmm = new GaussianMixtureModel(resolvedOptions.MixtureComponentCount);
+        backgroundGmm = new GaussianMixtureModel(resolvedOptions.MixtureComponentCount);
 
         trimapLabels = new TrimapLabel[pixelCount];
         isForeground = new bool[pixelCount];
@@ -53,6 +58,9 @@ internal sealed class GrabCutSession
         sourceCapacities = new double[pixelCount];
         sinkCapacities = new double[pixelCount];
     }
+
+    public MaskMatrix Run(IReadOnlyMatrix<TrimapLabel> trimap) =>
+        Run(trimap, defaultIterations);
 
     public MaskMatrix Run(IReadOnlyMatrix<TrimapLabel> trimap, int iterations)
     {

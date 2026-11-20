@@ -3,6 +3,7 @@ namespace Leiter.Algorithms.Segmentation;
 using System;
 using System.Collections.Generic;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -28,8 +29,12 @@ public static class SegmentationVisualizer
     /// <returns>A <see cref="ColorAssigner{Rgb8}"/> for use with <see cref="ColorRegions{T}(IReadOnlyMatrix{T}, IEnumerable{Region{Coord}}, ColorAssigner{T})"/>.</returns>
     public static ColorAssigner<Rgb8> RandomColorAssigner(int? seed = null)
     {
-        Random r = seed is int s ? new Random(s) : new Random();
-        return (_, _) => new Rgb8((byte)r.Next(256), (byte)r.Next(256), (byte)r.Next(256));
+        ulong state = seed is int s ? unchecked((ulong)s) : unchecked((ulong)Random.Shared.NextInt64());
+        return (_, _) =>
+        {
+            ulong bits = SplitMix64.Next(ref state);
+            return new Rgb8((byte)bits, (byte)(bits >> 8), (byte)(bits >> 16));
+        };
     }
 
     /// <summary>
@@ -125,5 +130,85 @@ public static class SegmentationVisualizer
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Renders a new <see cref="Matrix{Rgb8}"/> where every region in <paramref name="regionGraph"/> is filled with a random color.
+    /// </summary>
+    /// <param name="image">The source image providing output dimensions and fallback values for uncovered pixels.</param>
+    /// <param name="regionGraph">The region graph defining regions to color.</param>
+    /// <param name="seed">An optional seed for deterministic random colors.</param>
+    /// <returns>A new <see cref="Matrix{Rgb8}"/> with colored regions.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="regionGraph"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="regionGraph"/> dimensions do not match <paramref name="image"/>.</exception>
+    public static Matrix<Rgb8> ColorRegions(
+        IReadOnlyMatrix<Rgb8> image,
+        RegionGraph regionGraph,
+        int? seed = null) =>
+        ColorRegions(image, regionGraph, RandomColorAssigner(seed));
+
+    /// <summary>
+    /// Renders a new <see cref="Matrix{T}"/> where every region in <paramref name="regionGraph"/> is filled
+    /// using <paramref name="colorAssigner"/> without mutating <paramref name="image"/>.
+    /// </summary>
+    /// <typeparam name="T">The pixel type for the image matrix.</typeparam>
+    /// <param name="image">The source image providing pixel colors and output dimensions.</param>
+    /// <param name="regionGraph">The region graph defining regions to color.</param>
+    /// <param name="colorAssigner">The delegate selecting a color for each region.</param>
+    /// <returns>A new <see cref="Matrix{T}"/> containing the colored segmentation visualization.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="regionGraph"/>, or <paramref name="colorAssigner"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="regionGraph"/> dimensions do not match <paramref name="image"/>.</exception>
+    public static Matrix<T> ColorRegions<T>(
+        IReadOnlyMatrix<T> image,
+        RegionGraph regionGraph,
+        ColorAssigner<T> colorAssigner)
+        where T : struct, IPixel<T>
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(regionGraph);
+        ArgumentNullException.ThrowIfNull(colorAssigner);
+        Guard.ThrowIfSizeMismatch(image, regionGraph.Labels);
+
+        return ColorRegions(image, regionGraph.Regions, colorAssigner);
+    }
+
+    /// <summary>
+    /// Renders a new <see cref="Matrix{Rgb8}"/> where every partition in <paramref name="segmentation"/> is filled with a random color.
+    /// </summary>
+    /// <param name="image">The source image providing output dimensions and fallback values for uncovered pixels.</param>
+    /// <param name="segmentation">The disjoint-set segmentation defining regions to color.</param>
+    /// <param name="seed">An optional seed for deterministic random colors.</param>
+    /// <returns>A new <see cref="Matrix{Rgb8}"/> with colored regions.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="segmentation"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="segmentation"/> dimensions do not match <paramref name="image"/>.</exception>
+    public static Matrix<Rgb8> ColorRegions(
+        IReadOnlyMatrix<Rgb8> image,
+        IDisjointSet segmentation,
+        int? seed = null) =>
+        ColorRegions(image, segmentation, RandomColorAssigner(seed));
+
+    /// <summary>
+    /// Renders a new <see cref="Matrix{T}"/> where every partition in <paramref name="segmentation"/> is filled
+    /// using <paramref name="colorAssigner"/> without mutating <paramref name="image"/>.
+    /// </summary>
+    /// <typeparam name="T">The pixel type for the image matrix.</typeparam>
+    /// <param name="image">The source image providing pixel colors and output dimensions.</param>
+    /// <param name="segmentation">The disjoint-set segmentation defining regions to color.</param>
+    /// <param name="colorAssigner">The delegate selecting a color for each region.</param>
+    /// <returns>A new <see cref="Matrix{T}"/> containing the colored segmentation visualization.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/>, <paramref name="segmentation"/>, or <paramref name="colorAssigner"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="segmentation"/> dimensions do not match <paramref name="image"/>.</exception>
+    public static Matrix<T> ColorRegions<T>(
+        IReadOnlyMatrix<T> image,
+        IDisjointSet segmentation,
+        ColorAssigner<T> colorAssigner)
+        where T : struct, IPixel<T>
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(segmentation);
+        ArgumentNullException.ThrowIfNull(colorAssigner);
+        Guard.ThrowIfSizeMismatch(image, segmentation);
+
+        return ColorRegions(image, segmentation.ToRegions(), colorAssigner);
     }
 }

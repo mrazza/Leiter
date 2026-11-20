@@ -13,7 +13,7 @@ using Leiter.Pixels;
 /// <param name="NoiseOptions">Optional Perlin noise options for generating the fractal turbulence field. If <see langword="null"/>, default flow noise parameters are used.</param>
 public sealed record TurbulenceFlowOptions(
     double Intensity = 0.35,
-    PerlinNoiseOptions? NoiseOptions = null)
+    PerlinNoiseOptions? NoiseOptions = null) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default turbulence noise frequency applies unscaled.
@@ -25,7 +25,10 @@ public sealed record TurbulenceFlowOptions(
     /// </summary>
     public static TurbulenceFlowOptions Default { get; } = new();
 
-    internal static readonly PerlinNoiseOptions DefaultNoise = new(
+    /// <summary>
+    /// Gets the default fractal Perlin noise options used when <see cref="NoiseOptions"/> is <see langword="null"/>.
+    /// </summary>
+    public static PerlinNoiseOptions DefaultNoise { get; } = new(
         Seed: 404,
         Frequency: 0.015,
         Octaves: 4,

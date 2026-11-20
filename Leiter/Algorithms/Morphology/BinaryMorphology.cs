@@ -1,6 +1,7 @@
 namespace Leiter.Algorithms.Morphology;
 
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Saliency;
 using Leiter.Core;
 
 /// <summary>
@@ -21,48 +22,8 @@ public static class BinaryMorphology
     public static MaskMatrix Dilate(
         IReadOnlyMatrix<bool> mask,
         int radius,
-        StructuringElementShape shape = StructuringElementShape.Disk)
-    {
-        ValidateInputs(mask, radius, shape);
-
-        if (mask.Count == 0 || radius == 0)
-            return CloneMask(mask);
-
-        int width = mask.Width;
-        int height = mask.Height;
-        int rowStride = width + 1;
-        int[] rowPrefixSums = BuildRowPrefixSums(mask);
-        int[] horizontalHalfWidths = BuildHorizontalHalfWidths(radius, shape);
-        var result = new MaskMatrix(width, height);
-
-        Parallel.For(0, height, y =>
-        {
-            int minNeighborY = Math.Max(0, y - radius);
-            int maxNeighborY = Math.Min(height - 1, y + radius);
-
-            for (int x = 0; x < width; x++)
-            {
-                bool hasForegroundNeighbor = false;
-                for (int neighborY = minNeighborY; neighborY <= maxNeighborY; neighborY++)
-                {
-                    int halfWidth = horizontalHalfWidths[Math.Abs(neighborY - y)];
-                    int left = Math.Max(0, x - halfWidth);
-                    int right = Math.Min(width - 1, x + halfWidth);
-                    int rowOffset = neighborY * rowStride;
-
-                    if (rowPrefixSums[rowOffset + right + 1] - rowPrefixSums[rowOffset + left] > 0)
-                    {
-                        hasForegroundNeighbor = true;
-                        break;
-                    }
-                }
-
-                result[x, y] = hasForegroundNeighbor;
-            }
-        });
-
-        return result;
-    }
+        StructuringElementShape shape = StructuringElementShape.Disk) =>
+        ApplyMorphology(mask, radius, shape, isErosion: false, borderIsBackground: false);
 
     /// <summary>
     /// Erodes foreground (<see langword="true"/>) pixels in a boolean mask using a structuring element of the specified radius and shape.
@@ -81,7 +42,15 @@ public static class BinaryMorphology
         IReadOnlyMatrix<bool> mask,
         int radius,
         StructuringElementShape shape = StructuringElementShape.Disk,
-        bool borderIsBackground = false)
+        bool borderIsBackground = false) =>
+        ApplyMorphology(mask, radius, shape, isErosion: true, borderIsBackground: borderIsBackground);
+
+    private static MaskMatrix ApplyMorphology(
+        IReadOnlyMatrix<bool> mask,
+        int radius,
+        StructuringElementShape shape,
+        bool isErosion,
+        bool borderIsBackground)
     {
         ValidateInputs(mask, radius, shape);
 
@@ -97,7 +66,7 @@ public static class BinaryMorphology
 
         Parallel.For(0, height, y =>
         {
-            if (borderIsBackground && (y - radius < 0 || y + radius >= height))
+            if (isErosion && borderIsBackground && (y - radius < 0 || y + radius >= height))
                 return;
 
             int minNeighborY = Math.Max(0, y - radius);
@@ -105,26 +74,34 @@ public static class BinaryMorphology
 
             for (int x = 0; x < width; x++)
             {
-                if (borderIsBackground && (x - radius < 0 || x + radius >= width))
+                if (isErosion && borderIsBackground && (x - radius < 0 || x + radius >= width))
                     continue;
 
-                bool allForeground = true;
+                bool resultValue = isErosion;
                 for (int neighborY = minNeighborY; neighborY <= maxNeighborY; neighborY++)
                 {
                     int halfWidth = horizontalHalfWidths[Math.Abs(neighborY - y)];
                     int left = Math.Max(0, x - halfWidth);
                     int right = Math.Min(width - 1, x + halfWidth);
                     int rowOffset = neighborY * rowStride;
-                    int spanCount = right - left + 1;
+                    int foregroundCount = rowPrefixSums[rowOffset + right + 1] - rowPrefixSums[rowOffset + left];
 
-                    if (rowPrefixSums[rowOffset + right + 1] - rowPrefixSums[rowOffset + left] < spanCount)
+                    if (isErosion)
                     {
-                        allForeground = false;
+                        if (foregroundCount < right - left + 1)
+                        {
+                            resultValue = false;
+                            break;
+                        }
+                    }
+                    else if (foregroundCount > 0)
+                    {
+                        resultValue = true;
                         break;
                     }
                 }
 
-                result[x, y] = allForeground;
+                result[x, y] = resultValue;
             }
         });
 
@@ -181,7 +158,7 @@ public static class BinaryMorphology
     public static MaskMatrix FilterConnectedComponents(
         IReadOnlyMatrix<bool> mask,
         ComponentRetentionPolicy retentionPolicy = ComponentRetentionPolicy.MinimumAreaFraction,
-        double minAreaFraction = 0.01,
+        double minAreaFraction = SaliencyMaskOptions.DefaultMinAreaFraction,
         GridConnectivity connectivity = GridConnectivity.EightConnected)
     {
         ArgumentNullException.ThrowIfNull(mask);
@@ -217,7 +194,7 @@ public static class BinaryMorphology
         if (!hasAnyForeground)
             return filtered;
 
-        var disjointSet = new DisjointSet<byte>(mask, static _ => 0);
+        var disjointSet = DisjointSet.CreateSingletons(mask);
         ReadOnlySpan<GridNeighbor> forwardSteps = GridNeighborhood.GetForward(connectivity);
 
         for (int y = 0; y < height; y++)
@@ -240,10 +217,7 @@ public static class BinaryMorphology
                     if (!isForeground[neighborIndex])
                         continue;
 
-                    var currentPartition = disjointSet.GetPartition(currentIndex);
-                    var neighborPartition = disjointSet.GetPartition(neighborIndex);
-                    if (currentPartition.RootIndex != neighborPartition.RootIndex)
-                        disjointSet.Union(currentPartition, neighborPartition, 0);
+                    disjointSet.TryUnion(currentIndex, neighborIndex, 0, out _);
                 }
             }
         }

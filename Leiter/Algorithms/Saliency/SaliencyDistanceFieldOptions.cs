@@ -12,7 +12,7 @@ using Leiter.Core;
 /// <param name="DefaultSigmaScale">The fraction of <c>min(Width, Height)</c> used when <paramref name="SmoothingSigma"/> is <see langword="null"/> (default <c>0.03</c>).</param>
 public sealed record SaliencyDistanceFieldOptions(
     double? SmoothingSigma = null,
-    double DefaultSigmaScale = 0.03)
+    double DefaultSigmaScale = 0.03) : IValidatableOptions
 {
     /// <summary>
     /// Gets the default <see cref="SaliencyDistanceFieldOptions"/> instance.

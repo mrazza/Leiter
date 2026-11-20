@@ -15,7 +15,7 @@ using Leiter.Pixels;
 public sealed record EdgeDarkeningOptions(
     double Intensity = 1.8,
     double BlurSigma = 0.8,
-    GradientOperator GradientOperator = GradientOperator.Sobel)
+    GradientOperator GradientOperator = GradientOperator.Sobel) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default blur sigma and intensity apply unscaled.

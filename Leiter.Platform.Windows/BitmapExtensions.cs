@@ -99,4 +99,44 @@ public static class BitmapExtensions
 
         return bitmap;
     }
+
+    /// <summary>
+    /// Loads an image file from <paramref name="path"/> into a <see cref="SequentialMatrix{Rgb8}"/>.
+    /// </summary>
+    /// <param name="path">The file path of the image to load.</param>
+    /// <returns>The loaded image as a <see cref="SequentialMatrix{Rgb8}"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="path"/> is empty or contains only white-space characters.</exception>
+    public static SequentialMatrix<Rgb8> LoadRgb8(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        using var bitmap = new Bitmap(path);
+        return bitmap.ToSequentialMatrix();
+    }
+
+    /// <summary>
+    /// Saves an <see cref="IReadOnlyMatrix{Rgb8}"/> to disk at <paramref name="path"/>, determining the <see cref="ImageFormat"/> from the file extension.
+    /// </summary>
+    /// <param name="matrix">The image matrix to save.</param>
+    /// <param name="path">The destination file path.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="path"/> is empty or contains only white-space characters.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="matrix"/> has a width or height less than or equal to zero.</exception>
+    public static void Save(this IReadOnlyMatrix<Rgb8> matrix, string path)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        using Bitmap bitmap = matrix.ToBitmap();
+        ImageFormat format = Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => ImageFormat.Jpeg,
+            ".bmp" => ImageFormat.Bmp,
+            ".gif" => ImageFormat.Gif,
+            ".tif" or ".tiff" => ImageFormat.Tiff,
+            _ => ImageFormat.Png
+        };
+        bitmap.Save(path, format);
+    }
 }

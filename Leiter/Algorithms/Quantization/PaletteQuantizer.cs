@@ -56,10 +56,7 @@ public static class PaletteQuantizer
         ArgumentNullException.ThrowIfNull(bucketizer);
         ArgumentNullException.ThrowIfNull(metricSelector);
 
-        if (!double.IsFinite(coverageFraction) || coverageFraction is <= 0.0 or > 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(coverageFraction), "Coverage fraction must be in the range (0, 1].");
-        }
+        Guard.ThrowIfNotFiniteInHalfOpenRange(coverageFraction, 0.0, 1.0);
 
         if (image.Count == 0)
         {

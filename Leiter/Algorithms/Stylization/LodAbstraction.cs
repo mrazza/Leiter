@@ -39,9 +39,18 @@ public static class LodAbstraction
         Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
         Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
 
-        LodAbstractionOptions resolvedOptions = options ?? LodAbstractionOptions.Default;
-        resolvedOptions.Validate();
+        LodAbstractionOptions resolvedOptions = OptionsResolver.Resolve(options, LodAbstractionOptions.Default);
+        return ApplyCore(image, regionGraph, distanceField, salientMask, precomputedSalientFractions: null, resolvedOptions);
+    }
 
+    internal static Matrix<Rgb8> ApplyCore(
+        IReadOnlyMatrix<Rgb8> image,
+        RegionGraph regionGraph,
+        IReadOnlyMatrix<DoublePixel> distanceField,
+        IReadOnlyMatrix<bool>? salientMask,
+        double[]? precomputedSalientFractions,
+        LodAbstractionOptions resolvedOptions)
+    {
         if (image.Count == 0)
             return new SequentialMatrix<Rgb8>(image.Size);
 
@@ -50,8 +59,19 @@ public static class LodAbstraction
 
         Rgb64[] normalizedRgb = image.MapToArray(static pixel => pixel.ToRgb64());
 
-        IReadOnlyMatrix<bool> effectiveSalientMask = salientMask ?? SaliencyDistanceField.ExtractSalientMask(distanceField);
-        bool[] isSalientRegion = regionGraph.ComputeRegionFlags(effectiveSalientMask, resolvedOptions.SalientOverlapThreshold);
+        bool[] isSalientRegion;
+        if (precomputedSalientFractions is not null)
+        {
+            isSalientRegion = new bool[precomputedSalientFractions.Length];
+            double threshold = resolvedOptions.SalientOverlapThreshold;
+            for (int r = 0; r < isSalientRegion.Length; r++)
+                isSalientRegion[r] = precomputedSalientFractions[r] >= threshold;
+        }
+        else
+        {
+            IReadOnlyMatrix<bool> effectiveSalientMask = salientMask ?? SaliencyDistanceField.ExtractSalientMask(distanceField);
+            isSalientRegion = regionGraph.ComputeRegionFlags(effectiveSalientMask, resolvedOptions.SalientOverlapThreshold);
+        }
 
         var result = new SequentialMatrix<Rgb8>(width, height);
 
@@ -156,10 +176,15 @@ public static class LodAbstraction
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(segmentation);
-        ArgumentNullException.ThrowIfNull(distanceField);
+        Guard.ThrowIfSizeMismatch(image, distanceField);
         Guard.ThrowIfSizeMismatch(image, segmentation);
+        Guard.ThrowIfSizeMismatchIfNotNull(image, salientMask);
+
+        LodAbstractionOptions resolvedOptions = OptionsResolver.Resolve(options, LodAbstractionOptions.Default);
+        if (image.Count == 0)
+            return new SequentialMatrix<Rgb8>(image.Size);
 
         RegionGraph regionGraph = RegionGraph.FromDisjointSet(segmentation);
-        return Apply(image, regionGraph, distanceField, salientMask, options);
+        return ApplyCore(image, regionGraph, distanceField, salientMask, precomputedSalientFractions: null, resolvedOptions);
     }
 }

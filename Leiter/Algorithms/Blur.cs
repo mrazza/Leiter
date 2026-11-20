@@ -142,17 +142,23 @@ public static class Blur
 
         var result = new SequentialMatrix<T>(width, height);
 
-        Parallel.For(0, width, x =>
-        {
-            var col = new Vector<double>[height];
-            for (int y = 0; y < height; y++)
-                col[y] = buffer[y * width + x];
+        Parallel.For(
+            0,
+            width,
+            () => new Vector<double>[height],
+            (x, _, col) =>
+            {
+                for (int y = 0; y < height; y++)
+                    col[y] = buffer[y * width + x];
 
-            filterLine(col);
+                filterLine(col);
 
-            for (int y = 0; y < height; y++)
-                result[x, y] = T.FromDoubleVector(col[y]);
-        });
+                for (int y = 0; y < height; y++)
+                    result[x, y] = T.FromDoubleVector(col[y]);
+
+                return col;
+            },
+            static _ => { });
 
         return result;
     }

@@ -24,7 +24,7 @@ public class GrabCutSessionTests
             }
         }
 
-        var session = new GrabCutSession(image, mixtureComponentCount: 3, smoothnessWeight: 50.0);
+        var session = new GrabCutSession(image, new GrabCutOptions(Iterations: 2, MixtureComponentCount: 3, SmoothnessWeight: 50.0));
 
         var trimap1 = new TrimapMatrix(image.Size);
         for (int y = 0; y < image.Height; y++)
@@ -66,7 +66,7 @@ public class GrabCutSessionTests
     {
         var image = new SequentialMatrix<Rgb8>(8, 8);
         image.SetAll(new Rgb8(128, 128, 128));
-        var session = new GrabCutSession(image, mixtureComponentCount: 2, smoothnessWeight: 20.0);
+        var session = new GrabCutSession(image, new GrabCutOptions(Iterations: 2, MixtureComponentCount: 2, SmoothnessWeight: 20.0));
 
         var allBackground = new TrimapMatrix(image.Size);
         allBackground.SetAll(TrimapLabel.Background);
@@ -86,7 +86,7 @@ public class GrabCutSessionTests
     {
         var image = new SequentialMatrix<Rgb8>(4, 4);
         image.SetAll(new Rgb8(50, 50, 50));
-        var session = new GrabCutSession(image, mixtureComponentCount: 2, smoothnessWeight: 10.0);
+        var session = new GrabCutSession(image, new GrabCutOptions(Iterations: 1, MixtureComponentCount: 2, SmoothnessWeight: 10.0));
 
         var invalidTrimap = new TrimapMatrix(image.Size);
         invalidTrimap[0, 0] = (TrimapLabel)99;

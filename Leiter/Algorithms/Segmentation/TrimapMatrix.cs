@@ -79,8 +79,7 @@ public class TrimapMatrix : SequentialMatrix<TrimapLabel>
     /// </exception>
     public static TrimapMatrix FromBoundingBox(Size imageSize, Coord rectangleTopLeft, Size rectangleSize)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(imageSize.Width, nameof(imageSize));
-        ArgumentOutOfRangeException.ThrowIfNegative(imageSize.Height, nameof(imageSize));
+        Guard.ThrowIfNegative(imageSize);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(rectangleSize.Width, 0, nameof(rectangleSize));
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(rectangleSize.Height, 0, nameof(rectangleSize));
 

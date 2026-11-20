@@ -24,19 +24,22 @@ public static class MatrixMath
         ArgumentNullException.ThrowIfNull(right);
 
         if (self.Width != right.Height)
-            throw new ArgumentException("Right hand side matrix must have height equal to width of the left hand side matrix.");
+            throw new ArgumentException("Right hand side matrix must have height equal to width of the left hand side matrix.", nameof(right));
 
-        var result = new SequentialMatrix<T>(right.Width, self.Height);
-        for (int y = 0; y < self.Height; y++)
+        int selfHeight = self.Height;
+        int rightWidth = right.Width;
+        int innerLength = self.Width;
+        var result = new SequentialMatrix<T>(rightWidth, selfHeight);
+        Parallel.For(0, selfHeight, y =>
         {
-            for (int x = 0; x < right.Width; x++)
+            for (int x = 0; x < rightWidth; x++)
             {
                 T sum = T.Zero;
-                for (int k = 0; k < self.Width; k++)
+                for (int k = 0; k < innerLength; k++)
                     sum = sum.Add(self[k, y].Multiply(right[x, k]));
                 result[x, y] = sum;
             }
-        }
+        });
 
         return result;
     }
@@ -54,19 +57,18 @@ public static class MatrixMath
         where T : struct, IPixel<T>
     {
         ArgumentNullException.ThrowIfNull(self);
-        ArgumentNullException.ThrowIfNull(right);
         Guard.ThrowIfSizeMismatch(self, right);
 
         int width = self.Width;
         int height = self.Height;
         var data = new T[self.Count];
 
-        for (int y = 0; y < height; y++)
+        Parallel.For(0, height, y =>
         {
             int rowBase = y * width;
             for (int x = 0; x < width; x++)
                 data[rowBase + x] = self[x, y].Multiply(right[x, y]);
-        }
+        });
 
         return new SequentialMatrix<T>(width, height, data);
     }
@@ -86,19 +88,18 @@ public static class MatrixMath
         where R : struct, IScalar<R>
     {
         ArgumentNullException.ThrowIfNull(self);
-        ArgumentNullException.ThrowIfNull(right);
         Guard.ThrowIfSizeMismatch(self, right);
 
         int width = self.Width;
         int height = self.Height;
         var data = new T[self.Count];
 
-        for (int y = 0; y < height; y++)
+        Parallel.For(0, height, y =>
         {
             int rowBase = y * width;
             for (int x = 0; x < width; x++)
                 data[rowBase + x] = self[x, y].Multiply(right[x, y]);
-        }
+        });
 
         return new SequentialMatrix<T>(width, height, data);
     }
@@ -285,7 +286,6 @@ public static class MatrixMath
     {
         if (self is null)
             throw new ArgumentNullException(nameof(self));
-        ArgumentNullException.ThrowIfNull(right);
         Guard.ThrowIfSizeMismatch(self, right);
 
         Vector<double> sum = Vector<double>.Zero;
@@ -316,7 +316,6 @@ public static class MatrixMath
     {
         if (self is null)
             throw new ArgumentNullException(nameof(self));
-        ArgumentNullException.ThrowIfNull(right);
         Guard.ThrowIfSizeMismatch(self, right);
 
         Vector<double> sum = Vector<double>.Zero;

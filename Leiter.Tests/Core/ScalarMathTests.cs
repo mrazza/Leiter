@@ -70,4 +70,13 @@ public class ScalarMathTests
         Assert.NotEqual(ScalarMath.PackUnorderedPairKey(1, 2), ScalarMath.PackUnorderedPairKey(1, 3));
         Assert.NotEqual(ScalarMath.PackUnorderedPairKey(1, 100), ScalarMath.PackUnorderedPairKey(2, 100));
     }
+
+    [Fact]
+    public void Sqrt2Constants_ShouldMatchMathSqrt2()
+    {
+        double sqrt2 = ScalarMath.Sqrt2;
+        double invSqrt2 = ScalarMath.InvSqrt2;
+        Assert.Equal(Math.Sqrt(2.0), sqrt2, 15);
+        Assert.Equal(1.0 / Math.Sqrt(2.0), invSqrt2, 15);
+    }
 }

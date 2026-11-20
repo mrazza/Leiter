@@ -2,7 +2,6 @@ namespace Leiter.Platform.Windows;
 
 using System.Drawing;
 using System.Runtime.Versioning;
-using Leiter.Core;
 using Leiter.Pixels;
 
 /// <summary>

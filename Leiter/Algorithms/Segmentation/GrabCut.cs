@@ -29,14 +29,10 @@ public static class GrabCut
         GrabCutOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(image);
-        GrabCutOptions resolvedOptions = options ?? GrabCutOptions.Default;
-        resolvedOptions.Validate();
+        GrabCutOptions resolvedOptions = OptionsResolver.Resolve(options, GrabCutOptions.Default);
 
         TrimapMatrix trimap = TrimapMatrix.FromBoundingBox(image.Size, rectangleTopLeft, rectangleSize);
-        if (image.Count == 0)
-            return new MaskMatrix(image.Size);
-
-        return Segment(image, trimap, resolvedOptions);
+        return SegmentCore(image, trimap, resolvedOptions);
     }
 
     /// <summary>
@@ -57,13 +53,19 @@ public static class GrabCut
         ArgumentNullException.ThrowIfNull(image);
         Guard.ThrowIfSizeMismatch(image, trimap);
 
-        GrabCutOptions resolvedOptions = options ?? GrabCutOptions.Default;
-        resolvedOptions.Validate();
+        GrabCutOptions resolvedOptions = OptionsResolver.Resolve(options, GrabCutOptions.Default);
+        return SegmentCore(image, trimap, resolvedOptions);
+    }
 
+    private static MaskMatrix SegmentCore(
+        IReadOnlyMatrix<Rgb8> image,
+        IReadOnlyMatrix<TrimapLabel> trimap,
+        GrabCutOptions resolvedOptions)
+    {
         if (image.Count == 0)
             return new MaskMatrix(image.Size);
 
-        var session = new GrabCutSession(image, resolvedOptions.MixtureComponentCount, resolvedOptions.SmoothnessWeight);
-        return session.Run(trimap, resolvedOptions.Iterations);
+        var session = new GrabCutSession(image, resolvedOptions);
+        return session.Run(trimap);
     }
 }

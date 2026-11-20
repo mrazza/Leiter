@@ -13,7 +13,7 @@ using Leiter.Core;
 public sealed record OrientedEllipticalFilterOptions(
     double MajorRadius = 6.0,
     double MinorRadius = 1.5,
-    double SigmaScale = 0.5)
+    double SigmaScale = 0.5) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default radii apply unscaled.

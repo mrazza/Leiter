@@ -17,8 +17,13 @@ public sealed record PerlinNoiseOptions(
     double Frequency = 0.05,
     int Octaves = 4,
     double Lacunarity = 2.0,
-    double Persistence = 0.5)
+    double Persistence = 0.5) : IValidatableOptions
 {
+    /// <summary>
+    /// The maximum supported number of fractal noise octaves.
+    /// </summary>
+    internal const int MaxOctaves = 16;
+
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default frequencies apply unscaled.
     /// </summary>
@@ -114,7 +119,7 @@ public sealed record PerlinNoiseOptions(
     {
         Guard.ThrowIfNotFinitePositive(Frequency);
         ArgumentOutOfRangeException.ThrowIfLessThan(Octaves, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(Octaves, 16);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(Octaves, MaxOctaves);
         Guard.ThrowIfNotFinitePositive(Lacunarity);
         Guard.ThrowIfNotFiniteNonNegative(Persistence);
     }

@@ -53,24 +53,13 @@ public class DisjointSet<T> : IDisjointSet
         /// <inheritdoc/>
         public IEnumerable<Coord> GetCoords()
         {
-            var currIndex = RootIndex;
-            do
-            {
-                yield return disjointSet.image.CoordFromIndex(currIndex);
-                currIndex = disjointSet.elements[currIndex].NextIndex;
-            } while (currIndex != RootIndex);
+            foreach (int index in disjointSet.EnumeratePartitionIndices(RootIndex))
+                yield return disjointSet.image.CoordFromIndex(index);
         }
 
         /// <inheritdoc/>
         public IEnumerable<int> GetIndices()
-        {
-            var currIndex = RootIndex;
-            do
-            {
-                yield return currIndex;
-                currIndex = disjointSet.elements[currIndex].NextIndex;
-            } while (currIndex != RootIndex);
-        }
+            => disjointSet.EnumeratePartitionIndices(RootIndex);
     }
 
 
@@ -116,6 +105,8 @@ public class DisjointSet<T> : IDisjointSet
     /// <param name="initialValueFunc">The function to be used to initialize the value of each partition.</param>
     public DisjointSet(IUntypedMatrix image, Func<int, T> initialValueFunc)
     {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(initialValueFunc);
         this.image = image;
         elements = new Element[image.Count];
         for (int index = 0; index < image.Count; index++)
@@ -166,13 +157,19 @@ public class DisjointSet<T> : IDisjointSet
     {
         int rootIndex = FindRootReadOnly(index);
         var region = new Region<Coord>(elements[rootIndex].Size);
-        var currIndex = rootIndex;
+        foreach (int currIndex in EnumeratePartitionIndices(rootIndex))
+            region.Pixels.Add(image.CoordFromIndex(currIndex));
+        return region;
+    }
+
+    private IEnumerable<int> EnumeratePartitionIndices(int rootIndex)
+    {
+        int currIndex = rootIndex;
         do
         {
-            region.Pixels.Add(image.CoordFromIndex(currIndex));
+            yield return currIndex;
             currIndex = elements[currIndex].NextIndex;
         } while (currIndex != rootIndex);
-        return region;
     }
 
     /// <summary>
@@ -214,8 +211,35 @@ public class DisjointSet<T> : IDisjointSet
         int firstSetRoot = Find(firstIndex);
         int secondSetRoot = Find(secondIndex);
         if (firstSetRoot == secondSetRoot)
-            throw new ArgumentException("The two indices are already in the same set.");
+            throw new ArgumentException("The two indices are already in the same set.", nameof(secondIndex));
 
+        return MergeRoots(firstSetRoot, secondSetRoot, unionValue);
+    }
+
+    /// <summary>
+    /// Attempts to union the sets containing <paramref name="firstIndex"/> and <paramref name="secondIndex"/>.
+    /// </summary>
+    /// <param name="firstIndex">The linear index of an element in the first set.</param>
+    /// <param name="secondIndex">The linear index of an element in the second set.</param>
+    /// <param name="unionValue">The value to assign to the merged set.</param>
+    /// <param name="mergedPartition">When this method returns, contains the merged partition, or the existing partition if both elements already belong to the same set.</param>
+    /// <returns><see langword="true"/> if two distinct sets were merged; <see langword="false"/> if both indices already belonged to the same set.</returns>
+    public bool TryUnion(int firstIndex, int secondIndex, T unionValue, out Partition mergedPartition)
+    {
+        int firstSetRoot = Find(firstIndex);
+        int secondSetRoot = Find(secondIndex);
+        if (firstSetRoot == secondSetRoot)
+        {
+            mergedPartition = GetPartition(firstSetRoot);
+            return false;
+        }
+
+        mergedPartition = MergeRoots(firstSetRoot, secondSetRoot, unionValue);
+        return true;
+    }
+
+    private Partition MergeRoots(int firstSetRoot, int secondSetRoot, T unionValue)
+    {
         if (elements[firstSetRoot].Size < elements[secondSetRoot].Size)
         {
             (firstSetRoot, secondSetRoot) = (secondSetRoot, firstSetRoot);
@@ -296,7 +320,7 @@ public class DisjointSet<T> : IDisjointSet
     public LongPixel GetElement(int index) => FindRootReadOnly(index);
 
     /// <inheritdoc/>
-    public LongPixel GetElement(int width, int height) => FindRootReadOnly(image.IndexFromCoord(new Coord(width, height)));
+    public LongPixel GetElement(int x, int y) => FindRootReadOnly(image.IndexFromCoord(new Coord(x, y)));
 
     /// <summary>
     /// Converts a linear index into the corresponding 2D matrix coordinate.
@@ -322,4 +346,22 @@ public class DisjointSet<T> : IDisjointSet
     }
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
+/// <summary>
+/// Factory methods for creating <see cref="DisjointSet{T}"/> instances.
+/// </summary>
+public static class DisjointSet
+{
+    /// <summary>
+    /// Creates a <see cref="DisjointSet{T}"/> initialized with singleton byte partitions (value <c>0</c>) for each element in <paramref name="matrix"/>.
+    /// </summary>
+    /// <param name="matrix">The matrix whose dimensions and element count define the disjoint sets.</param>
+    /// <returns>A new <see cref="DisjointSet{T}"/> of <see cref="byte"/> containing singleton partitions.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> is <see langword="null"/>.</exception>
+    public static DisjointSet<byte> CreateSingletons(IUntypedMatrix matrix)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        return new DisjointSet<byte>(matrix, static _ => 0);
+    }
 }

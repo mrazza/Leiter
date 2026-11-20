@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -91,24 +92,12 @@ public class OrientedEllipticalFilterTests
     public void Apply_ZeroOrNonFiniteOrientation_ShouldPreserveOriginalPixel()
     {
         int size = 5;
-        var image = new SequentialMatrix<Rgb8>(size, size);
-        var orientations = new SequentialMatrix<Vector2D>(size, size);
-
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                image[x, y] = new Rgb8(120, 130, 140);
-                orientations[x, y] = Vector2D.Zero;
-            }
-        }
+        var image = TestMatrices.Constant(size, size, new Rgb8(120, 130, 140));
+        var orientations = TestMatrices.Constant(size, size, Vector2D.Zero);
 
         // Test with zero orientations
         Matrix<Rgb8> zeroResult = OrientedEllipticalFilter.Apply(image, orientations);
-        for (int i = 0; i < image.Count; i++)
-        {
-            Assert.Equal(image[i], zeroResult[i]);
-        }
+        MatrixAssert.Equal(image, zeroResult);
 
         // Test with NaN orientations
         orientations[2, 2] = new Vector2D(double.NaN, 1.0);

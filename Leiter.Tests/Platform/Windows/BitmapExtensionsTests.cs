@@ -1,10 +1,12 @@
 namespace Leiter.Tests.Platform.Windows;
 
 using System;
+using System.IO;
 using System.Runtime.Versioning;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Platform.Windows;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -13,11 +15,9 @@ using Xunit;
 [SupportedOSPlatform("windows")]
 public class BitmapExtensionsTests
 {
-    [Fact]
+    [WindowsFact]
     public void BitmapExtensions_ShouldConvertCorrectly()
     {
-        if (!OperatingSystem.IsWindows()) return;
-
         RunBitmapExtensionsTest();
     }
 
@@ -44,6 +44,21 @@ public class BitmapExtensionsTests
         Assert.Equal(bmp.Width, convertedBmp.Width);
         Assert.Equal(bmp.Height, convertedBmp.Height);
         Assert.Equal(System.Drawing.Color.FromArgb(255, 0, 30, 0).ToArgb(), convertedBmp.GetPixel(0, 3).ToArgb());
+
+        string tempPath = Path.Combine(Path.GetTempPath(), $"leiter_win_{Guid.NewGuid():N}.png");
+        try
+        {
+            matrix.Save(tempPath);
+            SequentialMatrix<Rgb8> loaded = BitmapExtensions.LoadRgb8(tempPath);
+            MatrixAssert.Equal(matrix, loaded);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
     }
 
     [Fact]
@@ -54,5 +69,9 @@ public class BitmapExtensionsTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 5).ToBitmap());
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(5, 0).ToBitmap());
         Assert.Throws<ArgumentOutOfRangeException>(() => new SequentialMatrix<Rgb8>(0, 0).ToBitmap());
+        Assert.Throws<ArgumentNullException>(() => BitmapExtensions.LoadRgb8(null!));
+        Assert.Throws<ArgumentException>(() => BitmapExtensions.LoadRgb8("   "));
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<Rgb8>)null!).Save("out.png"));
+        Assert.Throws<ArgumentException>(() => new SequentialMatrix<Rgb8>(2, 2).Save(" "));
     }
 }

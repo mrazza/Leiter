@@ -173,6 +173,22 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     /// <summary>
+    /// Calculates the squared color distance between the current and other pixel in XYZ color space.
+    /// </summary>
+    /// <remarks>
+    /// This naive implementation assumes Euclidean uniformity of the XYZ color space.
+    /// </remarks>
+    /// <param name="otherPixel">The other pixel on which to operate.</param>
+    /// <returns>The squared Euclidean distance in color between the two pixels.</returns>
+    public double DistanceSquared(Xyz32 otherPixel)
+    {
+        double dx = X - otherPixel.X;
+        double dy = Y - otherPixel.Y;
+        double dz = Z - otherPixel.Z;
+        return (dx * dx) + (dy * dy) + (dz * dz);
+    }
+
+    /// <summary>
     /// Calculates the color distance between the current and other pixel in XYZ color space.
     /// </summary>
     /// <remarks>
@@ -180,11 +196,5 @@ public readonly record struct Xyz32(float X, float Y, float Z) : ITypedPixel<Xyz
     /// </remarks>
     /// <param name="otherPixel">The other pixel on which to operate.</param>
     /// <returns>The distance in color between the two pixels.</returns>
-    public double Distance(Xyz32 otherPixel)
-    {
-        double dx = X - otherPixel.X;
-        double dy = Y - otherPixel.Y;
-        double dz = Z - otherPixel.Z;
-        return Math.Sqrt(dx * dx + dy * dy + dz * dz);
-    }
+    public double Distance(Xyz32 otherPixel) => Math.Sqrt(DistanceSquared(otherPixel));
 }

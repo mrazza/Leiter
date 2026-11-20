@@ -80,11 +80,7 @@ public class WetInWetOptionsTests
     /// </summary>
     /// <param name="degrees">The invalid hue threshold in degrees.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(180.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidHueDegrees), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidSalientHueThresholdDegrees_ShouldThrowArgumentOutOfRangeException(double degrees)
     {
         var options = new WetInWetOptions(SalientHueThresholdDegrees: degrees);
@@ -110,11 +106,7 @@ public class WetInWetOptionsTests
     /// </summary>
     /// <param name="degrees">The invalid hue threshold in degrees.</param>
     [Theory]
-    [InlineData(-0.01)]
-    [InlineData(180.01)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
+    [MemberData(nameof(OptionValidationData.InvalidHueDegrees), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidNonSalientHueThresholdDegrees_ShouldThrowArgumentOutOfRangeException(double degrees)
     {
         var options = new WetInWetOptions(NonSalientHueThresholdDegrees: degrees);

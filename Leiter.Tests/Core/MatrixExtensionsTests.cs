@@ -32,7 +32,8 @@ public class MatrixExtensionsTests
     public void ToSequentialMatrix_TooSmallSource_ShouldThrow()
     {
         var source = new List<DoublePixel> { 1.0, 2.0, 3.0 };
-        Assert.Throws<ArgumentException>(() => source.ToSequentialMatrix(2, 2));
+        var lengthEx = Assert.Throws<ArgumentException>(() => source.ToSequentialMatrix(2, 2));
+        Assert.Equal("values", lengthEx.ParamName);
         Assert.Throws<ArgumentNullException>(() => ((IEnumerable<DoublePixel>)null!).ToSequentialMatrix(2, 2));
     }
 
@@ -259,6 +260,26 @@ public class MatrixExtensionsTests
         Assert.NotSame(trimap, covariantTrimap);
 
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).Clone());
+    }
+
+    [Fact]
+    public void MapIndexed_ShouldTransformWithCoordinatesAndValidateArguments()
+    {
+        var source = new SequentialMatrix<DoublePixel>(new Size(2, 2), [1.0, 2.0, 3.0, 4.0]);
+        Matrix<DoublePixel> mapped = source.MapIndexed(static (x, y, p) => new DoublePixel((p.Value * 10.0) + (y * 2) + x));
+
+        Assert.Equal(10.0, mapped[0, 0].Value);
+        Assert.Equal(21.0, mapped[1, 0].Value);
+        Assert.Equal(32.0, mapped[0, 1].Value);
+        Assert.Equal(43.0, mapped[1, 1].Value);
+
+        var custom = new CustomMatrix(2, 2);
+        custom[1, 1] = new DoublePixel(5.0);
+        Matrix<DoublePixel> mappedCustom = custom.MapIndexed(static (x, y, p) => new DoublePixel(p.Value + x + y));
+        Assert.Equal(7.0, mappedCustom[1, 1].Value);
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<DoublePixel>)null!).MapIndexed(static (x, y, p) => p));
+        Assert.Throws<ArgumentNullException>(() => source.MapIndexed<DoublePixel, DoublePixel>(null!));
     }
 
     private sealed class CustomMatrix : Matrix<DoublePixel>

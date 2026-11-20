@@ -27,7 +27,7 @@ public static class MatrixExtensions
         {
             if (!enumerator.MoveNext())
             {
-                throw new ArgumentException($"IEnumerable of type {values.GetType()} is smaller than matrix of size {{{width}, {height}}}.");
+                throw new ArgumentException($"IEnumerable of type {values.GetType()} is smaller than matrix of size {{{width}, {height}}}.", nameof(values));
             }
             result[index] = enumerator.Current;
         }
@@ -136,6 +136,38 @@ public static class MatrixExtensions
             return concreteMatrix.Map(selector);
 
         return new SequentialMatrix<R>(matrix.Width, matrix.Height, matrix.MapToArray(selector));
+    }
+
+    /// <summary>
+    /// Applies a coordinate-aware transformation function to each element of a read-only matrix in parallel,
+    /// returning a new matrix of the mapped type.
+    /// </summary>
+    /// <typeparam name="T">The element type of the source matrix.</typeparam>
+    /// <typeparam name="R">The element type of the resulting matrix.</typeparam>
+    /// <param name="matrix">The source matrix to transform.</param>
+    /// <param name="selector">The transformation function receiving <c>(x, y, element)</c> for each cell.</param>
+    /// <returns>A new <see cref="Matrix{R}"/> containing the mapped elements.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> or <paramref name="selector"/> is <see langword="null"/>.</exception>
+    public static Matrix<R> MapIndexed<T, R>(this IReadOnlyMatrix<T> matrix, Func<int, int, T, R> selector)
+        where T : struct
+        where R : struct
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        ArgumentNullException.ThrowIfNull(selector);
+
+        int width = matrix.Width;
+        int height = matrix.Height;
+        var result = new SequentialMatrix<R>(width, height);
+        if (matrix.Count == 0)
+            return result;
+
+        Parallel.For(0, height, y =>
+        {
+            for (int x = 0; x < width; x++)
+                result[x, y] = selector(x, y, matrix[x, y]);
+        });
+
+        return result;
     }
 
     /// <summary>

@@ -5,13 +5,13 @@ using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
 using Xunit;
+using static Leiter.Tests.TestUtils.TestConstants;
 
 /// <summary>
 /// Provides unit tests for <see cref="PigmentBlend"/>.
 /// </summary>
 public class PigmentBlendTests
 {
-    private const double PrecisionTolerance = 1e-6;
 
     /// <summary>
     /// Verifies that paper white (1.0) and pure black (0.0) remain invariant under positive and negative density offsets.

@@ -5,10 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
-using Leiter.Algorithms.Quantization;
 using Leiter.Core;
 using Leiter.Pixels;
-using Leiter.Pixels.ColorSpaces;
 
 /// <summary>
 /// A regional contrast saliency algorithm.
@@ -48,27 +46,59 @@ public static class RegionalContrastSaliency
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(segmentation);
 
-        RegionalContrastSaliencyOptions resolvedOptions = options ?? RegionalContrastSaliencyOptions.Default;
-        resolvedOptions.Validate();
-        bool enableSmoothing = resolvedOptions.EnableSmoothing;
-        bool computeBorderRegions = resolvedOptions.ComputeBorderRegions;
+        RegionalContrastSaliencyOptions resolvedOptions = OptionsResolver.Resolve(options, RegionalContrastSaliencyOptions.Default);
+        Guard.ThrowIfSizeMismatch(image, segmentation);
 
         if (image.Count == 0)
         {
             return new SequentialMatrix<DoublePixel>(image.Size);
         }
 
-        Guard.ThrowIfSizeMismatch(image, segmentation);
-
         RegionGraph graph = RegionGraph.FromDisjointSet(segmentation);
+        return ComputeSaliencyCore(image, graph, resolvedOptions);
+    }
+
+    /// <summary>
+    /// Computes the saliency map for the given image based on a precomputed <see cref="RegionGraph"/>.
+    /// </summary>
+    /// <param name="image">The input image.</param>
+    /// <param name="regionGraph">The precomputed region adjacency graph matching <paramref name="image"/> dimensions.</param>
+    /// <param name="options">Optional regional contrast post-processing parameters.</param>
+    /// <returns>The saliency map where each pixel has a value between [0, 1].</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="image"/> or <paramref name="regionGraph"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="image"/> and <paramref name="regionGraph"/> dimensions do not match.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="options"/> contains invalid parameters.</exception>
+    public static Matrix<DoublePixel> ComputeSaliency(
+        IReadOnlyMatrix<Rgb8> image,
+        RegionGraph regionGraph,
+        RegionalContrastSaliencyOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(regionGraph);
+
+        RegionalContrastSaliencyOptions resolvedOptions = OptionsResolver.Resolve(options, RegionalContrastSaliencyOptions.Default);
+        Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
+
+        if (image.Count == 0)
+        {
+            return new SequentialMatrix<DoublePixel>(image.Size);
+        }
+
+        return ComputeSaliencyCore(image, regionGraph, resolvedOptions);
+    }
+
+    private static Matrix<DoublePixel> ComputeSaliencyCore(
+        IReadOnlyMatrix<Rgb8> image,
+        RegionGraph graph,
+        RegionalContrastSaliencyOptions resolvedOptions)
+    {
+        bool enableSmoothing = resolvedOptions.EnableSmoothing;
+        bool computeBorderRegions = resolvedOptions.ComputeBorderRegions;
         int regionCount = graph.RegionCount;
         IReadOnlyMatrix<int> labels = graph.Labels;
         IReadOnlyList<Region<Coord>> regions = graph.Regions;
 
-        var (colorQuantizedImage, _, rgbToLabLookupTable) = PaletteQuantizer.QuantizeAndTruncate(
-            image,
-            static color => UniformQuantizer.QuantizeToMidpoint(color, 12),
-            static color => color.ToLab32(RgbColorSpace.SRgb));
+        var (colorQuantizedImage, _, rgbToLabLookupTable) = SaliencyColorSmoother.QuantizeForSaliency(image);
 
         var regionCentroids = new NormalizedCoord[regionCount];
         var avgRegionDistances = new double[regionCount];
@@ -172,10 +202,10 @@ public static class RegionalContrastSaliency
         var isBorderRegion = new bool[regionCount];
         if (computeBorderRegions)
         {
-            const double REGION_IN_BORDER_PERCENTAGE = 0.1;
-            const double BORDER_PERCENTAGE = 0.025;
-            double borderPixelWidth = image.Width * BORDER_PERCENTAGE;
-            double borderPixelHeight = image.Height * BORDER_PERCENTAGE;
+            const double regionInBorderPercentage = 0.1;
+            const double borderPercentage = 0.025;
+            double borderPixelWidth = image.Width * borderPercentage;
+            double borderPixelHeight = image.Height * borderPercentage;
             double maxX = image.Width - borderPixelWidth;
             double maxY = image.Height - borderPixelHeight;
 
@@ -191,7 +221,7 @@ public static class RegionalContrastSaliency
                     }
                 }
 
-                if (borderPixels > region.Pixels.Count * REGION_IN_BORDER_PERCENTAGE)
+                if (borderPixels > region.Pixels.Count * regionInBorderPercentage)
                 {
                     isBorderRegion[r] = true;
                     rawSaliency[r] = 0.0;

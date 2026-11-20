@@ -15,7 +15,7 @@ using Leiter.Pixels;
 public sealed record PaperGranulationOptions(
     double DensityStrength = 0.3,
     double WarpAmplitude = 0.6,
-    PerlinNoiseOptions? GrainNoiseOptions = null)
+    PerlinNoiseOptions? GrainNoiseOptions = null) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default grain frequency and micro-warp amplitude apply unscaled.
@@ -27,7 +27,10 @@ public sealed record PaperGranulationOptions(
     /// </summary>
     public static PaperGranulationOptions Default { get; } = new();
 
-    internal static readonly PerlinNoiseOptions DefaultGrainNoise = new(
+    /// <summary>
+    /// Gets the default procedural paper grain Perlin noise options used when <see cref="GrainNoiseOptions"/> is <see langword="null"/>.
+    /// </summary>
+    public static PerlinNoiseOptions DefaultGrainNoise { get; } = new(
         Seed: 707,
         Frequency: 0.18,
         Octaves: 4,

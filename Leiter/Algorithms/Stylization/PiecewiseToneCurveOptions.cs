@@ -16,7 +16,7 @@ public sealed record PiecewiseToneCurveOptions(
     double MinTone = 0.05,
     double MaxTone = 0.96,
     double ShadowKnee = 0.15,
-    double HighlightKnee = 0.85)
+    double HighlightKnee = 0.85) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) accepted for uniform <c>ForSize</c> signatures.

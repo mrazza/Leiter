@@ -22,7 +22,7 @@ public sealed record LodAbstractionOptions(
     double DistanceKernelScale = 10.0,
     double DistanceKernelBias = 0.3,
     double CrossSegmentColorScale = 0.3,
-    double SalientOverlapThreshold = 0.5)
+    double SalientOverlapThreshold = 0.5) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default kernel widths apply unscaled.

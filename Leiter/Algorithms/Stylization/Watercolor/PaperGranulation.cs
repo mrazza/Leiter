@@ -22,11 +22,9 @@ public static class PaperGranulation
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="size"/> has negative dimensions or <paramref name="grainOptions"/> are invalid.</exception>
     public static Matrix<DoublePixel> GeneratePaperHeightMap(Size size, PerlinNoiseOptions? grainOptions = null)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(size.Width, nameof(size));
-        ArgumentOutOfRangeException.ThrowIfNegative(size.Height, nameof(size));
+        Guard.ThrowIfNegative(size);
 
-        PerlinNoiseOptions opts = grainOptions ?? PaperGranulationOptions.DefaultGrainNoise;
-        opts.Validate();
+        PerlinNoiseOptions opts = OptionsResolver.Resolve(grainOptions, PaperGranulationOptions.DefaultGrainNoise);
 
         if (size.Width == 0 || size.Height == 0)
         {
@@ -74,8 +72,7 @@ public static class PaperGranulation
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        PaperGranulationOptions opts = options ?? PaperGranulationOptions.Default;
-        opts.Validate();
+        PaperGranulationOptions opts = OptionsResolver.Resolve(options, PaperGranulationOptions.Default);
         Guard.ThrowIfSizeMismatchIfNotNull(image, paperHeightMap);
 
         if (image.Count == 0 || (opts.DensityStrength == 0.0 && opts.WarpAmplitude == 0.0))

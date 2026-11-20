@@ -36,4 +36,15 @@ public class SizeTests
         Assert.False(new Size(5, 0).Contains(0, 0));
         Assert.False(new Size(-2, 5).Contains(0, 0));
     }
+
+    [Fact]
+    public void Count_IndexOf_And_CoordOf_ShouldConvertBetweenLinearAnd2DCoordinates()
+    {
+        var size = new Size(4, 3);
+
+        Assert.Equal(12, size.Count);
+        Assert.Equal(6, size.IndexOf(2, 1));
+        Assert.Equal(6, size.IndexOf(new Coord(2, 1)));
+        Assert.Equal(new Coord(2, 1), size.CoordOf(6));
+    }
 }

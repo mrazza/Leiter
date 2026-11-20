@@ -8,12 +8,24 @@ namespace Leiter.Core;
 public readonly record struct NormalizedCoord(double X, double Y)
 {
     /// <summary>
+    /// Computes the squared Euclidean distance between this coordinate and another normalized coordinate.
+    /// </summary>
+    /// <param name="other">The other normalized coordinate to calculate the squared distance to.</param>
+    /// <returns>The squared Euclidean distance between the two coordinates.</returns>
+    public readonly double DistanceSquared(NormalizedCoord other)
+    {
+        double dx = X - other.X;
+        double dy = Y - other.Y;
+        return (dx * dx) + (dy * dy);
+    }
+
+    /// <summary>
     /// Computes the Euclidean distance between this coordinate and another normalized coordinate.
     /// </summary>
     /// <param name="other">The other normalized coordinate to calculate the distance to.</param>
     /// <returns>The Euclidean distance between the two coordinates.</returns>
     public readonly double Distance(NormalizedCoord other) =>
-        Math.Sqrt(Math.Pow(this.X - other.X, 2) + Math.Pow(this.Y - other.Y, 2));
+        Math.Sqrt(DistanceSquared(other));
 
     /// <summary>
     /// Adds two normalized coordinates together component-wise.

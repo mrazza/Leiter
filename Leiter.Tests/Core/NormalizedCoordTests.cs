@@ -52,4 +52,12 @@ public class NormalizedCoordTests
         Assert.Equal(0.25, divided.X, 12);
         Assert.Equal(0.75, divided.Y, 12);
     }
+
+    [Fact]
+    public void DistanceSquared_ShouldComputeSquaredEuclideanDistance()
+    {
+        var c1 = new NormalizedCoord(1.0, 2.0);
+        var c2 = new NormalizedCoord(4.0, 6.0);
+        Assert.Equal(25.0, c1.DistanceSquared(c2), 12);
+    }
 }

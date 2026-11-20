@@ -188,4 +188,27 @@ public class PixelConversionTests
             Assert.Equal(100.0f, whiteLab.L, 3);
         }
     }
+
+    [Fact]
+    public void Mask_ToRgb8_And_ToGrayscaleRgb8_ShouldMapBooleansAndValidateNull()
+    {
+        var mask = new MaskMatrix(2, 2);
+        mask[0, 0] = false;
+        mask[1, 0] = true;
+        mask[0, 1] = true;
+        mask[1, 1] = false;
+
+        Matrix<Rgb8> gray = mask.ToGrayscaleRgb8();
+        Assert.Equal(new Rgb8(0, 0, 0), gray[0, 0]);
+        Assert.Equal(new Rgb8(255, 255, 255), gray[1, 0]);
+        Assert.Equal(new Rgb8(255, 255, 255), gray[0, 1]);
+        Assert.Equal(new Rgb8(0, 0, 0), gray[1, 1]);
+
+        var custom = mask.ToRgb8(new Rgb8(10, 20, 30), new Rgb8(40, 50, 60));
+        Assert.Equal(new Rgb8(40, 50, 60), custom[0, 0]);
+        Assert.Equal(new Rgb8(10, 20, 30), custom[1, 0]);
+
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ToGrayscaleRgb8());
+        Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ToRgb8(Rgb8.Zero, Rgb8.Zero));
+    }
 }

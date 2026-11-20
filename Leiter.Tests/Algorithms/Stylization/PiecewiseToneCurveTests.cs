@@ -6,13 +6,13 @@ using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Tests.TestUtils;
 using Xunit;
+using static Leiter.Tests.TestUtils.TestConstants;
 
 /// <summary>
 /// Provides unit tests for <see cref="PiecewiseToneCurve"/>.
 /// </summary>
 public class PiecewiseToneCurveTests
 {
-    private const double PrecisionTolerance = 1e-6;
 
     /// <summary>
     /// Verifies that Evaluate correctly maps the domain endpoints to MinTone and MaxTone.

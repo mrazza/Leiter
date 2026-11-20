@@ -4,6 +4,7 @@ using System;
 using Leiter.Algorithms.Noise;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -189,14 +190,7 @@ public class PerlinNoiseTests
         Assert.Equal(16, field.Height);
         Assert.Equal(256, field.Count);
 
-        for (int y = 0; y < field.Height; y++)
-        {
-            for (int x = 0; x < field.Width; x++)
-            {
-                double val = field[x, y].Value;
-                Assert.True(val is >= -1.0 and <= 1.0);
-            }
-        }
+        MatrixAssert.AllInRange(field, -1.0, 1.0);
 
         // Test with default options (null)
         Matrix<DoublePixel> defaultField = PerlinNoise.GenerateFractalField(new Size(4, 4));
@@ -230,14 +224,7 @@ public class PerlinNoiseTests
         Assert.Equal(8, field.Width);
         Assert.Equal(8, field.Height);
 
-        for (int y = 0; y < field.Height; y++)
-        {
-            for (int x = 0; x < field.Width; x++)
-            {
-                double val = field[x, y].Value;
-                Assert.True(val is >= 0.0 and <= 1.0);
-            }
-        }
+        MatrixAssert.AllInRange(field, 0.0, 1.0);
     }
 
     /// <summary>

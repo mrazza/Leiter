@@ -4,6 +4,7 @@ using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Tests.TestUtils;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -19,18 +20,8 @@ public class EgbiSegmentationTests
     [Fact]
     public void Segment_ShouldPartitionImage()
     {
-        // Setup a simple 10x10 Rgb8 image with a distinct left and right side
-        var img = new SequentialMatrix<Rgb8>(10, 10);
-        for (int y = 0; y < 10; y++)
-        {
-            for (int x = 0; x < 10; x++)
-            {
-                if (x < 5)
-                    img[x, y] = new Rgb8(255, 0, 0); // Red
-                else
-                    img[x, y] = new Rgb8(0, 0, 255); // Blue
-            }
-        }
+        // Setup a simple 10x10 Rgb8 image with a distinct left and right side (Red vs Blue)
+        var img = TestMatrices.VerticalSplit(10, 10, new Rgb8(255, 0, 0), new Rgb8(0, 0, 255));
 
         // Run EGBI segmentation
         // Choose KFactor = 5.0, Epsilon = 1.0, MinRegionSize = 20
@@ -78,12 +69,7 @@ public class EgbiSegmentationTests
         for (int run = 0; run < 5; run++)
         {
             Matrix<LongPixel> current = EgbiSegmentation.Segment(img, baselineOptions).ToMatrix();
-            Assert.Equal(baseline.Width, current.Width);
-            Assert.Equal(baseline.Height, current.Height);
-            for (int i = 0; i < baseline.Count; i++)
-            {
-                Assert.Equal(baseline[i].Value, current[i].Value);
-            }
+            MatrixAssert.Equal(baseline, current);
         }
     }
 

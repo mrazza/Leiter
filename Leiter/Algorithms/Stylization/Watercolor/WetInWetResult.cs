@@ -36,17 +36,17 @@ public sealed record WetInWetResult
     /// <summary>
     /// Gets the filtered RGB image.
     /// </summary>
-    public Matrix<Rgb8> Image { get; init; }
+    public Matrix<Rgb8> Image { get; }
 
     /// <summary>
     /// Gets the binary mask indicating pixels within the smoothed wet-in-wet area.
     /// </summary>
-    public MaskMatrix WetAreaMask { get; init; }
+    public MaskMatrix WetAreaMask { get; }
 
     /// <summary>
     /// Gets the boolean qualification status for each boundary in the region graph.
     /// </summary>
-    public IReadOnlyList<bool> QualifyingBoundaries { get; init; }
+    public IReadOnlyList<bool> QualifyingBoundaries { get; }
 
     /// <summary>
     /// Deconstructs this result into its constituent parts.

@@ -16,7 +16,7 @@ public sealed record FxaaOptions(
     double RelativeContrastThreshold = 0.125,
     double AbsoluteContrastThreshold = 0.0625,
     double SubpixelBlendStrength = 0.75,
-    int MaxSpanSearchSteps = 8)
+    int MaxSpanSearchSteps = 8) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default FXAA span steps apply unscaled.

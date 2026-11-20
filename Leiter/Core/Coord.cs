@@ -8,12 +8,24 @@ namespace Leiter.Core;
 public readonly record struct Coord(int X, int Y)
 {
     /// <summary>
+    /// Computes the squared Euclidean distance between this coordinate and another coordinate.
+    /// </summary>
+    /// <param name="other">The other coordinate to calculate the squared distance to.</param>
+    /// <returns>The squared Euclidean distance between the two coordinates.</returns>
+    public readonly long DistanceSquared(Coord other)
+    {
+        long dx = (long)X - other.X;
+        long dy = (long)Y - other.Y;
+        return (dx * dx) + (dy * dy);
+    }
+
+    /// <summary>
     /// Computes the Euclidean distance between this coordinate and another coordinate.
     /// </summary>
     /// <param name="other">The other coordinate to calculate the distance to.</param>
     /// <returns>The Euclidean distance between the two coordinates.</returns>
     public readonly double Distance(Coord other) =>
-        Math.Sqrt(Math.Pow(this.X - other.X, 2) + Math.Pow(this.Y - other.Y, 2));
+        Math.Sqrt(DistanceSquared(other));
 
     /// <summary>
     /// Adds two coordinates together component-wise.

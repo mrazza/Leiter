@@ -69,7 +69,7 @@ public static class SpatialGradients
         GradientOperator gradientOperator = GradientOperator.Sobel)
     {
         ArgumentNullException.ThrowIfNull(image);
-        _ = GetKernelWeights(gradientOperator);
+        Guard.ThrowIfUndefinedEnum(gradientOperator);
 
         int width = image.Width;
         int height = image.Height;
@@ -152,7 +152,7 @@ public static class SpatialGradients
             w0, w1, w2, scale / 255.0);
     }
 
-    private static (Rgb64 Gx, Rgb64 Gy) ComputeRgb8GradientAt(
+    internal static (Rgb64 Gx, Rgb64 Gy) ComputeRgb8GradientAt(
         Rgb8 vM1M1, Rgb8 v0M1, Rgb8 vP1M1,
         Rgb8 vM10,            Rgb8 vP10,
         Rgb8 vM1P1, Rgb8 v0P1, Rgb8 vP1P1,
@@ -187,7 +187,7 @@ public static class SpatialGradients
     public static double ChannelNorm(Rgb64 derivative) =>
         Math.Sqrt((derivative.R * derivative.R) + (derivative.G * derivative.G) + (derivative.B * derivative.B));
 
-    private static (double W0, double W1, double W2, double Scale) GetKernelWeights(GradientOperator gradientOperator) =>
+    internal static (double W0, double W1, double W2, double Scale) GetKernelWeights(GradientOperator gradientOperator) =>
         gradientOperator switch
         {
             GradientOperator.Sobel => (1.0, 2.0, 1.0, 1.0 / 8.0),

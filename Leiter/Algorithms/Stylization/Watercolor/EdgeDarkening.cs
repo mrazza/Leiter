@@ -23,8 +23,7 @@ public static class EdgeDarkening
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        EdgeDarkeningOptions opts = options ?? EdgeDarkeningOptions.Default;
-        opts.Validate();
+        EdgeDarkeningOptions opts = OptionsResolver.Resolve(options, EdgeDarkeningOptions.Default);
 
         if (image.Count == 0 || opts.Intensity == 0.0)
         {

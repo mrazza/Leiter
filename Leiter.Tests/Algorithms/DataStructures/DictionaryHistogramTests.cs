@@ -17,8 +17,8 @@ public class DictionaryHistogramTests
         Assert.Equal(0, hist.BucketCount);
         Assert.Equal(0, hist.Total());
         Assert.Equal(0, hist["apple"]);
-        // If total is 0, GetCount / 0 results in double.NaN in C# double division
-        Assert.True(double.IsNaN(hist.GetDensity("apple")));
+        // Empty histogram density returns 0.0 cleanly (Defect 0.6 fix)
+        Assert.Equal(0.0, hist.GetDensity("apple"));
 
         hist.Increment("apple");
         hist.Increment("banana", 2);

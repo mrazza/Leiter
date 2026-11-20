@@ -29,7 +29,7 @@ public sealed record HandTremorOptions(
     PerlinNoiseOptions? SecondaryNoise = null,
     double MinContrastingChroma = 0.08,
     double PaperGapBias = 0.0,
-    double PaperGapOpacity = 1.0)
+    double PaperGapOpacity = 1.0) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default tremor amplitude and noise frequencies apply unscaled.
@@ -41,9 +41,20 @@ public sealed record HandTremorOptions(
     /// </summary>
     public static HandTremorOptions Default { get; } = new();
 
-    internal static readonly PerlinNoiseOptions DefaultPrimaryNoise = new(Seed: 101, Frequency: 0.04, Octaves: 3);
+    /// <summary>
+    /// Gets the default paper background color (<c>(250, 248, 242)</c>) used when <see cref="PaperColor"/> is <see langword="null"/>.
+    /// </summary>
+    public static Rgb8 DefaultPaperColor => new(250, 248, 242);
 
-    internal static readonly PerlinNoiseOptions DefaultSecondaryNoise = new(Seed: 202, Frequency: 0.04, Octaves: 3);
+    /// <summary>
+    /// Gets the default primary Perlin noise options used when <see cref="PrimaryNoise"/> is <see langword="null"/>.
+    /// </summary>
+    public static PerlinNoiseOptions DefaultPrimaryNoise { get; } = new(Seed: 101, Frequency: 0.04, Octaves: 3);
+
+    /// <summary>
+    /// Gets the default secondary Perlin noise options used when <see cref="SecondaryNoise"/> is <see langword="null"/>.
+    /// </summary>
+    public static PerlinNoiseOptions DefaultSecondaryNoise { get; } = new(Seed: 202, Frequency: 0.04, Octaves: 3);
 
     /// <summary>
     /// Creates <see cref="HandTremorOptions"/> with displacement amplitude and Perlin noise frequencies scaled for <paramref name="size"/>.

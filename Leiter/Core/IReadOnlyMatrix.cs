@@ -40,10 +40,10 @@ public interface IReadOnlyMatrix<T> : IUntypedMatrix, IReadOnlyCollection<T>, IR
     /// <summary>
     /// Gets the element at the specified coordinate components.
     /// </summary>
-    /// <param name="width">The zero-based column (X) coordinate of the element.</param>
-    /// <param name="height">The zero-based row (Y) coordinate of the element.</param>
+    /// <param name="x">The zero-based column (X) coordinate of the element.</param>
+    /// <param name="y">The zero-based row (Y) coordinate of the element.</param>
     /// <returns>The element at the specified coordinates.</returns>
-    T GetElement(int width, int height);
+    T GetElement(int x, int y);
 
     int IUntypedMatrix.Count => Count;
 

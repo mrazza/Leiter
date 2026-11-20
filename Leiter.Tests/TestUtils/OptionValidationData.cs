@@ -40,4 +40,16 @@ public static class OptionValidationData
     /// Invalid values for integer parameters constrained to <c>&gt;= 0</c>.
     /// </summary>
     public static TheoryData<int> InvalidNonNegativeInts => [-1, -10];
+
+    /// <summary>
+    /// Invalid values for hue difference angle parameters constrained to <c>[0, 180]</c> degrees.
+    /// </summary>
+    public static TheoryData<double> InvalidHueDegrees =>
+        [-0.01, 180.01, double.NaN, double.PositiveInfinity, double.NegativeInfinity];
+
+    /// <summary>
+    /// Invalid values for parameters constrained to <c>[-1, 1]</c>.
+    /// </summary>
+    public static TheoryData<double> InvalidSignedUnitDoubles =>
+        [-1.01, 1.01, double.NaN, double.PositiveInfinity, double.NegativeInfinity];
 }

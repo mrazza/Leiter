@@ -8,6 +8,16 @@ using System.Runtime.CompilerServices;
 public static class ScalarMath
 {
     /// <summary>
+    /// The square root of 2 (<c>sqrt(2)</c>).
+    /// </summary>
+    public const double Sqrt2 = 1.4142135623730951;
+
+    /// <summary>
+    /// The reciprocal square root of 2 (<c>1 / sqrt(2)</c>).
+    /// </summary>
+    public const double InvSqrt2 = 0.7071067811865475;
+
+    /// <summary>
     /// Computes linear interpolation between <paramref name="from"/> and <paramref name="to"/> by <paramref name="amount"/>.
     /// </summary>
     /// <remarks>

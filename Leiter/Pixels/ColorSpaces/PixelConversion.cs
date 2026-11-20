@@ -55,6 +55,30 @@ public static class PixelConversion
     }
 
     /// <summary>
+    /// Converts a boolean mask matrix to an <see cref="Rgb8"/> matrix using <paramref name="trueColor"/> for <see langword="true"/> cells
+    /// and <paramref name="falseColor"/> for <see langword="false"/> cells.
+    /// </summary>
+    /// <param name="mask">The boolean mask matrix to convert.</param>
+    /// <param name="trueColor">The RGB color assigned to <see langword="true"/> entries.</param>
+    /// <param name="falseColor">The RGB color assigned to <see langword="false"/> entries.</param>
+    /// <returns>A new <see cref="Matrix{Rgb8}"/> visualizing the boolean mask.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="mask"/> is <see langword="null"/>.</exception>
+    public static Matrix<Rgb8> ToRgb8(this IReadOnlyMatrix<bool> mask, Rgb8 trueColor, Rgb8 falseColor)
+    {
+        ArgumentNullException.ThrowIfNull(mask);
+        return mask.Map(value => value ? trueColor : falseColor);
+    }
+
+    /// <summary>
+    /// Converts a boolean mask matrix to a binary grayscale <see cref="Matrix{Rgb8}"/> (<c>(255, 255, 255)</c> for <see langword="true"/>, <c>(0, 0, 0)</c> for <see langword="false"/>).
+    /// </summary>
+    /// <param name="mask">The boolean mask matrix to convert.</param>
+    /// <returns>A new <see cref="Matrix{Rgb8}"/> containing black-and-white mask pixels.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="mask"/> is <see langword="null"/>.</exception>
+    public static Matrix<Rgb8> ToGrayscaleRgb8(this IReadOnlyMatrix<bool> mask) =>
+        mask.ToRgb8(new Rgb8(255, 255, 255), Rgb8.Zero);
+
+    /// <summary>
     /// Converts an <see cref="Xyz32"/> pixel to an <see cref="Rgb64"/> pixel in the specified <see cref="RgbColorSpace"/>.
     /// </summary>
     /// <remarks>
@@ -320,6 +344,9 @@ public static class PixelConversion
     public static Rgb8 ToRgb8(this Lab32 self, RgbColorSpace colorSpace, Illuminant illuminant) =>
         self.ToRgb64(colorSpace, illuminant).ToRgb8();
 
+    private const float LabEpsilon = 0.008856f; // (6/29)^3
+    private const float LabKappa = 903.3f; // (29/3)^3
+
     /// <summary>
     /// Evaluates the piecewise CIE L*a*b* transfer function on a normalized tristimulus ratio.
     /// </summary>
@@ -330,16 +357,12 @@ public static class PixelConversion
     /// <returns>The transformed transfer value.</returns>
     private static float LabTransfer(float channel)
     {
-        const float epsilon = 0.008856f; // (6/29)^3
-        const float kappa = 903.3f; // (29/3)^3
-        return channel > epsilon ? (float)Math.Cbrt(channel) : (kappa * channel + 16f) / 116f;
+        return channel > LabEpsilon ? (float)Math.Cbrt(channel) : (LabKappa * channel + 16f) / 116f;
     }
 
     private static float InverseLabTransfer(float f)
     {
-        const float epsilon = 0.008856f; // (6/29)^3
-        const float kappa = 903.3f; // (29/3)^3
         float cubed = f * f * f;
-        return cubed > epsilon ? cubed : (116f * f - 16f) / kappa;
+        return cubed > LabEpsilon ? cubed : (116f * f - 16f) / LabKappa;
     }
 }

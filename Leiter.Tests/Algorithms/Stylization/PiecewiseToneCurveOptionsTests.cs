@@ -5,13 +5,13 @@ using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
 using Xunit;
+using static Leiter.Tests.TestUtils.TestConstants;
 
 /// <summary>
 /// Provides unit tests for <see cref="PiecewiseToneCurveOptions"/>.
 /// </summary>
 public class PiecewiseToneCurveOptionsTests
 {
-    private const double PrecisionTolerance = 1e-6;
 
     /// <summary>
     /// Verifies that default options match the paper specifications and pass validation.

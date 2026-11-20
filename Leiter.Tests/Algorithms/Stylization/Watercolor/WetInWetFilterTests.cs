@@ -324,15 +324,7 @@ public class WetInWetFilterTests
         Assert.True(resNonSalient.QualifyingBoundaries[0]);
 
         // When Region 0 is salient, hue diff (~30) >= 20 -> does not qualify!
-        SequentialMatrix<bool> salientBool = TestMatrices.CenteredBox(width, height, 0, 0, 2, height - 1, true, false);
-        var salientMask = new MaskMatrix(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < 3; x++)
-            {
-                salientMask[x, y] = salientBool[x, y];
-            }
-        }
+        SequentialMatrix<bool> salientMask = TestMatrices.CenteredBox(width, height, 0, 0, 2, height - 1, true, false);
 
         WetInWetResult resSalient = WetInWetFilter.ApplyDetailed(image, graph, salientMask, options);
         Assert.False(resSalient.QualifyingBoundaries[0]);
@@ -344,22 +336,14 @@ public class WetInWetFilterTests
     [Fact]
     public void ApplyDetailed_PigmentSeeds_ShouldScatterExclusivelyOntoBrighterSide()
     {
-        int width = 10;
-        int height = 10;
-        var image = new SequentialMatrix<Rgb8>(width, height);
-        var labels = new SequentialMatrix<int>(width, height);
-
+        const int width = 10;
+        const int height = 10;
         // Left is darker (0), right is brighter (1)
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                labels[x, y] = x < 5 ? 0 : 1;
-                image[x, y] = x < 5 ? new Rgb8(30, 30, 30) : new Rgb8(220, 220, 220);
-            }
-        }
-
-        var graph = RegionGraph.FromLabels(labels);
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(30, 30, 30),
+            new Rgb8(220, 220, 220));
         var dist = new SequentialMatrix<DoublePixel>(width, height);
 
         var options = new WetInWetOptions(

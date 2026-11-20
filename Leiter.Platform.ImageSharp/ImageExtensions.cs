@@ -63,4 +63,36 @@ public static class ImageExtensions
         });
         return image;
     }
+
+    /// <summary>
+    /// Loads an image file from <paramref name="path"/> into a <see cref="SequentialMatrix{Rgb8}"/>.
+    /// </summary>
+    /// <param name="path">The file path of the image to load.</param>
+    /// <returns>The loaded image as a <see cref="SequentialMatrix{Rgb8}"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="path"/> is empty or contains only white-space characters.</exception>
+    public static SequentialMatrix<Rgb8> LoadRgb8(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        using Image<Rgb24> image = Image.Load<Rgb24>(path);
+        return image.ToSequentialMatrix();
+    }
+
+    /// <summary>
+    /// Saves an <see cref="IReadOnlyMatrix{Rgb8}"/> to disk at <paramref name="path"/>, inferring the image encoder from the file extension.
+    /// </summary>
+    /// <param name="matrix">The image matrix to save.</param>
+    /// <param name="path">The destination file path.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="matrix"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="path"/> is empty or contains only white-space characters.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="matrix"/> has a width or height less than or equal to zero.</exception>
+    public static void Save(this IReadOnlyMatrix<Rgb8> matrix, string path)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        using Image<Rgb24> image = matrix.ToImage();
+        image.Save(path);
+    }
 }

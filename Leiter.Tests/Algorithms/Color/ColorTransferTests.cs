@@ -230,4 +230,20 @@ public class ColorTransferTests
         Assert.True(Math.Abs(resultStats.MeanA) < 2.0, $"Expected near-achromatic MeanA, got {resultStats.MeanA}");
         Assert.True(Math.Abs(resultStats.MeanB) < 4.0, $"Expected near-achromatic MeanB, got {resultStats.MeanB}");
     }
+
+    [Fact]
+    public void RgbMethods_WithInvalidEnumArguments_ShouldThrowEagerlyEvenWhenEmpty()
+    {
+        var emptyRgb = new SequentialMatrix<Rgb8>(0, 0);
+        var profile = WatercolorPalettes.BalancedWash;
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.ComputeStatistics(emptyRgb, (RgbColorSpace)999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.ComputeStatistics(emptyRgb, RgbColorSpace.SRgb, (Illuminant)999));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(emptyRgb, emptyRgb, colorSpace: (RgbColorSpace)999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(emptyRgb, emptyRgb, illuminant: (Illuminant)999));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.Transfer(emptyRgb, profile, colorSpace: (RgbColorSpace)999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorTransfer.TransferToClosestProfile(emptyRgb, [profile], colorSpace: (RgbColorSpace)999));
+    }
 }

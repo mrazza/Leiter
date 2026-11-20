@@ -107,9 +107,7 @@ public class FxaaOptionsTests
     /// </summary>
     /// <param name="steps">The invalid maximum span search steps.</param>
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(-10)]
+    [MemberData(nameof(OptionValidationData.InvalidPositiveInts), MemberType = typeof(OptionValidationData))]
     public void Validate_InvalidMaxSpanSearchSteps_ShouldThrowArgumentOutOfRangeException(int steps)
     {
         var options = new FxaaOptions(MaxSpanSearchSteps: steps);

@@ -21,7 +21,7 @@ public sealed record MeanShiftOptions(
     int MinRegionSize = 50,
     int MaxIterations = 20,
     double ConvergenceEpsilon = 0.05,
-    GridConnectivity Connectivity = GridConnectivity.EightConnected)
+    GridConnectivity Connectivity = GridConnectivity.EightConnected) : IValidatableOptions
 {
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which default spatial parameters apply unscaled.

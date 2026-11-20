@@ -8,19 +8,16 @@ using Leiter.Core;
 /// </summary>
 public static class GridNeighborhood
 {
-    private const double Sqrt2 = 1.4142135623730951;
-    private const double InvSqrt2 = 0.7071067811865475;
-
     private static readonly GridNeighbor[] All8ConnectedData =
     [
         new(GridDirection.East, new Coord(1, 0), 1.0, 1.0),
         new(GridDirection.South, new Coord(0, 1), 1.0, 1.0),
-        new(GridDirection.SouthEast, new Coord(1, 1), Sqrt2, InvSqrt2),
-        new(GridDirection.SouthWest, new Coord(-1, 1), Sqrt2, InvSqrt2),
+        new(GridDirection.SouthEast, new Coord(1, 1), ScalarMath.Sqrt2, ScalarMath.InvSqrt2),
+        new(GridDirection.SouthWest, new Coord(-1, 1), ScalarMath.Sqrt2, ScalarMath.InvSqrt2),
         new(GridDirection.West, new Coord(-1, 0), 1.0, 1.0),
         new(GridDirection.North, new Coord(0, -1), 1.0, 1.0),
-        new(GridDirection.NorthWest, new Coord(-1, -1), Sqrt2, InvSqrt2),
-        new(GridDirection.NorthEast, new Coord(1, -1), Sqrt2, InvSqrt2),
+        new(GridDirection.NorthWest, new Coord(-1, -1), ScalarMath.Sqrt2, ScalarMath.InvSqrt2),
+        new(GridDirection.NorthEast, new Coord(1, -1), ScalarMath.Sqrt2, ScalarMath.InvSqrt2),
     ];
 
     private static readonly GridNeighbor[] Forward8ConnectedData =
@@ -79,7 +76,7 @@ public static class GridNeighborhood
     {
         GridConnectivity.FourConnected => Forward4ConnectedData,
         GridConnectivity.EightConnected => Forward8ConnectedData,
-        _ => throw new ArgumentOutOfRangeException(nameof(connectivity), connectivity, "Unsupported grid connectivity."),
+        _ => throw new ArgumentOutOfRangeException(nameof(connectivity), connectivity, $"Unsupported {nameof(GridConnectivity)} value."),
     };
 
     /// <summary>
@@ -92,7 +89,7 @@ public static class GridNeighborhood
     {
         GridConnectivity.FourConnected => All4ConnectedData,
         GridConnectivity.EightConnected => All8ConnectedData,
-        _ => throw new ArgumentOutOfRangeException(nameof(connectivity), connectivity, "Unsupported grid connectivity."),
+        _ => throw new ArgumentOutOfRangeException(nameof(connectivity), connectivity, $"Unsupported {nameof(GridConnectivity)} value."),
     };
 
     /// <summary>
@@ -105,7 +102,7 @@ public static class GridNeighborhood
     public static GridDirection Opposite(this GridDirection direction)
     {
         if ((byte)direction >= 8)
-            throw new ArgumentOutOfRangeException(nameof(direction), direction, "Unsupported grid direction.");
+            throw new ArgumentOutOfRangeException(nameof(direction), direction, $"Unsupported {nameof(GridDirection)} value.");
 
         return (GridDirection)((byte)direction ^ 4);
     }
@@ -119,7 +116,7 @@ public static class GridNeighborhood
     public static Coord ToOffset(this GridDirection direction)
     {
         if ((byte)direction >= 8)
-            throw new ArgumentOutOfRangeException(nameof(direction), direction, "Unsupported grid direction.");
+            throw new ArgumentOutOfRangeException(nameof(direction), direction, $"Unsupported {nameof(GridDirection)} value.");
 
         return All8ConnectedData[(byte)direction].Offset;
     }
