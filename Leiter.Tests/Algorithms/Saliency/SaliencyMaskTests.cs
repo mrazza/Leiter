@@ -1,10 +1,12 @@
 namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Saliency;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -15,22 +17,13 @@ public class SaliencyMaskTests
     [Fact]
     public void ComputeThreshold_And_Binarize_AcrossMethodsAndRetentionPolicies_ShouldWork()
     {
-        var map = new SequentialMatrix<DoublePixel>(10, 10);
-        for (int y = 1; y <= 4; y++)
-        {
-            for (int x = 1; x <= 4; x++)
-            {
-                map[x, y] = 0.85;
-            }
-        }
-
-        for (int y = 7; y <= 8; y++)
-        {
-            for (int x = 7; x <= 8; x++)
-            {
-                map[x, y] = 0.80;
-            }
-        }
+        SequentialMatrix<DoublePixel> map = TestMatrices.Create<DoublePixel>(
+            10,
+            10,
+            (x, y) =>
+                x >= 1 && x <= 4 && y >= 1 && y <= 4 ? 0.85 :
+                x >= 7 && x <= 8 && y >= 7 && y <= 8 ? 0.80 :
+                0.0);
 
         map[0, 9] = 0.90;
         map[9, 0] = double.NaN;
@@ -75,23 +68,86 @@ public class SaliencyMaskTests
     }
 
     [Fact]
+    public void Binarize_ConnectivityOption_ShouldControlDiagonalComponentMerging()
+    {
+        // Two 2x2 blocks touching only diagonally at (2, 2)-(3, 3): 4 pixels (4%) each, 8 pixels (8%) combined
+        SequentialMatrix<DoublePixel> map = TestMatrices.Create<DoublePixel>(
+            10,
+            10,
+            (x, y) =>
+                (x >= 1 && x <= 2 && y >= 1 && y <= 2) || (x >= 3 && x <= 4 && y >= 3 && y <= 4)
+                    ? 0.9
+                    : 0.0);
+
+        MaskMatrix eightConnected = SaliencyMask.Binarize(
+            map,
+            new SaliencyMaskOptions(
+                Method: SaliencyThresholdMethod.Fixed,
+                FixedThreshold: 0.5,
+                RetentionPolicy: ComponentRetentionPolicy.MinimumAreaFraction,
+                MinAreaFraction: 0.06,
+                Connectivity: GridConnectivity.EightConnected));
+
+        Assert.True(eightConnected[1, 1]);
+        Assert.True(eightConnected[4, 4]);
+
+        MaskMatrix fourConnected = SaliencyMask.Binarize(
+            map,
+            new SaliencyMaskOptions(
+                Method: SaliencyThresholdMethod.Fixed,
+                FixedThreshold: 0.5,
+                RetentionPolicy: ComponentRetentionPolicy.MinimumAreaFraction,
+                MinAreaFraction: 0.06,
+                Connectivity: GridConnectivity.FourConnected));
+
+        MatrixAssert.Equal(TestMatrices.Constant(10, 10, false), fourConnected);
+
+        // Under LargestComponentOnly, an asymmetric diagonal bridge preserves both blocks for 8-connected but only the larger for 4-connected
+        map[5, 3] = 0.9;
+        map[5, 4] = 0.9;
+        MaskMatrix largestFourConnected = SaliencyMask.Binarize(
+            map,
+            new SaliencyMaskOptions(
+                Method: SaliencyThresholdMethod.Fixed,
+                FixedThreshold: 0.5,
+                RetentionPolicy: ComponentRetentionPolicy.LargestComponentOnly,
+                Connectivity: GridConnectivity.FourConnected));
+
+        Assert.False(largestFourConnected[1, 1]);
+        Assert.True(largestFourConnected[4, 4]);
+        Assert.True(largestFourConnected[5, 3]);
+    }
+
+    [Fact]
+    public void ComputeThreshold_OtsuLargeSymmetricMultilevel_ShouldPreserveExactTieAcrossSplitModes()
+    {
+        // 300x300 = 90,000 pixels: 40% at bin 50, 20% at bin 125, 40% at bin 200.
+        // Both split boundaries (bin 50..124 and bin 125..199) share identical theoretical between-class variance.
+        const int width = 300;
+        const int height = 300;
+        SequentialMatrix<DoublePixel> map = TestMatrices.Create<DoublePixel>(
+            width,
+            height,
+            (_, y) =>
+                y < 120 ? 50.0 / 255.0 :
+                y < 180 ? 125.0 / 255.0 :
+                200.0 / 255.0);
+
+        double threshold = SaliencyMask.ComputeThreshold(map, SaliencyThresholdMethod.Otsu);
+        Assert.Equal(125.0 / 255.0, threshold, 9);
+    }
+
+    [Fact]
     public void UniformAndEdgeInputs_ShouldBeHandledCleanly()
     {
         var allZero = new SequentialMatrix<DoublePixel>(4, 4);
         Assert.Equal(1.0, SaliencyMask.ComputeThreshold(allZero, SaliencyThresholdMethod.Otsu), 6);
         MaskMatrix zeroMask = SaliencyMask.Binarize(allZero, new SaliencyMaskOptions(Method: SaliencyThresholdMethod.Otsu));
-        for (int i = 0; i < zeroMask.Count; i++)
-        {
-            Assert.False(zeroMask[i]);
-        }
+        MatrixAssert.Equal(TestMatrices.Constant(4, 4, false), zeroMask);
 
-        var allHigh = new SequentialMatrix<DoublePixel>(4, 4);
-        allHigh.SetAll(0.8);
+        SequentialMatrix<DoublePixel> allHigh = TestMatrices.Constant<DoublePixel>(4, 4, 0.8);
         MaskMatrix highMask = SaliencyMask.Binarize(allHigh, new SaliencyMaskOptions(Method: SaliencyThresholdMethod.Otsu));
-        for (int i = 0; i < highMask.Count; i++)
-        {
-            Assert.True(highMask[i]);
-        }
+        MatrixAssert.Equal(TestMatrices.Constant(4, 4, true), highMask);
 
         var emptyDouble = new SequentialMatrix<DoublePixel>(0, 0);
         Assert.Equal(0.0, SaliencyMask.ComputeThreshold(emptyDouble));
@@ -110,22 +166,19 @@ public class SaliencyMaskTests
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.ComputeThreshold(allZero, SaliencyThresholdMethod.Fixed, double.NaN));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.Binarize(allZero, new SaliencyMaskOptions(RetentionPolicy: (ComponentRetentionPolicy)99)));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.Binarize(allZero, new SaliencyMaskOptions(MinAreaFraction: -0.05)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyMask.Binarize(allZero, new SaliencyMaskOptions(Connectivity: (GridConnectivity)99)));
     }
 
     [Fact]
     public void NonSequentialMatrixView_ShouldMatchMaterializedThresholdsAndMasks()
     {
-        var padded = new SequentialMatrix<DoublePixel>(12, 12);
-        for (int y = 3; y <= 6; y++)
-        {
-            for (int x = 3; x <= 6; x++)
-                padded[x, y] = 0.85;
-        }
-
-        padded[8, 8] = 0.75;
-        padded[9, 8] = 0.75;
-        padded[8, 9] = 0.75;
-        padded[9, 9] = 0.75;
+        SequentialMatrix<DoublePixel> padded = TestMatrices.Create<DoublePixel>(
+            12,
+            12,
+            (x, y) =>
+                x >= 3 && x <= 6 && y >= 3 && y <= 6 ? 0.85 :
+                x >= 8 && x <= 9 && y >= 8 && y <= 9 ? 0.75 :
+                0.0);
 
         var view = new MatrixView<DoublePixel>(padded, 2, 2, 8, 8, EdgeHandling.Extend);
         SequentialMatrix<DoublePixel> materialized = view.ToSequentialMatrix();
@@ -143,7 +196,7 @@ public class SaliencyMaskTests
                 12);
 
             var options = new SaliencyMaskOptions(Method: method, FixedThreshold: 0.5);
-            Assert.True(SaliencyMask.Binarize(materialized, options).ContentEquals(SaliencyMask.Binarize(view, options)));
+            MatrixAssert.Equal(SaliencyMask.Binarize(materialized, options), SaliencyMask.Binarize(view, options));
         }
     }
 }

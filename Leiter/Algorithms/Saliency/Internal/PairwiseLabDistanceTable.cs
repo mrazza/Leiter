@@ -10,6 +10,8 @@ using Leiter.Pixels;
 /// </summary>
 internal sealed class PairwiseLabDistanceTable
 {
+    private const int ParallelThreshold = 32;
+
     private readonly double[] distances;
     private readonly Rgb8[] colors;
     private readonly Dictionary<Rgb8, int> colorToIndex;
@@ -27,13 +29,8 @@ internal sealed class PairwiseLabDistanceTable
     public int Count => colors.Length;
 
     /// <summary>
-    /// Gets the symmetric CIEDE2000 distance between palette colors at indices <paramref name="i"/> and <paramref name="j"/>.
-    /// </summary>
-    public double this[int i, int j] => distances[(i * colors.Length) + j];
-
-    /// <summary>
     /// Builds a symmetric pairwise CIEDE2000 distance table from <paramref name="rgbToLabLookupTable"/>,
-    /// evaluating only the upper triangle in parallel.
+    /// evaluating only the upper triangle and writing rows without cross-thread column contention.
     /// </summary>
     /// <param name="rgbToLabLookupTable">Mapping from quantized <see cref="Rgb8"/> colors to their CIELAB values.</param>
     /// <returns>A populated <see cref="PairwiseLabDistanceTable"/> instance.</returns>
@@ -43,6 +40,7 @@ internal sealed class PairwiseLabDistanceTable
         ArgumentNullException.ThrowIfNull(rgbToLabLookupTable);
 
         int count = rgbToLabLookupTable.Count;
+        int tableLength = checked(count * count);
         var colors = new Rgb8[count];
         var labColors = new Lab32[count];
         var colorToIndex = new Dictionary<Rgb8, int>(count);
@@ -56,10 +54,31 @@ internal sealed class PairwiseLabDistanceTable
             idx++;
         }
 
-        var distances = new double[count * count];
-        if (count > 1)
+        var distances = new double[tableLength];
+        if (count >= ParallelThreshold)
         {
             Parallel.For(0, count, i =>
+            {
+                Lab32 ci = labColors[i];
+                int rowOffset = i * count;
+                for (int j = i + 1; j < count; j++)
+                {
+                    distances[rowOffset + j] = ci.Distance(labColors[j]);
+                }
+            });
+
+            for (int i = 1; i < count; i++)
+            {
+                int rowOffset = i * count;
+                for (int j = 0; j < i; j++)
+                {
+                    distances[rowOffset + j] = distances[(j * count) + i];
+                }
+            }
+        }
+        else if (count > 1)
+        {
+            for (int i = 0; i < count; i++)
             {
                 Lab32 ci = labColors[i];
                 int rowOffset = i * count;
@@ -69,7 +88,7 @@ internal sealed class PairwiseLabDistanceTable
                     distances[rowOffset + j] = distance;
                     distances[(j * count) + i] = distance;
                 }
-            });
+            }
         }
 
         return new PairwiseLabDistanceTable(distances, colors, colorToIndex);
@@ -86,17 +105,7 @@ internal sealed class PairwiseLabDistanceTable
     public int GetIndex(Rgb8 color) => colorToIndex[color];
 
     /// <summary>
-    /// Attempts to resolve the dense zero-based table index associated with <paramref name="color"/>.
-    /// </summary>
-    public bool TryGetIndex(Rgb8 color, out int index) => colorToIndex.TryGetValue(color, out index);
-
-    /// <summary>
     /// Returns a contiguous read-only span of distances from palette color <paramref name="index"/> to all palette colors.
     /// </summary>
     public ReadOnlySpan<double> GetRow(int index) => distances.AsSpan(index * colors.Length, colors.Length);
-
-    /// <summary>
-    /// Gets the CIEDE2000 distance between two palette colors <paramref name="left"/> and <paramref name="right"/>.
-    /// </summary>
-    public double GetDistance(Rgb8 left, Rgb8 right) => this[GetIndex(left), GetIndex(right)];
 }

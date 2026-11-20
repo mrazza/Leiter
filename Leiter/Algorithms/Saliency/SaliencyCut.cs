@@ -1,5 +1,6 @@
 namespace Leiter.Algorithms.Saliency;
 
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Algorithms.Segmentation.Internal;
@@ -27,10 +28,9 @@ public static class SaliencyCut
         IReadOnlyMatrix<DoublePixel> saliencyMap,
         SaliencyCutOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(image);
         Guard.ThrowIfSizeMismatch(image, saliencyMap);
 
-        SaliencyCutOptions resolvedOptions = OptionsResolver.Resolve(options, SaliencyCutOptions.Default);
+        SaliencyCutOptions resolvedOptions = OptionsResolver.Resolve(options);
 
         if (image.Count == 0)
             return new MaskMatrix(image.Size);
@@ -41,7 +41,7 @@ public static class SaliencyCut
             return ExtractAtScaledResolution(image, saliencyMap, resolvedOptions, maxDimension);
         }
 
-        return ExtractCore(image, saliencyMap, resolvedOptions, resolvedOptions.TrimapBandRadius);
+        return ExtractCore(image, saliencyMap, resolvedOptions);
     }
 
     private static MaskMatrix ExtractAtScaledResolution(
@@ -52,14 +52,25 @@ public static class SaliencyCut
     {
         double scale = (double)maxDimension / Math.Max(image.Width, image.Height);
         var workingSize = new Size(
-            Math.Max(1, (int)Math.Round(image.Width * scale)),
-            Math.Max(1, (int)Math.Round(image.Height * scale)));
+            OptionTuning.RoundPositiveInt(image.Width * scale),
+            OptionTuning.RoundPositiveInt(image.Height * scale));
 
         Matrix<Rgb8> smallImage = image.ResizeBox(workingSize);
         Matrix<DoublePixel> smallSaliency = saliencyMap.ResizeBox(workingSize);
-        int scaledBandRadius = Math.Max(1, (int)Math.Round(options.TrimapBandRadius * scale));
+        int scaledBandRadius = OptionTuning.RoundPositiveInt(options.TrimapBandRadius * scale);
 
-        MaskMatrix smallMask = ExtractCore(smallImage, smallSaliency, options, scaledBandRadius);
+        GrabCutOptions grabCutOptions = options.GrabCut ?? SaliencyCutOptions.DefaultGrabCut;
+        GrabCutOptions scaledGrabCut = grabCutOptions with
+        {
+            SmoothnessWeight = OptionTuning.ScaleFiniteNonNegative(grabCutOptions.SmoothnessWeight * scale)
+        };
+        SaliencyCutOptions workingOptions = options with
+        {
+            TrimapBandRadius = scaledBandRadius,
+            GrabCut = scaledGrabCut
+        };
+
+        MaskMatrix smallMask = ExtractCore(smallImage, smallSaliency, workingOptions);
         return smallMask.ResizeMaskNearest(image.Size);
     }
 
@@ -84,8 +95,7 @@ public static class SaliencyCut
     private static MaskMatrix ExtractCore(
         IReadOnlyMatrix<Rgb8> image,
         IReadOnlyMatrix<DoublePixel> saliencyMap,
-        SaliencyCutOptions options,
-        int bandRadius)
+        SaliencyCutOptions options)
     {
         MaskMatrix candidateMask = BinarizeInitialSeed(saliencyMap, options, out int seedFgCount);
         if (seedFgCount == 0 || seedFgCount == image.Count)
@@ -93,6 +103,7 @@ public static class SaliencyCut
 
         GrabCutOptions grabCutOptions = options.GrabCut ?? SaliencyCutOptions.DefaultGrabCut;
         SaliencyMaskOptions maskOptions = options.Mask ?? SaliencyCutOptions.DefaultMask;
+        int bandRadius = options.TrimapBandRadius;
 
         TrimapMatrix trimap = TrimapMatrix.FromCandidateMask(candidateMask);
         var session = new GrabCutSession(image, grabCutOptions);
@@ -104,7 +115,8 @@ public static class SaliencyCut
             MaskMatrix currentMask = BinaryMorphology.FilterConnectedComponents(
                 rawMask,
                 maskOptions.RetentionPolicy,
-                maskOptions.MinAreaFraction);
+                maskOptions.MinAreaFraction,
+                maskOptions.Connectivity);
 
             int currentFgCount = currentMask.CountTrue();
             if (currentFgCount == 0 && previousMask is null)

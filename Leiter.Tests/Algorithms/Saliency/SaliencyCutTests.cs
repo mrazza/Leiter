@@ -1,11 +1,14 @@
 namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
+using Leiter.Algorithms;
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
+using Leiter.Tests.TestUtils;
 using Xunit;
 
 /// <summary>
@@ -16,20 +19,24 @@ public class SaliencyCutTests
     [Fact]
     public void Extract_PartialSaliencySeed_ShouldExpandAndExtractObjects()
     {
-        var image = new SequentialMatrix<Rgb8>(32, 32);
-        var saliency = new SequentialMatrix<DoublePixel>(32, 32);
-
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                bool isObject = x >= 10 && x <= 21 && y >= 10 && y <= 21;
-                image[x, y] = isObject ? new Rgb8(220, 35, 30) : new Rgb8(20, 45, 195);
-
-                bool isSeed = x >= 12 && x <= 19 && y >= 12 && y <= 16;
-                saliency[x, y] = isSeed ? 0.90 : 0.05;
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.CenteredBox(
+            32,
+            32,
+            10,
+            10,
+            21,
+            21,
+            new Rgb8(220, 35, 30),
+            new Rgb8(20, 45, 195));
+        SequentialMatrix<DoublePixel> saliency = TestMatrices.CenteredBox<DoublePixel>(
+            32,
+            32,
+            12,
+            12,
+            19,
+            16,
+            0.90,
+            0.05);
 
         MaskMatrix mask = SaliencyCut.Extract(image, saliency, new SaliencyCutOptions(TrimapBandRadius: 6));
 
@@ -45,20 +52,24 @@ public class SaliencyCutTests
     [Fact]
     public void Extract_MaxWorkingDimension_ShouldDownsampleAndUpsampleToMatchImageSize()
     {
-        var image = new SequentialMatrix<Rgb8>(32, 32);
-        var saliency = new SequentialMatrix<DoublePixel>(32, 32);
-
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                bool isObject = x >= 10 && x <= 21 && y >= 10 && y <= 21;
-                image[x, y] = isObject ? new Rgb8(220, 35, 30) : new Rgb8(20, 45, 195);
-
-                bool isSeed = x >= 12 && x <= 19 && y >= 12 && y <= 16;
-                saliency[x, y] = isSeed ? 0.90 : 0.05;
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.CenteredBox(
+            32,
+            32,
+            10,
+            10,
+            21,
+            21,
+            new Rgb8(220, 35, 30),
+            new Rgb8(20, 45, 195));
+        SequentialMatrix<DoublePixel> saliency = TestMatrices.CenteredBox<DoublePixel>(
+            32,
+            32,
+            12,
+            12,
+            19,
+            16,
+            0.90,
+            0.05);
 
         MaskMatrix downsampledMask = SaliencyCut.Extract(
             image,
@@ -76,31 +87,92 @@ public class SaliencyCutTests
             imageView,
             saliencyView,
             new SaliencyCutOptions(MaxWorkingDimension: 16, TrimapBandRadius: 6));
-        Assert.Equal(downsampledMask.Size, viewDownsampledMask.Size);
-        Assert.True(downsampledMask.ContentEquals(viewDownsampledMask));
+        MatrixAssert.Equal(downsampledMask, viewDownsampledMask);
+    }
+
+    [Fact]
+    public void Extract_MaxWorkingDimension_ShouldRescaleGrabCutSmoothnessWeight()
+    {
+        // 64x64 image scaled to MaxWorkingDimension=16 (scale = 0.25) with realistic multi-tone variance
+        // and a narrow 4px (1px working-res) protruding arm where unscaled SmoothnessWeight over-smooths
+        // and trims the arm, while rescaled SmoothnessWeight matches direct working-resolution execution.
+        static bool IsForeground(int x, int y) =>
+            (x >= 12 && x <= 31 && y >= 16 && y <= 47) || (x >= 32 && x <= 55 && y >= 28 && y <= 31);
+
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            64,
+            64,
+            (x, y) =>
+            {
+                int tone = ((x / 4) + (y / 4)) % 3;
+                return IsForeground(x, y)
+                    ? new Rgb8((byte)(165 + (tone * 20)), (byte)(75 + (tone * 10)), 85)
+                    : new Rgb8(85, (byte)(95 + (tone * 10)), (byte)(135 + (tone * 20)));
+            });
+        SequentialMatrix<DoublePixel> saliency = TestMatrices.CenteredBox<DoublePixel>(
+            64,
+            64,
+            12,
+            16,
+            31,
+            47,
+            0.90,
+            0.05);
+
+        var scaledOptions = new SaliencyCutOptions(
+            MaxOuterIterations: 3,
+            TrimapBandRadius: 8,
+            GrabCut: new GrabCutOptions(Iterations: 2, MixtureComponentCount: 2, SmoothnessWeight: 40.0),
+            MaxWorkingDimension: 16);
+
+        MaskMatrix actual = SaliencyCut.Extract(image, saliency, scaledOptions);
+
+        Matrix<Rgb8> smallImage = image.ResizeBox(new Size(16, 16));
+        Matrix<DoublePixel> smallSaliency = saliency.ResizeBox(new Size(16, 16));
+        MaskMatrix expectedRescaled = SaliencyCut.Extract(
+            smallImage,
+            smallSaliency,
+            new SaliencyCutOptions(
+                MaxOuterIterations: 3,
+                TrimapBandRadius: 2,
+                GrabCut: new GrabCutOptions(Iterations: 2, MixtureComponentCount: 2, SmoothnessWeight: 10.0)))
+            .ResizeMaskNearest(image.Size);
+
+        MatrixAssert.Equal(expectedRescaled, actual);
+
+        MaskMatrix unrescaledSmoothness = SaliencyCut.Extract(
+            smallImage,
+            smallSaliency,
+            new SaliencyCutOptions(
+                MaxOuterIterations: 3,
+                TrimapBandRadius: 2,
+                GrabCut: new GrabCutOptions(Iterations: 2, MixtureComponentCount: 2, SmoothnessWeight: 40.0)))
+            .ResizeMaskNearest(image.Size);
+
+        MatrixAssert.NotEqual(unrescaledSmoothness, actual);
     }
 
     [Fact]
     public void Extract_OverspillSaliency_ShouldRefineMaskToActualObject()
     {
-        var image = new SequentialMatrix<Rgb8>(32, 32);
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                bool isObject = x >= 10 && x <= 21 && y >= 10 && y <= 21;
-                image[x, y] = isObject ? new Rgb8(220, 35, 30) : new Rgb8(20, 45, 195);
-            }
-        }
-
-        var overspillSaliency = new SequentialMatrix<DoublePixel>(32, 32);
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                overspillSaliency[x, y] = (x >= 8 && x <= 23 && y >= 8 && y <= 18) ? 0.90 : 0.05;
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.CenteredBox(
+            32,
+            32,
+            10,
+            10,
+            21,
+            21,
+            new Rgb8(220, 35, 30),
+            new Rgb8(20, 45, 195));
+        SequentialMatrix<DoublePixel> overspillSaliency = TestMatrices.CenteredBox<DoublePixel>(
+            32,
+            32,
+            8,
+            8,
+            23,
+            18,
+            0.90,
+            0.05);
 
         MaskMatrix refinedMask = SaliencyCut.Extract(image, overspillSaliency, new SaliencyCutOptions(TrimapBandRadius: 6));
         Assert.False(refinedMask[8, 14]);
@@ -110,20 +182,24 @@ public class SaliencyCutTests
     [Fact]
     public void Extract_LargeTrimapBandRadius_ShouldScaleErosionAndRefineOverspill()
     {
-        var image = new SequentialMatrix<Rgb8>(96, 96);
-        var overspillSaliency = new SequentialMatrix<DoublePixel>(96, 96);
-
-        for (int y = 0; y < image.Height; y++)
-        {
-            for (int x = 0; x < image.Width; x++)
-            {
-                bool isObject = x >= 24 && x <= 71 && y >= 24 && y <= 71;
-                image[x, y] = isObject ? new Rgb8(220, 40, 35) : new Rgb8(25, 55, 195);
-
-                bool isOverspillSeed = x >= 20 && x <= 75 && y >= 20 && y <= 60;
-                overspillSaliency[x, y] = isOverspillSeed ? 0.90 : 0.05;
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.CenteredBox(
+            96,
+            96,
+            24,
+            24,
+            71,
+            71,
+            new Rgb8(220, 40, 35),
+            new Rgb8(25, 55, 195));
+        SequentialMatrix<DoublePixel> overspillSaliency = TestMatrices.CenteredBox<DoublePixel>(
+            96,
+            96,
+            20,
+            20,
+            75,
+            60,
+            0.90,
+            0.05);
 
         MaskMatrix mask = SaliencyCut.Extract(
             image,
@@ -136,25 +212,72 @@ public class SaliencyCutTests
     }
 
     [Fact]
+    public void Extract_MaskConnectivity_ShouldControlDiagonalComponentFiltering()
+    {
+        // Two diagonally touching blocks: 4x4 (16px, 16%) and 2x2 (4px, 4%) touching at (4,4)-(5,5) on 10x10 (100px)
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            10,
+            10,
+            (x, y) =>
+                (x >= 1 && x <= 4 && y >= 1 && y <= 4) || (x >= 5 && x <= 6 && y >= 5 && y <= 6)
+                    ? new Rgb8(220, 30, 30)
+                    : new Rgb8(20, 45, 195));
+        SequentialMatrix<DoublePixel> saliency = TestMatrices.Create<DoublePixel>(
+            10,
+            10,
+            (x, y) =>
+                (x >= 1 && x <= 4 && y >= 1 && y <= 4) || (x >= 5 && x <= 6 && y >= 5 && y <= 6)
+                    ? 0.90
+                    : 0.05);
+
+        MaskMatrix eightConnected = SaliencyCut.Extract(
+            image,
+            saliency,
+            new SaliencyCutOptions(
+                MaxOuterIterations: 1,
+                TrimapBandRadius: 1,
+                Mask: new SaliencyMaskOptions(
+                    Method: SaliencyThresholdMethod.Fixed,
+                    RetentionPolicy: ComponentRetentionPolicy.LargestComponentOnly,
+                    Connectivity: GridConnectivity.EightConnected)));
+
+        MaskMatrix fourConnected = SaliencyCut.Extract(
+            image,
+            saliency,
+            new SaliencyCutOptions(
+                MaxOuterIterations: 1,
+                TrimapBandRadius: 1,
+                Mask: new SaliencyMaskOptions(
+                    Method: SaliencyThresholdMethod.Fixed,
+                    RetentionPolicy: ComponentRetentionPolicy.LargestComponentOnly,
+                    Connectivity: GridConnectivity.FourConnected)));
+
+        Assert.True(eightConnected[6, 6]);
+        Assert.False(fourConnected[6, 6]);
+        Assert.True(fourConnected[2, 2]);
+    }
+
+    [Fact]
     public void Extract_FallbackEdgeCases_ShouldHandleVaryingIterations()
     {
-        var image = new SequentialMatrix<Rgb8>(6, 6);
-        for (int y = 0; y < 6; y++)
-        {
-            for (int x = 0; x < 6; x++)
-            {
-                image[x, y] = (x >= 2 && x <= 3 && y >= 2 && y <= 3) ? new Rgb8(240, 20, 20) : new Rgb8(10, 10, 180);
-            }
-        }
-
-        var lowContrastSaliency = new SequentialMatrix<DoublePixel>(6, 6);
-        for (int y = 0; y < 6; y++)
-        {
-            for (int x = 0; x < 6; x++)
-            {
-                lowContrastSaliency[x, y] = (x >= 2 && x <= 3 && y >= 2 && y <= 3) ? 0.20 : 0.02;
-            }
-        }
+        SequentialMatrix<Rgb8> image = TestMatrices.CenteredBox(
+            6,
+            6,
+            2,
+            2,
+            3,
+            3,
+            new Rgb8(240, 20, 20),
+            new Rgb8(10, 10, 180));
+        SequentialMatrix<DoublePixel> lowContrastSaliency = TestMatrices.CenteredBox<DoublePixel>(
+            6,
+            6,
+            2,
+            2,
+            3,
+            3,
+            0.20,
+            0.02);
 
         MaskMatrix otsuFallbackMask = SaliencyCut.Extract(
             image,
@@ -177,10 +300,7 @@ public class SaliencyCutTests
 
         var allZero = new SequentialMatrix<DoublePixel>(6, 6);
         MaskMatrix zeroResult = SaliencyCut.Extract(image, allZero);
-        for (int i = 0; i < zeroResult.Count; i++)
-        {
-            Assert.False(zeroResult[i]);
-        }
+        MatrixAssert.Equal(TestMatrices.Constant(6, 6, false), zeroResult);
 
         Assert.Empty(SaliencyCut.Extract(new SequentialMatrix<Rgb8>(0, 0), new SequentialMatrix<DoublePixel>(0, 0)));
     }
@@ -191,10 +311,11 @@ public class SaliencyCutTests
         var image = new SequentialMatrix<Rgb8>(6, 6);
         var allZero = new SequentialMatrix<DoublePixel>(6, 6);
 
-        Assert.Throws<ArgumentNullException>(() => SaliencyCut.Extract(null!, allZero));
-        Assert.Throws<ArgumentNullException>(() => SaliencyCut.Extract(image, null!));
-        Assert.Throws<ArgumentException>(() => SaliencyCut.Extract(image, new SequentialMatrix<DoublePixel>(2, 2)));
+        Assert.Throws<ArgumentNullException>("image", () => SaliencyCut.Extract(null!, allZero));
+        Assert.Throws<ArgumentNullException>("saliencyMap", () => SaliencyCut.Extract(image, null!));
+        Assert.Throws<ArgumentException>("saliencyMap", () => SaliencyCut.Extract(image, new SequentialMatrix<DoublePixel>(2, 2)));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(Mask: new SaliencyMaskOptions(FixedThreshold: -0.1))));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(Mask: new SaliencyMaskOptions(Connectivity: (GridConnectivity)99))));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(MaxOuterIterations: 0)));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(GrabCut: new GrabCutOptions(Iterations: 0))));
         Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCut.Extract(image, allZero, new SaliencyCutOptions(TrimapBandRadius: 0)));

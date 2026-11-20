@@ -1,8 +1,6 @@
 namespace Leiter.Algorithms.Saliency;
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Saliency.Internal;
@@ -24,14 +22,14 @@ public static class RegionalContrastSaliency
     /// </summary>
     /// <remarks>
     /// A value of 1 indicates a salient pixel, while a value of 0 indicates a non-salient pixel.
-    /// 
+    ///
     /// Optionally, color space smoothing can be enabled to smooth out saliency values across
     /// similar colors in the image. This helps produce more uniformity in saliency across regions
     /// with similar colors. This is enabled by default.
-    /// 
-    /// Additionally, border regions can be computed and rejected from the saliency map.
-    /// The idea being that regions whose pixels are primarily on the border of the image
-    /// are unlikely to be salient regions. This is enabled by default.
+    ///
+    /// Additionally, border regions (regions with more than 10% of their pixels inside the 2.5% outer image border)
+    /// can be identified and suppressed to <c>0.0</c> after optional color-space smoothing so border regions do not
+    /// darken interior regions sharing a color. This is enabled by default.
     /// </remarks>
     /// <param name="image">The input image.</param>
     /// <param name="segmentation">The segmentation to use.</param>
@@ -45,18 +43,15 @@ public static class RegionalContrastSaliency
         IDisjointSet segmentation,
         RegionalContrastSaliencyOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(image);
-        ArgumentNullException.ThrowIfNull(segmentation);
-
-        RegionalContrastSaliencyOptions resolvedOptions = OptionsResolver.Resolve(options, RegionalContrastSaliencyOptions.Default);
         Guard.ThrowIfSizeMismatch(image, segmentation);
+        RegionalContrastSaliencyOptions resolvedOptions = OptionsResolver.Resolve(options);
 
         if (image.Count == 0)
         {
             return new SequentialMatrix<DoublePixel>(image.Size);
         }
 
-        RegionGraph graph = RegionGraph.FromDisjointSet(segmentation);
+        RegionGraph graph = segmentation.ToRegionGraph();
         return ComputeSaliencyCore(image, graph, resolvedOptions);
     }
 
@@ -78,7 +73,7 @@ public static class RegionalContrastSaliency
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(regionGraph);
 
-        RegionalContrastSaliencyOptions resolvedOptions = OptionsResolver.Resolve(options, RegionalContrastSaliencyOptions.Default);
+        RegionalContrastSaliencyOptions resolvedOptions = OptionsResolver.Resolve(options);
         Guard.ThrowIfSizeMismatch(image.Size, regionGraph.Size, nameof(regionGraph));
 
         if (image.Count == 0)
@@ -97,42 +92,70 @@ public static class RegionalContrastSaliency
         bool enableSmoothing = resolvedOptions.EnableSmoothing;
         bool computeBorderRegions = resolvedOptions.ComputeBorderRegions;
         int regionCount = graph.RegionCount;
+        int width = image.Width;
+        int height = image.Height;
         IReadOnlyMatrix<int> labels = graph.Labels;
-        IReadOnlyList<Region<Coord>> regions = graph.Regions;
 
         var (colorQuantizedImage, _, rgbToLabLookupTable) = SaliencyColorSmoother.QuantizeForSaliency(image);
 
-        var regionCentroids = new NormalizedCoord[regionCount];
-        var avgRegionDistances = new double[regionCount];
-        var imageCenter = new NormalizedCoord(0.5, 0.5);
-        for (int r = 0; r < regionCount; r++)
-        {
-            Region<Coord> region = regions[r];
-            NormalizedCoord sum = new(0, 0);
-            double sumDist = 0.0;
-            foreach (Coord coord in region.Pixels)
-            {
-                NormalizedCoord normalizedCoord = image.NormalizeCoord(coord);
-                sum += normalizedCoord;
-                sumDist += normalizedCoord.Distance(imageCenter);
-            }
-
-            double invCount = 1.0 / region.Pixels.Count;
-            regionCentroids[r] = sum * invCount;
-            avgRegionDistances[r] = sumDist * invCount;
-        }
-
+        var regionCounts = new int[regionCount];
+        var centroidSums = new NormalizedCoord[regionCount];
+        var centerDistanceSums = new double[regionCount];
+        var borderPixelCounts = computeBorderRegions ? new int[regionCount] : null;
         var regionHistograms = new DictionaryHistogram<Rgb8>[regionCount];
         for (int r = 0; r < regionCount; r++)
         {
             regionHistograms[r] = new DictionaryHistogram<Rgb8>();
         }
 
-        for (int y = 0; y < image.Height; y++)
+        const double regionInBorderPercentage = 0.1;
+        const double borderPercentage = 0.025;
+        double borderPixelWidth = width * borderPercentage;
+        double borderPixelHeight = height * borderPercentage;
+        double maxX = width - borderPixelWidth;
+        double maxY = height - borderPixelHeight;
+        var imageCenter = new NormalizedCoord(0.5, 0.5);
+        double invWidth = 1.0 / width;
+        double invHeight = 1.0 / height;
+
+        ReadOnlySpan<Rgb8> colorSpan = default;
+        bool hasSpans = labels.TryGetReadOnlySpan(out ReadOnlySpan<int> labelSpan) &&
+                        colorQuantizedImage.TryGetReadOnlySpan(out colorSpan);
+
+        for (int y = 0; y < height; y++)
         {
-            for (int x = 0; x < image.Width; x++)
+            int rowBase = y * width;
+            double normY = y * invHeight;
+            bool isRowInBorder = computeBorderRegions && (y < borderPixelHeight || y >= maxY);
+
+            for (int x = 0; x < width; x++)
             {
-                regionHistograms[labels[x, y]].Increment(colorQuantizedImage[x, y]);
+                int label = hasSpans ? labelSpan[rowBase + x] : labels[x, y];
+                Rgb8 color = hasSpans ? colorSpan[rowBase + x] : colorQuantizedImage[x, y];
+
+                var normalizedCoord = new NormalizedCoord(x * invWidth, normY);
+                regionCounts[label]++;
+                centroidSums[label] += normalizedCoord;
+                centerDistanceSums[label] += normalizedCoord.Distance(imageCenter);
+                regionHistograms[label].Increment(color);
+
+                if (borderPixelCounts is not null && (isRowInBorder || x < borderPixelWidth || x >= maxX))
+                {
+                    borderPixelCounts[label]++;
+                }
+            }
+        }
+
+        var regionCentroids = new NormalizedCoord[regionCount];
+        var avgRegionDistances = new double[regionCount];
+        for (int r = 0; r < regionCount; r++)
+        {
+            int count = regionCounts[r];
+            if (count > 0)
+            {
+                double invCount = 1.0 / count;
+                regionCentroids[r] = centroidSums[r] * invCount;
+                avgRegionDistances[r] = centerDistanceSums[r] * invCount;
             }
         }
 
@@ -197,89 +220,66 @@ public static class RegionalContrastSaliency
             }
         });
 
-        var isBorderRegion = new bool[regionCount];
-        if (computeBorderRegions)
-        {
-            const double regionInBorderPercentage = 0.1;
-            const double borderPercentage = 0.025;
-            double borderPixelWidth = image.Width * borderPercentage;
-            double borderPixelHeight = image.Height * borderPercentage;
-            double maxX = image.Width - borderPixelWidth;
-            double maxY = image.Height - borderPixelHeight;
-
-            for (int r = 0; r < regionCount; r++)
-            {
-                HashSet<Coord> regionPixels = regions[r].Pixels;
-                int borderPixels = 0;
-                foreach (Coord pixel in regionPixels)
-                {
-                    if (pixel.X < borderPixelWidth || pixel.X >= maxX || pixel.Y < borderPixelHeight || pixel.Y >= maxY)
-                    {
-                        borderPixels++;
-                    }
-                }
-
-                if (borderPixels > regionPixels.Count * regionInBorderPercentage)
-                {
-                    isBorderRegion[r] = true;
-                    rawSaliency[r] = 0.0;
-                }
-            }
-        }
-
         double[] finalSaliency;
         if (enableSmoothing)
         {
-            Dictionary<Rgb8, (double Saliency, int Count)> intermediateColorSaliencyMap = [];
-            for (int x = 0; x < image.Width; x++)
+            int colorCount = distanceTable.Count;
+            var colorSaliencies = new double[colorCount];
+            var colorPixelCounts = new int[colorCount];
+
+            for (int y = 0; y < height; y++)
             {
-                for (int y = 0; y < image.Height; y++)
+                int rowBase = y * width;
+                for (int x = 0; x < width; x++)
                 {
-                    int label = labels[x, y];
-                    Rgb8 color = colorQuantizedImage[x, y];
-
-                    if (!intermediateColorSaliencyMap.TryGetValue(color, out var colorSaliencyEntry))
-                    {
-                        colorSaliencyEntry = (0.0, 0);
-                    }
-
-                    intermediateColorSaliencyMap[color] = (colorSaliencyEntry.Saliency + rawSaliency[label], colorSaliencyEntry.Count + 1);
+                    int label = hasSpans ? labelSpan[rowBase + x] : labels[x, y];
+                    Rgb8 color = hasSpans ? colorSpan[rowBase + x] : colorQuantizedImage[x, y];
+                    int colorIndex = distanceTable.GetIndex(color);
+                    colorSaliencies[colorIndex] += rawSaliency[label];
+                    colorPixelCounts[colorIndex]++;
                 }
             }
 
-            Dictionary<Rgb8, double> colorSaliencyMap = intermediateColorSaliencyMap.ToDictionary(entry => entry.Key, entry => entry.Value.Saliency / entry.Value.Count);
-            SaliencyColorSmoother.SmoothColorSaliency(colorSaliencyMap, distanceTable, neighborDivisor: 10);
+            for (int c = 0; c < colorCount; c++)
+            {
+                if (colorPixelCounts[c] > 0)
+                {
+                    colorSaliencies[c] /= colorPixelCounts[c];
+                }
+            }
+
+            SaliencyColorSmoother.SmoothColorSaliency(colorSaliencies, distanceTable, neighborDivisor: 10);
 
             finalSaliency = new double[regionCount];
             Parallel.For(0, regionCount, r =>
             {
-                DictionaryHistogram<Rgb8> histogram = regionHistograms[r];
+                var colorData = processedRegions[r].ColorData;
                 double regionSaliency = 0.0;
-                foreach (var bucket in histogram)
+                for (int c = 0; c < colorData.Length; c++)
                 {
-                    regionSaliency += histogram.GetDensity(bucket.Key) * colorSaliencyMap[bucket.Key];
+                    regionSaliency += colorData[c].Density * colorSaliencies[colorData[c].DistanceIndex];
                 }
 
                 finalSaliency[r] = regionSaliency;
             });
-
-            if (computeBorderRegions)
-            {
-                for (int r = 0; r < regionCount; r++)
-                {
-                    if (isBorderRegion[r])
-                    {
-                        finalSaliency[r] = 0.0;
-                    }
-                }
-            }
         }
         else
         {
             finalSaliency = rawSaliency;
         }
 
-        if (!SaliencyColorSmoother.TryGetMinMaxRange(finalSaliency, out double minSaliency, out double saliencyRange))
+        if (borderPixelCounts is not null)
+        {
+            for (int r = 0; r < regionCount; r++)
+            {
+                if (borderPixelCounts[r] > regionCounts[r] * regionInBorderPercentage)
+                {
+                    finalSaliency[r] = 0.0;
+                }
+            }
+        }
+
+        if (!SaliencyColorSmoother.TryGetMinMaxRange(finalSaliency.AsSpan(), out double minSaliency, out double saliencyRange))
         {
             return new SequentialMatrix<DoublePixel>(image.Size);
         }

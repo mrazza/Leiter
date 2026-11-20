@@ -1,5 +1,6 @@
 namespace Leiter.Algorithms.Saliency;
 
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Morphology;
 using Leiter.Core;
 
@@ -10,11 +11,13 @@ using Leiter.Core;
 /// <param name="FixedThreshold">The fixed threshold in <c>[0, 1]</c> used when <paramref name="Method"/> is <see cref="SaliencyThresholdMethod.Fixed"/> (default <c>70 / 255</c>).</param>
 /// <param name="RetentionPolicy">The connected-component retention policy applied after thresholding (default <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/>).</param>
 /// <param name="MinAreaFraction">The minimum component area fraction in <c>[0, 1]</c> used by <see cref="ComponentRetentionPolicy.MinimumAreaFraction"/> (default <c>0.01</c>).</param>
+/// <param name="Connectivity">The neighborhood connectivity used to group connected foreground components (default <see cref="GridConnectivity.EightConnected"/>).</param>
 public sealed record SaliencyMaskOptions(
     SaliencyThresholdMethod Method = SaliencyThresholdMethod.Otsu,
     double FixedThreshold = SaliencyMaskOptions.DefaultFixedThreshold,
     ComponentRetentionPolicy RetentionPolicy = ComponentRetentionPolicy.MinimumAreaFraction,
-    double MinAreaFraction = SaliencyMaskOptions.DefaultMinAreaFraction) : IAlgorithmOptions<SaliencyMaskOptions>
+    double MinAreaFraction = SaliencyMaskOptions.DefaultMinAreaFraction,
+    GridConnectivity Connectivity = GridConnectivity.EightConnected) : IAlgorithmOptions<SaliencyMaskOptions>
 {
     /// <summary>
     /// The default fixed saliency threshold (<c>70 / 255</c>).
@@ -41,5 +44,6 @@ public sealed record SaliencyMaskOptions(
         Guard.ThrowIfNotFiniteInRange(FixedThreshold, 0.0, 1.0);
         Guard.ThrowIfUndefinedEnum(RetentionPolicy);
         Guard.ThrowIfNotFiniteInRange(MinAreaFraction, 0.0, 1.0);
+        Guard.ThrowIfUndefinedEnum(Connectivity);
     }
 }

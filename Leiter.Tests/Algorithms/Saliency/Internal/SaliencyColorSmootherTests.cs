@@ -2,6 +2,7 @@ namespace Leiter.Tests.Algorithms.Saliency.Internal;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Leiter.Algorithms.Saliency.Internal;
 using Leiter.Pixels;
 using Xunit;
@@ -26,15 +27,18 @@ public class SaliencyColorSmootherTests
             [new Rgb8(0, 0, 0)] = new Lab32(0f, 0f, 0f)
         };
         PairwiseLabDistanceTable table = PairwiseLabDistanceTable.Build(labLookup);
+        double[] dense = [0.5];
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             SaliencyColorSmoother.SmoothColorSaliency(map, labLookup, neighborDivisor));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             SaliencyColorSmoother.SmoothColorSaliency(map, table, neighborDivisor));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            SaliencyColorSmoother.SmoothColorSaliency(dense, table, neighborDivisor));
     }
 
     [Fact]
-    public void SmoothColorSaliency_NullArguments_ShouldThrowArgumentNullException()
+    public void SmoothColorSaliency_NullAndMismatchedLengthArguments_ShouldThrowExpectedExceptions()
     {
         var map = new Dictionary<Rgb8, double>
         {
@@ -51,9 +55,13 @@ public class SaliencyColorSmootherTests
         Assert.Throws<ArgumentNullException>(() =>
             SaliencyColorSmoother.SmoothColorSaliency(map, (IReadOnlyDictionary<Rgb8, Lab32>)null!, 2));
         Assert.Throws<ArgumentNullException>(() =>
-            SaliencyColorSmoother.SmoothColorSaliency(null!, table, 2));
+            SaliencyColorSmoother.SmoothColorSaliency((Dictionary<Rgb8, double>)null!, table, 2));
         Assert.Throws<ArgumentNullException>(() =>
             SaliencyColorSmoother.SmoothColorSaliency(map, (PairwiseLabDistanceTable)null!, 2));
+        Assert.Throws<ArgumentNullException>(() =>
+            SaliencyColorSmoother.SmoothColorSaliency(new double[1], null!, 2));
+        Assert.Throws<ArgumentException>("colorSaliencies", () =>
+            SaliencyColorSmoother.SmoothColorSaliency(new double[2], table, 2));
     }
 
     [Fact]
@@ -104,7 +112,7 @@ public class SaliencyColorSmootherTests
     }
 
     [Fact]
-    public void SmoothColorSaliency_ActiveSmoothing_ShouldInterpolateNearestNeighbors_ForDictionaryAndDistanceTableOverloads()
+    public void SmoothColorSaliency_ActiveSmoothing_ShouldInterpolateNearestNeighbors_AcrossAllOverloads()
     {
         // 6 distinct colors positioned along the L* axis in CIELAB
         var c1 = new Rgb8(10, 0, 0);
@@ -146,6 +154,14 @@ public class SaliencyColorSmootherTests
         double t2 = d21 + d23;
         double expectedC2 = ((t2 * 0.2) + ((t2 - d21) * 0.1) + ((t2 - d23) * 0.3)) / (2.0 * t2);
 
+        PairwiseLabDistanceTable exactTable = PairwiseLabDistanceTable.Build(labLookup);
+        var denseSaliencies = new double[exactTable.Count];
+        for (int i = 0; i < exactTable.Count; i++)
+        {
+            denseSaliencies[i] = mapFromDict[exactTable.GetColor(i)];
+        }
+
+        SaliencyColorSmoother.SmoothColorSaliency(denseSaliencies, exactTable, neighborDivisor: 2);
         SaliencyColorSmoother.SmoothColorSaliency(mapFromDict, labLookup, neighborDivisor: 2);
 
         var extendedLabLookup = new Dictionary<Rgb8, Lab32>(labLookup)
@@ -160,6 +176,7 @@ public class SaliencyColorSmootherTests
         foreach (Rgb8 key in mapFromDict.Keys)
         {
             Assert.Equal(mapFromDict[key], mapFromTable[key], 12);
+            Assert.Equal(mapFromDict[key], denseSaliencies[exactTable.GetIndex(key)], 12);
         }
 
         Assert.All(mapFromDict.Values, value =>
@@ -167,6 +184,47 @@ public class SaliencyColorSmootherTests
             Assert.False(double.IsNaN(value));
             Assert.InRange(value, 0.0, 1.0);
         });
+    }
+
+    [Fact]
+    public void SmoothColorSaliency_PackedRgbTieBreaking_ShouldBeDeterministicForEqualDistances()
+    {
+        // Two distinct RGB colors mapped to identical Lab32 values test deterministic packed-RGB tie-breaking
+        var lowRgb = new Rgb8(10, 0, 0);
+        var midRgb = new Rgb8(20, 0, 0);
+        var highRgb = new Rgb8(200, 0, 0);
+        var farRgb = new Rgb8(250, 0, 0);
+
+        var labLookup = new Dictionary<Rgb8, Lab32>
+        {
+            [highRgb] = new Lab32(50f, 0f, 0f),
+            [lowRgb] = new Lab32(50f, 0f, 0f),
+            [midRgb] = new Lab32(0f, 0f, 0f),
+            [farRgb] = new Lab32(90f, 0f, 0f)
+        };
+
+        var mapForward = new Dictionary<Rgb8, double>
+        {
+            [midRgb] = 0.0,
+            [lowRgb] = 0.2,
+            [highRgb] = 0.8,
+            [farRgb] = 1.0
+        };
+        var mapReverse = new Dictionary<Rgb8, double>
+        {
+            [farRgb] = 1.0,
+            [highRgb] = 0.8,
+            [lowRgb] = 0.2,
+            [midRgb] = 0.0
+        };
+
+        SaliencyColorSmoother.SmoothColorSaliency(mapForward, labLookup, neighborDivisor: 2);
+        SaliencyColorSmoother.SmoothColorSaliency(mapReverse, labLookup, neighborDivisor: 2);
+
+        foreach (Rgb8 key in mapForward.Keys)
+        {
+            Assert.Equal(mapForward[key], mapReverse[key], 12);
+        }
     }
 
     [Fact]
@@ -195,27 +253,91 @@ public class SaliencyColorSmootherTests
         {
             int i = table.GetIndex(left);
             Assert.Equal(left, table.GetColor(i));
-            Assert.True(table.TryGetIndex(left, out int resolved));
-            Assert.Equal(i, resolved);
-            Assert.Equal(0.0, table[i, i]);
-            Assert.Equal(0.0, table.GetDistance(left, left));
 
             ReadOnlySpan<double> row = table.GetRow(i);
             Assert.Equal(3, row.Length);
+            Assert.Equal(0.0, row[i]);
 
             foreach (Rgb8 right in colors)
             {
                 int j = table.GetIndex(right);
-                Assert.Equal(table[i, j], table[j, i], 12);
-                Assert.Equal(table[i, j], row[j], 12);
-                Assert.Equal(table[i, j], table.GetDistance(left, right), 12);
+                Assert.Equal(row[j], table.GetRow(j)[i], 12);
                 if (i < j)
                 {
-                    Assert.Equal(lookup[left].Distance(lookup[right]), table[i, j], 12);
+                    Assert.Equal(lookup[left].Distance(lookup[right]), row[j], 12);
                 }
             }
         }
+    }
 
-        Assert.False(table.TryGetIndex(new Rgb8(1, 2, 3), out _));
+    [Fact]
+    public void PairwiseLabDistanceTable_Build_LargePaletteParallelPath_ShouldMatchSequentialDistances()
+    {
+        var lookup = new Dictionary<Rgb8, Lab32>(40);
+        for (int i = 0; i < 40; i++)
+        {
+            lookup[new Rgb8((byte)(i * 6), (byte)((i * 13) % 255), (byte)(255 - (i * 5)))] =
+                new Lab32(10f + (i * 2f), -30f + (i * 1.5f), 25f - (i * 1.2f));
+        }
+
+        PairwiseLabDistanceTable table = PairwiseLabDistanceTable.Build(lookup);
+        Assert.Equal(40, table.Count);
+
+        for (int i = 0; i < table.Count; i++)
+        {
+            ReadOnlySpan<double> rowI = table.GetRow(i);
+            Lab32 labI = lookup[table.GetColor(i)];
+            Assert.Equal(0.0, rowI[i]);
+
+            for (int j = i + 1; j < table.Count; j++)
+            {
+                double expected = labI.Distance(lookup[table.GetColor(j)]);
+                Assert.Equal(expected, rowI[j], 12);
+                Assert.Equal(expected, table.GetRow(j)[i], 12);
+            }
+        }
+    }
+
+    [Fact]
+    public void TryGetMinMaxRange_SpanAndEnumerableOverloads_ShouldValidateAndComputeRange()
+    {
+        Assert.Throws<ArgumentNullException>("values", () =>
+            SaliencyColorSmoother.TryGetMinMaxRange((IEnumerable<double>)null!, out _, out _));
+
+        Assert.False(SaliencyColorSmoother.TryGetMinMaxRange(ReadOnlySpan<double>.Empty, out double emptySpanMin, out double emptySpanRange));
+        Assert.Equal(0.0, emptySpanMin);
+        Assert.Equal(0.0, emptySpanRange);
+
+        Assert.False(SaliencyColorSmoother.TryGetMinMaxRange(Enumerable.Empty<double>(), out double emptySeqMin, out double emptySeqRange));
+        Assert.Equal(0.0, emptySeqMin);
+        Assert.Equal(0.0, emptySeqRange);
+
+        double[] constantArray = [3.5, 3.5, 3.5];
+        Assert.False(SaliencyColorSmoother.TryGetMinMaxRange(constantArray.AsSpan(), out double constMin, out double constRange));
+        Assert.Equal(3.5, constMin);
+        Assert.Equal(0.0, constRange);
+        Assert.False(SaliencyColorSmoother.TryGetMinMaxRange(constantArray.Select(v => v), out double constSeqMin, out double constSeqRange));
+        Assert.Equal(3.5, constSeqMin);
+        Assert.Equal(0.0, constSeqRange);
+
+        double[] valuesArray = [4.0, -2.5, 7.25, 1.0];
+        var valuesList = new List<double>(valuesArray);
+        IEnumerable<double> lazyValues = valuesArray.Select(v => v);
+
+        Assert.True(SaliencyColorSmoother.TryGetMinMaxRange(valuesArray.AsSpan(), out double spanMin, out double spanRange));
+        Assert.Equal(-2.5, spanMin, 12);
+        Assert.Equal(9.75, spanRange, 12);
+
+        Assert.True(SaliencyColorSmoother.TryGetMinMaxRange((IEnumerable<double>)valuesArray, out double arrMin, out double arrRange));
+        Assert.Equal(-2.5, arrMin, 12);
+        Assert.Equal(9.75, arrRange, 12);
+
+        Assert.True(SaliencyColorSmoother.TryGetMinMaxRange(valuesList, out double listMin, out double listRange));
+        Assert.Equal(-2.5, listMin, 12);
+        Assert.Equal(9.75, listRange, 12);
+
+        Assert.True(SaliencyColorSmoother.TryGetMinMaxRange(lazyValues, out double lazyMin, out double lazyRange));
+        Assert.Equal(-2.5, lazyMin, 12);
+        Assert.Equal(9.75, lazyRange, 12);
     }
 }

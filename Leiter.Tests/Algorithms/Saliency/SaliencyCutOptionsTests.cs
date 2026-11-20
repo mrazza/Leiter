@@ -1,6 +1,8 @@
 namespace Leiter.Tests.Algorithms.Saliency;
 
 using System;
+using Leiter.Algorithms;
+using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Morphology;
 using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
@@ -25,12 +27,14 @@ public class SaliencyCutOptionsTests : SizeTunableOptionsContractTestsBase<Salie
                 Method: SaliencyThresholdMethod.Otsu,
                 FixedThreshold: 0.3,
                 RetentionPolicy: ComponentRetentionPolicy.LargestComponentOnly,
-                MinAreaFraction: 0.02),
+                MinAreaFraction: 0.02,
+                Connectivity: GridConnectivity.FourConnected),
             MaxWorkingDimension: 512);
 
     /// <inheritdoc/>
     protected override SaliencyCutOptions CreateInvalidOptions() =>
         new(MaxOuterIterations: 0);
+
     [Fact]
     public void Constructor_DefaultProperties_ShouldMatchExpectedValues()
     {
@@ -42,8 +46,8 @@ public class SaliencyCutOptionsTests : SizeTunableOptionsContractTestsBase<Salie
         Assert.Null(options.Mask);
         Assert.Null(options.MaxWorkingDimension);
         Assert.Equal(SaliencyCutOptions.Default, options);
-
-        options.Validate();
+        Assert.Equal(GrabCutOptions.Default with { Iterations = 2 }, SaliencyCutOptions.DefaultGrabCut);
+        Assert.Equal(SaliencyMaskOptions.Default with { Method = SaliencyThresholdMethod.Fixed }, SaliencyCutOptions.DefaultMask);
     }
 
     [Theory]
@@ -130,7 +134,7 @@ public class SaliencyCutOptionsTests : SizeTunableOptionsContractTestsBase<Salie
     }
 
     [Fact]
-    public void ForSize_And_ForImage_ShouldScaleBandAndAdaptComponents()
+    public void ForSize_ForImage_And_ForAnalysis_ShouldScaleBandAndAdaptComponents()
     {
         SaliencyCutOptions refOpts = SaliencyCutOptions.ForSize(new Size(800, 800));
         Assert.Equal(10, refOpts.TrimapBandRadius);
@@ -147,17 +151,15 @@ public class SaliencyCutOptionsTests : SizeTunableOptionsContractTestsBase<Salie
         Assert.True(large.TrimapBandRadius > refOpts.TrimapBandRadius);
         Assert.InRange(strip.TrimapBandRadius, 1, 80 / 3);
 
-        foreach (Size size in new[] { new Size(0, 0), new Size(1, 1), new Size(3, 3), new Size(4000, 80), new Size(12000, 9000) })
-        {
-            SaliencyCutOptions.ForSize(size).Validate();
-        }
-
         SequentialMatrix<Rgb8> flat = TestMatrices.Constant(64, 64, new Rgb8(110, 110, 110));
         SequentialMatrix<Rgb8> vibrant = TestMatrices.Checkerboard(64, 64, new Rgb8(255, 250, 20), new Rgb8(10, 20, 240));
 
         Assert.Equal(4, SaliencyCutOptions.ForImage(flat).GrabCut!.MixtureComponentCount);
         Assert.Equal(6, SaliencyCutOptions.ForImage(vibrant).GrabCut!.MixtureComponentCount);
         Assert.Equal(SaliencyCutOptions.DefaultGrabCut.Iterations, SaliencyCutOptions.ForImage(vibrant).GrabCut!.Iterations);
+
+        ImageAnalysis vibrantAnalysis = ImageAnalysis.Analyze(vibrant);
+        Assert.Equal(SaliencyCutOptions.ForImage(vibrant), SaliencyCutOptions.ForAnalysis(vibrantAnalysis));
 
         SaliencyCutOptions customBaseline = CreateValidCustomOptions();
         SaliencyCutOptions customHalf = SaliencyCutOptions.ForSize(new Size(400, 400), customBaseline);
@@ -172,10 +174,13 @@ public class SaliencyCutOptionsTests : SizeTunableOptionsContractTestsBase<Salie
         Assert.Equal(5, customVibrant.GrabCut.MixtureComponentCount);
         Assert.Equal(customBaseline.Mask, customVibrant.Mask);
         Assert.Equal(512, customVibrant.MaxWorkingDimension);
+        Assert.Equal(customVibrant, SaliencyCutOptions.ForAnalysis(vibrantAnalysis, customBaseline));
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCutOptions.ForSize(new Size(-1, 100)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCutOptions.ForSize(new Size(100, 100), double.NegativeInfinity));
         Assert.Throws<ArgumentNullException>(() => SaliencyCutOptions.ForImage(null!));
         Assert.Throws<ArgumentNullException>(() => SaliencyCutOptions.ForImage(flat, null!));
+        Assert.Throws<ArgumentNullException>("analysis", () => SaliencyCutOptions.ForAnalysis(null!));
+        Assert.Throws<ArgumentNullException>("baseline", () => SaliencyCutOptions.ForAnalysis(vibrantAnalysis, null!));
+        Assert.Throws<ArgumentOutOfRangeException>("referenceDimension", () => SaliencyCutOptions.ForAnalysis(vibrantAnalysis, 0.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SaliencyCutOptions.ForAnalysis(vibrantAnalysis, CreateInvalidOptions()));
     }
 }
