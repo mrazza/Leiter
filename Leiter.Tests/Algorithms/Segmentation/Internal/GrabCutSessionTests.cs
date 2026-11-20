@@ -140,4 +140,57 @@ public class GrabCutSessionTests
         Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.CreateSession(image, new GrabCutOptions(SmoothnessWeight: double.NaN)));
         Assert.Throws<ArgumentOutOfRangeException>(() => GrabCut.CreateSession(image, new GrabCutOptions(SmoothnessWeight: double.PositiveInfinity)));
     }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 5)]
+    [InlineData(5, 0)]
+    public void Constructor_And_CreateSession_EmptyImage_ShouldSucceedAndReturnEmptyMask(int width, int height)
+    {
+        var image = new SequentialMatrix<Rgb8>(width, height);
+        var trimap = new SequentialMatrix<TrimapLabel>(width, height);
+
+        var explicitSession = new GrabCutSession(image, GrabCutOptions.Default);
+        GrabCutSession factorySession = GrabCut.CreateSession(image, GrabCutOptions.Default);
+
+        MaskMatrix explicitMask = explicitSession.Run(trimap);
+        MaskMatrix factoryMask = factorySession.Run(trimap);
+
+        Assert.Equal(image.Size, explicitMask.Size);
+        Assert.Equal(image.Size, factoryMask.Size);
+        Assert.Throws<ArgumentNullException>("trimap", () => explicitSession.Run(null!));
+        Assert.Throws<ArgumentException>("trimap", () => explicitSession.Run(new TrimapMatrix(1, 1)));
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(1, 5)]
+    [InlineData(5, 1)]
+    public void Constructor_And_CreateSession_DegenerateOnePixelWideImage_ShouldSucceed(int width, int height)
+    {
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            width,
+            height,
+            (x, y) => (x + y) == 0 ? new Rgb8(220, 20, 20) : new Rgb8(20, 40, 220));
+        SequentialMatrix<TrimapLabel> trimap = TestMatrices.Create(
+            width,
+            height,
+            (x, y) => (x + y) switch
+            {
+                0 => TrimapLabel.Foreground,
+                1 => TrimapLabel.ProbableForeground,
+                _ => TrimapLabel.Background,
+            });
+
+        var explicitSession = new GrabCutSession(image, GrabCutOptions.Default);
+        GrabCutSession factorySession = GrabCut.CreateSession(image, GrabCutOptions.Default);
+
+        MaskMatrix explicitMask = explicitSession.Run(trimap);
+        MaskMatrix factoryMask = factorySession.Run(trimap);
+
+        MatrixAssert.Equal(explicitMask, factoryMask);
+        Assert.True(factoryMask[0, 0]);
+        if (width * height > 1)
+            Assert.False(factoryMask[width - 1, height - 1]);
+    }
 }

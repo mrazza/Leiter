@@ -38,7 +38,7 @@ internal sealed class GrabCutSession
     private readonly int defaultIterations;
 
     private readonly Rgb8[] pixels;
-    private readonly GridMinCutSolver solver;
+    private readonly GridMinCutSolver? solver;
     private readonly GaussianMixtureModel foregroundGmm;
     private readonly GaussianMixtureModel backgroundGmm;
 
@@ -59,8 +59,15 @@ internal sealed class GrabCutSession
         defaultIterations = options.Iterations;
 
         pixels = image.ToArray();
-        solver = new GridMinCutSolver(imageSize);
-        InitializeSmoothnessEdges(solver, imageSize, pixels, smoothnessWeight);
+        if (imageSize.IsEmpty)
+        {
+            solver = null;
+        }
+        else
+        {
+            solver = new GridMinCutSolver(imageSize);
+            InitializeSmoothnessEdges(solver, imageSize, pixels, smoothnessWeight);
+        }
 
         foregroundGmm = new GaussianMixtureModel(options.MixtureComponentCount);
         backgroundGmm = new GaussianMixtureModel(options.MixtureComponentCount);
@@ -79,7 +86,7 @@ internal sealed class GrabCutSession
     {
         TrimapCounts initialCounts = LoadAndValidateTrimap(trimap);
 
-        if (initialCounts.ForegroundCount == 0)
+        if (initialCounts.ForegroundCount == 0 || solver is null)
             return new MaskMatrix(imageSize);
 
         if (initialCounts.BackgroundCount == 0)
@@ -103,7 +110,7 @@ internal sealed class GrabCutSession
             ComputeTerminalCapacities(hardWeight);
             solver.Solve(sourceCapacities, sinkCapacities);
 
-            bool changed = UpdateSegmentationFromCut(out fgCount);
+            bool changed = UpdateSegmentationFromCut(solver, out fgCount);
             bgCount = pixelCount - fgCount;
             if (!changed || fgCount == 0 || bgCount == 0)
                 break;
@@ -114,6 +121,9 @@ internal sealed class GrabCutSession
 
     private TrimapCounts LoadAndValidateTrimap(IReadOnlyMatrix<TrimapLabel> trimap)
     {
+        ArgumentNullException.ThrowIfNull(trimap);
+        Guard.ThrowIfSizeMismatch(imageSize, trimap.Size, nameof(trimap));
+
         int fgCount = 0;
         int bgCount = 0;
         int hardBgCount = 0;
@@ -217,7 +227,7 @@ internal sealed class GrabCutSession
         });
     }
 
-    private bool UpdateSegmentationFromCut(out int fgCount)
+    private bool UpdateSegmentationFromCut(GridMinCutSolver minCutSolver, out int fgCount)
     {
         bool changed = false;
         fgCount = 0;
@@ -228,7 +238,7 @@ internal sealed class GrabCutSession
             {
                 TrimapLabel.Foreground => true,
                 TrimapLabel.Background => false,
-                _ => solver.IsSourceSide(p),
+                _ => minCutSolver.IsSourceSide(p),
             };
 
             if (nextFg != isForeground[p])
@@ -252,14 +262,14 @@ internal sealed class GrabCutSession
         Rgb8[] pixels,
         double smoothnessWeight)
     {
-        if (smoothnessWeight == 0.0)
+        if (smoothnessWeight == 0.0 || imageSize.IsEmpty)
             return;
 
         int pairCapacity =
             ((imageSize.Width - 1) * imageSize.Height) +
             (imageSize.Width * (imageSize.Height - 1)) +
             (2 * (imageSize.Width - 1) * (imageSize.Height - 1));
-        if (pairCapacity == 0)
+        if (pairCapacity <= 0)
             return;
 
         var state = new SmoothnessScanState(imageSize, pixels, new ForwardSmoothnessPair[pairCapacity]);
