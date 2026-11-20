@@ -130,6 +130,12 @@ public readonly record struct Rgb64(double R, double G, double B) : ITypedPixel<
     public Vector256<double> ToDoubleVector() => Vector256.Create(R, G, B, 0.0);
 
     /// <summary>
+    /// Converts the RGB channels of this pixel into a three-dimensional <see cref="Vector3D"/> <c>(R, G, B)</c>.
+    /// </summary>
+    /// <returns>A <see cref="Vector3D"/> containing <c>(R, G, B)</c>.</returns>
+    public Vector3D ToVector3D() => new(R, G, B);
+
+    /// <summary>
     /// Computes the squared Euclidean magnitude across the red, green, and blue channels (<c>R^2 + G^2 + B^2</c>).
     /// </summary>
     /// <returns>The squared Euclidean norm of this pixel's channels.</returns>

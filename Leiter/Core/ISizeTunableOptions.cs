@@ -18,7 +18,8 @@ public interface ISizeTunableOptions<TSelf> : IAlgorithmOptions<TSelf>
     /// <param name="size">The target matrix or image dimensions.</param>
     /// <param name="referenceDimension">The reference linear dimension at which baseline defaults apply with scale <c>1.0</c>.</param>
     /// <returns>A validated <typeparamref name="TSelf"/> preset scaled for <paramref name="size"/>.</returns>
-    static abstract TSelf ForSize(Size size, double referenceDimension = DefaultReferenceDimension);
+    static virtual TSelf ForSize(Size size, double referenceDimension = DefaultReferenceDimension) =>
+        TSelf.ForSize(size, TSelf.Default, referenceDimension);
 
     /// <summary>
     /// Returns a validated options preset by scaling <paramref name="baseline"/> for matrices of <paramref name="size"/>.

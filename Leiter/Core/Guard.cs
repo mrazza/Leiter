@@ -1,7 +1,6 @@
 namespace Leiter.Core;
 
 using System.Runtime.CompilerServices;
-using Leiter.Pixels;
 
 /// <summary>
 /// Provides shared internal argument and domain validation guards.
@@ -72,9 +71,10 @@ internal static class Guard
     public static void ThrowIfSizeMismatch(
         IUntypedMatrix expected,
         IUntypedMatrix actual,
-        [CallerArgumentExpression(nameof(actual))] string? paramName = null)
+        [CallerArgumentExpression(nameof(actual))] string? paramName = null,
+        [CallerArgumentExpression(nameof(expected))] string? expectedParamName = null)
     {
-        ArgumentNullException.ThrowIfNull(expected);
+        ArgumentNullException.ThrowIfNull(expected, expectedParamName);
         ArgumentNullException.ThrowIfNull(actual, paramName);
 
         if (expected.Size != actual.Size)
@@ -99,9 +99,10 @@ internal static class Guard
     public static void ThrowIfSizeMismatchIfNotNull(
         IUntypedMatrix expected,
         IUntypedMatrix? actual,
-        [CallerArgumentExpression(nameof(actual))] string? paramName = null)
+        [CallerArgumentExpression(nameof(actual))] string? paramName = null,
+        [CallerArgumentExpression(nameof(expected))] string? expectedParamName = null)
     {
-        ArgumentNullException.ThrowIfNull(expected);
+        ArgumentNullException.ThrowIfNull(expected, expectedParamName);
         if (actual is not null && expected.Size != actual.Size)
             throw new ArgumentException($"Matrix dimensions {actual.Size} must match expected dimensions {expected.Size}.", paramName);
     }
@@ -143,16 +144,5 @@ internal static class Guard
             throw new ArgumentOutOfRangeException(widthParamName, width, $"{widthParamName} must be non-negative.");
         if (height < 0)
             throw new ArgumentOutOfRangeException(heightParamName, height, $"{heightParamName} must be non-negative.");
-    }
-
-    /// <summary>
-    /// Throws <see cref="ArgumentOutOfRangeException"/> if any channel of <paramref name="color"/> is not finite.
-    /// </summary>
-    public static void ThrowIfNotFinite(
-        Rgb64 color,
-        [CallerArgumentExpression(nameof(color))] string? paramName = null)
-    {
-        if (!double.IsFinite(color.R) || !double.IsFinite(color.G) || !double.IsFinite(color.B))
-            throw new ArgumentOutOfRangeException(paramName, color, "All RGB channels must be finite.");
     }
 }

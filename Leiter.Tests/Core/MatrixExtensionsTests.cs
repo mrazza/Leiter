@@ -111,6 +111,12 @@ public class MatrixExtensionsTests
 
         var denorm = matrix.DenormalizeCoord(norm);
         Assert.Equal(coord, denorm);
+
+        ArgumentNullException normNullEx = Assert.Throws<ArgumentNullException>(() => ((IUntypedMatrix)null!).NormalizeCoord(coord));
+        Assert.Equal("matrix", normNullEx.ParamName);
+
+        ArgumentNullException denormNullEx = Assert.Throws<ArgumentNullException>(() => ((IUntypedMatrix)null!).DenormalizeCoord(norm));
+        Assert.Equal("matrix", denormNullEx.ParamName);
     }
 
     [Fact]
@@ -204,6 +210,19 @@ public class MatrixExtensionsTests
 
         Assert.Throws<ArgumentNullException>(() => ((IReadOnlyMatrix<bool>)null!).ContentEquals(left));
         Assert.Throws<ArgumentNullException>(() => left.ContentEquals(null!));
+
+        // Floating-point SequentialMatrix SequenceEqual semantics (NaN == NaN and -0.0 == +0.0) and non-IEquatable struct support.
+        var fpA = new SequentialMatrix<DoublePixel>(new Size(2, 2), [double.NaN, -0.0, 1.5, 2.5]);
+        var fpB = new SequentialMatrix<DoublePixel>(new Size(2, 2), [double.NaN, +0.0, 1.5, 2.5]);
+        var fpC = new SequentialMatrix<DoublePixel>(new Size(2, 2), [double.NaN, +0.0, 1.5, 3.0]);
+        Assert.True(fpA.ContentEquals(fpB));
+        Assert.False(fpA.ContentEquals(fpC));
+
+        var plainA = new SequentialMatrix<PlainStruct>(new Size(1, 2), [new PlainStruct(1), new PlainStruct(2)]);
+        var plainB = new SequentialMatrix<PlainStruct>(new Size(1, 2), [new PlainStruct(1), new PlainStruct(2)]);
+        var plainC = new SequentialMatrix<PlainStruct>(new Size(1, 2), [new PlainStruct(1), new PlainStruct(3)]);
+        Assert.True(plainA.ContentEquals(plainB));
+        Assert.False(plainA.ContentEquals(plainC));
     }
 
     [Fact]
@@ -423,5 +442,10 @@ public class MatrixExtensionsTests
 
         public override Matrix<DoublePixel> Clone() =>
             new CustomMatrix(Width, Height, (DoublePixel[,])_elements.Clone());
+    }
+
+    private readonly struct PlainStruct(int value)
+    {
+        public int Value { get; } = value;
     }
 }

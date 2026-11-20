@@ -49,7 +49,7 @@ public readonly record struct Vector3D(double X, double Y, double Z)
     public Vector3D Normalize()
     {
         double lenSq = LengthSquared;
-        if (!double.IsFinite(lenSq) || lenSq <= 1e-24)
+        if (!double.IsFinite(lenSq) || lenSq <= ScalarMath.NormalizationEpsilonSquared)
             return Zero;
 
         double invLen = 1.0 / Math.Sqrt(lenSq);

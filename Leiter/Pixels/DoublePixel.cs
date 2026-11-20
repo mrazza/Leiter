@@ -118,6 +118,17 @@ public readonly record struct DoublePixel(double Value) : ITypedPixel<DoublePixe
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     /// <summary>
+    /// Calculates the squared distance between this pixel and another pixel as <c>(Value - otherPixel.Value)²</c>.
+    /// </summary>
+    /// <param name="otherPixel">The other pixel to compare with.</param>
+    /// <returns>The squared difference between the pixel values.</returns>
+    public double DistanceSquared(DoublePixel otherPixel)
+    {
+        double diff = Value - otherPixel.Value;
+        return diff * diff;
+    }
+
+    /// <summary>
     /// Calculates the distance between this pixel and another pixel as the absolute difference <c>|Value - otherPixel.Value|</c>.
     /// </summary>
     /// <param name="otherPixel">The other pixel to compare with.</param>

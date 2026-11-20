@@ -87,6 +87,42 @@ public class GuardTests
         Guard.ThrowIfSizeMismatchIfNotNull(a, b);
         Assert.Throws<ArgumentNullException>(() => Guard.ThrowIfSizeMismatchIfNotNull(null!, b));
         Assert.Throws<ArgumentException>(() => Guard.ThrowIfSizeMismatchIfNotNull(a, c));
+
+        IUntypedMatrix nullExpected = null!;
+        IUntypedMatrix nullActual = null!;
+        IUntypedMatrix mismatchedActual = c;
+
+        ArgumentNullException mismatchNullExpectedEx = Assert.Throws<ArgumentNullException>(() => Guard.ThrowIfSizeMismatch(nullExpected, b));
+        Assert.Equal(nameof(nullExpected), mismatchNullExpectedEx.ParamName);
+
+        ArgumentNullException mismatchNullExpectedThreeArgEx = Assert.Throws<ArgumentNullException>(() => Guard.ThrowIfSizeMismatch(nullExpected, b, "customActual"));
+        Assert.Equal(nameof(nullExpected), mismatchNullExpectedThreeArgEx.ParamName);
+
+        ArgumentNullException mismatchNullActualEx = Assert.Throws<ArgumentNullException>(() => Guard.ThrowIfSizeMismatch(a, nullActual));
+        Assert.Equal(nameof(nullActual), mismatchNullActualEx.ParamName);
+
+        ArgumentException mismatchDimEx = Assert.Throws<ArgumentException>(() => Guard.ThrowIfSizeMismatch(a, mismatchedActual));
+        Assert.Equal(nameof(mismatchedActual), mismatchDimEx.ParamName);
+
+        ArgumentException mismatchDimThreeArgEx = Assert.Throws<ArgumentException>(() => Guard.ThrowIfSizeMismatch(a, mismatchedActual, "customActual"));
+        Assert.Equal("customActual", mismatchDimThreeArgEx.ParamName);
+
+        Size expectedSize = new(2, 3);
+        Size mismatchedSize = new(3, 2);
+        ArgumentException sizeEx = Assert.Throws<ArgumentException>(() => Guard.ThrowIfSizeMismatch(expectedSize, mismatchedSize));
+        Assert.Equal(nameof(mismatchedSize), sizeEx.ParamName);
+
+        ArgumentNullException ifNotNullExpectedEx = Assert.Throws<ArgumentNullException>(() => Guard.ThrowIfSizeMismatchIfNotNull(nullExpected, b));
+        Assert.Equal(nameof(nullExpected), ifNotNullExpectedEx.ParamName);
+
+        ArgumentNullException ifNotNullExpectedThreeArgEx = Assert.Throws<ArgumentNullException>(() => Guard.ThrowIfSizeMismatchIfNotNull(nullExpected, b, "customActual"));
+        Assert.Equal(nameof(nullExpected), ifNotNullExpectedThreeArgEx.ParamName);
+
+        ArgumentException ifNotNullDimEx = Assert.Throws<ArgumentException>(() => Guard.ThrowIfSizeMismatchIfNotNull(a, mismatchedActual));
+        Assert.Equal(nameof(mismatchedActual), ifNotNullDimEx.ParamName);
+
+        ArgumentException ifNotNullDimThreeArgEx = Assert.Throws<ArgumentException>(() => Guard.ThrowIfSizeMismatchIfNotNull(a, mismatchedActual, "customActual"));
+        Assert.Equal("customActual", ifNotNullDimThreeArgEx.ParamName);
     }
 
     [Fact]

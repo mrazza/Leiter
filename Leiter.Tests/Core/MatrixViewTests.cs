@@ -54,6 +54,9 @@ public class MatrixViewTests
 
         var emptyView = new MatrixView<DoublePixel>(new SequentialMatrix<DoublePixel>(0, 0), 0, 0, 1, 1, EdgeHandling.Extend);
         Assert.Throws<ArgumentOutOfRangeException>(() => emptyView[0, 0]);
+
+        var overflowView = new MatrixView<DoublePixel>(baseMat, 0, 0, 65536, 65536, EdgeHandling.Extend);
+        Assert.Throws<OverflowException>(() => overflowView.Count);
     }
 
     [Fact]

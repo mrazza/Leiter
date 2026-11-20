@@ -55,4 +55,15 @@ public class DoublePixelTests : PixelContractTestsBase<DoublePixel, double>
         DoublePixel p2 = 3.5;
         Assert.Equal(3.5, p2.Value);
     }
+
+    [Fact]
+    public void DistanceSquared_ShouldComputeSquaredDifference()
+    {
+        var a = new DoublePixel(1.5);
+        var b = new DoublePixel(4.0);
+
+        Assert.Equal(6.25, a.DistanceSquared(b), 12);
+        Assert.Equal(a.DistanceSquared(b), b.DistanceSquared(a), 12);
+        Assert.Equal(0.0, a.DistanceSquared(a));
+    }
 }

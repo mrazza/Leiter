@@ -68,10 +68,10 @@ public readonly record struct LongPixel(long Value) : ITypedPixel<LongPixel, lon
     public LongPixel Subtract(decimal right) => new(Value - (long)right);
 
     /// <inheritdoc/>
-    public LongPixel Multiply(decimal right) => new(Value * (long)right);
+    public LongPixel Multiply(decimal right) => new((long)Math.Round(Value * right, MidpointRounding.AwayFromZero));
 
     /// <inheritdoc/>
-    public LongPixel Divide(decimal right) => new(Value / (long)right);
+    public LongPixel Divide(decimal right) => new((long)Math.Round(Value / right, MidpointRounding.AwayFromZero));
 
     /// <inheritdoc/>
     public LongPixel Add(double right) => new(Value + (long)right);
@@ -80,10 +80,10 @@ public readonly record struct LongPixel(long Value) : ITypedPixel<LongPixel, lon
     public LongPixel Subtract(double right) => new(Value - (long)right);
 
     /// <inheritdoc/>
-    public LongPixel Multiply(double right) => new(Value * (long)right);
+    public LongPixel Multiply(double right) => new((long)Math.Round(Value * right, MidpointRounding.AwayFromZero));
 
     /// <inheritdoc/>
-    public LongPixel Divide(double right) => new(Value / (long)right);
+    public LongPixel Divide(double right) => new((long)Math.Round(Value / right, MidpointRounding.AwayFromZero));
 
     /// <inheritdoc/>
     public LongPixel Add<S>(IScalar<S> right) where S : IScalar<S> =>
@@ -117,6 +117,17 @@ public readonly record struct LongPixel(long Value) : ITypedPixel<LongPixel, lon
     }
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    /// <summary>
+    /// Calculates the squared distance between this pixel and another pixel as <c>((double)Value - otherPixel.Value)²</c>.
+    /// </summary>
+    /// <param name="otherPixel">The other pixel to compare with.</param>
+    /// <returns>The squared difference between the pixel values.</returns>
+    public double DistanceSquared(LongPixel otherPixel)
+    {
+        double diff = (double)Value - otherPixel.Value;
+        return diff * diff;
+    }
 
     /// <summary>
     /// Calculates the distance between this pixel and another pixel as the absolute difference <c>|Value - otherPixel.Value|</c>.

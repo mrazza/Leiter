@@ -134,12 +134,8 @@ public static class MaskExtensions
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="mask"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when dimensions of <paramref name="source"/> and <paramref name="mask"/> differ.</exception>
     public static Matrix<T> ApplyMask<T>(this IReadOnlyMatrix<T> source, IReadOnlyMatrix<bool> mask, T background = default)
-        where T : struct
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        Guard.ThrowIfSizeMismatch(source, mask);
-        return source.Zip(mask, (value, isForeground) => isForeground ? value : background);
-    }
+        where T : struct =>
+        source.Zip(mask, (value, isForeground) => isForeground ? value : background);
 
     private static MaskMatrix CombineMasks(
         IReadOnlyMatrix<bool> left,

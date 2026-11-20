@@ -46,6 +46,33 @@ public class SizeTests
         Assert.Equal(6, size.IndexOf(2, 1));
         Assert.Equal(6, size.IndexOf(new Coord(2, 1)));
         Assert.Equal(new Coord(2, 1), size.CoordOf(6));
+
+        Assert.Throws<OverflowException>(() => new Size(65536, 65536).Count);
+        Assert.Throws<OverflowException>(() => new Size(100_000, 100_000).Count);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Size(0, 5).CoordOf(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Size(-3, 5).CoordOf(0));
+    }
+
+    [Fact]
+    public void ClampWindow_ShouldClampBoundsAndValidateInputs()
+    {
+        var size = new Size(10, 8);
+
+        Assert.Equal((3, 7, 2, 6), size.ClampWindow(5, 4, 2));
+        Assert.Equal((0, 3, 0, 3), size.ClampWindow(0, 0, 3));
+        Assert.Equal((6, 9, 4, 7), size.ClampWindow(9, 7, 3));
+        Assert.Equal((0, 9, 0, 7), size.ClampWindow(1, 1, 100));
+        Assert.Equal((3, 3, 2, 2), size.ClampWindow(3, 2, 0));
+        Assert.Equal((9, 9, 0, 0), size.ClampWindow(int.MaxValue, int.MinValue, 5));
+        Assert.Equal((0, 9, 0, 7), size.ClampWindow(5, 4, int.MaxValue));
+
+        ArgumentOutOfRangeException negRadiusEx = Assert.Throws<ArgumentOutOfRangeException>(() => size.ClampWindow(2, 2, -1));
+        Assert.Equal("radius", negRadiusEx.ParamName);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Size(0, 5).ClampWindow(0, 0, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Size(5, 0).ClampWindow(0, 0, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Size(0, 0).ClampWindow(0, 0, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Size(-2, 5).ClampWindow(0, 0, 1));
     }
 
     [Fact]

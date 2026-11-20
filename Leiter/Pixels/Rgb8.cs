@@ -22,16 +22,6 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
     private static byte ClampToByte(decimal value) => (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
 
     /// <summary>
-    /// Clamps a 64-bit floating-point value to an 8-bit unsigned byte range [0, 255].
-    /// </summary>
-    /// <remarks>
-    /// If <paramref name="value"/> is <see cref="double.NaN"/>, returns <c>0</c>; otherwise, finite values are clamped to the range [0, 255].
-    /// </remarks>
-    /// <param name="value">The floating-point value to clamp.</param>
-    /// <returns>A byte clamped to the range [0, 255], or <c>0</c> if <paramref name="value"/> is <see cref="double.NaN"/>.</returns>
-    private static byte ClampToByte(double value) => double.IsNaN(value) ? (byte)0 : (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
-
-    /// <summary>
     /// Rounds a floating-point channel value in the [0, 255] range using <see cref="MidpointRounding.AwayFromZero"/> and clamps it to <see cref="byte"/> range.
     /// </summary>
     /// <remarks>
@@ -150,70 +140,70 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
     public Rgb8 Multiply(decimal right) => new(ClampToByte(R * right), ClampToByte(G * right), ClampToByte(B * right));
 
     /// <summary>
-    /// Divides each color channel by a decimal scalar using integer division clamped to [0, 255].
+    /// Divides each color channel by a decimal scalar, clamping each channel to [0, 255] (truncating fractional values toward zero).
     /// </summary>
     /// <param name="right">The scalar divisor.</param>
     /// <returns>A new <see cref="Rgb8"/> pixel with clamped quotients.</returns>
     public Rgb8 Divide(decimal right) => new(ClampToByte(R / right), ClampToByte(G / right), ClampToByte(B / right));
 
     /// <summary>
-    /// Adds a double scalar to each color channel, saturating each channel to [0, 255].
+    /// Adds a double scalar to each color channel, rounding away from zero and clamping each channel to [0, 255].
     /// </summary>
     /// <param name="right">The scalar value to add.</param>
-    /// <returns>A new <see cref="Rgb8"/> pixel with saturated channel sums.</returns>
-    public Rgb8 Add(double right) => new(ClampToByte(R + right), ClampToByte(G + right), ClampToByte(B + right));
+    /// <returns>A new <see cref="Rgb8"/> pixel with rounded, clamped channel sums.</returns>
+    public Rgb8 Add(double right) => new(ClampRoundedByte(R + right), ClampRoundedByte(G + right), ClampRoundedByte(B + right));
 
     /// <summary>
-    /// Subtracts a double scalar from each color channel, saturating each channel to [0, 255].
+    /// Subtracts a double scalar from each color channel, rounding away from zero and clamping each channel to [0, 255].
     /// </summary>
     /// <param name="right">The scalar value to subtract.</param>
-    /// <returns>A new <see cref="Rgb8"/> pixel with saturated channel differences.</returns>
-    public Rgb8 Subtract(double right) => new(ClampToByte(R - right), ClampToByte(G - right), ClampToByte(B - right));
+    /// <returns>A new <see cref="Rgb8"/> pixel with rounded, clamped channel differences.</returns>
+    public Rgb8 Subtract(double right) => new(ClampRoundedByte(R - right), ClampRoundedByte(G - right), ClampRoundedByte(B - right));
 
     /// <summary>
-    /// Multiplies each color channel by a double scalar, saturating each channel to [0, 255].
+    /// Multiplies each color channel by a double scalar, rounding away from zero and clamping each channel to [0, 255].
     /// </summary>
     /// <param name="right">The scalar multiplier.</param>
-    /// <returns>A new <see cref="Rgb8"/> pixel with saturated channel products.</returns>
-    public Rgb8 Multiply(double right) => new(ClampToByte(R * right), ClampToByte(G * right), ClampToByte(B * right));
+    /// <returns>A new <see cref="Rgb8"/> pixel with rounded, clamped channel products.</returns>
+    public Rgb8 Multiply(double right) => new(ClampRoundedByte(R * right), ClampRoundedByte(G * right), ClampRoundedByte(B * right));
 
     /// <summary>
-    /// Divides each color channel by a double scalar using integer division clamped to [0, 255].
+    /// Divides each color channel by a double scalar, rounding away from zero and clamping each channel to [0, 255].
     /// </summary>
     /// <param name="right">The scalar divisor.</param>
-    /// <returns>A new <see cref="Rgb8"/> pixel with clamped quotients.</returns>
-    public Rgb8 Divide(double right) => new(ClampToByte(R / right), ClampToByte(G / right), ClampToByte(B / right));
+    /// <returns>A new <see cref="Rgb8"/> pixel with rounded, clamped quotients.</returns>
+    public Rgb8 Divide(double right) => new(ClampRoundedByte(R / right), ClampRoundedByte(G / right), ClampRoundedByte(B / right));
 
     /// <summary>
-    /// Adds a scalar value to each color channel, saturating each channel to [0, 255].
+    /// Adds a scalar value to each color channel, rounding away from zero and clamping each channel to [0, 255].
     /// </summary>
     /// <typeparam name="S">The scalar type.</typeparam>
     /// <param name="right">The scalar value to add.</param>
-    /// <returns>A new <see cref="Rgb8"/> pixel with saturated channel sums.</returns>
+    /// <returns>A new <see cref="Rgb8"/> pixel with rounded, clamped channel sums.</returns>
     public Rgb8 Add<S>(IScalar<S> right) where S : IScalar<S> => Add(right.AsDouble());
 
     /// <summary>
-    /// Subtracts a scalar value from each color channel, saturating each channel to [0, 255].
+    /// Subtracts a scalar value from each color channel, rounding away from zero and clamping each channel to [0, 255].
     /// </summary>
     /// <typeparam name="S">The scalar type.</typeparam>
     /// <param name="right">The scalar value to subtract.</param>
-    /// <returns>A new <see cref="Rgb8"/> pixel with saturated channel differences.</returns>
+    /// <returns>A new <see cref="Rgb8"/> pixel with rounded, clamped channel differences.</returns>
     public Rgb8 Subtract<S>(IScalar<S> right) where S : IScalar<S> => Subtract(right.AsDouble());
 
     /// <summary>
-    /// Multiplies each color channel by a scalar value, saturating each channel to [0, 255].
+    /// Multiplies each color channel by a scalar value, rounding away from zero and clamping each channel to [0, 255].
     /// </summary>
     /// <typeparam name="S">The scalar type.</typeparam>
     /// <param name="right">The scalar multiplier.</param>
-    /// <returns>A new <see cref="Rgb8"/> pixel with saturated channel products.</returns>
+    /// <returns>A new <see cref="Rgb8"/> pixel with rounded, clamped channel products.</returns>
     public Rgb8 Multiply<S>(IScalar<S> right) where S : IScalar<S> => Multiply(right.AsDouble());
 
     /// <summary>
-    /// Divides each color channel by a scalar value using integer division clamped to [0, 255].
+    /// Divides each color channel by a scalar value, rounding away from zero and clamping each channel to [0, 255].
     /// </summary>
     /// <typeparam name="S">The scalar type.</typeparam>
     /// <param name="right">The scalar divisor.</param>
-    /// <returns>A new <see cref="Rgb8"/> pixel with clamped quotients.</returns>
+    /// <returns>A new <see cref="Rgb8"/> pixel with rounded, clamped quotients.</returns>
     public Rgb8 Divide<S>(IScalar<S> right) where S : IScalar<S> => Divide(right.AsDouble());
 
     /// <inheritdoc/>
@@ -228,6 +218,15 @@ public readonly record struct Rgb8(byte R, byte G, byte B) : ITypedPixel<Rgb8, b
     /// <returns>A double vector containing the normalized RGB channel values.</returns>
     public Vector256<double> ToDoubleVector() =>
         Vector256.Create(R / 255.0, G / 255.0, B / 255.0, 0.0);
+
+    /// <summary>
+    /// Converts the raw unnormalized 8-bit channel values <c>(R, G, B)</c> of this pixel into a <see cref="Vector3D"/> in <c>[0, 255]</c> units.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="ToDoubleVector"/>, which normalizes channels to <c>[0.0, 1.0]</c>, this method preserves the raw <c>[0, 255]</c> byte magnitudes.
+    /// </remarks>
+    /// <returns>A <see cref="Vector3D"/> containing the raw channel values <c>(R, G, B)</c>.</returns>
+    public Vector3D ToRawVector3D() => new(R, G, B);
 
     /// <summary>
     /// Creates an <see cref="Rgb8"/> pixel from a <see cref="Vector256{Double}"/> by scaling normalized components by 255.0 with <see cref="MidpointRounding.AwayFromZero"/> rounding and clamping to [0, 255].

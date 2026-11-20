@@ -150,6 +150,12 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     /// <inheritdoc/>
     public Vector256<double> ToDoubleVector() => Vector256.Create((double)L, A, B, 0.0);
 
+    /// <summary>
+    /// Converts the CIELAB coordinates of this pixel into a three-dimensional <see cref="Vector3D"/> <c>(L, A, B)</c>.
+    /// </summary>
+    /// <returns>A <see cref="Vector3D"/> containing <c>(L, A, B)</c> widened to <see cref="double"/>.</returns>
+    public Vector3D ToVector3D() => new(L, A, B);
+
     /// <inheritdoc/>
     public static Lab32 FromDoubleVector(Vector256<double> vector) => new((float)vector[0], (float)vector[1], (float)vector[2]);
 
@@ -164,7 +170,17 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     /// <summary>
-    /// Calculates the color distance between the current and other pixel in L*a*b* color space.
+    /// Calculates the color distance between the current and other pixel in L*a*b* color space using <see cref="DeltaE2000"/>.
+    /// </summary>
+    /// <remarks>
+    /// Delegates to <see cref="DeltaE2000(Lab32)"/> (CIEDE2000). For fast squared Euclidean (CIE76) distance, see <see cref="EuclideanDistanceSquared"/> or <see cref="DistanceSquared"/>.
+    /// </remarks>
+    /// <param name="other">The other pixel on which to operate.</param>
+    /// <returns>The CIEDE2000 color distance between the two pixels.</returns>
+    public double Distance(Lab32 other) => DeltaE2000(other);
+
+    /// <summary>
+    /// Calculates the CIEDE2000 color difference between the current and other pixel in L*a*b* color space.
     /// </summary>
     /// <remarks>
     /// This implementation uses the CIEDE2000 method for calculating color distance as this method
@@ -175,8 +191,8 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     /// G. Sharma, W. Wu, E. N. Dalal, Color Research and Application, vol. 30. No. 1, pp. 21-30, February 2005.
     /// </remarks>
     /// <param name="other">The other pixel on which to operate.</param>
-    /// <returns>The distance in color between the two pixels.</returns>
-    public double Distance(Lab32 other)
+    /// <returns>The CIEDE2000 color difference between the two pixels.</returns>
+    public double DeltaE2000(Lab32 other)
     {
         const double kL = 1.0;
         const double kC = 1.0;
@@ -253,15 +269,25 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     /// Calculates the squared Euclidean (CIE76) color distance between the current pixel and <paramref name="other"/> in CIELAB space.
     /// </summary>
     /// <remarks>
+    /// Delegates to <see cref="EuclideanDistanceSquared"/> (<c>ΔL² + Δa² + Δb²</c>), NOT squared <see cref="DeltaE2000"/>.
+    /// </remarks>
+    /// <param name="other">The other pixel to compare with.</param>
+    /// <returns>The squared CIE76 Euclidean color distance between the two pixels.</returns>
+    public double DistanceSquared(Lab32 other) => EuclideanDistanceSquared(other);
+
+    /// <summary>
+    /// Calculates the squared Euclidean (CIE76) color distance between the current pixel and <paramref name="other"/> in CIELAB space.
+    /// </summary>
+    /// <remarks>
     /// Computes <c>ΔL² + Δa² + Δb²</c> without heap allocations or square roots, suitable for fast inner-loop range checks.
     /// </remarks>
     /// <param name="other">The other pixel to compare with.</param>
     /// <returns>The squared CIE76 Euclidean color distance between the two pixels.</returns>
     public double EuclideanDistanceSquared(Lab32 other)
     {
-        double dl = L - other.L;
-        double da = A - other.A;
-        double db = B - other.B;
+        double dl = (double)L - other.L;
+        double da = (double)A - other.A;
+        double db = (double)B - other.B;
         return (dl * dl) + (da * da) + (db * db);
     }
 
