@@ -6,6 +6,9 @@
 
 A pure-C# image processing, computer vision, and non-photorealistic rendering (NPR) library targeting **.NET 10**. `Leiter` provides strongly-typed generic pixel and matrix abstractions with **zero external dependencies** in its core library, cross-platform (`SixLabors.ImageSharp`) and Windows GDI+ (`System.Drawing.Common`) image adapters, and a complete end-to-end artistic **photo watercolorization** pipeline composed from modular primitives.
 
+> [!TIP]
+> Looking for a companion application built on `Leiter`? Check out **[LeiterWatercolorStudio](https://github.com/mrazza/LeiterWatercolorStudio)** for `Leiter`'s photo watercolorization studio.
+
 ---
 
 ## Features
@@ -161,6 +164,12 @@ dotnet test Leiter.slnx --configuration Release
 # Run the CLI harness against an image (writes benchmark timings & PNG outputs)
 dotnet run --project LeiterTest --configuration Release -- examples/input.png ./output
 ```
+
+---
+
+## Related Projects
+
+- **[LeiterWatercolorStudio](https://github.com/mrazza/LeiterWatercolorStudio)** — Companion studio application for `Leiter`'s photo watercolorization pipeline.
 
 ---
 
