@@ -1,6 +1,11 @@
 namespace Leiter.Algorithms.Morphology;
 
+using System;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 
 /// <summary>
@@ -156,6 +161,64 @@ public static class BinaryMorphology
         return Erode(Dilate(mask, radius, shape, borderIsBackground), radius, shape, borderIsBackground);
     }
 
+    private sealed class ComponentForest(int count)
+    {
+        private readonly int[] parents = CreateInitializedParents(count);
+
+        private static int[] CreateInitializedParents(int count)
+        {
+            var result = new int[count];
+            ParallelRunner.ForChunks(
+                count,
+                CancellationToken.None,
+                (start, end) => Array.Fill(result, -1, start, end - start));
+            return result;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int Find(int index)
+        {
+            int root = FindReadOnly(index);
+            int current = index;
+            while (current != root)
+            {
+                int next = parents[current];
+                parents[current] = root;
+                current = next;
+            }
+
+            return root;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int FindReadOnly(int index)
+        {
+            int current = index;
+            while (parents[current] >= 0)
+                current = parents[current];
+
+            return current;
+        }
+
+        public void Union(int first, int second)
+        {
+            int rootFirst = Find(first);
+            int rootSecond = Find(second);
+            if (rootFirst == rootSecond)
+                return;
+
+            // Negative values store -size, so a smaller integer indicates a larger component.
+            if (parents[rootFirst] > parents[rootSecond])
+                (rootFirst, rootSecond) = (rootSecond, rootFirst);
+
+            parents[rootFirst] += parents[rootSecond];
+            parents[rootSecond] = rootFirst;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetRootSize(int rootIndex) => -parents[rootIndex];
+    }
+
     /// <summary>
     /// Filters connected foreground components in a boolean mask according to the specified retention policy and grid connectivity.
     /// </summary>
@@ -189,81 +252,173 @@ public static class BinaryMorphology
         Size size = mask.Size;
         int width = size.Width;
         int height = size.Height;
-        var filtered = new MaskMatrix(width, height);
-        var isForeground = new bool[mask.Count];
-        bool hasAnyForeground = false;
+        bool[] isForeground = ExtractForegroundArray(mask);
 
-        if (mask.TryGetReadOnlySpan(out ReadOnlySpan<bool> maskSpan))
+        if (!isForeground.AsSpan().Contains(true))
+            return new MaskMatrix(width, height);
+
+        var forest = new ComponentForest(isForeground.Length);
+        bool isEightConnected = connectivity == GridConnectivity.EightConnected;
+        int stripCount = isForeground.Length >= ParallelRunner.DefaultMinParallelCount && height >= 8 && Environment.ProcessorCount > 1
+            ? Math.Min(height, Math.Clamp(Environment.ProcessorCount * 2, 2, 64))
+            : 1;
+
+        var stripRanges = new (int StartRow, int EndRow)[stripCount];
+        for (int s = 0; s < stripCount; s++)
+            stripRanges[s] = ((int)((long)s * height / stripCount), (int)((long)(s + 1) * height / stripCount));
+
+        // Step 1: Union foreground pixels within disjoint horizontal strips in parallel.
+        ParallelRunner.For(stripCount, CancellationToken.None, s =>
         {
-            maskSpan.CopyTo(isForeground);
-            hasAnyForeground = maskSpan.Contains(true);
-        }
-        else
-        {
-            for (int y = 0; y < height; y++)
+            (int startRow, int endRow) = stripRanges[s];
+            for (int y = startRow; y < endRow; y++)
             {
-                int rowBase = size.IndexOf(0, y);
+                int rowBase = y * width;
+                bool hasSouthInStrip = y + 1 < endRow;
                 for (int x = 0; x < width; x++)
                 {
-                    if (mask[x, y])
-                    {
-                        isForeground[rowBase + x] = true;
-                        hasAnyForeground = true;
-                    }
+                    int p = rowBase + x;
+                    if (!isForeground[p])
+                        continue;
+
+                    if (x + 1 < width && isForeground[p + 1])
+                        forest.Union(p, p + 1);
+
+                    if (hasSouthInStrip)
+                        UnionSouthNeighbors(forest, isForeground, p, x, width, isEightConnected);
                 }
+            }
+        });
+
+        // Step 2: Stitch adjacent horizontal strips sequentially across the P - 1 shared seams.
+        for (int s = 0; s < stripCount - 1; s++)
+        {
+            int seamTopRow = stripRanges[s].EndRow - 1;
+            int rowBase = seamTopRow * width;
+            for (int x = 0; x < width; x++)
+            {
+                int p = rowBase + x;
+                if (isForeground[p])
+                    UnionSouthNeighbors(forest, isForeground, p, x, width, isEightConnected);
             }
         }
 
-        if (!hasAnyForeground)
-            return filtered;
-
-        var disjointSet = DisjointSet.CreateSingletons(mask);
-        GridNeighborhood.ForEachForwardPair(
-            size,
-            connectivity,
-            (disjointSet, isForeground),
-            static (currentIndex, neighborIndex, state) =>
-            {
-                if (state.isForeground[currentIndex] && state.isForeground[neighborIndex])
-                    state.disjointSet.TryUnion(currentIndex, neighborIndex, 0, out _);
-            });
-
-        Span<bool> filteredSpan = filtered.AsSpan();
+        // Step 3: Retain components matching the policy in parallel (parent array is now read-only).
+        var filtered = new MaskMatrix(width, height);
+        bool[] filteredData = filtered.RawData;
         if (retentionPolicy == ComponentRetentionPolicy.LargestComponentOnly)
         {
+            (int BestRoot, int BestSize)[] chunkBest = ParallelRunner.MapChunks(
+                isForeground.Length,
+                CancellationToken.None,
+                (start, end) =>
+                {
+                    int bestRoot = -1;
+                    int bestSize = 0;
+                    for (int i = start; i < end; i++)
+                    {
+                        if (!isForeground[i])
+                            continue;
+
+                        int root = forest.FindReadOnly(i);
+                        int componentSize = forest.GetRootSize(root);
+                        if (componentSize > bestSize)
+                        {
+                            bestSize = componentSize;
+                            bestRoot = root;
+                        }
+                    }
+
+                    return (bestRoot, bestSize);
+                });
+
             int largestRoot = -1;
             int largestSize = 0;
-
-            for (int i = 0; i < isForeground.Length; i++)
+            for (int i = 0; i < chunkBest.Length; i++)
             {
-                if (!isForeground[i])
-                    continue;
-
-                var partition = disjointSet.GetPartition(i);
-                if (partition.Size > largestSize)
+                if (chunkBest[i].BestSize > largestSize)
                 {
-                    largestSize = partition.Size;
-                    largestRoot = partition.RootIndex;
+                    largestSize = chunkBest[i].BestSize;
+                    largestRoot = chunkBest[i].BestRoot;
                 }
             }
 
-            for (int i = 0; i < isForeground.Length; i++)
-            {
-                if (isForeground[i] && disjointSet.GetPartition(i).RootIndex == largestRoot)
-                    filteredSpan[i] = true;
-            }
+            ParallelRunner.ForChunks(
+                isForeground.Length,
+                CancellationToken.None,
+                (start, end) =>
+                {
+                    for (int i = start; i < end; i++)
+                    {
+                        if (isForeground[i] && forest.FindReadOnly(i) == largestRoot)
+                            filteredData[i] = true;
+                    }
+                });
         }
         else
         {
             int minPixels = Math.Max(1, (int)Math.Ceiling(minAreaFraction * mask.Count));
-            for (int i = 0; i < isForeground.Length; i++)
-            {
-                if (isForeground[i] && disjointSet.GetPartition(i).Size >= minPixels)
-                    filteredSpan[i] = true;
-            }
+            ParallelRunner.ForChunks(
+                isForeground.Length,
+                CancellationToken.None,
+                (start, end) =>
+                {
+                    for (int i = start; i < end; i++)
+                    {
+                        if (isForeground[i] && forest.GetRootSize(forest.FindReadOnly(i)) >= minPixels)
+                            filteredData[i] = true;
+                    }
+                });
         }
 
         return filtered;
+    }
+
+    private static bool[] ExtractForegroundArray(IReadOnlyMatrix<bool> mask)
+    {
+        if (mask is SequentialMatrix<bool> sequential)
+            return sequential.RawData;
+
+        int width = mask.Width;
+        int height = mask.Height;
+        var isForeground = new bool[mask.Count];
+        if (mask.TryGetReadOnlySpan(out ReadOnlySpan<bool> maskSpan))
+        {
+            maskSpan.CopyTo(isForeground);
+            return isForeground;
+        }
+
+        for (int y = 0; y < height; y++)
+        {
+            int rowBase = y * width;
+            for (int x = 0; x < width; x++)
+                isForeground[rowBase + x] = mask[x, y];
+        }
+
+        return isForeground;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void UnionSouthNeighbors(
+        ComponentForest forest,
+        bool[] isForeground,
+        int pixelIndex,
+        int x,
+        int width,
+        bool isEightConnected)
+    {
+        int south = pixelIndex + width;
+        if (isForeground[south])
+            forest.Union(pixelIndex, south);
+
+        if (isEightConnected)
+        {
+            if (x + 1 < width && isForeground[south + 1])
+                forest.Union(pixelIndex, south + 1);
+
+            if (x > 0 && isForeground[south - 1])
+                forest.Union(pixelIndex, south - 1);
+        }
     }
 
     private static void ValidateInputs(IReadOnlyMatrix<bool> mask, int radius, StructuringElementShape shape)

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Threading;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -65,32 +66,39 @@ internal static class MeanShiftRegionClusterer
         int pixelCount = size.Count;
         double[] gradientSquared = ComputeMaxCardinalGradientSquared(modes, size, cancellationToken);
 
-        var bucketCounts = new int[GradientBucketCount];
-        for (int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
-        {
-            if ((pixelIndex & CancellationCheckMask) == 0)
-                cancellationToken.ThrowIfCancellationRequested();
+        (int Start, int End, int[] Counts)[] chunkHistograms = ParallelRunner.MapChunks(
+            pixelCount,
+            cancellationToken,
+            (start, end) =>
+            {
+                var counts = new int[GradientBucketCount];
+                for (int pixelIndex = start; pixelIndex < end; pixelIndex++)
+                    counts[GetGradientBucketIndex(gradientSquared[pixelIndex])]++;
+                return (start, end, counts);
+            });
 
-            bucketCounts[GetGradientBucketIndex(gradientSquared[pixelIndex])]++;
-        }
-
-        var bucketWriteOffsets = new int[GradientBucketCount];
+        // Prefix sum in (bucket, chunk) order preserves exact row-major order inside every bucket.
         int runningOffset = 0;
         for (int bucket = 0; bucket < GradientBucketCount; bucket++)
         {
-            bucketWriteOffsets[bucket] = runningOffset;
-            runningOffset += bucketCounts[bucket];
+            for (int c = 0; c < chunkHistograms.Length; c++)
+            {
+                int count = chunkHistograms[c].Counts[bucket];
+                chunkHistograms[c].Counts[bucket] = runningOffset;
+                runningOffset += count;
+            }
         }
 
         var orderedPixels = new int[pixelCount];
-        for (int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
+        ParallelRunner.For(chunkHistograms.Length, cancellationToken, c =>
         {
-            if ((pixelIndex & CancellationCheckMask) == 0)
-                cancellationToken.ThrowIfCancellationRequested();
-
-            int bucket = GetGradientBucketIndex(gradientSquared[pixelIndex]);
-            orderedPixels[bucketWriteOffsets[bucket]++] = pixelIndex;
-        }
+            (int start, int end, int[] writeOffsets) = chunkHistograms[c];
+            for (int pixelIndex = start; pixelIndex < end; pixelIndex++)
+            {
+                int bucket = GetGradientBucketIndex(gradientSquared[pixelIndex]);
+                orderedPixels[writeOffsets[bucket]++] = pixelIndex;
+            }
+        });
 
         return orderedPixels;
     }
@@ -101,24 +109,43 @@ internal static class MeanShiftRegionClusterer
         CancellationToken cancellationToken)
     {
         var gradientSquared = new double[size.Count];
-        var state = (modes, gradientSquared);
-        for (int y = 0; y < size.Height; y++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            GridNeighborhood.ForEachForwardPairInRow(
-                size,
-                y,
-                GridConnectivity.FourConnected,
-                state,
-                static (firstIndex, secondIndex, s) =>
+        int width = size.Width;
+        int height = size.Height;
+        int minRowParallel = size.Count >= ParallelRunner.DefaultMinParallelCount && height >= 4
+            ? 2
+            : height + 1;
+
+        ParallelRunner.ForChunks(
+            height,
+            cancellationToken,
+            (startRow, endRow) =>
+            {
+                for (int y = startRow; y < endRow; y++)
                 {
-                    double differenceSquared = s.modes[firstIndex].Color.EuclideanDistanceSquared(s.modes[secondIndex].Color);
-                    if (differenceSquared > s.gradientSquared[firstIndex])
-                        s.gradientSquared[firstIndex] = differenceSquared;
-                    if (differenceSquared > s.gradientSquared[secondIndex])
-                        s.gradientSquared[secondIndex] = differenceSquared;
-                });
-        }
+                    int rowBase = y * width;
+                    bool hasNorth = y > 0;
+                    bool hasSouth = y + 1 < height;
+
+                    for (int x = 0; x < width; x++)
+                    {
+                        int p = rowBase + x;
+                        Lab32 centerColor = modes[p].Color;
+                        double maxDiffSq = 0.0;
+
+                        if (x > 0)
+                            maxDiffSq = Math.Max(maxDiffSq, centerColor.EuclideanDistanceSquared(modes[p - 1].Color));
+                        if (x + 1 < width)
+                            maxDiffSq = Math.Max(maxDiffSq, centerColor.EuclideanDistanceSquared(modes[p + 1].Color));
+                        if (hasNorth)
+                            maxDiffSq = Math.Max(maxDiffSq, centerColor.EuclideanDistanceSquared(modes[p - width].Color));
+                        if (hasSouth)
+                            maxDiffSq = Math.Max(maxDiffSq, centerColor.EuclideanDistanceSquared(modes[p + width].Color));
+
+                        gradientSquared[p] = maxDiffSq;
+                    }
+                }
+            },
+            minParallelCount: minRowParallel);
 
         return gradientSquared;
     }

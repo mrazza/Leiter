@@ -612,4 +612,64 @@ public class RegionGraphTests
         Assert.Equal(int.MaxValue, bridgeBand4.Distances[2, 1]);
         Assert.Equal(1, bridgeBand8.Distances[2, 1]);
     }
+
+    [Fact]
+    public void FromLabels_LargeGridAboveParallelThreshold_ShouldPreserveRowMajorIdsAndBoundaryBand()
+    {
+        const int width = 320;
+        const int height = 240; // 76,800 pixels (> ParallelRunner threshold)
+        var rawLabels = new SequentialMatrix<int>(width, height);
+        var expectedDense = new SequentialMatrix<int>(width, height);
+        var rowMajorMap = new Dictionary<int, int>();
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int raw = ((x / 64) + ((y / 48) * 5)) switch
+                {
+                    0 => -500,
+                    1 => 42,
+                    2 => -500, // reappears after 42
+                    3 => 999,
+                    int k => 1000 + (k % 17),
+                };
+                rawLabels[x, y] = raw;
+
+                if (!rowMajorMap.TryGetValue(raw, out int dense))
+                {
+                    dense = rowMajorMap.Count;
+                    rowMajorMap.Add(raw, dense);
+                }
+
+                expectedDense[x, y] = dense;
+            }
+        }
+
+        RegionGraph graph = RegionGraph.FromLabels(rawLabels, GridConnectivity.FourConnected);
+
+        Assert.Equal(rowMajorMap.Count, graph.RegionCount);
+        MatrixAssert.Equal(expectedDense, graph.Labels);
+
+        int summedPixels = 0;
+        for (int r = 0; r < graph.RegionCount; r++)
+        {
+            Assert.Equal(r, graph.Regions[r].Id);
+            summedPixels += graph.Regions[r].Pixels.Count;
+        }
+        Assert.Equal(width * height, summedPixels);
+
+        for (int i = 1; i < graph.Boundaries.Count; i++)
+        {
+            RegionBoundary prev = graph.Boundaries[i - 1];
+            RegionBoundary curr = graph.Boundaries[i];
+            Assert.True(prev.First < curr.First || (prev.First == curr.First && prev.Second < curr.Second));
+        }
+
+        RegionBoundaryBand band = graph.ComputeBoundaryBand(maxRadius: 3);
+        Assert.Equal(0, band.Distances[63, 10]); // border pixel between col block 0 and col block 1
+        Assert.Equal(1, band.Distances[62, 10]);
+        Assert.Equal(3, band.Distances[60, 10]);
+        Assert.Equal(int.MaxValue, band.Distances[59, 10]);
+    }
 }

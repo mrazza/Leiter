@@ -158,4 +158,42 @@ public class MeanShiftRegionClustererTests
         Assert.Throws<OperationCanceledException>(() =>
             MeanShiftRegionClusterer.ClusterModes(img, sourcePixels, modes, MeanShiftOptions.Default, canceledCts.Token));
     }
+
+    [Fact]
+    public void ClusterModes_LargeGridAboveParallelThreshold_ShouldBeDeterministic()
+    {
+        const int width = 300;
+        const int height = 256; // 76,800 pixels (> ParallelRunner threshold)
+        var modes = new MeanShiftMode[width * height];
+        var sourcePixels = new Lab32[width * height];
+        var matrix = new SequentialMatrix<Lab32>(width, height);
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int colorId = ((x / 100) + ((y / 86) * 2)) % 4;
+                Lab32 color = colorId switch
+                {
+                    0 => new Lab32(15f, 10f, -15f),
+                    1 => new Lab32(55f, -25f, 30f),
+                    2 => new Lab32(90f, 5f, -5f),
+                    _ => new Lab32(35f, 30f, 25f),
+                };
+
+                int idx = (y * width) + x;
+                sourcePixels[idx] = color;
+                modes[idx] = new MeanShiftMode(x, y, color);
+                matrix[idx] = color;
+            }
+        }
+
+        var options = new MeanShiftOptions(SpatialRadius: 4, RangeRadius: 5.0, MinRegionSize: 20);
+        Matrix<LongPixel> first = MeanShiftRegionClusterer.ClusterModes(matrix, sourcePixels, modes, options).ToMatrix();
+        Matrix<LongPixel> second = MeanShiftRegionClusterer.ClusterModes(matrix, sourcePixels, modes, options).ToMatrix();
+
+        MatrixAssert.Equal(first, second);
+        Assert.Equal(first[0, 0], first[99, 85]);
+        Assert.NotEqual(first[0, 0], first[100, 0]);
+    }
 }

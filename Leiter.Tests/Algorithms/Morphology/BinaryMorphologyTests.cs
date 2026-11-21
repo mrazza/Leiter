@@ -1,5 +1,6 @@
 namespace Leiter.Tests.Algorithms.Morphology;
 
+using System;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Morphology;
 using Leiter.Core;
@@ -299,5 +300,66 @@ public class BinaryMorphologyTests
         var emptyMask = new MaskMatrix(4, 4);
         var allFalseView = new MatrixView<bool>(emptyMask, 0, 0, 3, 3, EdgeHandling.Extend);
         MatrixAssert.Equal(new MaskMatrix(3, 3), BinaryMorphology.FilterConnectedComponents(allFalseView));
+    }
+
+    [Fact]
+    public void FilterConnectedComponents_LargeGridWithStripSeams_ShouldStitchAllStripsAccurately()
+    {
+        const int width = 320;
+        const int height = 256; // 81,920 pixels (> ParallelRunner threshold)
+        var mask = new MaskMatrix(width, height);
+
+        // Component A: Thin continuous 2px-wide vertical ribbon across ALL 256 rows (512 px).
+        for (int y = 0; y < height; y++)
+        {
+            mask[20, y] = true;
+            mask[21, y] = true;
+        }
+
+        // Component B: Diagonal staircase stepping 1px per row (256 px connected only under 8-connectivity).
+        for (int y = 0; y < height; y++)
+            mask[40 + y, y] = true;
+
+        // Component C: Solid 10x10 block (100 px) safely away from A and B.
+        for (int y = 100; y < 110; y++)
+        {
+            for (int x = 300; x < 310; x++)
+                mask[x, y] = true;
+        }
+
+        // Under 8-connectivity and MinAreaFraction keeping >= 200 px, both A (512 px) and B (256 px) survive while C (100 px) is pruned.
+        double fractionFor200 = 200.0 / (width * height);
+        MaskMatrix eightKeepLarge = BinaryMorphology.FilterConnectedComponents(
+            mask,
+            ComponentRetentionPolicy.MinimumAreaFraction,
+            fractionFor200,
+            GridConnectivity.EightConnected);
+        Assert.True(eightKeepLarge[20, 0]);
+        Assert.True(eightKeepLarge[20, height - 1]);
+        Assert.True(eightKeepLarge[40, 0]);
+        Assert.True(eightKeepLarge[40 + height - 1, height - 1]);
+        Assert.False(eightKeepLarge[305, 105]);
+
+        // Under 4-connectivity, diagonal staircase B breaks into singletons (size 1) and is completely filtered out!
+        MaskMatrix fourKeepLarge = BinaryMorphology.FilterConnectedComponents(
+            mask,
+            ComponentRetentionPolicy.MinimumAreaFraction,
+            fractionFor200,
+            GridConnectivity.FourConnected);
+        Assert.True(fourKeepLarge[20, 0]);
+        Assert.True(fourKeepLarge[20, height - 1]);
+        Assert.False(fourKeepLarge[40, 0]);
+        Assert.False(fourKeepLarge[40 + 128, 128]);
+        Assert.False(fourKeepLarge[305, 105]);
+
+        // LargestComponentOnly retains only the 512px vertical ribbon across all strips.
+        MaskMatrix largest = BinaryMorphology.FilterConnectedComponents(
+            mask,
+            ComponentRetentionPolicy.LargestComponentOnly,
+            connectivity: GridConnectivity.EightConnected);
+        Assert.True(largest[20, 0]);
+        Assert.True(largest[20, height - 1]);
+        Assert.False(largest[40, 0]);
+        Assert.False(largest[305, 105]);
     }
 }

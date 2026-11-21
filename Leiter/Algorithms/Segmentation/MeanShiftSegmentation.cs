@@ -218,17 +218,21 @@ public static class MeanShiftSegmentation
             MeanShiftModeSeeker.SeekModes(lab, resolvedOptions, cancellationToken: cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        Matrix<Lab32> filtered = BuildFilteredLabMatrix(lab.Size, modes);
+        Matrix<Lab32> filtered = BuildFilteredLabMatrix(lab.Size, modes, cancellationToken);
         return (modes, sourcePixels, filtered);
     }
 
-    private static Matrix<Lab32> BuildFilteredLabMatrix(Size size, MeanShiftMode[] modes)
+    private static Matrix<Lab32> BuildFilteredLabMatrix(Size size, MeanShiftMode[] modes, CancellationToken cancellationToken)
     {
         var resultData = new Lab32[modes.Length];
-        for (int i = 0; i < resultData.Length; i++)
-        {
-            resultData[i] = modes[i].Color;
-        }
+        Algorithms.Internal.ParallelRunner.ForChunks(
+            resultData.Length,
+            cancellationToken,
+            (start, end) =>
+            {
+                for (int i = start; i < end; i++)
+                    resultData[i] = modes[i].Color;
+            });
 
         return new SequentialMatrix<Lab32>(size.Width, size.Height, resultData);
     }

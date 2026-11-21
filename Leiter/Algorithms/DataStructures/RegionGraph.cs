@@ -1,5 +1,10 @@
 namespace Leiter.Algorithms.DataStructures;
 
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 
 /// <summary>
@@ -111,25 +116,159 @@ public sealed class RegionGraph
         if (labels.Count == 0)
             return CreateEmpty(labels.Size, connectivity);
 
-        var denseLabels = new SequentialMatrix<int>(labels.Size);
-        var idMap = new Dictionary<TLabel, int>();
+        SequentialMatrix<int> denseLabels = RemapLabelsToDense(labels, out int regionCount);
+        return BuildFromDenseLabels(denseLabels, regionCount, connectivity);
+    }
 
-        for (int y = 0; y < labels.Height; y++)
+    private sealed class StripRemapResult<TLabel>(
+        int startRow,
+        int endRow,
+        List<TLabel> firstSeenOrder)
+        where TLabel : struct, IEquatable<TLabel>
+    {
+        public readonly int StartRow = startRow;
+        public readonly int EndRow = endRow;
+        public readonly List<TLabel> FirstSeenOrder = firstSeenOrder;
+        public int[]? LocalToGlobal;
+        public bool IsIdentityMapping;
+    }
+
+    private sealed class StripBoundaryAccumulator
+    {
+        public readonly Dictionary<ulong, (List<int> FirstIndices, List<int> SecondIndices)> Pairs = new();
+
+        public void AddPair(int firstIndex, int secondIndex, int firstLabel, int secondLabel)
         {
-            for (int x = 0; x < labels.Width; x++)
+            ulong pairKey = GridNeighborhood.PackUnorderedPairKey(firstLabel, secondLabel);
+            if (!Pairs.TryGetValue(pairKey, out var lists))
             {
-                TLabel rawId = labels[x, y];
-                if (!idMap.TryGetValue(rawId, out int denseId))
-                {
-                    denseId = idMap.Count;
-                    idMap.Add(rawId, denseId);
-                }
+                lists = (new List<int>(), new List<int>());
+                Pairs.Add(pairKey, lists);
+            }
 
-                denseLabels[x, y] = denseId;
+            if (firstLabel < secondLabel)
+            {
+                lists.FirstIndices.Add(firstIndex);
+                lists.SecondIndices.Add(secondIndex);
+            }
+            else
+            {
+                lists.FirstIndices.Add(secondIndex);
+                lists.SecondIndices.Add(firstIndex);
             }
         }
+    }
 
-        return BuildFromDenseLabels(denseLabels, idMap.Count, connectivity);
+    private static SequentialMatrix<int> RemapLabelsToDense<TLabel>(
+        IReadOnlyMatrix<TLabel> labels,
+        out int regionCount)
+        where TLabel : struct, IEquatable<TLabel>
+    {
+        int width = labels.Width;
+        int height = labels.Height;
+        var denseLabels = new SequentialMatrix<int>(labels.Size);
+        int[] denseData = denseLabels.RawData;
+        TLabel[]? rawLabels = labels is SequentialMatrix<TLabel> seq ? seq.RawData : null;
+
+        if (labels.Count < ParallelRunner.DefaultMinParallelCount || height < 8 || Environment.ProcessorCount <= 1)
+        {
+            var idMap = new Dictionary<TLabel, int>();
+            for (int y = 0; y < height; y++)
+            {
+                int rowBase = y * width;
+                for (int x = 0; x < width; x++)
+                {
+                    int index = rowBase + x;
+                    TLabel rawId = rawLabels is not null ? rawLabels[index] : labels[index];
+                    if (!idMap.TryGetValue(rawId, out int denseId))
+                    {
+                        denseId = idMap.Count;
+                        idMap.Add(rawId, denseId);
+                    }
+
+                    denseData[index] = denseId;
+                }
+            }
+
+            regionCount = idMap.Count;
+            return denseLabels;
+        }
+
+        // Step 1: Discover per-strip unique labels in row-major order and write strip-local IDs.
+        StripRemapResult<TLabel>[] strips = ParallelRunner.MapChunks(
+            height,
+            CancellationToken.None,
+            (startRow, endRow) =>
+            {
+                var localMap = new Dictionary<TLabel, int>();
+                var firstSeen = new List<TLabel>();
+
+                for (int y = startRow; y < endRow; y++)
+                {
+                    int rowBase = y * width;
+                    for (int x = 0; x < width; x++)
+                    {
+                        int index = rowBase + x;
+                        TLabel rawId = rawLabels is not null ? rawLabels[index] : labels[index];
+                        if (!localMap.TryGetValue(rawId, out int localId))
+                        {
+                            localId = firstSeen.Count;
+                            localMap.Add(rawId, localId);
+                            firstSeen.Add(rawId);
+                        }
+
+                        denseData[index] = localId;
+                    }
+                }
+
+                return new StripRemapResult<TLabel>(startRow, endRow, firstSeen);
+            },
+            minParallelCount: 2);
+
+        // Step 2: Assign global dense IDs sequentially across strip first-seen lists to match exact row-major order.
+        var globalMap = new Dictionary<TLabel, int>();
+        for (int s = 0; s < strips.Length; s++)
+        {
+            StripRemapResult<TLabel> strip = strips[s];
+            List<TLabel> firstSeen = strip.FirstSeenOrder;
+            var localToGlobal = new int[firstSeen.Count];
+            bool identity = true;
+
+            for (int i = 0; i < firstSeen.Count; i++)
+            {
+                TLabel rawId = firstSeen[i];
+                if (!globalMap.TryGetValue(rawId, out int globalId))
+                {
+                    globalId = globalMap.Count;
+                    globalMap.Add(rawId, globalId);
+                }
+
+                localToGlobal[i] = globalId;
+                if (globalId != i)
+                    identity = false;
+            }
+
+            strip.LocalToGlobal = localToGlobal;
+            strip.IsIdentityMapping = identity;
+        }
+
+        regionCount = globalMap.Count;
+
+        // Step 3: Translate strip-local IDs to global dense IDs in parallel.
+        ParallelRunner.For(strips.Length, CancellationToken.None, s =>
+        {
+            StripRemapResult<TLabel> strip = strips[s];
+            if (strip.IsIdentityMapping)
+                return;
+
+            int[] localToGlobal = strip.LocalToGlobal!;
+            int startIndex = strip.StartRow * width;
+            int endIndex = strip.EndRow * width;
+            for (int i = startIndex; i < endIndex; i++)
+                denseData[i] = localToGlobal[denseData[i]];
+        });
+
+        return denseLabels;
     }
 
     /// <summary>
@@ -411,6 +550,12 @@ public sealed class RegionGraph
         }
 
         ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(Connectivity);
+        int neighborCount = neighbors.Length;
+        var neighborOffsets = new int[neighborCount];
+        for (int s = 0; s < neighborCount; s++)
+            neighborOffsets[s] = size.IndexOf(neighbors[s].Offset);
+
+        byte[] neighborMasks = BuildNeighborMasks(size, neighbors);
         ReadOnlySpan<int> labelSpan = labels.AsReadOnlySpan();
 
         while (queue.Count > 0)
@@ -423,15 +568,14 @@ public sealed class RegionGraph
             int curBoundary = boundaryData[curIdx];
             int curSeed = seedData[curIdx];
             RegionBoundary b = Boundaries[curBoundary];
-            Coord cur = size.CoordOf(curIdx);
+            byte validMask = neighborMasks[curIdx];
 
-            for (int s = 0; s < neighbors.Length; s++)
+            for (int s = 0; s < neighborCount; s++)
             {
-                Coord neighbor = cur + neighbors[s].Offset;
-                if (!size.Contains(neighbor))
+                if ((validMask & (1 << s)) == 0)
                     continue;
 
-                int nIdx = size.IndexOf(neighbor);
+                int nIdx = curIdx + neighborOffsets[s];
                 if (restrictToIncidentRegions)
                 {
                     int nLabel = labelSpan[nIdx];
@@ -459,6 +603,45 @@ public sealed class RegionGraph
             seedPixels.ToArray());
     }
 
+    private static byte[] BuildNeighborMasks(Size size, ReadOnlySpan<GridNeighbor> neighbors)
+    {
+        int width = size.Width;
+        int height = size.Height;
+        byte fullMask = (byte)((1 << neighbors.Length) - 1);
+        var masks = new byte[size.Count];
+        Array.Fill(masks, fullMask);
+
+        byte topClear = 0;
+        byte bottomClear = 0;
+        byte leftClear = 0;
+        byte rightClear = 0;
+        for (int s = 0; s < neighbors.Length; s++)
+        {
+            byte bit = (byte)(1 << s);
+            Coord offset = neighbors[s].Offset;
+            if (offset.Y < 0) topClear |= bit;
+            if (offset.Y > 0) bottomClear |= bit;
+            if (offset.X < 0) leftClear |= bit;
+            if (offset.X > 0) rightClear |= bit;
+        }
+
+        int bottomRowBase = (height - 1) * width;
+        for (int x = 0; x < width; x++)
+        {
+            masks[x] &= (byte)~topClear;
+            masks[bottomRowBase + x] &= (byte)~bottomClear;
+        }
+
+        for (int y = 0; y < height; y++)
+        {
+            int rowBase = y * width;
+            masks[rowBase] &= (byte)~leftClear;
+            masks[rowBase + width - 1] &= (byte)~rightClear;
+        }
+
+        return masks;
+    }
+
     private static RegionGraph CreateEmpty(Size size, GridConnectivity connectivity) =>
         new(
             new SequentialMatrix<int>(size),
@@ -477,103 +660,98 @@ public sealed class RegionGraph
         Size size = denseLabels.Size;
         int width = size.Width;
         int height = size.Height;
-
-        ReadOnlySpan<int> labelSpan = denseLabels.AsReadOnlySpan();
-        var pixelCounts = new int[regionCount];
-        for (int i = 0; i < labelSpan.Length; i++)
-            pixelCounts[labelSpan[i]]++;
-
-        var regions = new Region<Coord>[regionCount];
-        for (int id = 0; id < regionCount; id++)
-            regions[id] = new Region<Coord>(pixelCounts[id]) { Id = id };
-
         int[] labelData = denseLabels.RawData;
-        for (int y = 0; y < height; y++)
-        {
-            int rowBase = size.IndexOf(0, y);
-            for (int x = 0; x < width; x++)
+
+        Region<Coord>[] regions = BuildRegions(size, labelData, regionCount);
+
+        int minRowParallel = denseLabels.Count >= ParallelRunner.DefaultMinParallelCount && height >= 8
+            ? 2
+            : height + 1;
+
+        StripBoundaryAccumulator[] stripAccumulators = ParallelRunner.MapChunks(
+            height,
+            CancellationToken.None,
+            (startRow, endRow) =>
             {
-                regions[labelData[rowBase + x]].Pixels.Add(new Coord(x, y));
-            }
-        }
-
-        var pairToBoundaryBuilder = new Dictionary<ulong, (List<int> FirstIndices, List<int> SecondIndices)>();
-        GridNeighborhood.ForEachForwardPair(
-            size,
-            connectivity,
-            (labelData, pairToBoundaryBuilder),
-            static (firstIndex, secondIndex, state) =>
-            {
-                int firstLabel = state.labelData[firstIndex];
-                int secondLabel = state.labelData[secondIndex];
-                if (firstLabel == secondLabel)
-                    return;
-
-                ulong pairKey = GridNeighborhood.PackUnorderedPairKey(firstLabel, secondLabel);
-                if (!state.pairToBoundaryBuilder.TryGetValue(pairKey, out var lists))
+                var acc = new StripBoundaryAccumulator();
+                var state = (labelData, acc);
+                for (int y = startRow; y < endRow; y++)
                 {
-                    lists = (new List<int>(), new List<int>());
-                    state.pairToBoundaryBuilder.Add(pairKey, lists);
+                    GridNeighborhood.ForEachForwardPairInRow(
+                        size,
+                        y,
+                        connectivity,
+                        state,
+                        static (firstIndex, secondIndex, s) =>
+                        {
+                            int firstLabel = s.labelData[firstIndex];
+                            int secondLabel = s.labelData[secondIndex];
+                            if (firstLabel != secondLabel)
+                                s.acc.AddPair(firstIndex, secondIndex, firstLabel, secondLabel);
+                        });
                 }
 
-                if (firstLabel < secondLabel)
-                {
-                    lists.FirstIndices.Add(firstIndex);
-                    lists.SecondIndices.Add(secondIndex);
-                }
-                else
-                {
-                    lists.FirstIndices.Add(secondIndex);
-                    lists.SecondIndices.Add(firstIndex);
-                }
-            });
+                return acc;
+            },
+            minParallelCount: minRowParallel);
 
-        ulong[] sortedKeys = pairToBoundaryBuilder.Keys.ToArray();
+        StripBoundaryAccumulator merged = MergeStripBoundaries(stripAccumulators);
+
+        ulong[] sortedKeys = merged.Pairs.Keys.ToArray();
         Array.Sort(sortedKeys);
 
         int boundaryCount = sortedKeys.Length;
-        var sortedPairs = new (int First, int Second, int[] FirstUnique, int[] SecondUnique)[boundaryCount];
-        int totalBorderCoords = 0;
-
+        var rawPairs = new (List<int> FirstIndices, List<int> SecondIndices)[boundaryCount];
         for (int i = 0; i < boundaryCount; i++)
+            rawPairs[i] = merged.Pairs[sortedKeys[i]];
+
+        var sortedPairs = new (int First, int Second, int[] FirstUnique, int[] SecondUnique)[boundaryCount];
+        ParallelRunner.For(boundaryCount, CancellationToken.None, i =>
         {
             ulong key = sortedKeys[i];
             int firstRegion = (int)(key >> 32);
             int secondRegion = (int)(uint)key;
-            var (rawFirst, rawSecond) = pairToBoundaryBuilder[key];
+            var (rawFirst, rawSecond) = rawPairs[i];
+            sortedPairs[i] = (
+                firstRegion,
+                secondRegion,
+                SortAndDeduplicate(rawFirst),
+                SortAndDeduplicate(rawSecond));
+        });
 
-            int[] firstUnique = SortAndDeduplicate(rawFirst);
-            int[] secondUnique = SortAndDeduplicate(rawSecond);
+        var boundaryCoordOffsets = new int[boundaryCount];
+        var degrees = new int[regionCount];
+        int totalBorderCoords = 0;
+        for (int i = 0; i < boundaryCount; i++)
+        {
+            var (firstRegion, secondRegion, firstUnique, secondUnique) = sortedPairs[i];
+            boundaryCoordOffsets[i] = totalBorderCoords;
             totalBorderCoords += firstUnique.Length + secondUnique.Length;
-            sortedPairs[i] = (firstRegion, secondRegion, firstUnique, secondUnique);
+            degrees[firstRegion]++;
+            degrees[secondRegion]++;
         }
 
         var packedBorderCoords = new Coord[totalBorderCoords];
         var boundaries = new RegionBoundary[boundaryCount];
-        var degrees = new int[regionCount];
-        int coordCursor = 0;
-
-        for (int i = 0; i < boundaryCount; i++)
+        ParallelRunner.For(boundaryCount, CancellationToken.None, i =>
         {
             var (firstRegion, secondRegion, firstUnique, secondUnique) = sortedPairs[i];
+            int firstOffset = boundaryCoordOffsets[i];
+            int cursor = firstOffset;
 
-            int firstOffset = coordCursor;
             for (int k = 0; k < firstUnique.Length; k++)
-                packedBorderCoords[coordCursor++] = size.CoordOf(firstUnique[k]);
+                packedBorderCoords[cursor++] = size.CoordOf(firstUnique[k]);
 
-            int secondOffset = coordCursor;
+            int secondOffset = cursor;
             for (int k = 0; k < secondUnique.Length; k++)
-                packedBorderCoords[coordCursor++] = size.CoordOf(secondUnique[k]);
+                packedBorderCoords[cursor++] = size.CoordOf(secondUnique[k]);
 
             boundaries[i] = new RegionBoundary(
                 firstRegion,
                 secondRegion,
                 packedBorderCoords.AsMemory(firstOffset, firstUnique.Length),
                 packedBorderCoords.AsMemory(secondOffset, secondUnique.Length));
-
-            degrees[firstRegion]++;
-            degrees[secondRegion]++;
-        }
+        });
 
         var neighborOffsets = new int[regionCount + 1];
         for (int id = 0; id < regionCount; id++)
@@ -608,6 +786,121 @@ public sealed class RegionGraph
             neighborIds,
             boundaryIndices,
             neighborOffsets);
+    }
+
+    private static Region<Coord>[] BuildRegions(Size size, int[] labelData, int regionCount)
+    {
+        int width = size.Width;
+        int height = size.Height;
+        int stripCount = Math.Min(height, Math.Clamp(Environment.ProcessorCount * 4, 2, 128));
+        bool useParallelScatter =
+            labelData.Length >= ParallelRunner.DefaultMinParallelCount &&
+            height >= 8 &&
+            Environment.ProcessorCount > 1 &&
+            ((long)stripCount * regionCount) <= 4_000_000L;
+
+        if (!useParallelScatter)
+        {
+            var pixelCounts = new int[regionCount];
+            for (int i = 0; i < labelData.Length; i++)
+                pixelCounts[labelData[i]]++;
+
+            var sequentialRegions = new Region<Coord>[regionCount];
+            for (int id = 0; id < regionCount; id++)
+                sequentialRegions[id] = new Region<Coord>(pixelCounts[id]) { Id = id };
+
+            for (int y = 0; y < height; y++)
+            {
+                int rowBase = y * width;
+                for (int x = 0; x < width; x++)
+                    sequentialRegions[labelData[rowBase + x]].Pixels.Add(new Coord(x, y));
+            }
+
+            return sequentialRegions;
+        }
+
+        var stripBounds = new (int StartRow, int EndRow)[stripCount];
+        var stripWriteOffsets = new int[stripCount][];
+
+        ParallelRunner.For(stripCount, CancellationToken.None, s =>
+        {
+            int startRow = (int)((long)s * height / stripCount);
+            int endRow = (int)((long)(s + 1) * height / stripCount);
+            stripBounds[s] = (startRow, endRow);
+
+            var counts = new int[regionCount];
+            int startIndex = startRow * width;
+            int endIndex = endRow * width;
+            for (int i = startIndex; i < endIndex; i++)
+                counts[labelData[i]]++;
+
+            stripWriteOffsets[s] = counts;
+        });
+
+        var regionOffsets = new int[regionCount + 1];
+        int runningTotal = 0;
+        for (int r = 0; r < regionCount; r++)
+        {
+            regionOffsets[r] = runningTotal;
+            for (int s = 0; s < stripCount; s++)
+            {
+                int count = stripWriteOffsets[s][r];
+                stripWriteOffsets[s][r] = runningTotal;
+                runningTotal += count;
+            }
+        }
+        regionOffsets[regionCount] = runningTotal;
+
+        var packedRegionCoords = new Coord[labelData.Length];
+        ParallelRunner.For(stripCount, CancellationToken.None, s =>
+        {
+            (int startRow, int endRow) = stripBounds[s];
+            int[] cursors = stripWriteOffsets[s];
+            for (int y = startRow; y < endRow; y++)
+            {
+                int rowBase = y * width;
+                for (int x = 0; x < width; x++)
+                    packedRegionCoords[cursors[labelData[rowBase + x]]++] = new Coord(x, y);
+            }
+        });
+
+        var regions = new Region<Coord>[regionCount];
+        ParallelRunner.For(regionCount, CancellationToken.None, id =>
+        {
+            int start = regionOffsets[id];
+            int count = regionOffsets[id + 1] - start;
+            var region = new Region<Coord>(count) { Id = id };
+            for (int i = start; i < start + count; i++)
+                region.Pixels.Add(packedRegionCoords[i]);
+            regions[id] = region;
+        });
+
+        return regions;
+    }
+
+    private static StripBoundaryAccumulator MergeStripBoundaries(StripBoundaryAccumulator[] stripAccumulators)
+    {
+        if (stripAccumulators.Length == 1)
+            return stripAccumulators[0];
+
+        var merged = new StripBoundaryAccumulator();
+        for (int s = 0; s < stripAccumulators.Length; s++)
+        {
+            foreach (var (key, lists) in stripAccumulators[s].Pairs)
+            {
+                if (!merged.Pairs.TryGetValue(key, out var target))
+                {
+                    merged.Pairs.Add(key, lists);
+                }
+                else
+                {
+                    target.FirstIndices.AddRange(lists.FirstIndices);
+                    target.SecondIndices.AddRange(lists.SecondIndices);
+                }
+            }
+        }
+
+        return merged;
     }
 
     private static int[] SortAndDeduplicate(List<int> indices)
