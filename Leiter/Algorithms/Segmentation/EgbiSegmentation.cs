@@ -26,32 +26,6 @@ public static class EgbiSegmentation
     private const int CancellationCheckMask = 4095;
     private readonly record struct PartitionInfo(double InternalDifference);
 
-    private interface IPixelSource<T>
-        where T : struct, IPixel<T>
-    {
-        T this[int index] { get; }
-    }
-
-    private readonly struct ArrayPixelSource<T>(T[] raw) : IPixelSource<T>
-        where T : struct, IPixel<T>
-    {
-        public T this[int index]
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => raw[index];
-        }
-    }
-
-    private readonly struct MatrixPixelSource<T>(IReadOnlyMatrix<T> matrix) : IPixelSource<T>
-        where T : struct, IPixel<T>
-    {
-        public T this[int index]
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => matrix[index];
-        }
-    }
-
     private readonly struct EgbiEdgeComparer : IComparer<UndirectedGraphEdge<int>>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -167,9 +141,9 @@ public static class EgbiSegmentation
             return [];
 
         var edges = new UndirectedGraphEdge<int>[totalEdges];
-        if (image is SequentialMatrix<T> sequential)
+        if (image.TryGetRawArray() is T[] raw)
         {
-            var source = new ArrayPixelSource<T>(sequential.RawData);
+            var source = new ArrayPixelSource<T>(raw);
             ParallelRunner.For(
                 height,
                 cancellationToken,

@@ -3,7 +3,6 @@ namespace Leiter.Algorithms.Saliency;
 using System;
 using System.Collections.Generic;
 using System.Threading;
-using System.Threading.Tasks;
 using Leiter.Algorithms.DistanceTransform;
 using Leiter.Algorithms.Internal;
 using Leiter.Core;
@@ -106,14 +105,16 @@ public static class SaliencyDistanceField
             }
         }
 
-        if (cancellationToken.CanBeCanceled)
-        {
-            Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, NormalizeRow);
-        }
-        else
-        {
-            Parallel.For(0, height, NormalizeRow);
-        }
+        ParallelRunner.ForRows(
+            field.Size,
+            cancellationToken,
+            (startRow, endRow) =>
+            {
+                for (int y = startRow; y < endRow; y++)
+                    NormalizeRow(y);
+            },
+            minParallelPixels: 1,
+            minHeight: 2);
 
         return field;
     }
@@ -229,14 +230,10 @@ public static class SaliencyDistanceField
         int width = sourceField.Width;
         int height = sourceField.Height;
 
-        if (sourceField is SequentialMatrix<DoublePixel> srcSeq &&
-            salientMask is SequentialMatrix<bool> maskSeq &&
-            destination is SequentialMatrix<DoublePixel> dstSeq)
+        if (sourceField.TryGetRawArray() is DoublePixel[] srcRaw &&
+            salientMask.TryGetRawArray() is bool[] maskRaw &&
+            destination.TryGetRawArray() is DoublePixel[] dstRaw)
         {
-            DoublePixel[] srcRaw = srcSeq.RawData;
-            bool[] maskRaw = maskSeq.RawData;
-            DoublePixel[] dstRaw = dstSeq.RawData;
-
             ParallelRunner.ForChunks(
                 dstRaw.Length,
                 cancellationToken,
@@ -249,12 +246,8 @@ public static class SaliencyDistanceField
             return destination;
         }
 
-        int minRowParallel = sourceField.Count >= ParallelRunner.DefaultMinParallelCount && height >= 8
-            ? 2
-            : height + 1;
-
-        ParallelRunner.ForChunks(
-            height,
+        ParallelRunner.ForRows(
+            sourceField.Size,
             cancellationToken,
             (startRow, endRow) =>
             {
@@ -267,8 +260,7 @@ public static class SaliencyDistanceField
                             : ScalarMath.ClampUnitOrDefault(sourceField[x, y].Value);
                     }
                 }
-            },
-            minParallelCount: minRowParallel);
+            });
 
         return destination;
     }

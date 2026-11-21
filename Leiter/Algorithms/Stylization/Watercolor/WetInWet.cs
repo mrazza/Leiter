@@ -3,7 +3,6 @@ namespace Leiter.Algorithms.Stylization.Watercolor;
 using System;
 using System.Diagnostics;
 using System.Threading;
-using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
@@ -85,7 +84,7 @@ public static class WetInWet
         RegionColorStatistics<Rgb64>[] stats = RegionColorStatistics.Compute(regionGraph, image);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var (avgGradX, avgGradY) = ComputeAverageRegionGradients(regionGraph, image, cancellationToken);
+        Vector2D[] avgGrad = ComputeAverageRegionGradients(regionGraph, image, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
         bool canCancel = cancellationToken.CanBeCanceled;
@@ -122,8 +121,8 @@ public static class WetInWet
                 continue;
             }
 
-            bool gradRule = (avgGradX[b.First] >= opts.ColorGradientThreshold && avgGradY[b.First] >= opts.ColorGradientThreshold) ||
-                            (avgGradX[b.Second] >= opts.ColorGradientThreshold && avgGradY[b.Second] >= opts.ColorGradientThreshold);
+            bool gradRule = (avgGrad[b.First].X >= opts.ColorGradientThreshold && avgGrad[b.First].Y >= opts.ColorGradientThreshold) ||
+                            (avgGrad[b.Second].X >= opts.ColorGradientThreshold && avgGrad[b.Second].Y >= opts.ColorGradientThreshold);
 
             double hueDiff = ColorMetrics.HueDifferenceDegrees(stats[b.First].MeanHueDegrees, stats[b.Second].MeanHueDegrees);
             bool hueRule = (isSalientA || isSalientB)
@@ -179,9 +178,9 @@ public static class WetInWet
         GridNeighbor[] graphNeighbors = GridNeighborhood.GetAll(regionGraph.Connectivity).ToArray();
         ReadOnlyMemory<Coord> seedPixelsMemory = band.SeedPixels;
         Vector2D[] orientationsRaw = orientations.RawData;
-        Rgb8[]? imageRaw = image is SequentialMatrix<Rgb8> seqImage ? seqImage.RawData : null;
-        int[]? boundaryIdxRaw = band.NearestBoundaryIndices is SequentialMatrix<int> seqBi ? seqBi.RawData : null;
-        int[]? labelRaw = regionGraph.Labels is SequentialMatrix<int> seqLbl ? seqLbl.RawData : null;
+        Rgb8[]? imageRaw = image.TryGetRawArray();
+        int[]? boundaryIdxRaw = band.NearestBoundaryIndices.TryGetRawArray();
+        int[]? labelRaw = regionGraph.Labels.TryGetRawArray();
 
         int minSeedParallel = seedPixelsMemory.Length >= 4096 ? 256 : seedPixelsMemory.Length + 1;
         ParallelRunner.ForChunks(
@@ -243,15 +242,14 @@ public static class WetInWet
         cancellationToken.ThrowIfCancellationRequested();
 
         Matrix<Rgb8> seeded = image.Clone();
-        Rgb8[]? seededRaw = seeded is SequentialMatrix<Rgb8> seqSeeded ? seqSeeded.RawData : null;
+        Rgb8[]? seededRaw = seeded.TryGetRawArray();
         var wetAreaMask = new MaskMatrix(size);
         bool[] wetRaw = wetAreaMask.RawData;
-        int[]? distRaw = band.Distances is SequentialMatrix<int> seqDist ? seqDist.RawData : null;
-        int[]? nearestSeedRaw = band.NearestSeedIndices is SequentialMatrix<int> seqNearest ? seqNearest.RawData : null;
+        int[]? distRaw = band.Distances.TryGetRawArray();
+        int[]? nearestSeedRaw = band.NearestSeedIndices.TryGetRawArray();
 
-        int minRowParallel = size.Count >= ParallelRunner.DefaultMinParallelCount && height >= 8 ? 2 : height + 1;
-        ParallelRunner.ForChunks(
-            height,
+        ParallelRunner.ForRows(
+            size,
             cancellationToken,
             (startRow, endRow) =>
             {
@@ -294,8 +292,7 @@ public static class WetInWet
                         }
                     }
                 }
-            },
-            minParallelCount: minRowParallel);
+            });
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -307,8 +304,8 @@ public static class WetInWet
         cancellationToken.ThrowIfCancellationRequested();
 
         var composited = new SequentialMatrix<Rgb8>(size);
-        ParallelRunner.ForChunks(
-            height,
+        ParallelRunner.ForRows(
+            size,
             cancellationToken,
             (startRow, endRow) =>
             {
@@ -337,8 +334,7 @@ public static class WetInWet
                         composited[x, y] = Rgb8.Lerp(image[x, y], filtered[x, y], alpha);
                     }
                 }
-            },
-            minParallelCount: minRowParallel);
+            });
 
         return new WetInWetResult(composited, wetAreaMask, qualifying);
     }
@@ -524,7 +520,7 @@ public static class WetInWet
         CancellationToken cancellationToken = default) =>
         ApplyDetailed(image, segmentation, distanceField, options, cancellationToken).Image;
 
-    private static (double[] AvgGradX, double[] AvgGradY) ComputeAverageRegionGradients(
+    private static Vector2D[] ComputeAverageRegionGradients(
         RegionGraph regionGraph,
         IReadOnlyMatrix<Rgb8> image,
         CancellationToken cancellationToken)
@@ -533,22 +529,19 @@ public static class WetInWet
         int width = size.Width;
         int height = size.Height;
         int regionCount = regionGraph.RegionCount;
-        var avgGradX = new double[regionCount];
-        var avgGradY = new double[regionCount];
+        var avgGrad = new Vector2D[regionCount];
         if (regionCount == 0 || width == 0 || height == 0)
-            return (avgGradX, avgGradY);
+            return avgGrad;
 
         IReadOnlyMatrix<int> labels = regionGraph.Labels;
         (double w0, double w1, double w2, double scale) = SpatialGradients.GetKernelWeights(GradientOperator.Sobel);
         double normalizedScale = scale / 255.0;
 
         int totalPixels = size.Count;
-        var pixelGradX = new double[totalPixels];
-        var pixelGradY = new double[totalPixels];
+        var pixelGrad = new Vector2D[totalPixels];
 
-        int minRowParallel = totalPixels >= ParallelRunner.DefaultMinParallelCount && height >= 8 ? 2 : height + 1;
-        ParallelRunner.ForChunks(
-            height,
+        ParallelRunner.ForRows(
+            size,
             cancellationToken,
             (startRow, endRow) =>
             {
@@ -574,48 +567,37 @@ public static class WetInWet
                             w2,
                             normalizedScale);
 
-                        int idx = rowOffset + x;
-                        pixelGradX[idx] = SpatialGradients.ChannelNorm(gx);
-                        pixelGradY[idx] = SpatialGradients.ChannelNorm(gy);
+                        pixelGrad[rowOffset + x] = new Vector2D(
+                            SpatialGradients.ChannelNorm(gx),
+                            SpatialGradients.ChannelNorm(gy));
                     }
                 }
-            },
-            minParallelCount: minRowParallel);
+            });
 
         cancellationToken.ThrowIfCancellationRequested();
 
         bool canCancel = cancellationToken.CanBeCanceled;
-        if (labels is SequentialMatrix<int> seqLabels &&
+        if (labels.TryGetRawArray() is int[] labelRaw &&
             totalPixels >= ParallelRunner.DefaultMinParallelCount &&
             ((long)regionCount * 64) <= 4_000_000L)
         {
-            int[] labelRaw = seqLabels.RawData;
-            (double[] SumX, double[] SumY)[] chunkSums = ParallelRunner.MapChunks(
+            Vector2D[][] chunkSums = ParallelRunner.MapChunks(
                 totalPixels,
                 cancellationToken,
                 (start, end) =>
                 {
-                    var localX = new double[regionCount];
-                    var localY = new double[regionCount];
+                    var local = new Vector2D[regionCount];
                     for (int i = start; i < end; i++)
-                    {
-                        int r = labelRaw[i];
-                        localX[r] += pixelGradX[i];
-                        localY[r] += pixelGradY[i];
-                    }
+                        local[labelRaw[i]] += pixelGrad[i];
 
-                    return (localX, localY);
+                    return local;
                 });
 
             for (int c = 0; c < chunkSums.Length; c++)
             {
-                double[] localX = chunkSums[c].SumX;
-                double[] localY = chunkSums[c].SumY;
+                Vector2D[] local = chunkSums[c];
                 for (int r = 0; r < regionCount; r++)
-                {
-                    avgGradX[r] += localX[r];
-                    avgGradY[r] += localY[r];
-                }
+                    avgGrad[r] += local[r];
             }
         }
         else if (labels.TryGetReadOnlySpan(out ReadOnlySpan<int> labelSpan))
@@ -625,9 +607,7 @@ public static class WetInWet
                 if (canCancel && (i & 4095) == 0)
                     cancellationToken.ThrowIfCancellationRequested();
 
-                int r = labelSpan[i];
-                avgGradX[r] += pixelGradX[i];
-                avgGradY[r] += pixelGradY[i];
+                avgGrad[labelSpan[i]] += pixelGrad[i];
             }
         }
         else
@@ -637,12 +617,7 @@ public static class WetInWet
                 cancellationToken.ThrowIfCancellationRequested();
                 int rowOffset = size.IndexOf(0, y);
                 for (int x = 0; x < width; x++)
-                {
-                    int r = labels[x, y];
-                    int idx = rowOffset + x;
-                    avgGradX[r] += pixelGradX[idx];
-                    avgGradY[r] += pixelGradY[idx];
-                }
+                    avgGrad[labels[x, y]] += pixelGrad[rowOffset + x];
             }
         }
 
@@ -650,14 +625,10 @@ public static class WetInWet
         {
             int count = regionGraph.Regions[r].Pixels.Count;
             if (count > 0)
-            {
-                double invCount = 1.0 / count;
-                avgGradX[r] *= invCount;
-                avgGradY[r] *= invCount;
-            }
+                avgGrad[r] *= 1.0 / count;
         }
 
-        return (avgGradX, avgGradY);
+        return avgGrad;
     }
 
     private static Rgb8 SampleRegionClamped(

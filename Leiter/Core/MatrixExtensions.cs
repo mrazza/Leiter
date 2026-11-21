@@ -1,5 +1,6 @@
 namespace Leiter.Core;
 
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Leiter.Algorithms.Internal;
 
@@ -90,6 +91,11 @@ public static class MatrixExtensions
         return false;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static T[]? TryGetRawArray<T>(this IReadOnlyMatrix<T> matrix)
+        where T : struct =>
+        matrix is SequentialMatrix<T> sequential ? sequential.RawData : null;
+
     /// <summary>
     /// Copies the elements of a read-only matrix into a flat row-major array.
     /// </summary>
@@ -125,9 +131,8 @@ public static class MatrixExtensions
             return [];
 
         var mappedData = new R[count];
-        if (matrix is SequentialMatrix<T> sequential)
+        if (matrix.TryGetRawArray() is T[] raw)
         {
-            T[] raw = sequential.RawData;
             ParallelRunner.ForChunks(
                 raw.Length,
                 CancellationToken.None,
@@ -140,10 +145,8 @@ public static class MatrixExtensions
         }
 
         int width = matrix.Width;
-        int height = matrix.Height;
-        int minRowParallel = count >= ParallelRunner.DefaultMinParallelCount && height >= 4 ? 2 : height + 1;
-        ParallelRunner.ForChunks(
-            height,
+        ParallelRunner.ForRows(
+            matrix.Size,
             CancellationToken.None,
             (startRow, endRow) =>
             {
@@ -153,8 +156,7 @@ public static class MatrixExtensions
                     for (int x = 0; x < width; x++)
                         mappedData[rowBase + x] = selector(matrix[x, y]);
                 }
-            },
-            minParallelCount: minRowParallel);
+            });
 
         return mappedData;
     }
@@ -215,28 +217,26 @@ public static class MatrixExtensions
 
         int count = (int)area;
         var mappedData = new R[count];
-        int minRowParallel = count >= ParallelRunner.DefaultMinParallelCount && height >= 4 ? 2 : height + 1;
-        if (matrix is SequentialMatrix<T> sequential)
-        {
-            T[] raw = sequential.RawData;
-            ParallelRunner.ForChunks(
-                height,
-                CancellationToken.None,
-                (startRow, endRow) =>
-                {
-                    for (int y = startRow; y < endRow; y++)
-                    {
-                        int rowBase = y * width;
-                        for (int x = 0; x < width; x++)
-                            mappedData[rowBase + x] = selector(x, y, raw[rowBase + x]);
-                    }
-                },
-                minParallelCount: minRowParallel);
-            return new SequentialMatrix<R>(width, height, mappedData);
-        }
+        if (matrix.TryGetRawArray() is T[] raw)
+            MapIndexedCore<T, R, ArrayPixelSource<T>>(matrix.Size, new ArrayPixelSource<T>(raw), selector, mappedData);
+        else
+            MapIndexedCore<T, R, MatrixPixelSource<T>>(matrix.Size, new MatrixPixelSource<T>(matrix), selector, mappedData);
 
-        ParallelRunner.ForChunks(
-            height,
+        return new SequentialMatrix<R>(width, height, mappedData);
+    }
+
+    private static void MapIndexedCore<T, R, TSource>(
+        Size size,
+        TSource source,
+        Func<int, int, T, R> selector,
+        R[] mappedData)
+        where T : struct
+        where R : struct
+        where TSource : struct, IPixelSource<T>
+    {
+        int width = size.Width;
+        ParallelRunner.ForRows(
+            size,
             CancellationToken.None,
             (startRow, endRow) =>
             {
@@ -244,12 +244,9 @@ public static class MatrixExtensions
                 {
                     int rowBase = y * width;
                     for (int x = 0; x < width; x++)
-                        mappedData[rowBase + x] = selector(x, y, matrix[x, y]);
+                        mappedData[rowBase + x] = selector(x, y, source.GetAt(x, y, rowBase + x));
                 }
-            },
-            minParallelCount: minRowParallel);
-
-        return new SequentialMatrix<R>(width, height, mappedData);
+            });
     }
 
     /// <summary>
@@ -297,10 +294,10 @@ public static class MatrixExtensions
             return [];
 
         var result = new TResult[count];
-        if (left is SequentialMatrix<TLeft> leftSeq && right is SequentialMatrix<TRight> rightSeq)
+        TLeft[]? leftRaw = left.TryGetRawArray();
+        TRight[]? rightRaw = right.TryGetRawArray();
+        if (leftRaw is not null && rightRaw is not null)
         {
-            TLeft[] leftRaw = leftSeq.RawData;
-            TRight[] rightRaw = rightSeq.RawData;
             ParallelRunner.ForChunks(
                 count,
                 CancellationToken.None,
@@ -312,49 +309,34 @@ public static class MatrixExtensions
             return result;
         }
 
-        int width = left.Width;
-        int height = left.Height;
-        int minRowParallel = count >= ParallelRunner.DefaultMinParallelCount && height >= 4 ? 2 : height + 1;
-        if (left is SequentialMatrix<TLeft> leftOnly)
-        {
-            TLeft[] leftRaw = leftOnly.RawData;
-            ParallelRunner.ForChunks(
-                height,
-                CancellationToken.None,
-                (startRow, endRow) =>
-                {
-                    for (int y = startRow; y < endRow; y++)
-                    {
-                        int rowBase = y * width;
-                        for (int x = 0; x < width; x++)
-                            result[rowBase + x] = combiner(leftRaw[rowBase + x], right[x, y]);
-                    }
-                },
-                minParallelCount: minRowParallel);
-            return result;
-        }
+        if (leftRaw is not null)
+            ZipRowsCore<TLeft, TRight, TResult, ArrayPixelSource<TLeft>, MatrixPixelSource<TRight>>(
+                left.Size, new ArrayPixelSource<TLeft>(leftRaw), new MatrixPixelSource<TRight>(right), combiner, result);
+        else if (rightRaw is not null)
+            ZipRowsCore<TLeft, TRight, TResult, MatrixPixelSource<TLeft>, ArrayPixelSource<TRight>>(
+                left.Size, new MatrixPixelSource<TLeft>(left), new ArrayPixelSource<TRight>(rightRaw), combiner, result);
+        else
+            ZipRowsCore<TLeft, TRight, TResult, MatrixPixelSource<TLeft>, MatrixPixelSource<TRight>>(
+                left.Size, new MatrixPixelSource<TLeft>(left), new MatrixPixelSource<TRight>(right), combiner, result);
 
-        if (right is SequentialMatrix<TRight> rightOnly)
-        {
-            TRight[] rightRaw = rightOnly.RawData;
-            ParallelRunner.ForChunks(
-                height,
-                CancellationToken.None,
-                (startRow, endRow) =>
-                {
-                    for (int y = startRow; y < endRow; y++)
-                    {
-                        int rowBase = y * width;
-                        for (int x = 0; x < width; x++)
-                            result[rowBase + x] = combiner(left[x, y], rightRaw[rowBase + x]);
-                    }
-                },
-                minParallelCount: minRowParallel);
-            return result;
-        }
+        return result;
+    }
 
-        ParallelRunner.ForChunks(
-            height,
+    private static void ZipRowsCore<TLeft, TRight, TResult, TLeftSource, TRightSource>(
+        Size size,
+        TLeftSource left,
+        TRightSource right,
+        Func<TLeft, TRight, TResult> combiner,
+        TResult[] result)
+        where TLeft : struct
+        where TRight : struct
+        where TResult : struct
+        where TLeftSource : struct, IPixelSource<TLeft>
+        where TRightSource : struct, IPixelSource<TRight>
+    {
+        int width = size.Width;
+        ParallelRunner.ForRows(
+            size,
             CancellationToken.None,
             (startRow, endRow) =>
             {
@@ -362,11 +344,12 @@ public static class MatrixExtensions
                 {
                     int rowBase = y * width;
                     for (int x = 0; x < width; x++)
-                        result[rowBase + x] = combiner(left[x, y], right[x, y]);
+                    {
+                        int linearIndex = rowBase + x;
+                        result[linearIndex] = combiner(left.GetAt(x, y, linearIndex), right.GetAt(x, y, linearIndex));
+                    }
                 }
-            },
-            minParallelCount: minRowParallel);
-        return result;
+            });
     }
 
     /// <summary>

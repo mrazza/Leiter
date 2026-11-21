@@ -274,4 +274,57 @@ public class GridNeighborhoodTests
 
         return pairs;
     }
+
+    [Fact]
+    public void BuildValidNeighborMasks_AndGetLinearOffsets_ShouldMatchGridBounds()
+    {
+        Size[] sizes =
+        [
+            new(0, 0),
+            new(1, 1),
+            new(1, 4),
+            new(4, 1),
+            new(5, 4),
+        ];
+
+        GridConnectivity[] connectivities = [GridConnectivity.FourConnected, GridConnectivity.EightConnected];
+
+        foreach (GridConnectivity connectivity in connectivities)
+        {
+            ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(connectivity);
+            foreach (Size size in sizes)
+            {
+                byte[] masks = GridNeighborhood.BuildValidNeighborMasks(size, connectivity);
+                int[] offsets = GridNeighborhood.GetLinearOffsets(size.Width, connectivity);
+
+                Assert.Equal(size.Count, masks.Length);
+                Assert.Equal(neighbors.Length, offsets.Length);
+
+                for (int y = 0; y < size.Height; y++)
+                {
+                    for (int x = 0; x < size.Width; x++)
+                    {
+                        var coord = new Coord(x, y);
+                        int index = size.IndexOf(coord);
+                        byte mask = masks[index];
+
+                        for (int s = 0; s < neighbors.Length; s++)
+                        {
+                            Coord neighborCoord = coord + neighbors[s].Offset;
+                            bool expectedValid = size.Contains(neighborCoord);
+                            bool actualValid = (mask & (1 << s)) != 0;
+                            Assert.Equal(expectedValid, actualValid);
+
+                            if (expectedValid)
+                                Assert.Equal(size.IndexOf(neighborCoord), index + offsets[s]);
+                        }
+                    }
+                }
+            }
+        }
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.BuildValidNeighborMasks(new Size(-1, 2), GridConnectivity.FourConnected));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.BuildValidNeighborMasks(new Size(2, 2), (GridConnectivity)99));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridNeighborhood.GetLinearOffsets(4, (GridConnectivity)99));
+    }
 }

@@ -2,9 +2,9 @@ namespace Leiter.Algorithms.Stylization;
 
 using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Saliency;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -151,14 +151,7 @@ public static class LodAbstraction
             }
         }
 
-        if (cancellationToken.CanBeCanceled)
-        {
-            Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, ProcessRow);
-        }
-        else
-        {
-            Parallel.For(0, height, ProcessRow);
-        }
+        ParallelRunner.For(height, cancellationToken, ProcessRow);
 
         return result;
     }

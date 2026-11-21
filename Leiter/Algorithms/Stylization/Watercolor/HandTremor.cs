@@ -2,10 +2,10 @@ namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Leiter.Algorithms;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
@@ -249,14 +249,7 @@ public static class HandTremor
             }
         }
 
-        if (canCancel)
-        {
-            Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, ProcessRow);
-        }
-        else
-        {
-            Parallel.For(0, height, ProcessRow);
-        }
+        ParallelRunner.For(height, cancellationToken, ProcessRow);
 
         return result;
     }

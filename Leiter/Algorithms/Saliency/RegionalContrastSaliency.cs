@@ -99,6 +99,8 @@ public static class RegionalContrastSaliency
 
     private readonly record struct RegionColorBucket(int Count, double Density, int DistanceIndex);
 
+    private readonly record struct ProcessedRegion(int Total, RegionColorBucket[] ColorData);
+
     private static Matrix<DoublePixel> ComputeSaliencyCore(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph graph,
@@ -118,11 +120,10 @@ public static class RegionalContrastSaliency
         PairwiseLabDistanceTable distanceTable = PairwiseLabDistanceTable.Build(rgbToLabLookupTable);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var regionCounts = new int[regionCount];
         var regionCentroids = new NormalizedCoord[regionCount];
         var avgRegionDistances = new double[regionCount];
         var borderPixelCounts = computeBorderRegions ? new int[regionCount] : null;
-        var processedRegions = new (int Total, RegionColorBucket[] ColorData)[regionCount];
+        var processedRegions = new ProcessedRegion[regionCount];
 
         const double regionInBorderPercentage = 0.1;
         const double borderPercentage = 0.025;
@@ -134,17 +135,16 @@ public static class RegionalContrastSaliency
         double invWidth = 1.0 / width;
         double invHeight = 1.0 / height;
 
-        Rgb8[]? colorRaw = colorQuantizedImage is SequentialMatrix<Rgb8> seqColors ? seqColors.RawData : null;
+        Rgb8[]? colorRaw = colorQuantizedImage.TryGetRawArray();
         int colorCount = distanceTable.Count;
 
         ParallelRunner.For(regionCount, cancellationToken, r =>
         {
             HashSet<Coord> pixels = graph.Regions[r].Pixels;
             int count = pixels.Count;
-            regionCounts[r] = count;
             if (count == 0)
             {
-                processedRegions[r] = (0, []);
+                processedRegions[r] = new ProcessedRegion(0, []);
                 return;
             }
 
@@ -185,7 +185,7 @@ public static class RegionalContrastSaliency
             foreach (var kvp in localHist)
                 colorData[idx++] = new RegionColorBucket(kvp.Value, kvp.Value * invCount, kvp.Key);
 
-            processedRegions[r] = (count, colorData);
+            processedRegions[r] = new ProcessedRegion(count, colorData);
         });
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -279,7 +279,7 @@ public static class RegionalContrastSaliency
         {
             for (int r = 0; r < regionCount; r++)
             {
-                if (borderPixelCounts[r] > regionCounts[r] * regionInBorderPercentage)
+                if (borderPixelCounts[r] > processedRegions[r].Total * regionInBorderPercentage)
                     finalSaliency[r] = 0.0;
             }
         }

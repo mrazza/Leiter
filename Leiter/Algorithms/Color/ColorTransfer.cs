@@ -37,7 +37,7 @@ public static class ColorTransfer
     private static LabColorStatistics ComputeParallelArrayStatistics(Lab32[] data)
     {
         int count = data.Length;
-        (double L, double A, double B)[] chunkSums = ParallelRunner.MapChunks(
+        Lab64[] chunkSums = ParallelRunner.MapChunks(
             count,
             CancellationToken.None,
             (start, end) =>
@@ -53,24 +53,12 @@ public static class ColorTransfer
                     localB += pixel.B;
                 }
 
-                return (localL, localA, localB);
+                return new Lab64(localL, localA, localB);
             });
 
-        double sumL = 0.0;
-        double sumA = 0.0;
-        double sumB = 0.0;
-        for (int i = 0; i < chunkSums.Length; i++)
-        {
-            sumL += chunkSums[i].L;
-            sumA += chunkSums[i].A;
-            sumB += chunkSums[i].B;
-        }
+        Lab64 mean = SumLab64(chunkSums) / count;
 
-        double meanL = sumL / count;
-        double meanA = sumA / count;
-        double meanB = sumB / count;
-
-        (double L, double A, double B)[] chunkSq = ParallelRunner.MapChunks(
+        Lab64[] chunkSq = ParallelRunner.MapChunks(
             count,
             CancellationToken.None,
             (start, end) =>
@@ -81,28 +69,19 @@ public static class ColorTransfer
                 for (int i = start; i < end; i++)
                 {
                     Lab32 pixel = data[i];
-                    double dL = pixel.L - meanL;
-                    double dA = pixel.A - meanA;
-                    double dB = pixel.B - meanB;
+                    double dL = pixel.L - mean.L;
+                    double dA = pixel.A - mean.A;
+                    double dB = pixel.B - mean.B;
                     localSqL += dL * dL;
                     localSqA += dA * dA;
                     localSqB += dB * dB;
                 }
 
-                return (localSqL, localSqA, localSqB);
+                return new Lab64(localSqL, localSqA, localSqB);
             });
 
-        double sqL = 0.0;
-        double sqA = 0.0;
-        double sqB = 0.0;
-        for (int i = 0; i < chunkSq.Length; i++)
-        {
-            sqL += chunkSq[i].L;
-            sqA += chunkSq[i].A;
-            sqB += chunkSq[i].B;
-        }
-
-        return FinalizeStatistics(count, meanL, meanA, meanB, sqL, sqA, sqB);
+        Lab64 sqSum = SumLab64(chunkSq);
+        return FinalizeStatistics(count, mean, sqSum);
     }
 
     private static LabColorStatistics ComputeSpanStatistics(ReadOnlySpan<Lab32> span)
@@ -119,9 +98,7 @@ public static class ColorTransfer
             sumB += pixel.B;
         }
 
-        double meanL = sumL / count;
-        double meanA = sumA / count;
-        double meanB = sumB / count;
+        var mean = new Lab64(sumL / count, sumA / count, sumB / count);
 
         double sqL = 0.0;
         double sqA = 0.0;
@@ -129,26 +106,24 @@ public static class ColorTransfer
         for (int i = 0; i < count; i++)
         {
             Lab32 pixel = span[i];
-            double dL = pixel.L - meanL;
-            double dA = pixel.A - meanA;
-            double dB = pixel.B - meanB;
+            double dL = pixel.L - mean.L;
+            double dA = pixel.A - mean.A;
+            double dB = pixel.B - mean.B;
             sqL += dL * dL;
             sqA += dA * dA;
             sqB += dB * dB;
         }
 
-        return FinalizeStatistics(count, meanL, meanA, meanB, sqL, sqA, sqB);
+        return FinalizeStatistics(count, mean, new Lab64(sqL, sqA, sqB));
     }
 
     private static LabColorStatistics ComputeIndexedStatistics(IReadOnlyMatrix<Lab32> labImage)
     {
         int width = labImage.Width;
-        int height = labImage.Height;
         int count = labImage.Count;
-        int minRowParallel = count >= ParallelRunner.DefaultMinParallelCount && height >= 8 ? 2 : height + 1;
 
-        (double L, double A, double B)[] chunkSums = ParallelRunner.MapChunks(
-            height,
+        Lab64[] chunkSums = ParallelRunner.MapRows(
+            labImage.Size,
             CancellationToken.None,
             (startRow, endRow) =>
             {
@@ -166,26 +141,13 @@ public static class ColorTransfer
                     }
                 }
 
-                return (localL, localA, localB);
-            },
-            minParallelCount: minRowParallel);
+                return new Lab64(localL, localA, localB);
+            });
 
-        double sumL = 0.0;
-        double sumA = 0.0;
-        double sumB = 0.0;
-        for (int i = 0; i < chunkSums.Length; i++)
-        {
-            sumL += chunkSums[i].L;
-            sumA += chunkSums[i].A;
-            sumB += chunkSums[i].B;
-        }
+        Lab64 mean = SumLab64(chunkSums) / count;
 
-        double meanL = sumL / count;
-        double meanA = sumA / count;
-        double meanB = sumB / count;
-
-        (double L, double A, double B)[] chunkSq = ParallelRunner.MapChunks(
-            height,
+        Lab64[] chunkSq = ParallelRunner.MapRows(
+            labImage.Size,
             CancellationToken.None,
             (startRow, endRow) =>
             {
@@ -197,47 +159,45 @@ public static class ColorTransfer
                     for (int x = 0; x < width; x++)
                     {
                         Lab32 pixel = labImage[x, y];
-                        double dL = pixel.L - meanL;
-                        double dA = pixel.A - meanA;
-                        double dB = pixel.B - meanB;
+                        double dL = pixel.L - mean.L;
+                        double dA = pixel.A - mean.A;
+                        double dB = pixel.B - mean.B;
                         localSqL += dL * dL;
                         localSqA += dA * dA;
                         localSqB += dB * dB;
                     }
                 }
 
-                return (localSqL, localSqA, localSqB);
-            },
-            minParallelCount: minRowParallel);
+                return new Lab64(localSqL, localSqA, localSqB);
+            });
 
-        double sqL = 0.0;
-        double sqA = 0.0;
-        double sqB = 0.0;
-        for (int i = 0; i < chunkSq.Length; i++)
-        {
-            sqL += chunkSq[i].L;
-            sqA += chunkSq[i].A;
-            sqB += chunkSq[i].B;
-        }
-
-        return FinalizeStatistics(count, meanL, meanA, meanB, sqL, sqA, sqB);
+        Lab64 sqSum = SumLab64(chunkSq);
+        return FinalizeStatistics(count, mean, sqSum);
     }
 
-    private static LabColorStatistics FinalizeStatistics(
-        int count,
-        double meanL,
-        double meanA,
-        double meanB,
-        double sqL,
-        double sqA,
-        double sqB) =>
+    private static Lab64 SumLab64(Lab64[] chunks)
+    {
+        double sumL = 0.0;
+        double sumA = 0.0;
+        double sumB = 0.0;
+        for (int i = 0; i < chunks.Length; i++)
+        {
+            sumL += chunks[i].L;
+            sumA += chunks[i].A;
+            sumB += chunks[i].B;
+        }
+
+        return new Lab64(sumL, sumA, sumB);
+    }
+
+    private static LabColorStatistics FinalizeStatistics(int count, Lab64 mean, Lab64 sqSum) =>
         new(
-            meanL,
-            meanA,
-            meanB,
-            Math.Sqrt(Math.Max(0.0, sqL / count)),
-            Math.Sqrt(Math.Max(0.0, sqA / count)),
-            Math.Sqrt(Math.Max(0.0, sqB / count)));
+            mean.L,
+            mean.A,
+            mean.B,
+            Math.Sqrt(Math.Max(0.0, sqSum.L / count)),
+            Math.Sqrt(Math.Max(0.0, sqSum.A / count)),
+            Math.Sqrt(Math.Max(0.0, sqSum.B / count)));
 
     /// <summary>
     /// Computes CIELAB color statistics for an <see cref="Rgb8"/> image under the specified color space and illuminant.

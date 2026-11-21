@@ -2,8 +2,8 @@ namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Leiter.Algorithms;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
@@ -59,14 +59,7 @@ public static class PaperGranulation
             }
         }
 
-        if (cancellationToken.CanBeCanceled)
-        {
-            Parallel.For(0, size.Height, new ParallelOptions { CancellationToken = cancellationToken }, ProcessRow);
-        }
-        else
-        {
-            Parallel.For(0, size.Height, ProcessRow);
-        }
+        ParallelRunner.For(size.Height, cancellationToken, ProcessRow);
 
         return result;
     }
