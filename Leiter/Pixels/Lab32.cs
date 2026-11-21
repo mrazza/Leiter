@@ -4,6 +4,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.InteropServices;
 using Leiter.Core;
@@ -179,6 +180,21 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     /// <returns>The CIEDE2000 color distance between the two pixels.</returns>
     public double Distance(Lab32 other) => DeltaE2000(other);
 
+    private const double Pow25To7 = 6_103_515_625.0; // 25^7
+    private const double DegToRad = Math.PI / 180.0;
+    private const double RadToDeg = 180.0 / Math.PI;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static double Square(double x) => x * x;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static double Pow7(double x)
+    {
+        double x2 = x * x;
+        double x4 = x2 * x2;
+        return x4 * x2 * x;
+    }
+
     /// <summary>
     /// Calculates the CIEDE2000 color difference between the current and other pixel in L*a*b* color space.
     /// </summary>
@@ -194,75 +210,94 @@ public readonly record struct Lab32(float L, float A, float B) : ITypedPixel<Lab
     /// <returns>The CIEDE2000 color difference between the two pixels.</returns>
     public double DeltaE2000(Lab32 other)
     {
+        if (L == other.L && A == other.A && B == other.B)
+            return 0.0;
+
         const double kL = 1.0;
         const double kC = 1.0;
         const double kH = 1.0;
 
-        double selfCStar = Math.Sqrt(A * A + B * B);
-        double otherCStar = Math.Sqrt(other.A * other.A + other.B * other.B);
-        double meanCStar = (selfCStar + otherCStar) / 2.0;
+        double selfCStar = Math.Sqrt((A * A) + (B * B));
+        double otherCStar = Math.Sqrt((other.A * other.A) + (other.B * other.B));
+        double meanCStar = (selfCStar + otherCStar) * 0.5;
+        double meanCStar7 = Pow7(meanCStar);
 
-        double G = 0.5 * (1 - Math.Sqrt(Math.Pow(meanCStar, 7) /
-                                       (Math.Pow(meanCStar, 7) + Math.Pow(25, 7))));
+        double G = 0.5 * (1.0 - Math.Sqrt(meanCStar7 / (meanCStar7 + Pow25To7)));
 
-        double selfAPrime = (1 + G) * A;
-        double otherAPrime = (1 + G) * other.A;
+        double selfAPrime = (1.0 + G) * A;
+        double otherAPrime = (1.0 + G) * other.A;
 
-        double selfCPrime = Math.Sqrt(selfAPrime * selfAPrime + B * B);
-        double otherCPrime = Math.Sqrt(otherAPrime * otherAPrime + other.B * other.B);
+        double selfCPrime = Math.Sqrt((selfAPrime * selfAPrime) + (B * B));
+        double otherCPrime = Math.Sqrt((otherAPrime * otherAPrime) + (other.B * other.B));
 
-        double selfHPrime = B == 0 && selfAPrime == 0 ? 0 : Math.Atan2(B, selfAPrime) * 180.0 / Math.PI;
-        double otherHPrime = other.B == 0 && otherAPrime == 0 ? 0 : Math.Atan2(other.B, otherAPrime) * 180.0 / Math.PI;
-        if (selfHPrime < 0.0) selfHPrime += 360;
-        if (otherHPrime < 0.0) otherHPrime += 360;
+        double selfHPrime = B == 0 && selfAPrime == 0 ? 0.0 : Math.Atan2(B, selfAPrime) * RadToDeg;
+        double otherHPrime = other.B == 0 && otherAPrime == 0 ? 0.0 : Math.Atan2(other.B, otherAPrime) * RadToDeg;
+        if (selfHPrime < 0.0) selfHPrime += 360.0;
+        if (otherHPrime < 0.0) otherHPrime += 360.0;
 
         double deltaLPrime = other.L - L;
         double deltaCPrime = otherCPrime - selfCPrime;
 
-        double partialDeltaHPrime = (selfCPrime, otherCPrime, diffHPrime: otherHPrime - selfHPrime, absDiffHPrime: Math.Abs(otherHPrime - selfHPrime)) switch
+        double partialDeltaHPrime;
+        if (selfCPrime == 0.0 || otherCPrime == 0.0)
         {
-            { selfCPrime: 0.0 } => 0.0,
-            { otherCPrime: 0.0 } => 0.0,
-            { diffHPrime: var diffHPrime, absDiffHPrime: <= 180.0 } => diffHPrime,
-            { diffHPrime: var diffHPrime, diffHPrime: > 180.0 } => diffHPrime - 360,
-            { diffHPrime: var diffHPrime, diffHPrime: < -180.0 } => diffHPrime + 360,
-            (_) => throw new UnreachableException()
-        };
-        double deltaHPrime = 2 * Math.Sqrt(selfCPrime * otherCPrime) * Math.Sin(partialDeltaHPrime / 180.0 * Math.PI / 2.0);
-
-        double meanLPrime = (L + other.L) / 2.0;
-        double meanCPrime = (selfCPrime + otherCPrime) / 2.0;
-
-        double meanHPrime = (mulCPrime: selfCPrime * otherCPrime, sumHPrime: selfHPrime + otherHPrime, absDiffHPrime: Math.Abs(selfHPrime - otherHPrime)) switch
+            partialDeltaHPrime = 0.0;
+        }
+        else
         {
-            { mulCPrime: 0.0, sumHPrime: var sumHPrime } => sumHPrime,
-            { absDiffHPrime: <= 180, sumHPrime: var sumHPrime } => sumHPrime / 2.0,
-            { sumHPrime: < 360, sumHPrime: var sumHPrime } => (sumHPrime + 360) / 2.0,
-            { sumHPrime: >= 360, sumHPrime: var sumHPrime } => (sumHPrime - 360) / 2.0,
-            (_) => throw new UnreachableException()
-        };
+            double diffHPrime = otherHPrime - selfHPrime;
+            partialDeltaHPrime = Math.Abs(diffHPrime) <= 180.0
+                ? diffHPrime
+                : diffHPrime > 180.0
+                    ? diffHPrime - 360.0
+                    : diffHPrime + 360.0;
+        }
+        double deltaHPrime = 2.0 * Math.Sqrt(selfCPrime * otherCPrime) * Math.Sin(partialDeltaHPrime * 0.5 * DegToRad);
 
-        double t = 1 -
-                       0.17 * Math.Cos((meanHPrime - 30) / 180.0 * Math.PI) +
-                       0.24 * Math.Cos(2.0 * meanHPrime / 180.0 * Math.PI) +
-                       0.32 * Math.Cos((3.0 * meanHPrime + 6) / 180.0 * Math.PI) -
-                       0.20 * Math.Cos((4.0 * meanHPrime - 63.0) / 180.0 * Math.PI);
+        double meanLPrime = (L + other.L) * 0.5;
+        double meanCPrime = (selfCPrime + otherCPrime) * 0.5;
 
-        double deltaTheta = 30 * Math.Exp(-Math.Pow((meanHPrime - 275.0) / 25.0, 2));
-        double rC = 2.0 * Math.Sqrt(Math.Pow(meanCPrime, 7) / (Math.Pow(meanCPrime, 7) + Math.Pow(25, 7)));
-        double sL = 1 + 0.015 * Math.Pow(meanLPrime - 50, 2) / Math.Sqrt(20 + Math.Pow(meanLPrime - 50, 2));
-        double sC = 1 + 0.045 * meanCPrime;
-        double sH = 1 + 0.015 * meanCPrime * t;
-        double rT = -Math.Sin(2.0 * deltaTheta / 180 * Math.PI) * rC;
+        double meanHPrime;
+        double sumHPrime = selfHPrime + otherHPrime;
+        if (selfCPrime * otherCPrime == 0.0)
+        {
+            meanHPrime = sumHPrime;
+        }
+        else if (Math.Abs(selfHPrime - otherHPrime) <= 180.0)
+        {
+            meanHPrime = sumHPrime * 0.5;
+        }
+        else
+        {
+            meanHPrime = sumHPrime < 360.0
+                ? (sumHPrime + 360.0) * 0.5
+                : (sumHPrime - 360.0) * 0.5;
+        }
+
+        double t = 1.0 -
+                       (0.17 * Math.Cos((meanHPrime - 30.0) * DegToRad)) +
+                       (0.24 * Math.Cos((2.0 * meanHPrime) * DegToRad)) +
+                       (0.32 * Math.Cos(((3.0 * meanHPrime) + 6.0) * DegToRad)) -
+                       (0.20 * Math.Cos(((4.0 * meanHPrime) - 63.0) * DegToRad));
+
+        double deltaTheta = 30.0 * Math.Exp(-Square((meanHPrime - 275.0) / 25.0));
+        double meanCPrime7 = Pow7(meanCPrime);
+        double rC = 2.0 * Math.Sqrt(meanCPrime7 / (meanCPrime7 + Pow25To7));
+        double meanLPrimeMinus50Sq = Square(meanLPrime - 50.0);
+        double sL = 1.0 + ((0.015 * meanLPrimeMinus50Sq) / Math.Sqrt(20.0 + meanLPrimeMinus50Sq));
+        double sC = 1.0 + (0.045 * meanCPrime);
+        double sH = 1.0 + (0.015 * meanCPrime * t);
+        double rT = -Math.Sin((2.0 * deltaTheta) * DegToRad) * rC;
+
+        double deltaLTerm = deltaLPrime / (kL * sL);
+        double deltaCTerm = deltaCPrime / (kC * sC);
+        double deltaHTerm = deltaHPrime / (kH * sH);
 
         return Math.Sqrt(
-            Math.Pow(deltaLPrime / (kL * sL), 2) +
-            Math.Pow(deltaCPrime / (kC * sC), 2) +
-            Math.Pow(deltaHPrime / (kH * sH), 2) +
-            rT *
-                (deltaCPrime / (kC * sC)) *
-                (deltaHPrime / (kH * sH))
-        );
+            Square(deltaLTerm) +
+            Square(deltaCTerm) +
+            Square(deltaHTerm) +
+            (rT * deltaCTerm * deltaHTerm));
     }
 
     /// <summary>
