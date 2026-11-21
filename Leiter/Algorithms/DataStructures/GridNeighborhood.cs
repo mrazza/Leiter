@@ -134,6 +134,63 @@ public static class GridNeighborhood
         return ((ulong)(uint)low << 32) | (uint)high;
     }
 
+    internal static int[] GetLinearOffsets(int width, GridConnectivity connectivity)
+    {
+        ReadOnlySpan<GridNeighbor> neighbors = GetAll(connectivity);
+        var offsets = new int[neighbors.Length];
+        for (int s = 0; s < neighbors.Length; s++)
+        {
+            Coord offset = neighbors[s].Offset;
+            offsets[s] = (offset.Y * width) + offset.X;
+        }
+
+        return offsets;
+    }
+
+    internal static byte[] BuildValidNeighborMasks(Size size, GridConnectivity connectivity)
+    {
+        Guard.ThrowIfNegative(size);
+        ReadOnlySpan<GridNeighbor> neighbors = GetAll(connectivity);
+        if (size.IsEmpty)
+            return [];
+
+        int width = size.Width;
+        int height = size.Height;
+        byte fullMask = (byte)((1 << neighbors.Length) - 1);
+        var masks = new byte[size.Count];
+        Array.Fill(masks, fullMask);
+
+        byte topClear = 0;
+        byte bottomClear = 0;
+        byte leftClear = 0;
+        byte rightClear = 0;
+        for (int s = 0; s < neighbors.Length; s++)
+        {
+            byte bit = (byte)(1 << s);
+            Coord offset = neighbors[s].Offset;
+            if (offset.Y < 0) topClear |= bit;
+            if (offset.Y > 0) bottomClear |= bit;
+            if (offset.X < 0) leftClear |= bit;
+            if (offset.X > 0) rightClear |= bit;
+        }
+
+        int bottomRowBase = (height - 1) * width;
+        for (int x = 0; x < width; x++)
+        {
+            masks[x] &= (byte)~topClear;
+            masks[bottomRowBase + x] &= (byte)~bottomClear;
+        }
+
+        for (int y = 0; y < height; y++)
+        {
+            int rowBase = y * width;
+            masks[rowBase] &= (byte)~leftClear;
+            masks[rowBase + width - 1] &= (byte)~rightClear;
+        }
+
+        return masks;
+    }
+
     /// <summary>
     /// Iterates sequentially over all unique forward neighbor index pairs in row-major order.
     /// </summary>

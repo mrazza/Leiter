@@ -50,7 +50,7 @@ public static class MatrixMath
         int rightWidth = right.Width;
         int innerLength = self.Width;
         var result = new SequentialMatrix<T>(rightWidth, selfHeight);
-        Parallel.For(0, selfHeight, y =>
+        ParallelRunner.For(selfHeight, CancellationToken.None, y =>
         {
             for (int x = 0; x < rightWidth; x++)
             {
@@ -131,21 +131,31 @@ public static class MatrixMath
         if (count == 0)
             return;
 
-        if (self is SequentialMatrix<T> leftSeq && right is SequentialMatrix<T> rightSeq)
+        if (self.TryGetRawArray() is T[] leftRaw && right.TryGetRawArray() is T[] rightRaw)
         {
-            T[] leftRaw = leftSeq.RawData;
-            T[] rightRaw = rightSeq.RawData;
-            Parallel.For(0, count, i => leftRaw[i] = leftRaw[i].Add(rightRaw[i]));
+            ParallelRunner.ForChunks(
+                count,
+                CancellationToken.None,
+                (start, end) =>
+                {
+                    for (int i = start; i < end; i++)
+                        leftRaw[i] = leftRaw[i].Add(rightRaw[i]);
+                });
             return;
         }
 
         int width = self.Width;
-        int height = self.Height;
-        Parallel.For(0, height, y =>
-        {
-            for (int x = 0; x < width; x++)
-                self[x, y] = self[x, y].Add(right[x, y]);
-        });
+        ParallelRunner.ForRows(
+            self.Size,
+            CancellationToken.None,
+            (startRow, endRow) =>
+            {
+                for (int y = startRow; y < endRow; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                        self[x, y] = self[x, y].Add(right[x, y]);
+                }
+            });
     }
 
     internal static void ScaleInPlace<T>(this Matrix<T> self, double factor)
@@ -158,20 +168,31 @@ public static class MatrixMath
         if (count == 0)
             return;
 
-        if (self is SequentialMatrix<T> sequential)
+        if (self.TryGetRawArray() is T[] raw)
         {
-            T[] raw = sequential.RawData;
-            Parallel.For(0, count, i => raw[i] = raw[i].Multiply(factor));
+            ParallelRunner.ForChunks(
+                count,
+                CancellationToken.None,
+                (start, end) =>
+                {
+                    for (int i = start; i < end; i++)
+                        raw[i] = raw[i].Multiply(factor);
+                });
             return;
         }
 
         int width = self.Width;
-        int height = self.Height;
-        Parallel.For(0, height, y =>
-        {
-            for (int x = 0; x < width; x++)
-                self[x, y] = self[x, y].Multiply(factor);
-        });
+        ParallelRunner.ForRows(
+            self.Size,
+            CancellationToken.None,
+            (startRow, endRow) =>
+            {
+                for (int y = startRow; y < endRow; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                        self[x, y] = self[x, y].Multiply(factor);
+                }
+            });
     }
 
     /// <summary>
@@ -259,7 +280,7 @@ public static class MatrixMath
         int halfX = kernel.Width / 2;
         int halfY = kernel.Height / 2;
 
-        Parallel.For(0, height, y =>
+        ParallelRunner.For(height, CancellationToken.None, y =>
         {
             for (int x = 0; x < width; x++)
             {

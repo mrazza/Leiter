@@ -44,7 +44,7 @@ internal static class ParallelSort
         var workerBucketCounts = new int[workerCount * bucketCount];
         ParallelRunner.For(workerCount, cancellationToken, worker =>
         {
-            (int start, int end) = GetWorkerSlice(worker, workerCount, length);
+            (int start, int end) = ParallelRunner.GetChunkBounds(worker, workerCount, length);
             int rowBase = worker * bucketCount;
             for (int i = start; i < end; i++)
             {
@@ -55,27 +55,14 @@ internal static class ParallelSort
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var workerBucketOffsets = new int[workerCount * bucketCount];
-        var bucketOffsets = new int[bucketCount + 1];
-        int runningOffset = 0;
-        for (int bucket = 0; bucket < bucketCount; bucket++)
-        {
-            bucketOffsets[bucket] = runningOffset;
-            for (int worker = 0; worker < workerCount; worker++)
-            {
-                int index = (worker * bucketCount) + bucket;
-                workerBucketOffsets[index] = runningOffset;
-                runningOffset += workerBucketCounts[index];
-            }
-        }
-        bucketOffsets[bucketCount] = runningOffset;
+        int[] bucketOffsets = ParallelRunner.PrefixSumTransposedBuckets(workerBucketCounts, workerCount, bucketCount);
 
         var destination = new T[length];
         ParallelRunner.For(workerCount, cancellationToken, worker =>
         {
-            (int start, int end) = GetWorkerSlice(worker, workerCount, length);
+            (int start, int end) = ParallelRunner.GetChunkBounds(worker, workerCount, length);
             Span<int> cursors = stackalloc int[bucketCount];
-            workerBucketOffsets.AsSpan(worker * bucketCount, bucketCount).CopyTo(cursors);
+            workerBucketCounts.AsSpan(worker * bucketCount, bucketCount).CopyTo(cursors);
 
             for (int i = start; i < end; i++)
             {
@@ -137,12 +124,5 @@ internal static class ParallelSort
         }
 
         return low;
-    }
-
-    private static (int Start, int End) GetWorkerSlice(int worker, int workerCount, int length)
-    {
-        int start = (int)((long)worker * length / workerCount);
-        int end = (int)((long)(worker + 1) * length / workerCount);
-        return (start, end);
     }
 }

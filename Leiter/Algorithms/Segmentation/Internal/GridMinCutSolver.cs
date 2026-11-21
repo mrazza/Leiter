@@ -89,16 +89,6 @@ internal sealed class GridMinCutSolver
         (1 << (int)GridDirection.SouthEast) |
         (1 << (int)GridDirection.SouthWest);
 
-    private const byte WestDirectionsMask =
-        (1 << (int)GridDirection.West) |
-        (1 << (int)GridDirection.NorthWest) |
-        (1 << (int)GridDirection.SouthWest);
-
-    private const byte EastDirectionsMask =
-        (1 << (int)GridDirection.East) |
-        (1 << (int)GridDirection.NorthEast) |
-        (1 << (int)GridDirection.SouthEast);
-
     private readonly Size gridSize;
     private readonly int pixelCount;
     private readonly int[] neighborOffsets;
@@ -130,11 +120,9 @@ internal sealed class GridMinCutSolver
 
         gridSize = size;
         pixelCount = checked((int)size.Area);
-        neighborOffsets = new int[8];
-        foreach (GridNeighbor neighbor in GridNeighborhood.All8Connected)
-            neighborOffsets[(int)neighbor.Direction] = size.IndexOf(neighbor.Offset);
+        neighborOffsets = GridNeighborhood.GetLinearOffsets(size.Width, GridConnectivity.EightConnected);
 
-        validDirectionMasks = BuildValidDirectionMasks(size);
+        validDirectionMasks = GridNeighborhood.BuildValidNeighborMasks(size, GridConnectivity.EightConnected);
         baseNeighborCapacities = new float[pixelCount * 8];
         residualCapacities = new float[pixelCount * 8];
         terminalExcess = new double[pixelCount];
@@ -372,30 +360,6 @@ internal sealed class GridMinCutSolver
     {
         residualCapacities[DirectedEdgeIndex(toPixel, OppositeDirection(dirFromTo))] += flow;
         return SubtractResidual(DirectedEdgeIndex(fromPixel, dirFromTo), flow);
-    }
-
-    private static byte[] BuildValidDirectionMasks(Size size)
-    {
-        int width = size.Width;
-        int height = size.Height;
-        var masks = new byte[size.Count];
-        Array.Fill(masks, (byte)0xFF);
-
-        int bottomRowBase = (height - 1) * width;
-        for (int x = 0; x < width; x++)
-        {
-            masks[x] &= unchecked((byte)~NorthDirectionsMask);
-            masks[bottomRowBase + x] &= unchecked((byte)~SouthDirectionsMask);
-        }
-
-        for (int y = 0; y < height; y++)
-        {
-            int rowBase = y * width;
-            masks[rowBase] &= unchecked((byte)~WestDirectionsMask);
-            masks[rowBase + width - 1] &= unchecked((byte)~EastDirectionsMask);
-        }
-
-        return masks;
     }
 
     private double InitializeTerminalTreesBand(

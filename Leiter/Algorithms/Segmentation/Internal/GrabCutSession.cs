@@ -133,11 +133,10 @@ internal sealed class GrabCutSession
         cancellationToken.ThrowIfCancellationRequested();
 
         int width = imageSize.Width;
-        int minRowParallel = pixelCount >= ParallelRunner.DefaultMinParallelCount ? 2 : imageSize.Height + 1;
-        TrimapLabel[]? rawTrimap = trimap is SequentialMatrix<TrimapLabel> seq ? seq.RawData : null;
+        TrimapLabel[]? rawTrimap = trimap.TryGetRawArray();
 
-        TrimapChunkResult[] chunks = ParallelRunner.MapChunks(
-            imageSize.Height,
+        TrimapChunkResult[] chunks = ParallelRunner.MapRows(
+            imageSize,
             cancellationToken,
             (startRow, endRow) =>
             {
@@ -174,7 +173,7 @@ internal sealed class GrabCutSession
 
                 return new TrimapChunkResult(localFg, localBg, localHardBg, default, HasInvalidLabel: false);
             },
-            minParallelCount: minRowParallel);
+            minHeight: 2);
 
         int fgCount = 0;
         int bgCount = 0;
@@ -352,14 +351,13 @@ internal sealed class GrabCutSession
             return;
 
         int height = imageSize.Height;
-        int minRowParallel = pixels.Length >= ParallelRunner.DefaultMinParallelCount ? 2 : height + 1;
 
         // Pass 1: Deterministically accumulate total forward squared color differences to compute beta.
-        (double SumSquaredDiff, int Count)[] chunkSums = ParallelRunner.MapChunks(
-            height,
+        (double SumSquaredDiff, int Count)[] chunkSums = ParallelRunner.MapRows(
+            imageSize,
             cancellationToken,
             (startRow, endRow) => SumForwardSquaredDifferences(imageSize, pixels, startRow, endRow),
-            minParallelCount: minRowParallel);
+            minHeight: 2);
 
         double sumSquaredDiff = 0.0;
         int pairCount = 0;

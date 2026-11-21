@@ -161,64 +161,6 @@ public static class BinaryMorphology
         return Erode(Dilate(mask, radius, shape, borderIsBackground), radius, shape, borderIsBackground);
     }
 
-    private sealed class ComponentForest(int count)
-    {
-        private readonly int[] parents = CreateInitializedParents(count);
-
-        private static int[] CreateInitializedParents(int count)
-        {
-            var result = new int[count];
-            ParallelRunner.ForChunks(
-                count,
-                CancellationToken.None,
-                (start, end) => Array.Fill(result, -1, start, end - start));
-            return result;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int Find(int index)
-        {
-            int root = FindReadOnly(index);
-            int current = index;
-            while (current != root)
-            {
-                int next = parents[current];
-                parents[current] = root;
-                current = next;
-            }
-
-            return root;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int FindReadOnly(int index)
-        {
-            int current = index;
-            while (parents[current] >= 0)
-                current = parents[current];
-
-            return current;
-        }
-
-        public void Union(int first, int second)
-        {
-            int rootFirst = Find(first);
-            int rootSecond = Find(second);
-            if (rootFirst == rootSecond)
-                return;
-
-            // Negative values store -size, so a smaller integer indicates a larger component.
-            if (parents[rootFirst] > parents[rootSecond])
-                (rootFirst, rootSecond) = (rootSecond, rootFirst);
-
-            parents[rootFirst] += parents[rootSecond];
-            parents[rootSecond] = rootFirst;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetRootSize(int rootIndex) => -parents[rootIndex];
-    }
-
     /// <summary>
     /// Filters connected foreground components in a boolean mask according to the specified retention policy and grid connectivity.
     /// </summary>
@@ -257,7 +199,7 @@ public static class BinaryMorphology
         if (!isForeground.AsSpan().Contains(true))
             return new MaskMatrix(width, height);
 
-        var forest = new ComponentForest(isForeground.Length);
+        var forest = new DisjointSetForest(isForeground.Length);
         bool isEightConnected = connectivity == GridConnectivity.EightConnected;
         int stripCount = isForeground.Length >= ParallelRunner.DefaultMinParallelCount && height >= 8 && Environment.ProcessorCount > 1
             ? Math.Min(height, Math.Clamp(Environment.ProcessorCount * 2, 2, 64))
@@ -265,7 +207,7 @@ public static class BinaryMorphology
 
         var stripRanges = new (int StartRow, int EndRow)[stripCount];
         for (int s = 0; s < stripCount; s++)
-            stripRanges[s] = ((int)((long)s * height / stripCount), (int)((long)(s + 1) * height / stripCount));
+            stripRanges[s] = ParallelRunner.GetChunkBounds(s, stripCount, height);
 
         // Step 1: Union foreground pixels within disjoint horizontal strips in parallel.
         ParallelRunner.For(stripCount, CancellationToken.None, s =>
@@ -376,8 +318,8 @@ public static class BinaryMorphology
 
     private static bool[] ExtractForegroundArray(IReadOnlyMatrix<bool> mask)
     {
-        if (mask is SequentialMatrix<bool> sequential)
-            return sequential.RawData;
+        if (mask.TryGetRawArray() is bool[] rawMask)
+            return rawMask;
 
         int width = mask.Width;
         int height = mask.Height;
@@ -400,7 +342,7 @@ public static class BinaryMorphology
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void UnionSouthNeighbors(
-        ComponentForest forest,
+        DisjointSetForest forest,
         bool[] isForeground,
         int pixelIndex,
         int x,

@@ -70,8 +70,7 @@ public class DisjointSet<T> : IDisjointSet
 
 
     private readonly IUntypedMatrix image;
-    private readonly int[] parents;
-    private readonly int[] sizes;
+    private readonly DisjointSetForest forest;
     private readonly T[] values;
     private readonly Lock nextIndicesLock = new();
     private int[]? nextIndices;
@@ -99,7 +98,7 @@ public class DisjointSet<T> : IDisjointSet
         get
         {
             ValidateIndex(index);
-            return FindRootReadOnly(index);
+            return forest.FindReadOnly(index);
         }
     }
 
@@ -114,7 +113,7 @@ public class DisjointSet<T> : IDisjointSet
         get
         {
             ValidateCoord(coord);
-            return FindRootReadOnly(image.IndexFromCoord(coord));
+            return forest.FindReadOnly(image.IndexFromCoord(coord));
         }
     }
 
@@ -132,7 +131,7 @@ public class DisjointSet<T> : IDisjointSet
         get
         {
             ValidateCoords(x, y);
-            return FindRootReadOnly(image.IndexFromCoord(new Coord(x, y)));
+            return forest.FindReadOnly(image.IndexFromCoord(new Coord(x, y)));
         }
     }
 
@@ -148,15 +147,10 @@ public class DisjointSet<T> : IDisjointSet
         ArgumentNullException.ThrowIfNull(initialValueFunc);
         this.image = image;
         int count = image.Count;
-        parents = new int[count];
-        sizes = new int[count];
+        forest = new DisjointSetForest(count);
         values = new T[count];
-        Array.Fill(sizes, 1);
         for (int index = 0; index < count; index++)
-        {
-            parents[index] = index;
             values[index] = initialValueFunc(index);
-        }
     }
 
     internal DisjointSet(IUntypedMatrix image, T initialValue)
@@ -164,19 +158,9 @@ public class DisjointSet<T> : IDisjointSet
         ArgumentNullException.ThrowIfNull(image);
         this.image = image;
         int count = image.Count;
-        parents = new int[count];
-        sizes = new int[count];
+        forest = new DisjointSetForest(count);
         values = new T[count];
-        Array.Fill(sizes, 1);
         Array.Fill(values, initialValue);
-        ParallelRunner.ForChunks(
-            count,
-            CancellationToken.None,
-            (start, end) =>
-            {
-                for (int index = start; index < end; index++)
-                    parents[index] = index;
-            });
     }
 
     /// <summary>
@@ -200,8 +184,8 @@ public class DisjointSet<T> : IDisjointSet
     public Partition GetPartition(int index)
     {
         ValidateIndex(index);
-        int rootIndex = Find(index);
-        return new Partition(this, rootIndex, sizes[rootIndex], values[rootIndex]);
+        int rootIndex = forest.Find(index);
+        return new Partition(this, rootIndex, forest.GetRootSize(rootIndex), values[rootIndex]);
     }
 
     /// <summary>
@@ -238,9 +222,9 @@ public class DisjointSet<T> : IDisjointSet
     public Region<Coord> GetRegion(int index)
     {
         ValidateIndex(index);
-        int rootIndex = FindRootReadOnly(index);
+        int rootIndex = forest.FindReadOnly(index);
         int[] links = EnsureNextIndicesInitialized();
-        var region = new Region<Coord>(sizes[rootIndex]);
+        var region = new Region<Coord>(forest.GetRootSize(rootIndex));
         int currIndex = rootIndex;
         do
         {
@@ -273,14 +257,14 @@ public class DisjointSet<T> : IDisjointSet
             if (existing is not null)
                 return existing;
 
-            int count = parents.Length;
+            int count = forest.Count;
             var links = new int[count];
             for (int i = 0; i < count; i++)
                 links[i] = i;
 
             for (int i = 0; i < count; i++)
             {
-                int root = FindRootReadOnly(i);
+                int root = forest.FindReadOnly(i);
                 if (root != i)
                 {
                     links[i] = links[root];
@@ -348,8 +332,8 @@ public class DisjointSet<T> : IDisjointSet
 
     private Partition UnionCore(int firstIndex, int secondIndex, T unionValue, string secondParamName)
     {
-        int firstSetRoot = Find(firstIndex);
-        int secondSetRoot = Find(secondIndex);
+        int firstSetRoot = forest.Find(firstIndex);
+        int secondSetRoot = forest.Find(secondIndex);
         if (firstSetRoot == secondSetRoot)
             throw new ArgumentException("The two elements are already in the same set.", secondParamName);
 
@@ -369,8 +353,8 @@ public class DisjointSet<T> : IDisjointSet
     {
         ValidateIndex(firstIndex);
         ValidateIndex(secondIndex);
-        int firstSetRoot = Find(firstIndex);
-        int secondSetRoot = Find(secondIndex);
+        int firstSetRoot = forest.Find(firstIndex);
+        int secondSetRoot = forest.Find(secondIndex);
         if (firstSetRoot == secondSetRoot)
         {
             mergedPartition = GetPartition(firstSetRoot);
@@ -384,52 +368,36 @@ public class DisjointSet<T> : IDisjointSet
     private Partition MergeRoots(int firstSetRoot, int secondSetRoot, T unionValue)
     {
         int mergedRoot = MergeRootsCore(firstSetRoot, secondSetRoot, unionValue);
-        return new Partition(this, mergedRoot, sizes[mergedRoot], unionValue);
+        return new Partition(this, mergedRoot, forest.GetRootSize(mergedRoot), unionValue);
     }
 
     internal int FindRoot(int index)
     {
-        Debug.Assert((uint)index < (uint)parents.Length);
-        return Find(index);
+        Debug.Assert((uint)index < (uint)forest.Count);
+        return forest.Find(index);
     }
 
-    internal int GetRootSize(int rootIndex)
-    {
-        Debug.Assert((uint)rootIndex < (uint)sizes.Length);
-        Debug.Assert(parents[rootIndex] == rootIndex);
-        return sizes[rootIndex];
-    }
+    internal int GetRootSize(int rootIndex) => forest.GetRootSize(rootIndex);
 
     internal T GetRootValue(int rootIndex)
     {
         Debug.Assert((uint)rootIndex < (uint)values.Length);
-        Debug.Assert(parents[rootIndex] == rootIndex);
+        Debug.Assert(forest.IsRoot(rootIndex));
         return values[rootIndex];
     }
 
-    internal int MergeRootsUnchecked(int firstSetRoot, int secondSetRoot, T unionValue)
-    {
-        Debug.Assert((uint)firstSetRoot < (uint)parents.Length);
-        Debug.Assert((uint)secondSetRoot < (uint)parents.Length);
-        Debug.Assert(firstSetRoot != secondSetRoot);
-        Debug.Assert(parents[firstSetRoot] == firstSetRoot);
-        Debug.Assert(parents[secondSetRoot] == secondSetRoot);
-        return MergeRootsCore(firstSetRoot, secondSetRoot, unionValue);
-    }
+    internal int MergeRootsUnchecked(int firstSetRoot, int secondSetRoot, T unionValue) =>
+        MergeRootsCore(firstSetRoot, secondSetRoot, unionValue);
 
     private int MergeRootsCore(int firstSetRoot, int secondSetRoot, T unionValue)
     {
-        if (sizes[firstSetRoot] < sizes[secondSetRoot])
-            (firstSetRoot, secondSetRoot) = (secondSetRoot, firstSetRoot);
-
-        parents[secondSetRoot] = firstSetRoot;
-        sizes[firstSetRoot] += sizes[secondSetRoot];
-        values[firstSetRoot] = unionValue;
+        int mergedRoot = forest.MergeRootsUnchecked(firstSetRoot, secondSetRoot, out int absorbedRoot);
+        values[mergedRoot] = unionValue;
 
         if (Volatile.Read(ref nextIndices) is int[] links)
-            (links[firstSetRoot], links[secondSetRoot]) = (links[secondSetRoot], links[firstSetRoot]);
+            (links[mergedRoot], links[absorbedRoot]) = (links[absorbedRoot], links[mergedRoot]);
 
-        return firstSetRoot;
+        return mergedRoot;
     }
 
     /// <inheritdoc/>
@@ -438,12 +406,12 @@ public class DisjointSet<T> : IDisjointSet
         var matrix = new SequentialMatrix<LongPixel>(image.Size);
         LongPixel[] raw = matrix.RawData;
         ParallelRunner.ForChunks(
-            parents.Length,
+            forest.Count,
             CancellationToken.None,
             (start, end) =>
             {
                 for (int pixelIndex = start; pixelIndex < end; pixelIndex++)
-                    raw[pixelIndex] = FindRootReadOnly(pixelIndex);
+                    raw[pixelIndex] = forest.FindReadOnly(pixelIndex);
             });
         return matrix;
     }
@@ -454,7 +422,7 @@ public class DisjointSet<T> : IDisjointSet
         var components = new Dictionary<int, Region<Coord>>();
         for (int pixelIndex = 0; pixelIndex < image.Count; pixelIndex++)
         {
-            int root = FindRootReadOnly(pixelIndex);
+            int root = forest.FindReadOnly(pixelIndex);
 
             if (!components.TryGetValue(root, out var region))
             {
@@ -471,37 +439,6 @@ public class DisjointSet<T> : IDisjointSet
     }
 
     /// <summary>
-    /// Finds the root partition index for the specified element index, applying path compression.
-    /// </summary>
-    /// <param name="index">The index of the element whose root is to be found.</param>
-    /// <returns>The root index of the partition containing <paramref name="index"/>.</returns>
-    private int Find(int index)
-    {
-        int root = FindRootReadOnly(index);
-
-        int current = index;
-        while (current != root)
-        {
-            int next = parents[current];
-            parents[current] = root;
-            current = next;
-        }
-
-        return root;
-    }
-
-    private int FindRootReadOnly(int index)
-    {
-        int current = index;
-        while (parents[current] != current)
-        {
-            current = parents[current];
-        }
-
-        return current;
-    }
-
-    /// <summary>
     /// Gets the partition identifier of the element at the specified linear index.
     /// </summary>
     /// <param name="index">The zero-based linear index of the element.</param>
@@ -510,7 +447,7 @@ public class DisjointSet<T> : IDisjointSet
     public LongPixel GetElement(int index)
     {
         ValidateIndex(index);
-        return FindRootReadOnly(index);
+        return forest.FindReadOnly(index);
     }
 
     /// <summary>
@@ -525,13 +462,13 @@ public class DisjointSet<T> : IDisjointSet
     public LongPixel GetElement(int x, int y)
     {
         ValidateCoords(x, y);
-        return FindRootReadOnly(image.IndexFromCoord(new Coord(x, y)));
+        return forest.FindReadOnly(image.IndexFromCoord(new Coord(x, y)));
     }
 
     private void ValidateIndex(int index, [CallerArgumentExpression(nameof(index))] string? paramName = null)
     {
-        if ((uint)index >= (uint)parents.Length)
-            throw new ArgumentOutOfRangeException(paramName, index, $"Index {index} must be within [0, {parents.Length}).");
+        if ((uint)index >= (uint)forest.Count)
+            throw new ArgumentOutOfRangeException(paramName, index, $"Index {index} must be within [0, {forest.Count}).");
     }
 
     private void ValidateCoord(Coord coord, [CallerArgumentExpression(nameof(coord))] string? paramName = null)
@@ -568,7 +505,7 @@ public class DisjointSet<T> : IDisjointSet
     {
         for (int pixelIndex = 0; pixelIndex < image.Count; pixelIndex++)
         {
-            yield return FindRootReadOnly(pixelIndex);
+            yield return forest.FindReadOnly(pixelIndex);
         }
     }
 

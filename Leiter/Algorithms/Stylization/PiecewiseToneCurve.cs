@@ -2,8 +2,8 @@ namespace Leiter.Algorithms.Stylization;
 
 using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Leiter.Algorithms.Color;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -122,17 +122,40 @@ public static class PiecewiseToneCurve
         }
 
         int width = image.Width;
-        int height = image.Height;
-        var result = new SequentialMatrix<Rgb8>(width, height);
+        var result = new SequentialMatrix<Rgb8>(image.Size);
 
-        Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, y =>
+        if (image.TryGetRawArray() is Rgb8[] srcRaw)
         {
-            for (int x = 0; x < width; x++)
+            Rgb8[] dstRaw = result.RawData;
+            ParallelRunner.ForChunks(
+                srcRaw.Length,
+                cancellationToken,
+                (start, end) =>
+                {
+                    for (int i = start; i < end; i++)
+                    {
+                        Rgb8 pixel = srcRaw[i];
+                        dstRaw[i] = new Rgb8(toneLookupTable[pixel.R], toneLookupTable[pixel.G], toneLookupTable[pixel.B]);
+                    }
+                });
+
+            return result;
+        }
+
+        ParallelRunner.ForRows(
+            image.Size,
+            cancellationToken,
+            (startRow, endRow) =>
             {
-                Rgb8 pixel = image[x, y];
-                result[x, y] = new Rgb8(toneLookupTable[pixel.R], toneLookupTable[pixel.G], toneLookupTable[pixel.B]);
-            }
-        });
+                for (int y = startRow; y < endRow; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        Rgb8 pixel = image[x, y];
+                        result[x, y] = new Rgb8(toneLookupTable[pixel.R], toneLookupTable[pixel.G], toneLookupTable[pixel.B]);
+                    }
+                }
+            });
 
         return result;
     }

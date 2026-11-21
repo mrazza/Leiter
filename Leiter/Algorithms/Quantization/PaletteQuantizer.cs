@@ -116,7 +116,7 @@ public static class PaletteQuantizer
         DictionaryHistogram<TPixel> paletteHistogram = new();
         Dictionary<TPixel, TMetric> metricLookup = new();
         Dictionary<TPixel, TPixel> remap = new();
-        var retainedBuckets = new List<(TPixel Bucket, TMetric Metric, int FirstSeen)>();
+        var retainedBuckets = new List<RetainedBucket<TPixel, TMetric>>();
 
         int targetPixelCount = (int)Math.Ceiling(image.Count * coverageFraction);
         int pixelCount = 0;
@@ -127,7 +127,7 @@ public static class PaletteQuantizer
                 TMetric metric = rawMetricLookup[bucket.Key];
                 paletteHistogram.Increment(bucket.Key, bucket.Value);
                 metricLookup[bucket.Key] = metric;
-                retainedBuckets.Add((bucket.Key, metric, firstSeenOrder[bucket.Key]));
+                retainedBuckets.Add(new RetainedBucket<TPixel, TMetric>(bucket.Key, metric, firstSeenOrder[bucket.Key]));
                 pixelCount += bucket.Value;
             }
             else
@@ -152,9 +152,11 @@ public static class PaletteQuantizer
         public int FirstSeen;
     }
 
+    private readonly record struct RetainedBucket<TPixel, TMetric>(TPixel Bucket, TMetric Metric, int FirstSeen);
+
     private static TPixel FindNearestRetainedBucket<TPixel, TMetric>(
         TMetric rareMetric,
-        List<(TPixel Bucket, TMetric Metric, int FirstSeen)> retainedBuckets)
+        List<RetainedBucket<TPixel, TMetric>> retainedBuckets)
         where TPixel : struct, IPixel<TPixel>
         where TMetric : struct, IPixel<TMetric>
     {
@@ -164,14 +166,14 @@ public static class PaletteQuantizer
 
         for (int i = 1; i < retainedBuckets.Count; i++)
         {
-            (TPixel bucket, TMetric metric, int firstSeen) = retainedBuckets[i];
-            double distance = rareMetric.Distance(metric);
+            RetainedBucket<TPixel, TMetric> candidate = retainedBuckets[i];
+            double distance = rareMetric.Distance(candidate.Metric);
             int cmp = distance.CompareTo(bestDistance);
-            if (cmp < 0 || (cmp == 0 && firstSeen < bestFirstSeen))
+            if (cmp < 0 || (cmp == 0 && candidate.FirstSeen < bestFirstSeen))
             {
                 bestDistance = distance;
-                bestBucket = bucket;
-                bestFirstSeen = firstSeen;
+                bestBucket = candidate.Bucket;
+                bestFirstSeen = candidate.FirstSeen;
             }
         }
 

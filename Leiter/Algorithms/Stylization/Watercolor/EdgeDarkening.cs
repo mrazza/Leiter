@@ -2,8 +2,8 @@ namespace Leiter.Algorithms.Stylization.Watercolor;
 
 using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Leiter.Algorithms;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Stylization;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -86,49 +86,32 @@ public static class EdgeDarkening
         cancellationToken.ThrowIfCancellationRequested();
 
         int width = smoothedEdges.Width;
-        int height = smoothedEdges.Height;
         double intensity = opts.Intensity;
 
-        if (smoothedEdges is SequentialMatrix<DoublePixel> sequential)
+        if (smoothedEdges.TryGetRawArray() is DoublePixel[] raw)
         {
-            DoublePixel[] raw = sequential.RawData;
-            void ScaleSequentialRow(int y)
-            {
-                int rowOffset = y * width;
-                for (int x = 0; x < width; x++)
+            ParallelRunner.ForChunks(
+                raw.Length,
+                cancellationToken,
+                (start, end) =>
                 {
-                    int idx = rowOffset + x;
-                    raw[idx] = new DoublePixel(intensity * ScalarMath.ClampUnitOrDefault(raw[idx].Value));
-                }
-            }
-
-            if (cancellationToken.CanBeCanceled)
-            {
-                Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, ScaleSequentialRow);
-            }
-            else
-            {
-                Parallel.For(0, height, ScaleSequentialRow);
-            }
+                    for (int i = start; i < end; i++)
+                        raw[i] = new DoublePixel(intensity * ScalarMath.ClampUnitOrDefault(raw[i].Value));
+                });
         }
         else
         {
-            void ScaleRow(int y)
-            {
-                for (int x = 0; x < width; x++)
+            ParallelRunner.ForRows(
+                smoothedEdges.Size,
+                cancellationToken,
+                (startRow, endRow) =>
                 {
-                    smoothedEdges[x, y] = new DoublePixel(intensity * ScalarMath.ClampUnitOrDefault(smoothedEdges[x, y].Value));
-                }
-            }
-
-            if (cancellationToken.CanBeCanceled)
-            {
-                Parallel.For(0, height, new ParallelOptions { CancellationToken = cancellationToken }, ScaleRow);
-            }
-            else
-            {
-                Parallel.For(0, height, ScaleRow);
-            }
+                    for (int y = startRow; y < endRow; y++)
+                    {
+                        for (int x = 0; x < width; x++)
+                            smoothedEdges[x, y] = new DoublePixel(intensity * ScalarMath.ClampUnitOrDefault(smoothedEdges[x, y].Value));
+                    }
+                });
         }
 
         return smoothedEdges;

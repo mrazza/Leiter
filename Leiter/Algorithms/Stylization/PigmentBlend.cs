@@ -2,7 +2,6 @@ namespace Leiter.Algorithms.Stylization;
 
 using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -219,7 +218,7 @@ public static class PigmentBlend
         CancellationToken cancellationToken)
     {
         int count = densityField.Count;
-        DoublePixel[]? fieldRaw = densityField is SequentialMatrix<DoublePixel> sequential ? sequential.RawData : null;
+        DoublePixel[]? fieldRaw = densityField.TryGetRawArray();
 
         if (intensity == 0.0)
         {
@@ -238,8 +237,8 @@ public static class PigmentBlend
 
                         return default;
                     })
-                : ParallelRunner.MapChunks(
-                    densityField.Height,
+                : ParallelRunner.MapRows(
+                    densityField.Size,
                     cancellationToken,
                     (startRow, endRow) =>
                     {
@@ -255,8 +254,7 @@ public static class PigmentBlend
                         }
 
                         return default;
-                    },
-                    minParallelCount: count >= ParallelRunner.DefaultMinParallelCount && densityField.Height >= 8 ? 2 : densityField.Height + 1);
+                    });
 
             ThrowFirstNonFiniteError(errors, nameof(densityField));
             return null;
@@ -279,8 +277,8 @@ public static class PigmentBlend
 
                     return default;
                 })
-            : ParallelRunner.MapChunks(
-                densityField.Height,
+            : ParallelRunner.MapRows(
+                densityField.Size,
                 cancellationToken,
                 (startRow, endRow) =>
                 {
@@ -298,8 +296,7 @@ public static class PigmentBlend
                     }
 
                     return default;
-                },
-                minParallelCount: count >= ParallelRunner.DefaultMinParallelCount && densityField.Height >= 8 ? 2 : densityField.Height + 1);
+                });
 
         ThrowFirstNonFiniteError(buildErrors, nameof(densityField));
         return offsets;
@@ -332,7 +329,7 @@ public static class PigmentBlend
     {
         int count = field.Count;
         var offsets = new double[count];
-        DoublePixel[]? fieldRaw = field is SequentialMatrix<DoublePixel> sequential ? sequential.RawData : null;
+        DoublePixel[]? fieldRaw = field.TryGetRawArray();
 
         OffsetValidationError[] errors = fieldRaw is not null
             ? ParallelRunner.MapChunks(
@@ -351,8 +348,8 @@ public static class PigmentBlend
 
                     return default;
                 })
-            : ParallelRunner.MapChunks(
-                field.Height,
+            : ParallelRunner.MapRows(
+                field.Size,
                 cancellationToken,
                 (startRow, endRow) =>
                 {
@@ -371,8 +368,7 @@ public static class PigmentBlend
                     }
 
                     return default;
-                },
-                minParallelCount: count >= ParallelRunner.DefaultMinParallelCount && field.Height >= 8 ? 2 : field.Height + 1);
+                });
 
         ThrowFirstNonFiniteError(errors, "densityOffset");
         return offsets;
@@ -392,41 +388,40 @@ public static class PigmentBlend
         double[] densityOffsets,
         CancellationToken cancellationToken)
     {
-        int width = image.Width;
-        int height = image.Height;
-        var result = new SequentialMatrix<Rgb8>(width, height);
+        Size size = image.Size;
+        int width = size.Width;
+        var result = new SequentialMatrix<Rgb8>(size);
         Rgb8[] destRaw = result.RawData;
 
-        if (image is SequentialMatrix<Rgb8> sequentialImage)
+        if (image.TryGetRawArray() is Rgb8[] srcRaw)
         {
-            Rgb8[] srcRaw = sequentialImage.RawData;
-            ParallelFor(destRaw.Length, cancellationToken, i => destRaw[i] = AdjustDensityUnchecked(srcRaw[i], densityOffsets[i]));
+            ParallelRunner.ForChunks(
+                destRaw.Length,
+                cancellationToken,
+                (start, end) =>
+                {
+                    for (int i = start; i < end; i++)
+                        destRaw[i] = AdjustDensityUnchecked(srcRaw[i], densityOffsets[i]);
+                });
             return result;
         }
 
-        Size size = image.Size;
-        ParallelFor(height, cancellationToken, y =>
-        {
-            int rowOffset = size.IndexOf(0, y);
-            for (int x = 0; x < width; x++)
+        ParallelRunner.ForRows(
+            size,
+            cancellationToken,
+            (startRow, endRow) =>
             {
-                int idx = rowOffset + x;
-                destRaw[idx] = AdjustDensityUnchecked(image[x, y], densityOffsets[idx]);
-            }
-        });
+                for (int y = startRow; y < endRow; y++)
+                {
+                    int rowOffset = size.IndexOf(0, y);
+                    for (int x = 0; x < width; x++)
+                    {
+                        int idx = rowOffset + x;
+                        destRaw[idx] = AdjustDensityUnchecked(image[x, y], densityOffsets[idx]);
+                    }
+                }
+            });
 
         return result;
-    }
-
-    private static void ParallelFor(int toExclusive, CancellationToken cancellationToken, Action<int> body)
-    {
-        if (cancellationToken.CanBeCanceled)
-        {
-            Parallel.For(0, toExclusive, new ParallelOptions { CancellationToken = cancellationToken }, body);
-        }
-        else
-        {
-            Parallel.For(0, toExclusive, body);
-        }
     }
 }

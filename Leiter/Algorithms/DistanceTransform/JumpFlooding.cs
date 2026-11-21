@@ -43,12 +43,10 @@ public static class JumpFlooding
             return new List<Coord>();
 
         int width = size.Width;
-        int height = size.Height;
-        bool[]? rawMask = binaryMask is SequentialMatrix<bool> sequential ? sequential.RawData : null;
-        int minRowParallel = size.Count >= ParallelRunner.DefaultMinParallelCount && height >= 8 ? 2 : height + 1;
+        bool[]? rawMask = binaryMask.TryGetRawArray();
 
-        List<Coord>[] stripSeeds = ParallelRunner.MapChunks(
-            height,
+        List<Coord>[] stripSeeds = ParallelRunner.MapRows(
+            size,
             cancellationToken,
             (startRow, endRow) =>
             {
@@ -82,8 +80,7 @@ public static class JumpFlooding
                 }
 
                 return local;
-            },
-            minParallelCount: minRowParallel);
+            });
 
         if (stripSeeds.Length == 1)
             return stripSeeds[0];
@@ -164,13 +161,11 @@ public static class JumpFlooding
             return new SequentialMatrix<NearestSeed>(size);
 
         int width = size.Width;
-        int height = size.Height;
         var seedGrid = new Coord[seedMask.Count];
-        bool[]? rawMask = seedMask is SequentialMatrix<bool> sequential ? sequential.RawData : null;
-        int minRowParallel = size.Count >= ParallelRunner.DefaultMinParallelCount && height >= 8 ? 2 : height + 1;
+        bool[]? rawMask = seedMask.TryGetRawArray();
 
-        bool[] stripHasSeed = ParallelRunner.MapChunks(
-            height,
+        bool[] stripHasSeed = ParallelRunner.MapRows(
+            size,
             cancellationToken,
             (startRow, endRow) =>
             {
@@ -195,8 +190,7 @@ public static class JumpFlooding
                 }
 
                 return localHasSeed;
-            },
-            minParallelCount: minRowParallel);
+            });
 
         bool hasAnySeed = false;
         for (int i = 0; i < stripHasSeed.Length; i++)
@@ -295,10 +289,9 @@ public static class JumpFlooding
     {
         int width = size.Width;
         int height = size.Height;
-        int minRowParallel = size.Count >= 4096 && height >= 8 ? 2 : height + 1;
 
-        ParallelRunner.ForChunks(
-            height,
+        ParallelRunner.ForRows(
+            size,
             cancellationToken,
             (startRow, endRow) =>
             {
@@ -349,7 +342,7 @@ public static class JumpFlooding
                     }
                 }
             },
-            minParallelCount: minRowParallel);
+            minParallelPixels: 4096);
     }
 
     private static Matrix<DoublePixel> ComputeDistancesFromNearestSeeds(IReadOnlyMatrix<NearestSeed> nearestSeeds) =>

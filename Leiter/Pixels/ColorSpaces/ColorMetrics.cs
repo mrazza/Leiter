@@ -162,6 +162,42 @@ public static class ColorMetrics
         Math.Clamp(pixel.L / 100.0, 0.0, 1.0);
 
     /// <summary>
+    /// Computes the CIELCh chroma <c>C* = sqrt(a*² + b*²)</c> for a <see cref="Lab64"/> pixel.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="GetChroma(Rgb64)"/> and <see cref="GetChroma(Rgb8)"/>, which return normalized RGB channel range in <c>[0, 1]</c>,
+    /// CIELCh chroma is unbounded above and expressed in perceptual CIELAB units.
+    /// </remarks>
+    /// <param name="pixel">The CIELAB pixel to evaluate.</param>
+    /// <returns>The non-negative chroma magnitude.</returns>
+    public static double GetChroma(this Lab64 pixel) =>
+        Math.Sqrt((pixel.A * pixel.A) + (pixel.B * pixel.B));
+
+    /// <summary>
+    /// Computes the cylindrical CIELCh hue angle in degrees in <c>[0, 360)</c> for a <see cref="Lab64"/> pixel.
+    /// </summary>
+    /// <remarks>
+    /// Returns <c>0</c> for near-neutral pixels where chroma is at most <c>1e-6</c>.
+    /// </remarks>
+    /// <param name="pixel">The CIELAB pixel to evaluate.</param>
+    /// <returns>The hue angle in degrees in <c>[0, 360)</c>.</returns>
+    public static double GetHueDegrees(this Lab64 pixel)
+    {
+        if (pixel.GetChroma() <= 1e-6)
+            return 0.0;
+
+        return WrapHueDegrees(Math.Atan2(pixel.B, pixel.A) * (180.0 / Math.PI));
+    }
+
+    /// <summary>
+    /// Computes lightness normalized to <c>[0, 1]</c> (<c>L* / 100</c> clamped) for a <see cref="Lab64"/> pixel.
+    /// </summary>
+    /// <param name="pixel">The CIELAB pixel to evaluate.</param>
+    /// <returns>The clamped normalized lightness in <c>[0, 1]</c>.</returns>
+    public static double GetNormalizedLightness(this Lab64 pixel) =>
+        Math.Clamp(pixel.L / 100.0, 0.0, 1.0);
+
+    /// <summary>
     /// Computes the shortest circular angular difference in <c>[0, 180]</c> between two hue angles in degrees.
     /// </summary>
     /// <param name="hue1Degrees">The first hue angle in degrees.</param>

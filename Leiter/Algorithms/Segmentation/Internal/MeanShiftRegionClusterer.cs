@@ -66,7 +66,7 @@ internal static class MeanShiftRegionClusterer
         int pixelCount = size.Count;
         double[] gradientSquared = ComputeMaxCardinalGradientSquared(modes, size, cancellationToken);
 
-        (int Start, int End, int[] Counts)[] chunkHistograms = ParallelRunner.MapChunks(
+        int[][] chunkHistograms = ParallelRunner.MapChunks(
             pixelCount,
             cancellationToken,
             (start, end) =>
@@ -74,25 +74,18 @@ internal static class MeanShiftRegionClusterer
                 var counts = new int[GradientBucketCount];
                 for (int pixelIndex = start; pixelIndex < end; pixelIndex++)
                     counts[GetGradientBucketIndex(gradientSquared[pixelIndex])]++;
-                return (start, end, counts);
+                return counts;
             });
 
         // Prefix sum in (bucket, chunk) order preserves exact row-major order inside every bucket.
-        int runningOffset = 0;
-        for (int bucket = 0; bucket < GradientBucketCount; bucket++)
-        {
-            for (int c = 0; c < chunkHistograms.Length; c++)
-            {
-                int count = chunkHistograms[c].Counts[bucket];
-                chunkHistograms[c].Counts[bucket] = runningOffset;
-                runningOffset += count;
-            }
-        }
+        _ = ParallelRunner.PrefixSumTransposedBuckets(chunkHistograms, GradientBucketCount);
 
         var orderedPixels = new int[pixelCount];
-        ParallelRunner.For(chunkHistograms.Length, cancellationToken, c =>
+        int chunkCount = chunkHistograms.Length;
+        ParallelRunner.For(chunkCount, cancellationToken, c =>
         {
-            (int start, int end, int[] writeOffsets) = chunkHistograms[c];
+            (int start, int end) = ParallelRunner.GetChunkBounds(c, chunkCount, pixelCount);
+            int[] writeOffsets = chunkHistograms[c];
             for (int pixelIndex = start; pixelIndex < end; pixelIndex++)
             {
                 int bucket = GetGradientBucketIndex(gradientSquared[pixelIndex]);
@@ -111,12 +104,9 @@ internal static class MeanShiftRegionClusterer
         var gradientSquared = new double[size.Count];
         int width = size.Width;
         int height = size.Height;
-        int minRowParallel = size.Count >= ParallelRunner.DefaultMinParallelCount && height >= 4
-            ? 2
-            : height + 1;
 
-        ParallelRunner.ForChunks(
-            height,
+        ParallelRunner.ForRows(
+            size,
             cancellationToken,
             (startRow, endRow) =>
             {
@@ -144,8 +134,7 @@ internal static class MeanShiftRegionClusterer
                         gradientSquared[p] = maxDiffSq;
                     }
                 }
-            },
-            minParallelCount: minRowParallel);
+            });
 
         return gradientSquared;
     }
@@ -215,7 +204,7 @@ internal static class MeanShiftRegionClusterer
 
         var regionPartition = disjointSet.GetPartition(seedPixel);
         Lab32 seedColor = modes[seedPixel].Color;
-        Vector3D colorSum = seedColor.ToVector3D();
+        Lab64 colorSum = seedColor.ToLab64();
         int memberCount = 1;
         int dequeuedCount = 0;
 
@@ -254,7 +243,7 @@ internal static class MeanShiftRegionClusterer
 
                 visited[neighborPixel] = true;
                 regionPartition = disjointSet.Union(regionPartition, disjointSet.GetPartition(neighborPixel), 0);
-                colorSum += neighborMode.Color.ToVector3D();
+                colorSum += neighborMode.Color.ToLab64();
                 memberCount++;
                 regionMeanColor = ComputeMeanColor(colorSum, memberCount);
                 frontierQueue.Enqueue(neighborPixel);
@@ -262,11 +251,8 @@ internal static class MeanShiftRegionClusterer
         }
     }
 
-    private static Lab32 ComputeMeanColor(Vector3D colorSum, int memberCount)
-    {
-        Vector3D mean = colorSum * (1.0 / memberCount);
-        return new Lab32((float)mean.X, (float)mean.Y, (float)mean.Z);
-    }
+    private static Lab32 ComputeMeanColor(Lab64 colorSum, int memberCount) =>
+        (colorSum * (1.0 / memberCount)).ToLab32();
 
     private static bool CanMergeNeighborMode(
         MeanShiftMode currentMode,
@@ -301,7 +287,7 @@ internal static class MeanShiftRegionClusterer
 
         var regionParent = new int[regionCount];
         var regionSizes = new int[regionCount];
-        var regionColorSums = new Vector3D[regionCount];
+        var regionColorSums = new Lab64[regionCount];
         var regionMeanColors = new Lab32[regionCount];
         var representativePixels = new int[regionCount];
 
@@ -316,7 +302,7 @@ internal static class MeanShiftRegionClusterer
             regionSizes[r] = pixelCount;
             Lab32 meanColor = initialStats[r].MeanColor;
             regionMeanColors[r] = meanColor;
-            regionColorSums[r] = meanColor.ToVector3D() * pixelCount;
+            regionColorSums[r] = meanColor.ToLab64() * pixelCount;
 
             foreach (Coord coord in region.Pixels)
             {
