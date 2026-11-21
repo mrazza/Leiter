@@ -55,4 +55,49 @@ public class GaussianMixtureModelTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() => new GaussianMixtureModel(0));
     }
+
+    [Fact]
+    public void ArrayOverloads_AboveParallelThreshold_ShouldMatchSpanOverloads()
+    {
+        const int sampleCount = 72_000;
+        var rng = new Random(12345);
+        var pixels = new Rgb8[sampleCount];
+        var indices = new int[sampleCount];
+        var isForeground = new bool[sampleCount];
+        var assigned = new int[sampleCount];
+
+        for (int i = 0; i < sampleCount; i++)
+        {
+            bool fg = (i & 1) == 0;
+            isForeground[i] = fg;
+            indices[i] = i;
+            assigned[i] = i % 5;
+            pixels[i] = fg
+                ? new Rgb8((byte)(180 + rng.Next(60)), (byte)(20 + rng.Next(40)), (byte)(30 + rng.Next(50)))
+                : new Rgb8((byte)(20 + rng.Next(40)), (byte)(120 + rng.Next(60)), (byte)(180 + rng.Next(60)));
+        }
+
+        var spanGmm = new GaussianMixtureModel(componentCount: 5);
+        var arrayGmm = new GaussianMixtureModel(componentCount: 5);
+
+        spanGmm.InitializeAndFit(pixels.AsSpan(), indices.AsSpan());
+        arrayGmm.InitializeAndFit(pixels, indices);
+
+        for (int i = 0; i < 200; i++)
+        {
+            Rgb8 probe = pixels[i * 350];
+            Assert.Equal(spanGmm.AssignBestComponent(probe), arrayGmm.AssignBestComponent(probe));
+            Assert.Equal(spanGmm.EvaluateNegativeLogLikelihood(probe), arrayGmm.EvaluateNegativeLogLikelihood(probe), 10);
+        }
+
+        spanGmm.FitFromAssignedComponents(pixels.AsSpan(), isForeground.AsSpan(), targetForeground: true, assigned.AsSpan(), sampleCount / 2);
+        arrayGmm.FitFromAssignedComponents(pixels, isForeground, targetForeground: true, assigned, sampleCount / 2);
+
+        for (int i = 0; i < 200; i++)
+        {
+            Rgb8 probe = pixels[i * 350];
+            Assert.Equal(spanGmm.AssignBestComponent(probe), arrayGmm.AssignBestComponent(probe));
+            Assert.Equal(spanGmm.EvaluateNegativeLogLikelihood(probe), arrayGmm.EvaluateNegativeLogLikelihood(probe), 10);
+        }
+    }
 }
