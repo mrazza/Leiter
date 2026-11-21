@@ -366,4 +366,48 @@ public class DisjointSetTests
         Assert.Throws<ArgumentOutOfRangeException>(() => emptyDsu.GetPartition(new Coord(0, 0)));
         Assert.Throws<ArgumentOutOfRangeException>(() => emptyDsu.TryUnion(0, 0, 1, out _));
     }
+
+    [Fact]
+    public void LazyRegionLinks_ConcurrentReadsAndPostReadUnions_ShouldRemainConsistent()
+    {
+        const int width = 300;
+        const int height = 240; // 72,000 elements (> ParallelRunner threshold)
+        var mat = new DummyUntypedMatrix(width, height);
+        var dsu = new DisjointSet<int>(mat, index => index);
+
+        // Build 3 distinct horizontal bands
+        for (int y = 0; y < height; y++)
+        {
+            int bandStart = (y / 80) * 80 * width;
+            for (int x = 0; x < width; x++)
+            {
+                int idx = (y * width) + x;
+                if (idx != bandStart)
+                    dsu.Union(bandStart, idx, bandStart);
+            }
+        }
+
+        int[] queries = [0, (80 * width) + 123, (160 * width) + 299];
+        Parallel.For(0, 32, worker =>
+        {
+            int idx = queries[worker % queries.Length];
+            Region<Coord> region = dsu.GetRegion(idx);
+            Assert.Equal(80 * width, region.Pixels.Count);
+
+            var part = dsu.GetPartition(idx);
+            Assert.Equal(80 * width, part.GetIndices().Count());
+            Assert.Equal(80 * width, part.GetCoords().Count());
+        });
+
+        Matrix<LongPixel> matrixBeforeMerge = dsu.ToMatrix();
+        Assert.Equal(matrixBeforeMerge[0], matrixBeforeMerge[(79 * width) + 299]);
+        Assert.NotEqual(matrixBeforeMerge[0], matrixBeforeMerge[80 * width]);
+
+        // Union after lazy nextIndices has been materialized
+        dsu.Union(0, 80 * width, 1);
+        Region<Coord> mergedRegion = dsu.GetRegion(80 * width);
+        Assert.Equal(160 * width, mergedRegion.Pixels.Count);
+        Assert.Contains(new Coord(0, 0), mergedRegion.Pixels);
+        Assert.Contains(new Coord(299, 159), mergedRegion.Pixels);
+    }
 }

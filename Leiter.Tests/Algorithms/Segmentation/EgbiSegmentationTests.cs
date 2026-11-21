@@ -145,4 +145,27 @@ public class EgbiSegmentationTests
             MatrixAssert.Equal(baseline, withToken);
         }
     }
+
+    [Fact]
+    public void Segment_LargeGridAboveParallelSortThreshold_ShouldBeDeterministicAndMatchWithToken()
+    {
+        const int size = 200; // ~159K 8-connected edges (> ParallelSort threshold)
+        SequentialMatrix<Lab32> img = TestMatrices.Create(
+            size,
+            size,
+            (x, y) =>
+            {
+                float l = 25.0f + (((x / 40) + (y / 40)) * 12.0f);
+                float a = ((x % 40) == 0 ? 15.0f : -5.0f) + ((x / 50) * 8.0f);
+                float b = ((y % 40) == 0 ? -12.0f : 6.0f);
+                return new Lab32(l, a, b);
+            });
+
+        var options = new EgbiOptions(KFactor: 300.0, Epsilon: 0.5, MinRegionSize: 40);
+        Matrix<LongPixel> baseline = EgbiSegmentation.Segment(img, options).ToMatrix();
+
+        using var cts = new CancellationTokenSource();
+        Matrix<LongPixel> repeated = EgbiSegmentation.Segment(img, options, cts.Token).ToMatrix();
+        MatrixAssert.Equal(baseline, repeated);
+    }
 }

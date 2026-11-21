@@ -3,8 +3,11 @@ namespace Leiter.Algorithms.DataStructures;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -66,19 +69,12 @@ public class DisjointSet<T> : IDisjointSet
     }
 
 
-    /// <summary>
-    /// Represents an element within the disjoint set, storing its forest links and associated value.
-    /// </summary>
-    /// <param name="SelfIndex">The linear index of this element in the matrix.</param>
-    /// <param name="ParentIndex">The index of the parent element in the forest tree for path compression.</param>
-    /// <param name="NextIndex">The index of the next element in the circular singly-linked list for allocation-free partition traversal.</param>
-    /// <param name="Size">The number of elements in the tree rooted at this element, used for union-by-size rank optimization.</param>
-    /// <param name="Value">The arbitrary user data associated with this partition root.</param>
-    [StructLayout(LayoutKind.Sequential)]
-    private record struct Element(int SelfIndex, int ParentIndex, int NextIndex, int Size, T Value);
-
     private readonly IUntypedMatrix image;
-    private readonly Element[] elements;
+    private readonly int[] parents;
+    private readonly int[] sizes;
+    private readonly T[] values;
+    private readonly Lock nextIndicesLock = new();
+    private int[]? nextIndices;
 
     /// <inheritdoc/>
     public int Count => image.Count;
@@ -151,15 +147,36 @@ public class DisjointSet<T> : IDisjointSet
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(initialValueFunc);
         this.image = image;
-        elements = new Element[image.Count];
-        for (int index = 0; index < image.Count; index++)
+        int count = image.Count;
+        parents = new int[count];
+        sizes = new int[count];
+        values = new T[count];
+        Array.Fill(sizes, 1);
+        for (int index = 0; index < count; index++)
         {
-            elements[index].SelfIndex = index;
-            elements[index].ParentIndex = index;
-            elements[index].NextIndex = index;
-            elements[index].Size = 1;
-            elements[index].Value = initialValueFunc(index);
+            parents[index] = index;
+            values[index] = initialValueFunc(index);
         }
+    }
+
+    internal DisjointSet(IUntypedMatrix image, T initialValue)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        this.image = image;
+        int count = image.Count;
+        parents = new int[count];
+        sizes = new int[count];
+        values = new T[count];
+        Array.Fill(sizes, 1);
+        Array.Fill(values, initialValue);
+        ParallelRunner.ForChunks(
+            count,
+            CancellationToken.None,
+            (start, end) =>
+            {
+                for (int index = start; index < end; index++)
+                    parents[index] = index;
+            });
     }
 
     /// <summary>
@@ -183,8 +200,8 @@ public class DisjointSet<T> : IDisjointSet
     public Partition GetPartition(int index)
     {
         ValidateIndex(index);
-        var rootIndex = Find(index);
-        return new Partition(this, rootIndex, elements[rootIndex].Size, elements[rootIndex].Value);
+        int rootIndex = Find(index);
+        return new Partition(this, rootIndex, sizes[rootIndex], values[rootIndex]);
     }
 
     /// <summary>
@@ -222,24 +239,58 @@ public class DisjointSet<T> : IDisjointSet
     {
         ValidateIndex(index);
         int rootIndex = FindRootReadOnly(index);
-        var region = new Region<Coord>(elements[rootIndex].Size);
+        int[] links = EnsureNextIndicesInitialized();
+        var region = new Region<Coord>(sizes[rootIndex]);
         int currIndex = rootIndex;
         do
         {
             region.Pixels.Add(image.CoordFromIndex(currIndex));
-            currIndex = elements[currIndex].NextIndex;
+            currIndex = links[currIndex];
         } while (currIndex != rootIndex);
         return region;
     }
 
     private IEnumerable<int> EnumeratePartitionIndices(int rootIndex)
     {
+        int[] links = EnsureNextIndicesInitialized();
         int currIndex = rootIndex;
         do
         {
             yield return currIndex;
-            currIndex = elements[currIndex].NextIndex;
+            currIndex = links[currIndex];
         } while (currIndex != rootIndex);
+    }
+
+    private int[] EnsureNextIndicesInitialized()
+    {
+        int[]? existing = Volatile.Read(ref nextIndices);
+        if (existing is not null)
+            return existing;
+
+        lock (nextIndicesLock)
+        {
+            existing = nextIndices;
+            if (existing is not null)
+                return existing;
+
+            int count = parents.Length;
+            var links = new int[count];
+            for (int i = 0; i < count; i++)
+                links[i] = i;
+
+            for (int i = 0; i < count; i++)
+            {
+                int root = FindRootReadOnly(i);
+                if (root != i)
+                {
+                    links[i] = links[root];
+                    links[root] = i;
+                }
+            }
+
+            Volatile.Write(ref nextIndices, links);
+            return links;
+        }
     }
 
     /// <summary>
@@ -332,26 +383,68 @@ public class DisjointSet<T> : IDisjointSet
 
     private Partition MergeRoots(int firstSetRoot, int secondSetRoot, T unionValue)
     {
-        if (elements[firstSetRoot].Size < elements[secondSetRoot].Size)
-        {
-            (firstSetRoot, secondSetRoot) = (secondSetRoot, firstSetRoot);
-        }
+        int mergedRoot = MergeRootsCore(firstSetRoot, secondSetRoot, unionValue);
+        return new Partition(this, mergedRoot, sizes[mergedRoot], unionValue);
+    }
 
-        elements[secondSetRoot].ParentIndex = firstSetRoot;
-        elements[firstSetRoot].Size += elements[secondSetRoot].Size;
-        (elements[firstSetRoot].NextIndex, elements[secondSetRoot].NextIndex) = (elements[secondSetRoot].NextIndex, elements[firstSetRoot].NextIndex);
-        elements[firstSetRoot].Value = unionValue;
-        return GetPartition(firstSetRoot);
+    internal int FindRoot(int index)
+    {
+        Debug.Assert((uint)index < (uint)parents.Length);
+        return Find(index);
+    }
+
+    internal int GetRootSize(int rootIndex)
+    {
+        Debug.Assert((uint)rootIndex < (uint)sizes.Length);
+        Debug.Assert(parents[rootIndex] == rootIndex);
+        return sizes[rootIndex];
+    }
+
+    internal T GetRootValue(int rootIndex)
+    {
+        Debug.Assert((uint)rootIndex < (uint)values.Length);
+        Debug.Assert(parents[rootIndex] == rootIndex);
+        return values[rootIndex];
+    }
+
+    internal int MergeRootsUnchecked(int firstSetRoot, int secondSetRoot, T unionValue)
+    {
+        Debug.Assert((uint)firstSetRoot < (uint)parents.Length);
+        Debug.Assert((uint)secondSetRoot < (uint)parents.Length);
+        Debug.Assert(firstSetRoot != secondSetRoot);
+        Debug.Assert(parents[firstSetRoot] == firstSetRoot);
+        Debug.Assert(parents[secondSetRoot] == secondSetRoot);
+        return MergeRootsCore(firstSetRoot, secondSetRoot, unionValue);
+    }
+
+    private int MergeRootsCore(int firstSetRoot, int secondSetRoot, T unionValue)
+    {
+        if (sizes[firstSetRoot] < sizes[secondSetRoot])
+            (firstSetRoot, secondSetRoot) = (secondSetRoot, firstSetRoot);
+
+        parents[secondSetRoot] = firstSetRoot;
+        sizes[firstSetRoot] += sizes[secondSetRoot];
+        values[firstSetRoot] = unionValue;
+
+        if (Volatile.Read(ref nextIndices) is int[] links)
+            (links[firstSetRoot], links[secondSetRoot]) = (links[secondSetRoot], links[firstSetRoot]);
+
+        return firstSetRoot;
     }
 
     /// <inheritdoc/>
     public Matrix<LongPixel> ToMatrix()
     {
         var matrix = new SequentialMatrix<LongPixel>(image.Size);
-        for (int pixelIndex = 0; pixelIndex < image.Count; pixelIndex++)
-        {
-            matrix[pixelIndex] = FindRootReadOnly(pixelIndex);
-        }
+        LongPixel[] raw = matrix.RawData;
+        ParallelRunner.ForChunks(
+            parents.Length,
+            CancellationToken.None,
+            (start, end) =>
+            {
+                for (int pixelIndex = start; pixelIndex < end; pixelIndex++)
+                    raw[pixelIndex] = FindRootReadOnly(pixelIndex);
+            });
         return matrix;
     }
 
@@ -389,8 +482,8 @@ public class DisjointSet<T> : IDisjointSet
         int current = index;
         while (current != root)
         {
-            int next = elements[current].ParentIndex;
-            elements[current].ParentIndex = root;
+            int next = parents[current];
+            parents[current] = root;
             current = next;
         }
 
@@ -400,9 +493,9 @@ public class DisjointSet<T> : IDisjointSet
     private int FindRootReadOnly(int index)
     {
         int current = index;
-        while (elements[current].ParentIndex != current)
+        while (parents[current] != current)
         {
-            current = elements[current].ParentIndex;
+            current = parents[current];
         }
 
         return current;
@@ -437,8 +530,8 @@ public class DisjointSet<T> : IDisjointSet
 
     private void ValidateIndex(int index, [CallerArgumentExpression(nameof(index))] string? paramName = null)
     {
-        if ((uint)index >= (uint)elements.Length)
-            throw new ArgumentOutOfRangeException(paramName, index, $"Index {index} must be within [0, {elements.Length}).");
+        if ((uint)index >= (uint)parents.Length)
+            throw new ArgumentOutOfRangeException(paramName, index, $"Index {index} must be within [0, {parents.Length}).");
     }
 
     private void ValidateCoord(Coord coord, [CallerArgumentExpression(nameof(coord))] string? paramName = null)
@@ -496,7 +589,7 @@ public static class DisjointSet
     public static DisjointSet<byte> CreateSingletons(IUntypedMatrix matrix)
     {
         ArgumentNullException.ThrowIfNull(matrix);
-        return new DisjointSet<byte>(matrix, static _ => 0);
+        return new DisjointSet<byte>(matrix, (byte)0);
     }
 
     /// <summary>
