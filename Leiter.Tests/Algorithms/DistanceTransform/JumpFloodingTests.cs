@@ -185,4 +185,61 @@ public class JumpFloodingTests
         Matrix<DoublePixel> tokenDist = JumpFlooding.ComputeDistanceTransform(mask.Size, seeds, activeCts.Token);
         MatrixAssert.Equal(baselineDist, tokenDist);
     }
+
+    [Fact]
+    public void ComputeDistanceTransform_And_ExtractBoundarySeeds_LargeGrid_ShouldMatchExactEuclideanAndTieBreak()
+    {
+        const int width = 280;
+        const int height = 260;
+
+        SequentialMatrix<bool> mask = TestMatrices.CenteredBox(width, height, 40, 30, 239, 229, true, false);
+        IReadOnlyList<Coord> boundarySeeds = JumpFlooding.ExtractBoundarySeeds(mask, GridConnectivity.FourConnected);
+
+        // Perimeter of 200x200 filled interior rectangle: 2 * 200 + 2 * 198 = 796.
+        Assert.Equal(796, boundarySeeds.Count);
+        int prevLinear = -1;
+        foreach (Coord coord in boundarySeeds)
+        {
+            Assert.True(coord.X is 40 or 239 || coord.Y is 30 or 229);
+            int linear = (coord.Y * width) + coord.X;
+            Assert.True(linear > prevLinear);
+            prevLinear = linear;
+        }
+
+        // Put (210, 130) ahead of (70, 130) in seed array to verify equidistant ties resolve by row-major grid order.
+        Coord[] seeds =
+        [
+            new(210, 130),
+            new(70, 130),
+            new(140, 40),
+            new(140, 220),
+        ];
+
+        var size = new Size(width, height);
+        Matrix<NearestSeed> nearestSeeds = JumpFlooding.ComputeNearestSeeds(size, seeds);
+        Matrix<DoublePixel> distances = JumpFlooding.ComputeDistanceTransform(size, seeds);
+
+        Assert.Equal(new Coord(70, 130), nearestSeeds[140, 130].Seed);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                double expectedMinDistSq = double.PositiveInfinity;
+                for (int s = 0; s < seeds.Length; s++)
+                {
+                    double dx = x - seeds[s].X;
+                    double dy = y - seeds[s].Y;
+                    double distSq = (dx * dx) + (dy * dy);
+                    if (distSq < expectedMinDistSq)
+                    {
+                        expectedMinDistSq = distSq;
+                    }
+                }
+
+                double expectedDist = Math.Sqrt(expectedMinDistSq);
+                Assert.Equal(expectedDist, distances[x, y].Value, 1e-9);
+                Assert.Equal(expectedDist, nearestSeeds[x, y].Seed.Distance(new Coord(x, y)), 1e-9);
+            }
+        }
+    }
 }

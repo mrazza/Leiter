@@ -3,6 +3,7 @@ namespace Leiter.Algorithms.Segmentation;
 using System;
 using System.Collections.Generic;
 using System.Runtime.Intrinsics;
+using System.Threading;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Internal;
 using Leiter.Core;
@@ -211,11 +212,18 @@ public static class SegmentationVisualizer
         for (int i = 0; i < regionColors.Length; i++)
             regionColors[i] = colorAssigner(image, regionGraph.Regions[i]);
 
-        Span<T> resultSpan = result.AsSpan();
-        if (regionGraph.Labels.TryGetReadOnlySpan(out ReadOnlySpan<int> labelSpan))
+        T[] resultRaw = result.RawData;
+        if (regionGraph.Labels is SequentialMatrix<int> sequentialLabels)
         {
-            for (int i = 0; i < resultSpan.Length; i++)
-                resultSpan[i] = regionColors[labelSpan[i]];
+            int[] labelRaw = sequentialLabels.RawData;
+            ParallelRunner.ForChunks(
+                resultRaw.Length,
+                CancellationToken.None,
+                (start, end) =>
+                {
+                    for (int i = start; i < end; i++)
+                        resultRaw[i] = regionColors[labelRaw[i]];
+                });
         }
         else
         {
@@ -272,28 +280,34 @@ public static class SegmentationVisualizer
 
         int width = segmentation.Width;
         int height = segmentation.Height;
+        var roots = new long[pixelCount];
+        ParallelRunner.ForChunks(
+            pixelCount,
+            CancellationToken.None,
+            (start, end) =>
+            {
+                for (int i = start; i < end; i++)
+                    roots[i] = segmentation[i].Value;
+            });
+
         var rootToDenseId = new Dictionary<long, int>();
         var regionSizes = new List<int>();
         var rootIds = new List<long>();
         var denseIds = new int[pixelCount];
 
-        int pixelIndex = 0;
-        for (int y = 0; y < height; y++)
+        for (int i = 0; i < pixelCount; i++)
         {
-            for (int x = 0; x < width; x++)
+            long root = roots[i];
+            if (!rootToDenseId.TryGetValue(root, out int denseId))
             {
-                long root = segmentation[x, y].Value;
-                if (!rootToDenseId.TryGetValue(root, out int denseId))
-                {
-                    denseId = regionSizes.Count;
-                    rootToDenseId.Add(root, denseId);
-                    regionSizes.Add(0);
-                    rootIds.Add(root);
-                }
-
-                regionSizes[denseId]++;
-                denseIds[pixelIndex++] = denseId;
+                denseId = regionSizes.Count;
+                rootToDenseId.Add(root, denseId);
+                regionSizes.Add(0);
+                rootIds.Add(root);
             }
+
+            regionSizes[denseId]++;
+            denseIds[i] = denseId;
         }
 
         int regionCount = regionSizes.Count;
@@ -301,7 +315,7 @@ public static class SegmentationVisualizer
         for (int id = 0; id < regionCount; id++)
             regions[id] = new Region<Coord>(regionSizes[id]) { Id = unchecked((int)rootIds[id]) };
 
-        pixelIndex = 0;
+        int pixelIndex = 0;
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
@@ -312,9 +326,15 @@ public static class SegmentationVisualizer
         for (int id = 0; id < regionCount; id++)
             regionColors[id] = colorAssigner(image, regions[id]);
 
-        Span<T> resultSpan = result.AsSpan();
-        for (int i = 0; i < pixelCount; i++)
-            resultSpan[i] = regionColors[denseIds[i]];
+        T[] resultRaw = result.RawData;
+        ParallelRunner.ForChunks(
+            pixelCount,
+            CancellationToken.None,
+            (start, end) =>
+            {
+                for (int i = start; i < end; i++)
+                    resultRaw[i] = regionColors[denseIds[i]];
+            });
 
         return result;
     }

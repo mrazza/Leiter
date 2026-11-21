@@ -175,4 +175,47 @@ public class PaletteQuantizerTests
         var viewResult = PaletteQuantizer.QuantizeAndTruncate(view, static p => p);
         Assert.Equal(view.Size, viewResult.Image.Size);
     }
+
+    /// <summary>
+    /// Verifies that large matrices above the parallel threshold produce exact histogram counts,
+    /// deterministic first-seen tie-breaking across chunks, and accurate rare-bucket remapping.
+    /// </summary>
+    [Fact]
+    public void QuantizeAndTruncate_LargeGrid_ShouldConvergeParallelHistogramFirstSeenAndRemap()
+    {
+        const int width = 280;
+        const int height = 260;
+        var a = new DoublePixel(0.0);
+        var b = new DoublePixel(10.0);
+        var c = new DoublePixel(30.0);
+        var rareMid = new DoublePixel(5.0);
+
+        var img = TestMatrices.Constant(width, height, c);
+        img[100] = a;
+        for (int i = 1_000; i < 25_000; i++)
+        {
+            img[i] = b;
+        }
+
+        for (int i = 50_000; i < 72_700; i++)
+        {
+            img[i] = a;
+        }
+
+        img[72_798] = rareMid;
+        img[72_799] = rareMid;
+
+        var result = PaletteQuantizer.QuantizeAndTruncate(
+            img,
+            static pixel => pixel,
+            coverageFraction: 0.99);
+
+        Assert.Equal(3, result.Histogram.BucketCount);
+        Assert.Equal(72_800, result.Histogram.Total);
+        Assert.Equal(22_703, result.Histogram[a]);
+        Assert.Equal(24_000, result.Histogram[b]);
+        Assert.Equal(26_097, result.Histogram[c]);
+        Assert.Equal(a, result.Image[72_798]);
+        Assert.Equal(a, result.Image[72_799]);
+    }
 }

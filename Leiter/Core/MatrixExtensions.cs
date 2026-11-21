@@ -1,5 +1,8 @@
 namespace Leiter.Core;
 
+using System.Threading;
+using Leiter.Algorithms.Internal;
+
 /// <summary>
 /// Provides extension methods for matrices and sequences converting to or indexing into matrices.
 /// </summary>
@@ -125,18 +128,33 @@ public static class MatrixExtensions
         if (matrix is SequentialMatrix<T> sequential)
         {
             T[] raw = sequential.RawData;
-            Parallel.For(0, raw.Length, index => mappedData[index] = selector(raw[index]));
+            ParallelRunner.ForChunks(
+                raw.Length,
+                CancellationToken.None,
+                (start, end) =>
+                {
+                    for (int index = start; index < end; index++)
+                        mappedData[index] = selector(raw[index]);
+                });
             return mappedData;
         }
 
         int width = matrix.Width;
         int height = matrix.Height;
-        Parallel.For(0, height, y =>
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-                mappedData[rowBase + x] = selector(matrix[x, y]);
-        });
+        int minRowParallel = count >= ParallelRunner.DefaultMinParallelCount && height >= 4 ? 2 : height + 1;
+        ParallelRunner.ForChunks(
+            height,
+            CancellationToken.None,
+            (startRow, endRow) =>
+            {
+                for (int y = startRow; y < endRow; y++)
+                {
+                    int rowBase = y * width;
+                    for (int x = 0; x < width; x++)
+                        mappedData[rowBase + x] = selector(matrix[x, y]);
+                }
+            },
+            minParallelCount: minRowParallel);
 
         return mappedData;
     }
@@ -197,24 +215,39 @@ public static class MatrixExtensions
 
         int count = (int)area;
         var mappedData = new R[count];
+        int minRowParallel = count >= ParallelRunner.DefaultMinParallelCount && height >= 4 ? 2 : height + 1;
         if (matrix is SequentialMatrix<T> sequential)
         {
             T[] raw = sequential.RawData;
-            Parallel.For(0, height, y =>
-            {
-                int rowBase = y * width;
-                for (int x = 0; x < width; x++)
-                    mappedData[rowBase + x] = selector(x, y, raw[rowBase + x]);
-            });
+            ParallelRunner.ForChunks(
+                height,
+                CancellationToken.None,
+                (startRow, endRow) =>
+                {
+                    for (int y = startRow; y < endRow; y++)
+                    {
+                        int rowBase = y * width;
+                        for (int x = 0; x < width; x++)
+                            mappedData[rowBase + x] = selector(x, y, raw[rowBase + x]);
+                    }
+                },
+                minParallelCount: minRowParallel);
             return new SequentialMatrix<R>(width, height, mappedData);
         }
 
-        Parallel.For(0, height, y =>
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-                mappedData[rowBase + x] = selector(x, y, matrix[x, y]);
-        });
+        ParallelRunner.ForChunks(
+            height,
+            CancellationToken.None,
+            (startRow, endRow) =>
+            {
+                for (int y = startRow; y < endRow; y++)
+                {
+                    int rowBase = y * width;
+                    for (int x = 0; x < width; x++)
+                        mappedData[rowBase + x] = selector(x, y, matrix[x, y]);
+                }
+            },
+            minParallelCount: minRowParallel);
 
         return new SequentialMatrix<R>(width, height, mappedData);
     }
@@ -268,42 +301,71 @@ public static class MatrixExtensions
         {
             TLeft[] leftRaw = leftSeq.RawData;
             TRight[] rightRaw = rightSeq.RawData;
-            Parallel.For(0, count, i => result[i] = combiner(leftRaw[i], rightRaw[i]));
+            ParallelRunner.ForChunks(
+                count,
+                CancellationToken.None,
+                (start, end) =>
+                {
+                    for (int i = start; i < end; i++)
+                        result[i] = combiner(leftRaw[i], rightRaw[i]);
+                });
             return result;
         }
 
         int width = left.Width;
         int height = left.Height;
+        int minRowParallel = count >= ParallelRunner.DefaultMinParallelCount && height >= 4 ? 2 : height + 1;
         if (left is SequentialMatrix<TLeft> leftOnly)
         {
             TLeft[] leftRaw = leftOnly.RawData;
-            Parallel.For(0, height, y =>
-            {
-                int rowBase = y * width;
-                for (int x = 0; x < width; x++)
-                    result[rowBase + x] = combiner(leftRaw[rowBase + x], right[x, y]);
-            });
+            ParallelRunner.ForChunks(
+                height,
+                CancellationToken.None,
+                (startRow, endRow) =>
+                {
+                    for (int y = startRow; y < endRow; y++)
+                    {
+                        int rowBase = y * width;
+                        for (int x = 0; x < width; x++)
+                            result[rowBase + x] = combiner(leftRaw[rowBase + x], right[x, y]);
+                    }
+                },
+                minParallelCount: minRowParallel);
             return result;
         }
 
         if (right is SequentialMatrix<TRight> rightOnly)
         {
             TRight[] rightRaw = rightOnly.RawData;
-            Parallel.For(0, height, y =>
-            {
-                int rowBase = y * width;
-                for (int x = 0; x < width; x++)
-                    result[rowBase + x] = combiner(left[x, y], rightRaw[rowBase + x]);
-            });
+            ParallelRunner.ForChunks(
+                height,
+                CancellationToken.None,
+                (startRow, endRow) =>
+                {
+                    for (int y = startRow; y < endRow; y++)
+                    {
+                        int rowBase = y * width;
+                        for (int x = 0; x < width; x++)
+                            result[rowBase + x] = combiner(left[x, y], rightRaw[rowBase + x]);
+                    }
+                },
+                minParallelCount: minRowParallel);
             return result;
         }
 
-        Parallel.For(0, height, y =>
-        {
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-                result[rowBase + x] = combiner(left[x, y], right[x, y]);
-        });
+        ParallelRunner.ForChunks(
+            height,
+            CancellationToken.None,
+            (startRow, endRow) =>
+            {
+                for (int y = startRow; y < endRow; y++)
+                {
+                    int rowBase = y * width;
+                    for (int x = 0; x < width; x++)
+                        result[rowBase + x] = combiner(left[x, y], right[x, y]);
+                }
+            },
+            minParallelCount: minRowParallel);
         return result;
     }
 

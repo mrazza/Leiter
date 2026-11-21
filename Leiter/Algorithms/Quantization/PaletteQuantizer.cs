@@ -3,7 +3,10 @@ namespace Leiter.Algorithms.Quantization;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 
 /// <summary>
@@ -67,14 +70,43 @@ public static class PaletteQuantizer
         }
 
         Matrix<TPixel> quantizedInput = image.Map(bucketizer);
-        DictionaryHistogram<TPixel> histogram = new();
-        Dictionary<TPixel, int> firstSeenOrder = new();
+        TPixel[] quantizedRaw = quantizedInput is SequentialMatrix<TPixel> sequentialQuantized
+            ? sequentialQuantized.RawData
+            : quantizedInput.ToArray();
 
-        int pixelIndex = 0;
-        foreach (var quantizedPixel in quantizedInput)
+        Dictionary<TPixel, BucketEntry>[] chunkHistograms = ParallelRunner.MapChunks(
+            quantizedRaw.Length,
+            CancellationToken.None,
+            (start, end) =>
+            {
+                var local = new Dictionary<TPixel, BucketEntry>();
+                for (int i = start; i < end; i++)
+                {
+                    ref BucketEntry entry = ref CollectionsMarshal.GetValueRefOrAddDefault(local, quantizedRaw[i], out bool exists);
+                    if (!exists)
+                    {
+                        entry.Count = 1;
+                        entry.FirstSeen = i;
+                    }
+                    else
+                    {
+                        entry.Count++;
+                    }
+                }
+
+                return local;
+            });
+
+        var histogram = new DictionaryHistogram<TPixel>();
+        var firstSeenOrder = new Dictionary<TPixel, int>();
+        for (int c = 0; c < chunkHistograms.Length; c++)
         {
-            histogram.Increment(quantizedPixel);
-            firstSeenOrder.TryAdd(quantizedPixel, pixelIndex++);
+            foreach (var kvp in chunkHistograms[c])
+            {
+                histogram.Increment(kvp.Key, kvp.Value.Count);
+                if (!firstSeenOrder.TryGetValue(kvp.Key, out int existingFirst) || kvp.Value.FirstSeen < existingFirst)
+                    firstSeenOrder[kvp.Key] = kvp.Value.FirstSeen;
+            }
         }
 
         Dictionary<TPixel, TMetric> rawMetricLookup = histogram.ToDictionary(
@@ -84,6 +116,7 @@ public static class PaletteQuantizer
         DictionaryHistogram<TPixel> paletteHistogram = new();
         Dictionary<TPixel, TMetric> metricLookup = new();
         Dictionary<TPixel, TPixel> remap = new();
+        var retainedBuckets = new List<(TPixel Bucket, TMetric Metric, int FirstSeen)>();
 
         int targetPixelCount = (int)Math.Ceiling(image.Count * coverageFraction);
         int pixelCount = 0;
@@ -91,18 +124,16 @@ public static class PaletteQuantizer
         {
             if (pixelCount < targetPixelCount || paletteHistogram.BucketCount == 0)
             {
+                TMetric metric = rawMetricLookup[bucket.Key];
                 paletteHistogram.Increment(bucket.Key, bucket.Value);
-                metricLookup[bucket.Key] = rawMetricLookup[bucket.Key];
+                metricLookup[bucket.Key] = metric;
+                retainedBuckets.Add((bucket.Key, metric, firstSeenOrder[bucket.Key]));
                 pixelCount += bucket.Value;
             }
             else
             {
                 TMetric rareMetric = rawMetricLookup[bucket.Key];
-                TPixel nearestRetainedColor = paletteHistogram
-                    .OrderBy(target => rareMetric.Distance(metricLookup[target.Key]))
-                    .ThenBy(target => firstSeenOrder[target.Key])
-                    .First()
-                    .Key;
+                TPixel nearestRetainedColor = FindNearestRetainedBucket(rareMetric, retainedBuckets);
                 paletteHistogram.Increment(nearestRetainedColor, bucket.Value);
                 remap[bucket.Key] = nearestRetainedColor;
             }
@@ -113,5 +144,37 @@ public static class PaletteQuantizer
             : quantizedInput;
 
         return new QuantizedPalette<TPixel, TMetric>(paletteImage, paletteHistogram, metricLookup);
+    }
+
+    private struct BucketEntry
+    {
+        public int Count;
+        public int FirstSeen;
+    }
+
+    private static TPixel FindNearestRetainedBucket<TPixel, TMetric>(
+        TMetric rareMetric,
+        List<(TPixel Bucket, TMetric Metric, int FirstSeen)> retainedBuckets)
+        where TPixel : struct, IPixel<TPixel>
+        where TMetric : struct, IPixel<TMetric>
+    {
+        TPixel bestBucket = retainedBuckets[0].Bucket;
+        double bestDistance = rareMetric.Distance(retainedBuckets[0].Metric);
+        int bestFirstSeen = retainedBuckets[0].FirstSeen;
+
+        for (int i = 1; i < retainedBuckets.Count; i++)
+        {
+            (TPixel bucket, TMetric metric, int firstSeen) = retainedBuckets[i];
+            double distance = rareMetric.Distance(metric);
+            int cmp = distance.CompareTo(bestDistance);
+            if (cmp < 0 || (cmp == 0 && firstSeen < bestFirstSeen))
+            {
+                bestDistance = distance;
+                bestBucket = bucket;
+                bestFirstSeen = firstSeen;
+            }
+        }
+
+        return bestBucket;
     }
 }

@@ -1,5 +1,8 @@
 namespace Leiter.Core;
 
+using System.Threading;
+using Leiter.Algorithms.Internal;
+
 /// <summary>
 /// Represents a two-dimensional matrix stored as a contiguous, row-major flat array in memory.
 /// </summary>
@@ -226,7 +229,14 @@ public class SequentialMatrix<T> : Matrix<T>
     {
         ArgumentNullException.ThrowIfNull(func);
         var mappedData = new R[data.Length];
-        Parallel.For(0, data.Length, index => mappedData[index] = func(data[index]));
+        ParallelRunner.ForChunks(
+            data.Length,
+            CancellationToken.None,
+            (start, end) =>
+            {
+                for (int i = start; i < end; i++)
+                    mappedData[i] = func(data[i]);
+            });
         return new SequentialMatrix<R>(Width, Height, mappedData);
     }
 }

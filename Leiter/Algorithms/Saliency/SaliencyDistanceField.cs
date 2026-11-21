@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Algorithms.DistanceTransform;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -208,34 +209,68 @@ public static class SaliencyDistanceField
             if (reuseUnblurredInput && rawDistanceField is Matrix<DoublePixel> ownedField)
                 return ownedField;
 
-            var unblurred = new SequentialMatrix<DoublePixel>(width, height);
-            for (int y = 0; y < height; y++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                for (int x = 0; x < width; x++)
-                {
-                    unblurred[x, y] = salientMask[x, y]
-                        ? 0.0
-                        : ScalarMath.ClampUnitOrDefault(rawDistanceField[x, y].Value);
-                }
-            }
-
-            return unblurred;
+            return ClampAndMaskField(
+                rawDistanceField,
+                salientMask,
+                new SequentialMatrix<DoublePixel>(width, height),
+                cancellationToken);
         }
 
         Matrix<DoublePixel> smoothed = Blur.GaussianBlur(rawDistanceField, resolvedSigma);
-        for (int y = 0; y < height; y++)
+        return ClampAndMaskField(smoothed, salientMask, smoothed, cancellationToken);
+    }
+
+    private static Matrix<DoublePixel> ClampAndMaskField(
+        IReadOnlyMatrix<DoublePixel> sourceField,
+        IReadOnlyMatrix<bool> salientMask,
+        Matrix<DoublePixel> destination,
+        CancellationToken cancellationToken)
+    {
+        int width = sourceField.Width;
+        int height = sourceField.Height;
+
+        if (sourceField is SequentialMatrix<DoublePixel> srcSeq &&
+            salientMask is SequentialMatrix<bool> maskSeq &&
+            destination is SequentialMatrix<DoublePixel> dstSeq)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            for (int x = 0; x < width; x++)
-            {
-                smoothed[x, y] = salientMask[x, y]
-                    ? 0.0
-                    : ScalarMath.ClampUnitOrDefault(smoothed[x, y].Value);
-            }
+            DoublePixel[] srcRaw = srcSeq.RawData;
+            bool[] maskRaw = maskSeq.RawData;
+            DoublePixel[] dstRaw = dstSeq.RawData;
+
+            ParallelRunner.ForChunks(
+                dstRaw.Length,
+                cancellationToken,
+                (start, end) =>
+                {
+                    for (int i = start; i < end; i++)
+                        dstRaw[i] = maskRaw[i] ? 0.0 : ScalarMath.ClampUnitOrDefault(srcRaw[i].Value);
+                });
+
+            return destination;
         }
 
-        return smoothed;
+        int minRowParallel = sourceField.Count >= ParallelRunner.DefaultMinParallelCount && height >= 8
+            ? 2
+            : height + 1;
+
+        ParallelRunner.ForChunks(
+            height,
+            cancellationToken,
+            (startRow, endRow) =>
+            {
+                for (int y = startRow; y < endRow; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        destination[x, y] = salientMask[x, y]
+                            ? 0.0
+                            : ScalarMath.ClampUnitOrDefault(sourceField[x, y].Value);
+                    }
+                }
+            },
+            minParallelCount: minRowParallel);
+
+        return destination;
     }
 
     /// <summary>

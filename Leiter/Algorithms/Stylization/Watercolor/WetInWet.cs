@@ -176,96 +176,126 @@ public static class WetInWet
 
         var orientations = new SequentialMatrix<Vector2D>(size);
         var seedDarkerColors = new Rgb8[size.Count];
-        ReadOnlySpan<GridNeighbor> graphNeighbors = GridNeighborhood.GetAll(regionGraph.Connectivity);
-        ReadOnlySpan<Coord> seedPixels = band.SeedPixels.Span;
-        for (int s = 0; s < seedPixels.Length; s++)
-        {
-            if (canCancel && (s & 4095) == 0)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-            }
+        GridNeighbor[] graphNeighbors = GridNeighborhood.GetAll(regionGraph.Connectivity).ToArray();
+        ReadOnlyMemory<Coord> seedPixelsMemory = band.SeedPixels;
+        Vector2D[] orientationsRaw = orientations.RawData;
+        Rgb8[]? imageRaw = image is SequentialMatrix<Rgb8> seqImage ? seqImage.RawData : null;
+        int[]? boundaryIdxRaw = band.NearestBoundaryIndices is SequentialMatrix<int> seqBi ? seqBi.RawData : null;
+        int[]? labelRaw = regionGraph.Labels is SequentialMatrix<int> seqLbl ? seqLbl.RawData : null;
 
-            Coord p = seedPixels[s];
-            int bi = band.NearestBoundaryIndices[p];
-            (int brighterId, int darkerId) = boundaryPolarity[bi];
-
-            Vector2D normal = regionGraph.ComputeBoundaryNormal(p, brighterId, darkerId);
-            orientations[p] = normal == Vector2D.Zero ? new Vector2D(1.0, 0.0) : normal;
-
-            int pIdx = size.IndexOf(p);
-            if (regionGraph.Labels[p] == darkerId)
+        int minSeedParallel = seedPixelsMemory.Length >= 4096 ? 256 : seedPixelsMemory.Length + 1;
+        ParallelRunner.ForChunks(
+            seedPixelsMemory.Length,
+            cancellationToken,
+            (start, end) =>
             {
-                seedDarkerColors[pIdx] = image[p];
-            }
-            else
-            {
-                int sumR = 0;
-                int sumG = 0;
-                int sumB = 0;
-                int count = 0;
-                for (int n = 0; n < graphNeighbors.Length; n++)
+                ReadOnlySpan<Coord> seeds = seedPixelsMemory.Span;
+                for (int s = start; s < end; s++)
                 {
-                    Coord q = p + graphNeighbors[n].Offset;
-                    if (size.Contains(q) && regionGraph.Labels[q] == darkerId)
+                    Coord p = seeds[s];
+                    int pIdx = (p.Y * width) + p.X;
+                    int bi = boundaryIdxRaw is not null ? boundaryIdxRaw[pIdx] : band.NearestBoundaryIndices[p];
+                    (int brighterId, int darkerId) = boundaryPolarity[bi];
+
+                    Vector2D normal = regionGraph.ComputeBoundaryNormal(p, brighterId, darkerId);
+                    orientationsRaw[pIdx] = normal == Vector2D.Zero ? new Vector2D(1.0, 0.0) : normal;
+
+                    int pLabel = labelRaw is not null ? labelRaw[pIdx] : regionGraph.Labels[p];
+                    if (pLabel == darkerId)
                     {
-                        Rgb8 qCol = image[q];
-                        sumR += qCol.R;
-                        sumG += qCol.G;
-                        sumB += qCol.B;
-                        count++;
+                        seedDarkerColors[pIdx] = imageRaw is not null ? imageRaw[pIdx] : image[p];
+                    }
+                    else
+                    {
+                        int sumR = 0;
+                        int sumG = 0;
+                        int sumB = 0;
+                        int count = 0;
+                        for (int n = 0; n < graphNeighbors.Length; n++)
+                        {
+                            Coord q = p + graphNeighbors[n].Offset;
+                            if (!size.Contains(q))
+                                continue;
+
+                            int qIdx = (q.Y * width) + q.X;
+                            int qLabel = labelRaw is not null ? labelRaw[qIdx] : regionGraph.Labels[q];
+                            if (qLabel == darkerId)
+                            {
+                                Rgb8 qCol = imageRaw is not null ? imageRaw[qIdx] : image[q];
+                                sumR += qCol.R;
+                                sumG += qCol.G;
+                                sumB += qCol.B;
+                                count++;
+                            }
+                        }
+
+                        seedDarkerColors[pIdx] = count > 0
+                            ? new Rgb8(
+                                Rgb8.ClampRoundedByte((double)sumR / count),
+                                Rgb8.ClampRoundedByte((double)sumG / count),
+                                Rgb8.ClampRoundedByte((double)sumB / count))
+                            : stats[darkerId].MeanColor.ToRgb8();
                     }
                 }
-
-                seedDarkerColors[pIdx] = count > 0
-                    ? new Rgb8(
-                        Rgb8.ClampRoundedByte((double)sumR / count),
-                        Rgb8.ClampRoundedByte((double)sumG / count),
-                        Rgb8.ClampRoundedByte((double)sumB / count))
-                    : stats[darkerId].MeanColor.ToRgb8();
-            }
-        }
+            },
+            minParallelCount: minSeedParallel);
 
         cancellationToken.ThrowIfCancellationRequested();
 
         Matrix<Rgb8> seeded = image.Clone();
+        Rgb8[]? seededRaw = seeded is SequentialMatrix<Rgb8> seqSeeded ? seqSeeded.RawData : null;
         var wetAreaMask = new MaskMatrix(size);
+        bool[] wetRaw = wetAreaMask.RawData;
+        int[]? distRaw = band.Distances is SequentialMatrix<int> seqDist ? seqDist.RawData : null;
+        int[]? nearestSeedRaw = band.NearestSeedIndices is SequentialMatrix<int> seqNearest ? seqNearest.RawData : null;
 
-        for (int y = 0; y < height; y++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            for (int x = 0; x < width; x++)
+        int minRowParallel = size.Count >= ParallelRunner.DefaultMinParallelCount && height >= 8 ? 2 : height + 1;
+        ParallelRunner.ForChunks(
+            height,
+            cancellationToken,
+            (startRow, endRow) =>
             {
-                int dist = band.Distances[x, y];
-                if (dist <= maxBand)
+                for (int y = startRow; y < endRow; y++)
                 {
-                    int bi = band.NearestBoundaryIndices[x, y];
-                    int brighterId = boundaryPolarity[bi].BrighterId;
-                    bool isBrighterSide = regionGraph.Labels[x, y] == brighterId;
-
-                    if (!isBrighterSide && dist > 1)
+                    int rowBase = y * width;
+                    for (int x = 0; x < width; x++)
                     {
-                        continue;
-                    }
+                        int pIdx = rowBase + x;
+                        int dist = distRaw is not null ? distRaw[pIdx] : band.Distances[x, y];
+                        if (dist > maxBand)
+                            continue;
 
-                    wetAreaMask[x, y] = true;
-                    if (dist > 0)
-                    {
-                        orientations[x, y] = orientations[band.NearestSeedIndices[x, y]];
-                    }
+                        int bi = boundaryIdxRaw is not null ? boundaryIdxRaw[pIdx] : band.NearestBoundaryIndices[x, y];
+                        int brighterId = boundaryPolarity[bi].BrighterId;
+                        int pLabel = labelRaw is not null ? labelRaw[pIdx] : regionGraph.Labels[x, y];
+                        bool isBrighterSide = pLabel == brighterId;
 
-                    if (isBrighterSide && dist <= opts.ScatterRadius)
-                    {
-                        double falloff = 1.0 - ((double)dist / (opts.ScatterRadius + 1));
-                        double effectiveProbability = opts.SeedProbability * falloff * falloff;
-                        double hash = SplitMix64.HashToUnitDouble(opts.Seed, x, y);
-                        if (hash < effectiveProbability)
+                        if (!isBrighterSide && dist > 1)
+                            continue;
+
+                        wetRaw[pIdx] = true;
+                        int seedIdx = nearestSeedRaw is not null ? nearestSeedRaw[pIdx] : band.NearestSeedIndices[x, y];
+                        if (dist > 0)
+                            orientationsRaw[pIdx] = orientationsRaw[seedIdx];
+
+                        if (isBrighterSide && dist <= opts.ScatterRadius)
                         {
-                            seeded[x, y] = seedDarkerColors[band.NearestSeedIndices[x, y]];
+                            double falloff = 1.0 - ((double)dist / (opts.ScatterRadius + 1));
+                            double effectiveProbability = opts.SeedProbability * falloff * falloff;
+                            double hash = SplitMix64.HashToUnitDouble(opts.Seed, x, y);
+                            if (hash < effectiveProbability)
+                            {
+                                Rgb8 seedColor = seedDarkerColors[seedIdx];
+                                if (seededRaw is not null)
+                                    seededRaw[pIdx] = seedColor;
+                                else
+                                    seeded[x, y] = seedColor;
+                            }
                         }
                     }
                 }
-            }
-        }
+            },
+            minParallelCount: minRowParallel);
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -277,31 +307,38 @@ public static class WetInWet
         cancellationToken.ThrowIfCancellationRequested();
 
         var composited = new SequentialMatrix<Rgb8>(size);
-        ParallelFor(height, cancellationToken, y =>
-        {
-            for (int x = 0; x < width; x++)
+        ParallelRunner.ForChunks(
+            height,
+            cancellationToken,
+            (startRow, endRow) =>
             {
-                if (!wetAreaMask[x, y])
+                for (int y = startRow; y < endRow; y++)
                 {
-                    composited[x, y] = image[x, y];
-                    continue;
+                    for (int x = 0; x < width; x++)
+                    {
+                        if (!wetAreaMask[x, y])
+                        {
+                            composited[x, y] = image[x, y];
+                            continue;
+                        }
+
+                        int dist = band.Distances[x, y];
+                        int bi = band.NearestBoundaryIndices[x, y];
+                        int brighterId = boundaryPolarity[bi].BrighterId;
+                        bool isBrighterSide = regionGraph.Labels[x, y] == brighterId;
+
+                        double alpha = isBrighterSide
+                            ? ScalarMath.OuterBandSmoothstepWeightUnchecked(dist, opts.ScatterRadius, maxBand)
+                            : dist == 0
+                                ? DarkerBoundarySeedAlpha
+                                : DarkerBoundaryInnerRingAlpha;
+
+                        Debug.Assert(isBrighterSide || dist is 0 or 1);
+                        composited[x, y] = Rgb8.Lerp(image[x, y], filtered[x, y], alpha);
+                    }
                 }
-
-                int dist = band.Distances[x, y];
-                int bi = band.NearestBoundaryIndices[x, y];
-                int brighterId = boundaryPolarity[bi].BrighterId;
-                bool isBrighterSide = regionGraph.Labels[x, y] == brighterId;
-
-                double alpha = isBrighterSide
-                    ? ScalarMath.OuterBandSmoothstepWeightUnchecked(dist, opts.ScatterRadius, maxBand)
-                    : dist == 0
-                        ? DarkerBoundarySeedAlpha
-                        : DarkerBoundaryInnerRingAlpha;
-
-                Debug.Assert(isBrighterSide || dist is 0 or 1);
-                composited[x, y] = Rgb8.Lerp(image[x, y], filtered[x, y], alpha);
-            }
-        });
+            },
+            minParallelCount: minRowParallel);
 
         return new WetInWetResult(composited, wetAreaMask, qualifying);
     }
@@ -509,45 +546,84 @@ public static class WetInWet
         var pixelGradX = new double[totalPixels];
         var pixelGradY = new double[totalPixels];
 
-        ParallelFor(height, cancellationToken, y =>
-        {
-            int rowOffset = size.IndexOf(0, y);
-            for (int x = 0; x < width; x++)
+        int minRowParallel = totalPixels >= ParallelRunner.DefaultMinParallelCount && height >= 8 ? 2 : height + 1;
+        ParallelRunner.ForChunks(
+            height,
+            cancellationToken,
+            (startRow, endRow) =>
             {
-                int r = labels[x, y];
-                Rgb8 center = image[x, y];
+                for (int y = startRow; y < endRow; y++)
+                {
+                    int rowOffset = size.IndexOf(0, y);
+                    for (int x = 0; x < width; x++)
+                    {
+                        int r = labels[x, y];
+                        Rgb8 center = image[x, y];
 
-                var (gx, gy) = SpatialGradients.ComputeRgb8GradientAt(
-                    SampleRegionClamped(image, labels, size, x - 1, y - 1, r, center),
-                    SampleRegionClamped(image, labels, size, x, y - 1, r, center),
-                    SampleRegionClamped(image, labels, size, x + 1, y - 1, r, center),
-                    SampleRegionClamped(image, labels, size, x - 1, y, r, center),
-                    SampleRegionClamped(image, labels, size, x + 1, y, r, center),
-                    SampleRegionClamped(image, labels, size, x - 1, y + 1, r, center),
-                    SampleRegionClamped(image, labels, size, x, y + 1, r, center),
-                    SampleRegionClamped(image, labels, size, x + 1, y + 1, r, center),
-                    w0,
-                    w1,
-                    w2,
-                    normalizedScale);
+                        var (gx, gy) = SpatialGradients.ComputeRgb8GradientAt(
+                            SampleRegionClamped(image, labels, size, x - 1, y - 1, r, center),
+                            SampleRegionClamped(image, labels, size, x, y - 1, r, center),
+                            SampleRegionClamped(image, labels, size, x + 1, y - 1, r, center),
+                            SampleRegionClamped(image, labels, size, x - 1, y, r, center),
+                            SampleRegionClamped(image, labels, size, x + 1, y, r, center),
+                            SampleRegionClamped(image, labels, size, x - 1, y + 1, r, center),
+                            SampleRegionClamped(image, labels, size, x, y + 1, r, center),
+                            SampleRegionClamped(image, labels, size, x + 1, y + 1, r, center),
+                            w0,
+                            w1,
+                            w2,
+                            normalizedScale);
 
-                int idx = rowOffset + x;
-                pixelGradX[idx] = SpatialGradients.ChannelNorm(gx);
-                pixelGradY[idx] = SpatialGradients.ChannelNorm(gy);
-            }
-        });
+                        int idx = rowOffset + x;
+                        pixelGradX[idx] = SpatialGradients.ChannelNorm(gx);
+                        pixelGradY[idx] = SpatialGradients.ChannelNorm(gy);
+                    }
+                }
+            },
+            minParallelCount: minRowParallel);
 
         cancellationToken.ThrowIfCancellationRequested();
 
         bool canCancel = cancellationToken.CanBeCanceled;
-        if (labels.TryGetReadOnlySpan(out ReadOnlySpan<int> labelSpan))
+        if (labels is SequentialMatrix<int> seqLabels &&
+            totalPixels >= ParallelRunner.DefaultMinParallelCount &&
+            ((long)regionCount * 64) <= 4_000_000L)
+        {
+            int[] labelRaw = seqLabels.RawData;
+            (double[] SumX, double[] SumY)[] chunkSums = ParallelRunner.MapChunks(
+                totalPixels,
+                cancellationToken,
+                (start, end) =>
+                {
+                    var localX = new double[regionCount];
+                    var localY = new double[regionCount];
+                    for (int i = start; i < end; i++)
+                    {
+                        int r = labelRaw[i];
+                        localX[r] += pixelGradX[i];
+                        localY[r] += pixelGradY[i];
+                    }
+
+                    return (localX, localY);
+                });
+
+            for (int c = 0; c < chunkSums.Length; c++)
+            {
+                double[] localX = chunkSums[c].SumX;
+                double[] localY = chunkSums[c].SumY;
+                for (int r = 0; r < regionCount; r++)
+                {
+                    avgGradX[r] += localX[r];
+                    avgGradY[r] += localY[r];
+                }
+            }
+        }
+        else if (labels.TryGetReadOnlySpan(out ReadOnlySpan<int> labelSpan))
         {
             for (int i = 0; i < totalPixels; i++)
             {
                 if (canCancel && (i & 4095) == 0)
-                {
                     cancellationToken.ThrowIfCancellationRequested();
-                }
 
                 int r = labelSpan[i];
                 avgGradX[r] += pixelGradX[i];
@@ -582,18 +658,6 @@ public static class WetInWet
         }
 
         return (avgGradX, avgGradY);
-    }
-
-    private static void ParallelFor(int toExclusive, CancellationToken cancellationToken, Action<int> body)
-    {
-        if (cancellationToken.CanBeCanceled)
-        {
-            Parallel.For(0, toExclusive, new ParallelOptions { CancellationToken = cancellationToken }, body);
-        }
-        else
-        {
-            Parallel.For(0, toExclusive, body);
-        }
     }
 
     private static Rgb8 SampleRegionClamped(

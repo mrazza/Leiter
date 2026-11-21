@@ -9,6 +9,7 @@ using Leiter.Algorithms;
 using Leiter.Algorithms.AntiAliasing;
 using Leiter.Algorithms.Color;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Noise;
 using Leiter.Algorithms.Saliency;
 using Leiter.Algorithms.Segmentation;
@@ -697,34 +698,31 @@ public sealed class WatercolorPipelineSession
     {
         var summed = new SequentialMatrix<DoublePixel>(size);
         DoublePixel[] summedRaw = summed.RawData;
-        bool canCancel = cancellationToken.CanBeCanceled;
 
         if (edgeDensityField is SequentialMatrix<DoublePixel> seqEdge &&
             turbulenceDensityField is SequentialMatrix<DoublePixel> seqTurb)
         {
             DoublePixel[] edgeRaw = seqEdge.RawData;
             DoublePixel[] turbRaw = seqTurb.RawData;
-            for (int i = 0; i < summedRaw.Length; i++)
-            {
-                if (canCancel && (i & CancellationCheckMask) == 0)
+            ParallelRunner.ForChunks(
+                summedRaw.Length,
+                cancellationToken,
+                (start, end) =>
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
-
-                summedRaw[i] = new DoublePixel(edgeRaw[i].Value + turbRaw[i].Value);
-            }
+                    for (int i = start; i < end; i++)
+                        summedRaw[i] = new DoublePixel(edgeRaw[i].Value + turbRaw[i].Value);
+                });
         }
         else
         {
-            for (int i = 0; i < summedRaw.Length; i++)
-            {
-                if (canCancel && (i & CancellationCheckMask) == 0)
+            ParallelRunner.ForChunks(
+                summedRaw.Length,
+                cancellationToken,
+                (start, end) =>
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
-
-                summedRaw[i] = new DoublePixel(edgeDensityField[i].Value + turbulenceDensityField[i].Value);
-            }
+                    for (int i = start; i < end; i++)
+                        summedRaw[i] = new DoublePixel(edgeDensityField[i].Value + turbulenceDensityField[i].Value);
+                });
         }
 
         return summed;

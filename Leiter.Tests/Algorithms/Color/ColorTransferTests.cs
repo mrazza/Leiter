@@ -431,6 +431,36 @@ public class ColorTransferTests
             ColorTransfer.TransferToClosestProfile(emptyRgb, [valid], featureWeights: new LabColorStatistics(1, 1, double.PositiveInfinity, 1, 1, 1)));
     }
 
+    [Fact]
+    public void ComputeStatistics_LargeSequentialAndNonSequential_ShouldMatchExactMeanAndStdDev()
+    {
+        const int width = 280;
+        const int height = 260;
+
+        static Lab32 SampleAt(int x, int y) => new(
+            50f + ((x & 1) == 0 ? -20f : 20f),
+            -5f + ((y & 1) == 0 ? -10f : 10f),
+            12f + (((x ^ y) & 1) == 0 ? -8f : 8f));
+
+        SequentialMatrix<Lab32> seq = TestMatrices.Create(width, height, SampleAt);
+        SequentialMatrix<Lab32> padded = TestMatrices.Create(width + 2, height + 2, SampleAt);
+        var view = new MatrixView<Lab32>(padded, 1, 1, width, height, EdgeHandling.Extend);
+
+        foreach (LabColorStatistics stats in new[]
+        {
+            ColorTransfer.ComputeStatistics(seq),
+            ColorTransfer.ComputeStatistics(view),
+        })
+        {
+            Assert.Equal(50.0, stats.MeanL, 6);
+            Assert.Equal(-5.0, stats.MeanA, 6);
+            Assert.Equal(12.0, stats.MeanB, 6);
+            Assert.Equal(20.0, stats.StdDevL, 6);
+            Assert.Equal(10.0, stats.StdDevA, 6);
+            Assert.Equal(8.0, stats.StdDevB, 6);
+        }
+    }
+
     private sealed class ThrowingPixelsRgb8Matrix(int width, int height) : IReadOnlyMatrix<Rgb8>
     {
         public int Width => width;
