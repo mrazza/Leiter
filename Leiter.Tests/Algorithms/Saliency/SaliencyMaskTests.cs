@@ -199,4 +199,24 @@ public class SaliencyMaskTests
             MatrixAssert.Equal(SaliencyMask.Binarize(materialized, options), SaliencyMask.Binarize(view, options));
         }
     }
+
+    [Fact]
+    public void ComputeThreshold_LargeGrid_AdaptiveMeanAndOtsu_ShouldMatchExpected()
+    {
+        const int width = 280;
+        const int height = 260;
+
+        SequentialMatrix<DoublePixel> map = TestMatrices.Create<DoublePixel>(
+            width,
+            height,
+            static (x, y) => (x < 140 && y < 130) ? 1.0 : 0.0);
+
+        double adaptive = SaliencyMask.ComputeThreshold(map, SaliencyThresholdMethod.AdaptiveMean);
+        double otsu = SaliencyMask.ComputeThreshold(map, SaliencyThresholdMethod.Otsu);
+
+        // 25% of pixels are 1.0 and 75% are 0.0: mean = 0.25 -> AdaptiveMean = 2 * 0.25 = 0.50;
+        // Otsu maximizes between-class variance equally across all bins in [0, 254], giving (127.0 + 0.5) / 255.0 = 0.50.
+        Assert.Equal(0.50, adaptive, 12);
+        Assert.Equal(0.50, otsu, 12);
+    }
 }

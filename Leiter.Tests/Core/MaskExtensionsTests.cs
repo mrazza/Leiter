@@ -145,4 +145,46 @@ public class MaskExtensionsTests
         Matrix<Rgb8> actual = imageView.ApplyMask(leftView, fallback);
         MatrixAssert.Equal(expected, actual);
     }
+
+    [Fact]
+    public void LargeMaskOperations_ShouldComputeExactCountsAndResults()
+    {
+        const int width = 300;
+        const int height = 250;
+        var left = new MaskMatrix(width, height);
+        var right = new MaskMatrix(width, height);
+
+        int expectedTrueLeft = 0;
+        int expectedTrueAnd = 0;
+        int expectedTrueOr = 0;
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                bool lv = (x + y) % 3 == 0;
+                bool rv = ((x * 3) + y) % 5 == 0;
+                left[x, y] = lv;
+                right[x, y] = rv;
+
+                if (lv)
+                    expectedTrueLeft++;
+                if (lv && rv)
+                    expectedTrueAnd++;
+                if (lv || rv)
+                    expectedTrueOr++;
+            }
+        }
+
+        Assert.Equal(expectedTrueLeft, left.CountTrue());
+        Assert.Equal((width * height) - expectedTrueLeft, left.CountFalse());
+        Assert.Equal((width * height) - expectedTrueLeft, left.Invert().CountTrue());
+
+        MaskMatrix andMask = left.And(right);
+        MaskMatrix orMask = left.Or(right);
+        Assert.Equal(expectedTrueAnd, andMask.CountTrue());
+        Assert.Equal(expectedTrueOr, orMask.CountTrue());
+        Assert.Equal(left[30, 15] && right[30, 15], andMask[30, 15]);
+        Assert.Equal(left[31, 15] || right[31, 15], orMask[31, 15]);
+    }
 }

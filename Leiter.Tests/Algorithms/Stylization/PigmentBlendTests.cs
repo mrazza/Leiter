@@ -511,4 +511,44 @@ public class PigmentBlendTests
             PigmentBlend.ApplyDensityField(customImage, customField, intensity: 0.8),
             PigmentBlend.ApplyDensityField(customImage, customField, intensity: 0.8, cancellationToken: cts.Token));
     }
+
+    /// <summary>
+    /// Verifies that large density-field grids apply offsets in parallel and surface non-finite
+    /// field samples or selector outputs as unwrapped <see cref="ArgumentOutOfRangeException"/>.
+    /// </summary>
+    [Fact]
+    public void ApplyDensityField_LargeGrid_ShouldApplyAndValidateNonFiniteWithoutWrapping()
+    {
+        const int width = 280;
+        const int height = 260;
+
+        SequentialMatrix<Rgb8> image = TestMatrices.Constant(width, height, new Rgb8(128, 128, 128));
+        SequentialMatrix<DoublePixel> field = TestMatrices.Create<DoublePixel>(
+            width,
+            height,
+            static (x, y) => ((x + y) & 1) == 0 ? 0.5 : -0.5);
+
+        Matrix<Rgb8> scaled = PigmentBlend.ApplyDensityField(image, field, intensity: 0.8);
+        Matrix<Rgb8> zeroIntensity = PigmentBlend.ApplyDensityField(image, field, intensity: 0.0);
+        Matrix<Rgb8> viaSelector = PigmentBlend.ApplyDensityField(image, field, static v => 0.8 * v);
+
+        MatrixAssert.Equal(scaled, viaSelector);
+        MatrixAssert.Equal(image, zeroIntensity);
+        Assert.Equal(PigmentBlend.AdjustDensity(new Rgb8(128, 128, 128), 0.4), scaled[0, 0]);
+        Assert.Equal(PigmentBlend.AdjustDensity(new Rgb8(128, 128, 128), -0.4), scaled[1, 0]);
+
+        field[200, 190] = double.NaN;
+
+        ArgumentOutOfRangeException exZero = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            PigmentBlend.ApplyDensityField(image, field, intensity: 0.0));
+        Assert.Equal("densityField", exZero.ParamName);
+
+        ArgumentOutOfRangeException exNonZero = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            PigmentBlend.ApplyDensityField(image, field, intensity: 0.8));
+        Assert.Equal("densityField", exNonZero.ParamName);
+
+        ArgumentOutOfRangeException exSelector = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            PigmentBlend.ApplyDensityField(image, field, static v => v));
+        Assert.Equal("densityOffset", exSelector.ParamName);
+    }
 }

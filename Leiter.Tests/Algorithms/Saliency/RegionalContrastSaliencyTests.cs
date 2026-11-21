@@ -466,4 +466,40 @@ public class RegionalContrastSaliencyTests
             MatrixAssert.Equal(baseline, withToken);
         }
     }
+
+    [Fact]
+    public void ComputeSaliency_LargeGridWithSmoothingAndBorderSuppression_ShouldBeDeterministicAndFinite()
+    {
+        const int width = 280;
+        const int height = 260;
+
+        SequentialMatrix<Rgb8> img = TestMatrices.Create(
+            width,
+            height,
+            static (x, y) =>
+            {
+                int bx = x / 28;
+                int by = y / 26;
+                return new Rgb8(
+                    (byte)((bx * 25) + 10),
+                    (byte)((by * 25) + 10),
+                    (byte)(((bx * 7) + (by * 13)) % 256));
+            });
+
+        SequentialMatrix<int> labels = TestMatrices.Create(
+            width,
+            height,
+            static (x, y) => ((y / 26) * 10) + (x / 28));
+
+        RegionGraph graph = RegionGraph.FromLabels(labels);
+        var opts = new RegionalContrastSaliencyOptions(EnableSmoothing: true, ComputeBorderRegions: true);
+
+        Matrix<DoublePixel> first = RegionalContrastSaliency.ComputeSaliency(img, graph, opts);
+        Matrix<DoublePixel> second = RegionalContrastSaliency.ComputeSaliency(img, graph, opts);
+
+        Assert.Equal(img.Size, first.Size);
+        MatrixAssert.AllInRange(first, 0.0, 1.0);
+        Assert.Contains(first, static p => p.Value > 0.0 && p.Value < 1.0);
+        MatrixAssert.Equal(first, second);
+    }
 }

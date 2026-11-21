@@ -1,9 +1,11 @@
 namespace Leiter.Algorithms.DistanceTransform;
 
+using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Threading;
-using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 
@@ -13,6 +15,8 @@ using Leiter.Pixels;
 /// </summary>
 public static class JumpFlooding
 {
+    private static readonly Coord NoSeed = new(-1, -1);
+
     /// <summary>
     /// Extracts all foreground (<see langword="true"/>) coordinates in a boolean mask that border at least one background pixel.
     /// </summary>
@@ -31,38 +35,66 @@ public static class JumpFlooding
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(binaryMask);
-        ReadOnlySpan<GridNeighbor> neighbors = GridNeighborhood.GetAll(backgroundConnectivity);
+        GridNeighbor[] neighbors = GridNeighborhood.GetAll(backgroundConnectivity).ToArray();
         cancellationToken.ThrowIfCancellationRequested();
 
-        var seeds = new List<Coord>();
         Size size = binaryMask.Size;
         if (size.IsEmpty)
-            return seeds;
+            return new List<Coord>();
 
         int width = size.Width;
         int height = size.Height;
+        bool[]? rawMask = binaryMask is SequentialMatrix<bool> sequential ? sequential.RawData : null;
+        int minRowParallel = size.Count >= ParallelRunner.DefaultMinParallelCount && height >= 8 ? 2 : height + 1;
 
-        for (int y = 0; y < height; y++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            for (int x = 0; x < width; x++)
+        List<Coord>[] stripSeeds = ParallelRunner.MapChunks(
+            height,
+            cancellationToken,
+            (startRow, endRow) =>
             {
-                if (!binaryMask[x, y])
-                    continue;
-
-                var coord = new Coord(x, y);
-                foreach (GridNeighbor neighbor in neighbors)
+                var local = new List<Coord>();
+                for (int y = startRow; y < endRow; y++)
                 {
-                    Coord neighborCoord = coord + neighbor.Offset;
-                    if (size.Contains(neighborCoord) && !binaryMask[neighborCoord])
+                    int rowBase = y * width;
+                    for (int x = 0; x < width; x++)
                     {
-                        seeds.Add(coord);
-                        break;
+                        bool isFg = rawMask is not null ? rawMask[rowBase + x] : binaryMask[x, y];
+                        if (!isFg)
+                            continue;
+
+                        var coord = new Coord(x, y);
+                        for (int n = 0; n < neighbors.Length; n++)
+                        {
+                            Coord neighborCoord = coord + neighbors[n].Offset;
+                            if (!size.Contains(neighborCoord))
+                                continue;
+
+                            bool neighborFg = rawMask is not null
+                                ? rawMask[(neighborCoord.Y * width) + neighborCoord.X]
+                                : binaryMask[neighborCoord.X, neighborCoord.Y];
+                            if (!neighborFg)
+                            {
+                                local.Add(coord);
+                                break;
+                            }
+                        }
                     }
                 }
-            }
-        }
+
+                return local;
+            },
+            minParallelCount: minRowParallel);
+
+        if (stripSeeds.Length == 1)
+            return stripSeeds[0];
+
+        int totalCount = 0;
+        for (int i = 0; i < stripSeeds.Length; i++)
+            totalCount += stripSeeds[i].Count;
+
+        var seeds = new List<Coord>(totalCount);
+        for (int i = 0; i < stripSeeds.Length; i++)
+            seeds.AddRange(stripSeeds[i]);
 
         return seeds;
     }
@@ -91,16 +123,18 @@ public static class JumpFlooding
         if (size.IsEmpty)
             return new SequentialMatrix<NearestSeed>(size);
 
-        var seedGrid = new int[size.Count];
-        Array.Fill(seedGrid, -1);
+        var seedGrid = new Coord[size.Count];
+        ParallelRunner.ForChunks(
+            seedGrid.Length,
+            cancellationToken,
+            (start, end) => Array.Fill(seedGrid, NoSeed, start, end - start));
 
         bool hasAnySeed = false;
         foreach (Coord seed in seeds)
         {
             if (size.Contains(seed))
             {
-                int index = size.IndexOf(seed);
-                seedGrid[index] = index;
+                seedGrid[size.IndexOf(seed)] = seed;
                 hasAnySeed = true;
             }
         }
@@ -129,30 +163,44 @@ public static class JumpFlooding
         if (size.IsEmpty)
             return new SequentialMatrix<NearestSeed>(size);
 
-        var seedGrid = new int[seedMask.Count];
-        bool hasAnySeed = false;
-
         int width = size.Width;
         int height = size.Height;
-        for (int y = 0; y < height; y++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        var seedGrid = new Coord[seedMask.Count];
+        bool[]? rawMask = seedMask is SequentialMatrix<bool> sequential ? sequential.RawData : null;
+        int minRowParallel = size.Count >= ParallelRunner.DefaultMinParallelCount && height >= 8 ? 2 : height + 1;
 
-            int rowBase = size.IndexOf(0, y);
-            for (int x = 0; x < width; x++)
+        bool[] stripHasSeed = ParallelRunner.MapChunks(
+            height,
+            cancellationToken,
+            (startRow, endRow) =>
             {
-                int index = rowBase + x;
-                if (seedMask[x, y])
+                bool localHasSeed = false;
+                for (int y = startRow; y < endRow; y++)
                 {
-                    seedGrid[index] = index;
-                    hasAnySeed = true;
+                    int rowBase = y * width;
+                    for (int x = 0; x < width; x++)
+                    {
+                        int index = rowBase + x;
+                        bool isSeed = rawMask is not null ? rawMask[index] : seedMask[x, y];
+                        if (isSeed)
+                        {
+                            seedGrid[index] = new Coord(x, y);
+                            localHasSeed = true;
+                        }
+                        else
+                        {
+                            seedGrid[index] = NoSeed;
+                        }
+                    }
                 }
-                else
-                {
-                    seedGrid[index] = -1;
-                }
-            }
-        }
+
+                return localHasSeed;
+            },
+            minParallelCount: minRowParallel);
+
+        bool hasAnySeed = false;
+        for (int i = 0; i < stripHasSeed.Length; i++)
+            hasAnySeed |= stripHasSeed[i];
 
         return RunJumpFlooding(size, seedGrid, hasAnySeed, cancellationToken);
     }
@@ -196,7 +244,7 @@ public static class JumpFlooding
 
     private static Matrix<NearestSeed> RunJumpFlooding(
         Size size,
-        int[] currentSeeds,
+        Coord[] currentSeeds,
         bool hasAnySeed,
         CancellationToken cancellationToken)
     {
@@ -212,95 +260,96 @@ public static class JumpFlooding
         int maxDimension = Math.Max(size.Width, size.Height);
         if (maxDimension > 1)
         {
-            var nextSeeds = new int[currentSeeds.Length];
-            ParallelOptions? parallelOptions = cancellationToken.CanBeCanceled
-                ? new ParallelOptions { CancellationToken = cancellationToken }
-                : null;
+            var nextSeeds = new Coord[currentSeeds.Length];
 
-            cancellationToken.ThrowIfCancellationRequested();
-            ExecuteJumpPass(currentSeeds, nextSeeds, size, 1, parallelOptions);
+            ExecuteJumpPass(currentSeeds, nextSeeds, size, 1, cancellationToken);
             (currentSeeds, nextSeeds) = (nextSeeds, currentSeeds);
 
             int largestStep = 1 << BitOperations.Log2((uint)(maxDimension - 1));
             for (int step = largestStep; step >= 1; step >>= 1)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                ExecuteJumpPass(currentSeeds, nextSeeds, size, step, parallelOptions);
+                ExecuteJumpPass(currentSeeds, nextSeeds, size, step, cancellationToken);
                 (currentSeeds, nextSeeds) = (nextSeeds, currentSeeds);
             }
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        Span<NearestSeed> resultSpan = result.AsSpan();
-        for (int i = 0; i < currentSeeds.Length; i++)
-        {
-            resultSpan[i] = NearestSeed.FromCoord(size.CoordOf(currentSeeds[i]));
-        }
+        NearestSeed[] resultData = result.RawData;
+        ParallelRunner.ForChunks(
+            currentSeeds.Length,
+            cancellationToken,
+            (start, end) =>
+            {
+                for (int i = start; i < end; i++)
+                    resultData[i] = NearestSeed.FromCoord(currentSeeds[i]);
+            });
 
         return result;
     }
 
     private static void ExecuteJumpPass(
-        int[] source,
-        int[] destination,
+        Coord[] source,
+        Coord[] destination,
         Size size,
         int step,
-        ParallelOptions? parallelOptions)
+        CancellationToken cancellationToken)
     {
         int width = size.Width;
         int height = size.Height;
+        int minRowParallel = size.Count >= 4096 && height >= 8 ? 2 : height + 1;
 
-        void ProcessRow(int y)
-        {
-            for (int x = 0; x < width; x++)
+        ParallelRunner.ForChunks(
+            height,
+            cancellationToken,
+            (startRow, endRow) =>
             {
-                var current = new Coord(x, y);
-                int currentIndex = size.IndexOf(current);
-                int bestSeed = source[currentIndex];
-                long bestDistSq = bestSeed >= 0
-                    ? current.DistanceSquared(size.CoordOf(bestSeed))
-                    : long.MaxValue;
-
-                for (int dy = -step; dy <= step; dy += step)
+                for (int y = startRow; y < endRow; y++)
                 {
-                    int ny = y + dy;
-                    if ((uint)ny >= (uint)height)
-                        continue;
-
-                    for (int dx = -step; dx <= step; dx += step)
+                    int rowBase = y * width;
+                    for (int x = 0; x < width; x++)
                     {
-                        if (dx == 0 && dy == 0)
-                            continue;
+                        var current = new Coord(x, y);
+                        int currentIndex = rowBase + x;
+                        Coord bestSeed = source[currentIndex];
+                        long bestDistSq = bestSeed.X >= 0
+                            ? current.DistanceSquared(bestSeed)
+                            : long.MaxValue;
 
-                        int nx = x + dx;
-                        if ((uint)nx >= (uint)width)
-                            continue;
-
-                        int candidateSeed = source[size.IndexOf(nx, ny)];
-                        if (candidateSeed < 0)
-                            continue;
-
-                        long distSq = current.DistanceSquared(size.CoordOf(candidateSeed));
-                        if (distSq < bestDistSq || (distSq == bestDistSq && candidateSeed < bestSeed))
+                        for (int dy = -step; dy <= step; dy += step)
                         {
-                            bestDistSq = distSq;
-                            bestSeed = candidateSeed;
+                            int ny = y + dy;
+                            if ((uint)ny >= (uint)height)
+                                continue;
+
+                            int nRowBase = ny * width;
+                            for (int dx = -step; dx <= step; dx += step)
+                            {
+                                if (dx == 0 && dy == 0)
+                                    continue;
+
+                                int nx = x + dx;
+                                if ((uint)nx >= (uint)width)
+                                    continue;
+
+                                Coord candidateSeed = source[nRowBase + nx];
+                                if (candidateSeed.X < 0)
+                                    continue;
+
+                                long distSq = current.DistanceSquared(candidateSeed);
+                                if (distSq < bestDistSq ||
+                                    (distSq == bestDistSq &&
+                                     (candidateSeed.Y < bestSeed.Y || (candidateSeed.Y == bestSeed.Y && candidateSeed.X < bestSeed.X))))
+                                {
+                                    bestDistSq = distSq;
+                                    bestSeed = candidateSeed;
+                                }
+                            }
                         }
+
+                        destination[currentIndex] = bestSeed;
                     }
                 }
-
-                destination[currentIndex] = bestSeed;
-            }
-        }
-
-        if (parallelOptions is not null)
-        {
-            Parallel.For(0, height, parallelOptions, ProcessRow);
-        }
-        else
-        {
-            Parallel.For(0, height, ProcessRow);
-        }
+            },
+            minParallelCount: minRowParallel);
     }
 
     private static Matrix<DoublePixel> ComputeDistancesFromNearestSeeds(IReadOnlyMatrix<NearestSeed> nearestSeeds) =>

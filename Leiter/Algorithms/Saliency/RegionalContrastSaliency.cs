@@ -1,9 +1,12 @@
 namespace Leiter.Algorithms.Saliency;
 
 using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Saliency.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -94,6 +97,8 @@ public static class RegionalContrastSaliency
         return ComputeSaliencyCore(image, regionGraph, resolvedOptions, cancellationToken);
     }
 
+    private readonly record struct RegionColorBucket(int Count, double Density, int DistanceIndex);
+
     private static Matrix<DoublePixel> ComputeSaliencyCore(
         IReadOnlyMatrix<Rgb8> image,
         RegionGraph graph,
@@ -110,15 +115,14 @@ public static class RegionalContrastSaliency
         var (colorQuantizedImage, _, rgbToLabLookupTable) = SaliencyColorSmoother.QuantizeForSaliency(image);
         cancellationToken.ThrowIfCancellationRequested();
 
+        PairwiseLabDistanceTable distanceTable = PairwiseLabDistanceTable.Build(rgbToLabLookupTable);
+        cancellationToken.ThrowIfCancellationRequested();
+
         var regionCounts = new int[regionCount];
-        var centroidSums = new NormalizedCoord[regionCount];
-        var centerDistanceSums = new double[regionCount];
+        var regionCentroids = new NormalizedCoord[regionCount];
+        var avgRegionDistances = new double[regionCount];
         var borderPixelCounts = computeBorderRegions ? new int[regionCount] : null;
-        var regionHistograms = new DictionaryHistogram<Rgb8>[regionCount];
-        for (int r = 0; r < regionCount; r++)
-        {
-            regionHistograms[r] = new DictionaryHistogram<Rgb8>();
-        }
+        var processedRegions = new (int Total, RegionColorBucket[] ColorData)[regionCount];
 
         const double regionInBorderPercentage = 0.1;
         const double borderPercentage = 0.025;
@@ -130,85 +134,76 @@ public static class RegionalContrastSaliency
         double invWidth = 1.0 / width;
         double invHeight = 1.0 / height;
 
-        ReadOnlySpan<Rgb8> colorSpan = default;
-        bool hasSpans = labels.TryGetReadOnlySpan(out ReadOnlySpan<int> labelSpan) &&
-                        colorQuantizedImage.TryGetReadOnlySpan(out colorSpan);
+        Rgb8[]? colorRaw = colorQuantizedImage is SequentialMatrix<Rgb8> seqColors ? seqColors.RawData : null;
+        int colorCount = distanceTable.Count;
 
-        for (int y = 0; y < height; y++)
+        ParallelRunner.For(regionCount, cancellationToken, r =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            int rowBase = y * width;
-            double normY = y * invHeight;
-            bool isRowInBorder = computeBorderRegions && (y < borderPixelHeight || y >= maxY);
-
-            for (int x = 0; x < width; x++)
+            HashSet<Coord> pixels = graph.Regions[r].Pixels;
+            int count = pixels.Count;
+            regionCounts[r] = count;
+            if (count == 0)
             {
-                int label = hasSpans ? labelSpan[rowBase + x] : labels[x, y];
-                Rgb8 color = hasSpans ? colorSpan[rowBase + x] : colorQuantizedImage[x, y];
+                processedRegions[r] = (0, []);
+                return;
+            }
 
-                var normalizedCoord = new NormalizedCoord(x * invWidth, normY);
-                regionCounts[label]++;
-                centroidSums[label] += normalizedCoord;
-                centerDistanceSums[label] += normalizedCoord.Distance(imageCenter);
-                regionHistograms[label].Increment(color);
+            NormalizedCoord centroidSum = default;
+            double centerDistanceSum = 0.0;
+            int borderCount = 0;
+            var localHist = new Dictionary<int, int>();
 
-                if (borderPixelCounts is not null && (isRowInBorder || x < borderPixelWidth || x >= maxX))
+            foreach (Coord coord in pixels)
+            {
+                Rgb8 color = colorRaw is not null
+                    ? colorRaw[(coord.Y * width) + coord.X]
+                    : colorQuantizedImage[coord.X, coord.Y];
+
+                int colorIndex = distanceTable.GetIndex(color);
+                ref int bucketCount = ref CollectionsMarshal.GetValueRefOrAddDefault(localHist, colorIndex, out _);
+                bucketCount++;
+
+                var normalizedCoord = new NormalizedCoord(coord.X * invWidth, coord.Y * invHeight);
+                centroidSum += normalizedCoord;
+                centerDistanceSum += normalizedCoord.Distance(imageCenter);
+
+                if (borderPixelCounts is not null &&
+                    (coord.Y < borderPixelHeight || coord.Y >= maxY || coord.X < borderPixelWidth || coord.X >= maxX))
                 {
-                    borderPixelCounts[label]++;
+                    borderCount++;
                 }
             }
-        }
 
-        var regionCentroids = new NormalizedCoord[regionCount];
-        var avgRegionDistances = new double[regionCount];
-        for (int r = 0; r < regionCount; r++)
-        {
-            int count = regionCounts[r];
-            if (count > 0)
-            {
-                double invCount = 1.0 / count;
-                regionCentroids[r] = centroidSums[r] * invCount;
-                avgRegionDistances[r] = centerDistanceSums[r] * invCount;
-            }
-        }
+            double invCount = 1.0 / count;
+            regionCentroids[r] = centroidSum * invCount;
+            avgRegionDistances[r] = centerDistanceSum * invCount;
+            if (borderPixelCounts is not null)
+                borderPixelCounts[r] = borderCount;
+
+            var colorData = new RegionColorBucket[localHist.Count];
+            int idx = 0;
+            foreach (var kvp in localHist)
+                colorData[idx++] = new RegionColorBucket(kvp.Value, kvp.Value * invCount, kvp.Key);
+
+            processedRegions[r] = (count, colorData);
+        });
 
         cancellationToken.ThrowIfCancellationRequested();
-        PairwiseLabDistanceTable distanceTable = PairwiseLabDistanceTable.Build(rgbToLabLookupTable);
-
-        var processedRegions = new (int Total, (double Density, int DistanceIndex)[] ColorData)[regionCount];
-        for (int r = 0; r < regionCount; r++)
-        {
-            DictionaryHistogram<Rgb8> histogram = regionHistograms[r];
-            var colorData = new (double Density, int DistanceIndex)[histogram.BucketCount];
-            int idx = 0;
-            foreach (Rgb8 bucket in histogram.Buckets)
-            {
-                colorData[idx++] = (histogram.GetDensity(bucket), distanceTable.GetIndex(bucket));
-            }
-
-            processedRegions[r] = (histogram.Total, colorData);
-        }
 
         var rawSaliency = new double[regionCount];
         const double sigmaSquared = 0.4;
         double centerPriorWeight = resolvedOptions.CenterPriorWeight;
-        ParallelOptions? parallelOptions = cancellationToken.CanBeCanceled
-            ? new ParallelOptions { CancellationToken = cancellationToken }
-            : null;
 
-        void ComputeRegionContrast(int r)
+        ParallelRunner.For(regionCount, cancellationToken, r =>
         {
             NormalizedCoord currCentroid = regionCentroids[r];
-            var colorData = processedRegions[r].ColorData;
+            RegionColorBucket[] colorData = processedRegions[r].ColorData;
             double currSaliency = 0.0;
 
             for (int other = 0; other < regionCount; other++)
             {
                 if (r == other)
-                {
                     continue;
-                }
 
                 var (otherTotal, otherColorData) = processedRegions[other];
                 double distance = 0.0;
@@ -218,9 +213,7 @@ public static class RegionalContrastSaliency
                     double bucketDensity = colorData[c].Density;
                     ReadOnlySpan<double> distanceRow = distanceTable.GetRow(colorData[c].DistanceIndex);
                     for (int oc = 0; oc < otherColorData.Length; oc++)
-                    {
                         distance += bucketDensity * otherColorData[oc].Density * distanceRow[otherColorData[oc].DistanceIndex];
-                    }
                 }
 
                 double spatialDistance = currCentroid.Distance(regionCentroids[other]);
@@ -236,72 +229,46 @@ public static class RegionalContrastSaliency
             {
                 rawSaliency[r] = currSaliency;
             }
-        }
-
-        if (parallelOptions is not null)
-        {
-            Parallel.For(0, regionCount, parallelOptions, ComputeRegionContrast);
-        }
-        else
-        {
-            Parallel.For(0, regionCount, ComputeRegionContrast);
-        }
+        });
 
         double[] finalSaliency;
         if (enableSmoothing)
         {
-            int colorCount = distanceTable.Count;
             var colorSaliencies = new double[colorCount];
             var colorPixelCounts = new int[colorCount];
 
-            for (int y = 0; y < height; y++)
+            // Aggregate per-color raw saliency directly across processed region histograms (O(R * B) instead of O(W * H)).
+            for (int r = 0; r < regionCount; r++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                int rowBase = y * width;
-                for (int x = 0; x < width; x++)
+                double regionSaliency = rawSaliency[r];
+                RegionColorBucket[] colorData = processedRegions[r].ColorData;
+                for (int c = 0; c < colorData.Length; c++)
                 {
-                    int label = hasSpans ? labelSpan[rowBase + x] : labels[x, y];
-                    Rgb8 color = hasSpans ? colorSpan[rowBase + x] : colorQuantizedImage[x, y];
-                    int colorIndex = distanceTable.GetIndex(color);
-                    colorSaliencies[colorIndex] += rawSaliency[label];
-                    colorPixelCounts[colorIndex]++;
+                    RegionColorBucket entry = colorData[c];
+                    colorSaliencies[entry.DistanceIndex] += regionSaliency * entry.Count;
+                    colorPixelCounts[entry.DistanceIndex] += entry.Count;
                 }
             }
 
             for (int c = 0; c < colorCount; c++)
             {
                 if (colorPixelCounts[c] > 0)
-                {
                     colorSaliencies[c] /= colorPixelCounts[c];
-                }
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             SaliencyColorSmoother.SmoothColorSaliency(colorSaliencies, distanceTable, neighborDivisor: 10);
 
             finalSaliency = new double[regionCount];
-
-            void ProjectSmoothedRegion(int r)
+            ParallelRunner.For(regionCount, cancellationToken, r =>
             {
-                var colorData = processedRegions[r].ColorData;
+                RegionColorBucket[] colorData = processedRegions[r].ColorData;
                 double regionSaliency = 0.0;
                 for (int c = 0; c < colorData.Length; c++)
-                {
                     regionSaliency += colorData[c].Density * colorSaliencies[colorData[c].DistanceIndex];
-                }
 
                 finalSaliency[r] = regionSaliency;
-            }
-
-            if (parallelOptions is not null)
-            {
-                Parallel.For(0, regionCount, parallelOptions, ProjectSmoothedRegion);
-            }
-            else
-            {
-                Parallel.For(0, regionCount, ProjectSmoothedRegion);
-            }
+            });
         }
         else
         {
@@ -313,18 +280,18 @@ public static class RegionalContrastSaliency
             for (int r = 0; r < regionCount; r++)
             {
                 if (borderPixelCounts[r] > regionCounts[r] * regionInBorderPercentage)
-                {
                     finalSaliency[r] = 0.0;
-                }
             }
         }
 
         if (!SaliencyColorSmoother.TryGetMinMaxRange(finalSaliency.AsSpan(), out double minSaliency, out double saliencyRange))
-        {
             return new SequentialMatrix<DoublePixel>(image.Size);
-        }
 
         cancellationToken.ThrowIfCancellationRequested();
-        return labels.Map<int, DoublePixel>(label => (finalSaliency[label] - minSaliency) / saliencyRange);
+        var normalizedRegionSaliency = new DoublePixel[regionCount];
+        for (int r = 0; r < regionCount; r++)
+            normalizedRegionSaliency[r] = (finalSaliency[r] - minSaliency) / saliencyRange;
+
+        return labels.Map<int, DoublePixel>(label => normalizedRegionSaliency[label]);
     }
 }

@@ -3,6 +3,7 @@ namespace Leiter.Algorithms.Stylization;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Leiter.Algorithms.Internal;
 using Leiter.Core;
 using Leiter.Pixels;
 using Leiter.Pixels.ColorSpaces;
@@ -210,80 +211,118 @@ public static class PigmentBlend
         return ApplyDensityOffsetsUnchecked(image, densityOffsets, cancellationToken);
     }
 
+    private readonly record struct OffsetValidationError(bool HasError, double InvalidValue);
+
     private static double[]? ValidateAndBuildDensityOffsets(
         IReadOnlyMatrix<DoublePixel> densityField,
         double intensity,
         CancellationToken cancellationToken)
     {
-        bool canCancel = cancellationToken.CanBeCanceled;
         int count = densityField.Count;
+        DoublePixel[]? fieldRaw = densityField is SequentialMatrix<DoublePixel> sequential ? sequential.RawData : null;
+
         if (intensity == 0.0)
         {
-            if (densityField.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> span))
-            {
-                for (int i = 0; i < span.Length; i++)
-                {
-                    if (canCancel && (i & 4095) == 0)
+            OffsetValidationError[] errors = fieldRaw is not null
+                ? ParallelRunner.MapChunks(
+                    fieldRaw.Length,
+                    cancellationToken,
+                    (start, end) =>
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
-                    }
+                        for (int i = start; i < end; i++)
+                        {
+                            double sample = fieldRaw[i].Value;
+                            if (!double.IsFinite(sample))
+                                return new OffsetValidationError(true, sample);
+                        }
 
-                    Guard.ThrowIfNotFinite(span[i].Value, nameof(densityField));
-                }
-            }
-            else
-            {
-                for (int y = 0; y < densityField.Height; y++)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    for (int x = 0; x < densityField.Width; x++)
+                        return default;
+                    })
+                : ParallelRunner.MapChunks(
+                    densityField.Height,
+                    cancellationToken,
+                    (startRow, endRow) =>
                     {
-                        Guard.ThrowIfNotFinite(densityField[x, y].Value, nameof(densityField));
-                    }
-                }
-            }
+                        int width = densityField.Width;
+                        for (int y = startRow; y < endRow; y++)
+                        {
+                            for (int x = 0; x < width; x++)
+                            {
+                                double sample = densityField[x, y].Value;
+                                if (!double.IsFinite(sample))
+                                    return new OffsetValidationError(true, sample);
+                            }
+                        }
 
-            cancellationToken.ThrowIfCancellationRequested();
+                        return default;
+                    },
+                    minParallelCount: count >= ParallelRunner.DefaultMinParallelCount && densityField.Height >= 8 ? 2 : densityField.Height + 1);
+
+            ThrowFirstNonFiniteError(errors, nameof(densityField));
             return null;
         }
 
         var offsets = new double[count];
-        if (densityField.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> fieldSpan))
-        {
-            for (int i = 0; i < fieldSpan.Length; i++)
-            {
-                if (canCancel && (i & 4095) == 0)
+        OffsetValidationError[] buildErrors = fieldRaw is not null
+            ? ParallelRunner.MapChunks(
+                fieldRaw.Length,
+                cancellationToken,
+                (start, end) =>
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
+                    for (int i = start; i < end; i++)
+                    {
+                        if (!TryComputeScaledOffset(fieldRaw[i].Value, intensity, out double offset, out double invalidValue))
+                            return new OffsetValidationError(true, invalidValue);
 
-                offsets[i] = ValidateScaledOffset(fieldSpan[i].Value, intensity, nameof(densityField));
-            }
-        }
-        else
-        {
-            Size size = densityField.Size;
-            for (int y = 0; y < size.Height; y++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int rowOffset = size.IndexOf(0, y);
-                for (int x = 0; x < size.Width; x++)
+                        offsets[i] = offset;
+                    }
+
+                    return default;
+                })
+            : ParallelRunner.MapChunks(
+                densityField.Height,
+                cancellationToken,
+                (startRow, endRow) =>
                 {
-                    offsets[rowOffset + x] = ValidateScaledOffset(densityField[x, y].Value, intensity, nameof(densityField));
-                }
-            }
-        }
+                    int width = densityField.Width;
+                    for (int y = startRow; y < endRow; y++)
+                    {
+                        int rowOffset = y * width;
+                        for (int x = 0; x < width; x++)
+                        {
+                            if (!TryComputeScaledOffset(densityField[x, y].Value, intensity, out double offset, out double invalidValue))
+                                return new OffsetValidationError(true, invalidValue);
 
-        cancellationToken.ThrowIfCancellationRequested();
+                            offsets[rowOffset + x] = offset;
+                        }
+                    }
+
+                    return default;
+                },
+                minParallelCount: count >= ParallelRunner.DefaultMinParallelCount && densityField.Height >= 8 ? 2 : densityField.Height + 1);
+
+        ThrowFirstNonFiniteError(buildErrors, nameof(densityField));
         return offsets;
     }
 
-    private static double ValidateScaledOffset(double sample, double intensity, string paramName)
+    private static bool TryComputeScaledOffset(double sample, double intensity, out double offset, out double invalidValue)
     {
-        Guard.ThrowIfNotFinite(sample, paramName);
-        double offset = intensity * sample;
-        Guard.ThrowIfNotFinite(offset, paramName);
-        return offset;
+        if (!double.IsFinite(sample))
+        {
+            offset = 0.0;
+            invalidValue = sample;
+            return false;
+        }
+
+        offset = intensity * sample;
+        if (!double.IsFinite(offset))
+        {
+            invalidValue = offset;
+            return false;
+        }
+
+        invalidValue = 0.0;
+        return true;
     }
 
     private static double[] EvaluateAndValidateDensityOffsets(
@@ -291,40 +330,61 @@ public static class PigmentBlend
         Func<double, double> densityOffsetSelector,
         CancellationToken cancellationToken)
     {
-        bool canCancel = cancellationToken.CanBeCanceled;
-        var offsets = new double[field.Count];
-        if (field.TryGetReadOnlySpan(out ReadOnlySpan<DoublePixel> span))
-        {
-            for (int i = 0; i < span.Length; i++)
-            {
-                if (canCancel && (i & 4095) == 0)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
+        int count = field.Count;
+        var offsets = new double[count];
+        DoublePixel[]? fieldRaw = field is SequentialMatrix<DoublePixel> sequential ? sequential.RawData : null;
 
-                double densityOffset = densityOffsetSelector(span[i].Value);
-                Guard.ThrowIfNotFinite(densityOffset);
-                offsets[i] = densityOffset;
-            }
-        }
-        else
-        {
-            Size size = field.Size;
-            for (int y = 0; y < size.Height; y++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int rowOffset = size.IndexOf(0, y);
-                for (int x = 0; x < size.Width; x++)
+        OffsetValidationError[] errors = fieldRaw is not null
+            ? ParallelRunner.MapChunks(
+                fieldRaw.Length,
+                cancellationToken,
+                (start, end) =>
                 {
-                    double densityOffset = densityOffsetSelector(field[x, y].Value);
-                    Guard.ThrowIfNotFinite(densityOffset);
-                    offsets[rowOffset + x] = densityOffset;
-                }
-            }
-        }
+                    for (int i = start; i < end; i++)
+                    {
+                        double densityOffset = densityOffsetSelector(fieldRaw[i].Value);
+                        if (!double.IsFinite(densityOffset))
+                            return new OffsetValidationError(true, densityOffset);
 
-        cancellationToken.ThrowIfCancellationRequested();
+                        offsets[i] = densityOffset;
+                    }
+
+                    return default;
+                })
+            : ParallelRunner.MapChunks(
+                field.Height,
+                cancellationToken,
+                (startRow, endRow) =>
+                {
+                    int width = field.Width;
+                    for (int y = startRow; y < endRow; y++)
+                    {
+                        int rowOffset = y * width;
+                        for (int x = 0; x < width; x++)
+                        {
+                            double densityOffset = densityOffsetSelector(field[x, y].Value);
+                            if (!double.IsFinite(densityOffset))
+                                return new OffsetValidationError(true, densityOffset);
+
+                            offsets[rowOffset + x] = densityOffset;
+                        }
+                    }
+
+                    return default;
+                },
+                minParallelCount: count >= ParallelRunner.DefaultMinParallelCount && field.Height >= 8 ? 2 : field.Height + 1);
+
+        ThrowFirstNonFiniteError(errors, "densityOffset");
         return offsets;
+    }
+
+    private static void ThrowFirstNonFiniteError(OffsetValidationError[] errors, string paramName)
+    {
+        for (int i = 0; i < errors.Length; i++)
+        {
+            if (errors[i].HasError)
+                Guard.ThrowIfNotFinite(errors[i].InvalidValue, paramName);
+        }
     }
 
     private static Matrix<Rgb8> ApplyDensityOffsetsUnchecked(

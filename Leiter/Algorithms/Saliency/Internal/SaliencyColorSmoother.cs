@@ -3,6 +3,9 @@ namespace Leiter.Algorithms.Saliency.Internal;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Quantization;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -67,7 +70,9 @@ internal static class SaliencyColorSmoother
         }
 
         double[] unsmoothedValues = colorSaliencies.ToArray();
-        SmoothCore(unsmoothedValues, tableIndices, packedColors, distanceTable, nearestColorCount, colorSaliencies);
+        var smoothedValues = new double[activeCount];
+        SmoothCore(unsmoothedValues, tableIndices, packedColors, distanceTable, nearestColorCount, smoothedValues);
+        smoothedValues.CopyTo(colorSaliencies);
     }
 
     /// <summary>
@@ -145,71 +150,102 @@ internal static class SaliencyColorSmoother
     }
 
     private static void SmoothCore(
-        ReadOnlySpan<double> unsmoothedValues,
-        ReadOnlySpan<int> tableIndices,
-        ReadOnlySpan<int> packedColors,
+        double[] unsmoothedValues,
+        int[] tableIndices,
+        int[] packedColors,
         PairwiseLabDistanceTable distanceTable,
         int nearestColorCount,
-        Span<double> destination)
+        double[] destination)
     {
         int activeCount = unsmoothedValues.Length;
-        var topNeighbors = new NeighborEntry[nearestColorCount];
-
-        for (int i = 0; i < activeCount; i++)
+        if (activeCount < 64 || Environment.ProcessorCount <= 1)
         {
-            ReadOnlySpan<double> distanceRow = distanceTable.GetRow(tableIndices[i]);
-
-            for (int j = 0; j < nearestColorCount; j++)
+            var topNeighbors = new NeighborEntry[nearestColorCount];
+            for (int i = 0; i < activeCount; i++)
             {
-                topNeighbors[j] = new NeighborEntry(j, distanceRow[tableIndices[j]], packedColors[j]);
+                destination[i] = ComputeSmoothedColorValue(
+                    i,
+                    unsmoothedValues,
+                    tableIndices,
+                    packedColors,
+                    distanceTable,
+                    nearestColorCount,
+                    topNeighbors);
             }
 
-            if (nearestColorCount < activeCount)
-            {
-                for (int p = (nearestColorCount / 2) - 1; p >= 0; p--)
-                {
-                    SiftDownMaxHeap(topNeighbors, p, nearestColorCount);
-                }
-
-                for (int j = nearestColorCount; j < activeCount; j++)
-                {
-                    double distance = distanceRow[tableIndices[j]];
-                    int packed = packedColors[j];
-                    if (CompareNeighbors(distance, packed, topNeighbors[0]) < 0)
-                    {
-                        topNeighbors[0] = new NeighborEntry(j, distance, packed);
-                        SiftDownMaxHeap(topNeighbors, 0, nearestColorCount);
-                    }
-                }
-            }
-
-            Array.Sort(topNeighbors, CompareNeighbors);
-
-            // Computes totalDistance = sum(D(c, c_i)).
-            // Note that we include our own color here. The paper says "other colors" and "other pixels"
-            // but the equations seem to explicitly include the color or pixel under evaluation and so
-            // we do so here.
-            double totalDistance = 0.0;
-            for (int k = 0; k < nearestColorCount; k++)
-            {
-                totalDistance += topNeighbors[k].Distance;
-            }
-
-            if (totalDistance <= 0.0)
-            {
-                destination[i] = unsmoothedValues[i];
-                continue;
-            }
-
-            // Computes (1 / ((m - 1) * totalDistance)) * sum((totalDistance - D(c, c_i)) * S[c_i]).
-            double weightedSum = 0.0;
-            for (int k = 0; k < nearestColorCount; k++)
-            {
-                weightedSum += (totalDistance - topNeighbors[k].Distance) * unsmoothedValues[topNeighbors[k].EntryIndex];
-            }
-
-            destination[i] = (1.0 / ((nearestColorCount - 1) * totalDistance)) * weightedSum;
+            return;
         }
+
+        Parallel.For(
+            0,
+            activeCount,
+            () => new NeighborEntry[nearestColorCount],
+            (i, _, topNeighbors) =>
+            {
+                destination[i] = ComputeSmoothedColorValue(
+                    i,
+                    unsmoothedValues,
+                    tableIndices,
+                    packedColors,
+                    distanceTable,
+                    nearestColorCount,
+                    topNeighbors);
+                return topNeighbors;
+            },
+            static _ => { });
+    }
+
+    private static double ComputeSmoothedColorValue(
+        int entryIndex,
+        double[] unsmoothedValues,
+        int[] tableIndices,
+        int[] packedColors,
+        PairwiseLabDistanceTable distanceTable,
+        int nearestColorCount,
+        NeighborEntry[] topNeighbors)
+    {
+        int activeCount = unsmoothedValues.Length;
+        ReadOnlySpan<double> distanceRow = distanceTable.GetRow(tableIndices[entryIndex]);
+
+        for (int j = 0; j < nearestColorCount; j++)
+            topNeighbors[j] = new NeighborEntry(j, distanceRow[tableIndices[j]], packedColors[j]);
+
+        if (nearestColorCount < activeCount)
+        {
+            for (int p = (nearestColorCount / 2) - 1; p >= 0; p--)
+                SiftDownMaxHeap(topNeighbors, p, nearestColorCount);
+
+            for (int j = nearestColorCount; j < activeCount; j++)
+            {
+                double distance = distanceRow[tableIndices[j]];
+                int packed = packedColors[j];
+                if (CompareNeighbors(distance, packed, topNeighbors[0]) < 0)
+                {
+                    topNeighbors[0] = new NeighborEntry(j, distance, packed);
+                    SiftDownMaxHeap(topNeighbors, 0, nearestColorCount);
+                }
+            }
+        }
+
+        Array.Sort(topNeighbors, CompareNeighbors);
+
+        // Computes totalDistance = sum(D(c, c_i)).
+        // Note that we include our own color here. The paper says "other colors" and "other pixels"
+        // but the equations seem to explicitly include the color or pixel under evaluation and so
+        // we do so here.
+        double totalDistance = 0.0;
+        for (int k = 0; k < nearestColorCount; k++)
+            totalDistance += topNeighbors[k].Distance;
+
+        if (totalDistance <= 0.0)
+            return unsmoothedValues[entryIndex];
+
+        // Computes (1 / ((m - 1) * totalDistance)) * sum((totalDistance - D(c, c_i)) * S[c_i]).
+        double weightedSum = 0.0;
+        for (int k = 0; k < nearestColorCount; k++)
+            weightedSum += (totalDistance - topNeighbors[k].Distance) * unsmoothedValues[topNeighbors[k].EntryIndex];
+
+        return (1.0 / ((nearestColorCount - 1) * totalDistance)) * weightedSum;
     }
 
     private static int PackRgbKey(Rgb8 color) =>

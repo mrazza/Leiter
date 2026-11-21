@@ -16,16 +16,7 @@ public static class MaskExtensions
         ArgumentNullException.ThrowIfNull(mask);
 
         if (mask.TryGetReadOnlySpan(out ReadOnlySpan<bool> span))
-        {
-            int spanCount = 0;
-            foreach (bool value in span)
-            {
-                if (value)
-                    spanCount++;
-            }
-
-            return spanCount;
-        }
+            return span.Count(true);
 
         int count = 0;
         for (int y = 0; y < mask.Height; y++)

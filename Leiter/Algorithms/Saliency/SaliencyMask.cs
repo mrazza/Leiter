@@ -1,5 +1,8 @@
 namespace Leiter.Algorithms.Saliency;
 
+using System;
+using System.Threading;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Morphology;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -75,14 +78,35 @@ public static class SaliencyMask
     private static double ComputeAdaptiveMeanThreshold(IReadOnlyMatrix<DoublePixel> saliencyMap)
     {
         double sum = 0.0;
-        ForEachSpan(
-            saliencyMap,
-            ref sum,
-            static (scoped ReadOnlySpan<DoublePixel> span, ref double acc) =>
-            {
-                for (int i = 0; i < span.Length; i++)
-                    acc += ScalarMath.ClampUnitOrDefault(span[i].Value);
-            });
+        if (saliencyMap is SequentialMatrix<DoublePixel> sequential &&
+            saliencyMap.Count >= ParallelRunner.DefaultMinParallelCount)
+        {
+            DoublePixel[] raw = sequential.RawData;
+            double[] chunkSums = ParallelRunner.MapChunks(
+                raw.Length,
+                CancellationToken.None,
+                (start, end) =>
+                {
+                    double local = 0.0;
+                    for (int i = start; i < end; i++)
+                        local += ScalarMath.ClampUnitOrDefault(raw[i].Value);
+                    return local;
+                });
+
+            for (int i = 0; i < chunkSums.Length; i++)
+                sum += chunkSums[i];
+        }
+        else
+        {
+            ForEachSpan(
+                saliencyMap,
+                ref sum,
+                static (scoped ReadOnlySpan<DoublePixel> span, ref double acc) =>
+                {
+                    for (int i = 0; i < span.Length; i++)
+                        acc += ScalarMath.ClampUnitOrDefault(span[i].Value);
+                });
+        }
 
         double mean = sum / saliencyMap.Count;
         return Math.Clamp(2.0 * mean, 0.0, 0.95);
@@ -91,22 +115,53 @@ public static class SaliencyMask
     private static double ComputeOtsuThreshold(IReadOnlyMatrix<DoublePixel> saliencyMap)
     {
         Span<int> histogram = stackalloc int[256];
-        var accumulator = new OtsuHistogramAccumulator(histogram);
-        ForEachSpan(
-            saliencyMap,
-            ref accumulator,
-            static (scoped ReadOnlySpan<DoublePixel> span, ref OtsuHistogramAccumulator acc) =>
-            {
-                for (int i = 0; i < span.Length; i++)
+        histogram.Clear();
+        double totalSum = 0.0;
+
+        if (saliencyMap is SequentialMatrix<DoublePixel> sequential &&
+            saliencyMap.Count >= ParallelRunner.DefaultMinParallelCount)
+        {
+            DoublePixel[] raw = sequential.RawData;
+            int[][] chunkHistograms = ParallelRunner.MapChunks(
+                raw.Length,
+                CancellationToken.None,
+                (start, end) =>
                 {
-                    int bin = ToHistogramBin(span[i].Value);
-                    acc.Histogram[bin]++;
-                    acc.TotalSum += bin;
-                }
-            });
+                    var local = new int[256];
+                    for (int i = start; i < end; i++)
+                        local[ToHistogramBin(raw[i].Value)]++;
+                    return local;
+                });
+
+            for (int c = 0; c < chunkHistograms.Length; c++)
+            {
+                int[] local = chunkHistograms[c];
+                for (int bin = 0; bin < 256; bin++)
+                    histogram[bin] += local[bin];
+            }
+
+            for (int bin = 0; bin < 256; bin++)
+                totalSum += (double)bin * histogram[bin];
+        }
+        else
+        {
+            var accumulator = new OtsuHistogramAccumulator(histogram);
+            ForEachSpan(
+                saliencyMap,
+                ref accumulator,
+                static (scoped ReadOnlySpan<DoublePixel> span, ref OtsuHistogramAccumulator acc) =>
+                {
+                    for (int i = 0; i < span.Length; i++)
+                    {
+                        int bin = ToHistogramBin(span[i].Value);
+                        acc.Histogram[bin]++;
+                        acc.TotalSum += bin;
+                    }
+                });
+            totalSum = accumulator.TotalSum;
+        }
 
         int totalCount = saliencyMap.Count;
-        double totalSum = accumulator.TotalSum;
         double meanBin = totalSum / totalCount;
         double totalVarianceSum = 0.0;
         for (int bin = 0; bin < 256; bin++)
