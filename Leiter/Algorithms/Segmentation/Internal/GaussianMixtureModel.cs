@@ -1,5 +1,8 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
+using System;
+using System.Threading;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -31,6 +34,13 @@ internal sealed class GaussianMixtureModel
             Vector3D color = ToColorVector(pixel);
             SumVectors += color;
             SumOuterProducts = SumOuterProducts.AddOuterProduct(color);
+        }
+
+        public void Merge(ComponentAccumulator other)
+        {
+            Count += other.Count;
+            SumVectors += other.SumVectors;
+            SumOuterProducts = SumOuterProducts.Add(other.SumOuterProducts);
         }
     }
 
@@ -78,6 +88,58 @@ internal sealed class GaussianMixtureModel
         }
 
         AccumulateClusterStatistics(pixels, samplePixelIndices, clusterAssignments, componentCount);
+        FinalizeComponentsFromAccumulators(sampleCount);
+    }
+
+    public void InitializeAndFit(
+        Rgb8[] pixels,
+        int[] samplePixelIndices,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(pixels);
+        ArgumentNullException.ThrowIfNull(samplePixelIndices);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (samplePixelIndices.Length < ParallelRunner.DefaultMinParallelCount)
+        {
+            InitializeAndFit(pixels.AsSpan(), samplePixelIndices.AsSpan());
+            return;
+        }
+
+        int sampleCount = samplePixelIndices.Length;
+        var clusterAssignments = new int[sampleCount];
+
+        int activeClusters = 1;
+        while (activeClusters < componentCount)
+        {
+            AccumulateClusterStatisticsParallel(
+                pixels,
+                samplePixelIndices,
+                clusterAssignments,
+                activeClusters,
+                cancellationToken);
+            if (!TryFindClusterToSplit(activeClusters, out int splitTarget, out Vector3D splitMean, out Vector3D splitAxis))
+                break;
+
+            SplitClusterAlongAxisParallel(
+                pixels,
+                samplePixelIndices,
+                clusterAssignments,
+                splitTarget,
+                newClusterId: activeClusters,
+                splitMean,
+                splitAxis,
+                cancellationToken);
+
+            activeClusters++;
+        }
+
+        AccumulateClusterStatisticsParallel(
+            pixels,
+            samplePixelIndices,
+            clusterAssignments,
+            componentCount,
+            cancellationToken);
         FinalizeComponentsFromAccumulators(sampleCount);
     }
 
@@ -129,6 +191,52 @@ internal sealed class GaussianMixtureModel
         FinalizeComponentsFromAccumulators(totalMemberCount);
     }
 
+    public void FitFromAssignedComponents(
+        Rgb8[] pixels,
+        bool[] isForeground,
+        bool targetForeground,
+        int[] assignedComponents,
+        int totalMemberCount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(pixels);
+        ArgumentNullException.ThrowIfNull(isForeground);
+        ArgumentNullException.ThrowIfNull(assignedComponents);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (isForeground.Length < ParallelRunner.DefaultMinParallelCount || totalMemberCount <= 0)
+        {
+            FitFromAssignedComponents(
+                pixels.AsSpan(),
+                isForeground.AsSpan(),
+                targetForeground,
+                assignedComponents.AsSpan(),
+                totalMemberCount);
+            return;
+        }
+
+        int kCount = componentCount;
+        ComponentAccumulator[][] chunkAccumulators = ParallelRunner.MapChunks(
+            isForeground.Length,
+            cancellationToken,
+            (start, end) =>
+            {
+                var local = new ComponentAccumulator[kCount];
+                for (int p = start; p < end; p++)
+                {
+                    if (isForeground[p] != targetForeground)
+                        continue;
+
+                    local[assignedComponents[p]].AddSample(pixels[p]);
+                }
+
+                return local;
+            });
+
+        FoldChunkAccumulators(chunkAccumulators, kCount);
+        FinalizeComponentsFromAccumulators(totalMemberCount);
+    }
+
     public double EvaluateNegativeLogLikelihood(Rgb8 pixel)
     {
         Span<double> energies = componentCount <= StackAllocComponentThreshold
@@ -160,6 +268,43 @@ internal sealed class GaussianMixtureModel
         }
 
         return minEnergy - Math.Log(expSum);
+    }
+
+    private void AccumulateClusterStatisticsParallel(
+        Rgb8[] pixels,
+        int[] samplePixelIndices,
+        int[] clusterAssignments,
+        int clearCount,
+        CancellationToken cancellationToken)
+    {
+        ComponentAccumulator[][] chunkAccumulators = ParallelRunner.MapChunks(
+            samplePixelIndices.Length,
+            cancellationToken,
+            (start, end) =>
+            {
+                var local = new ComponentAccumulator[clearCount];
+                for (int i = start; i < end; i++)
+                {
+                    int pixelIndex = samplePixelIndices[i];
+                    int k = clusterAssignments[i];
+                    local[k].AddSample(pixels[pixelIndex]);
+                }
+
+                return local;
+            });
+
+        FoldChunkAccumulators(chunkAccumulators, clearCount);
+    }
+
+    private void FoldChunkAccumulators(ComponentAccumulator[][] chunkAccumulators, int count)
+    {
+        Array.Clear(accumulators, 0, count);
+        for (int c = 0; c < chunkAccumulators.Length; c++)
+        {
+            ComponentAccumulator[] local = chunkAccumulators[c];
+            for (int k = 0; k < count; k++)
+                accumulators[k].Merge(local[k]);
+        }
     }
 
     private void AccumulateClusterStatistics(
@@ -211,6 +356,29 @@ internal sealed class GaussianMixtureModel
         }
 
         return splitTarget >= 0 && bestEigenvalue > 1e-6;
+    }
+
+    private static void SplitClusterAlongAxisParallel(
+        Rgb8[] pixels,
+        int[] samplePixelIndices,
+        int[] clusterAssignments,
+        int splitTarget,
+        int newClusterId,
+        Vector3D splitMean,
+        Vector3D splitAxis,
+        CancellationToken cancellationToken)
+    {
+        ParallelRunner.ForChunks(
+            samplePixelIndices.Length,
+            cancellationToken,
+            (start, end) => SplitClusterAlongAxis(
+                pixels.AsSpan(),
+                samplePixelIndices.AsSpan(start, end - start),
+                clusterAssignments.AsSpan(start, end - start),
+                splitTarget,
+                newClusterId,
+                splitMean,
+                splitAxis));
     }
 
     private static void SplitClusterAlongAxis(

@@ -214,4 +214,32 @@ public class GrabCutSessionTests
         Assert.Throws<OperationCanceledException>(() => session.Run(trimap, canceledCts.Token));
         Assert.Throws<OperationCanceledException>(() => session.Run(trimap, iterations: 2, cancellationToken: canceledCts.Token));
     }
+
+    [Fact]
+    public void Run_LargeImageAboveParallelThreshold_ShouldProduceDeterministicCutAndValidateTrimap()
+    {
+        const int size = 280; // 78,400 pixels (> ParallelRunner threshold)
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(
+            size,
+            size,
+            (x, y) => x >= 70 && x < 210 && y >= 70 && y < 210
+                ? new Rgb8(215, 35, 45)
+                : new Rgb8(25, 130, 210));
+
+        TrimapMatrix trimap = TrimapMatrix.FromBoundingBox(image.Size, new Coord(50, 50), new Size(180, 180));
+        var options = new GrabCutOptions(Iterations: 2, MixtureComponentCount: 4, SmoothnessWeight: 50.0);
+
+        GrabCutSession session = GrabCut.CreateSession(image, options);
+        MaskMatrix first = session.Run(trimap);
+        MaskMatrix second = session.Run(trimap);
+
+        MatrixAssert.Equal(first, second);
+        Assert.True(first[140, 140]);
+        Assert.False(first[5, 5]);
+
+        var badTrimap = new TrimapMatrix(image.Size);
+        badTrimap[size - 1, size - 1] = (TrimapLabel)123;
+        ArgumentOutOfRangeException ex = Assert.Throws<ArgumentOutOfRangeException>(() => session.Run(badTrimap));
+        Assert.Equal("trimap", ex.ParamName);
+    }
 }

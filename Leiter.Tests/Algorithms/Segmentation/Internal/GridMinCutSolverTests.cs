@@ -1,5 +1,7 @@
 namespace Leiter.Tests.Algorithms.Segmentation.Internal;
 
+using System;
+using System.Collections.Generic;
 using System.Threading;
 using Leiter.Algorithms.DataStructures;
 using Leiter.Algorithms.Segmentation.Internal;
@@ -115,5 +117,150 @@ public class GridMinCutSolverTests
         canceledCts.Cancel();
 
         Assert.Throws<OperationCanceledException>(() => solver.Solve(sourceCaps, sinkCaps, canceledCts.Token));
+    }
+
+    [Theory]
+    [InlineData(128, 128, 1)]
+    [InlineData(260, 260, 65_536)]
+    public void Solve_MultiBandEquivalence_Random8ConnectedGrid_ShouldMatchSingleBandFlowAndOptimalCut(
+        int width,
+        int height,
+        int minParallelPixels)
+    {
+        var rng = new Random(42_128 + width);
+        int count = width * height;
+        var solver = new GridMinCutSolver(width, height);
+        var forwardEdges = new List<(int First, int Second, float Capacity)>();
+
+        // Populate 8-connected undirected capacities directly via GridDirection
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                var p = new Coord(x, y);
+                int pIdx = (y * width) + x;
+                foreach (GridNeighbor neighbor in GridNeighborhood.Forward8Connected)
+                {
+                    Coord q = p + neighbor.Offset;
+                    if ((uint)q.X >= (uint)width || (uint)q.Y >= (uint)height)
+                        continue;
+
+                    float cap = (float)(0.2 + (rng.NextDouble() * 8.0));
+                    solver.SetUndirectedEdgeCapacity(p, neighbor.Direction, cap);
+                    forwardEdges.Add((pIdx, (q.Y * width) + q.X, cap));
+                }
+            }
+        }
+
+        var sourceCaps = new double[count];
+        var sinkCaps = new double[count];
+        for (int i = 0; i < count; i++)
+        {
+            int x = i % width;
+            int y = i / width;
+            if (x < width / 3)
+                sourceCaps[i] = 1.0 + (rng.NextDouble() * 12.0);
+            else if (x >= (width * 2) / 3)
+                sinkCaps[i] = 1.0 + (rng.NextDouble() * 12.0);
+            else if ((x + y) % 5 == 0)
+            {
+                sourceCaps[i] = rng.NextDouble() * 2.0;
+                sinkCaps[i] = rng.NextDouble() * 2.0;
+            }
+        }
+
+        double baselineFlow = solver.Solve(sourceCaps, sinkCaps, maxBands: 1, minParallelPixels: minParallelPixels);
+        double baselineCut = ComputeCutCapacity(solver, forwardEdges, sourceCaps, sinkCaps);
+        Assert.Equal(baselineFlow, baselineCut, precision: 2);
+
+        foreach (int bands in new[] { 2, 4, 8 })
+        {
+            double bandFlow = solver.Solve(sourceCaps, sinkCaps, maxBands: bands, minParallelPixels: minParallelPixels);
+            double bandCut = ComputeCutCapacity(solver, forwardEdges, sourceCaps, sinkCaps);
+
+            Assert.Equal(baselineFlow, bandFlow, tolerance: 1e-2);
+            Assert.Equal(bandFlow, bandCut, tolerance: 1e-2);
+        }
+
+        // Verify timestamp dirty-flag recovery after a canceled solve.
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+        Assert.Throws<OperationCanceledException>(() => solver.Solve(sourceCaps, sinkCaps, maxBands: 4, cancellationToken: canceledCts.Token, minParallelPixels: minParallelPixels));
+
+        double recoveredFlow = solver.Solve(sourceCaps, sinkCaps, maxBands: 4, minParallelPixels: minParallelPixels);
+        Assert.Equal(baselineFlow, recoveredFlow, tolerance: 1e-2);
+    }
+
+    [Fact]
+    public void Solve_SeamCrossingCorridor_ShouldMatchSingleBandAcrossAllBandCounts()
+    {
+        const int width = 64;
+        const int height = 128; // Seam at row 64 / 32 / 96 with maxBands = 2, 4
+        var solver = new GridMinCutSolver(width, height);
+        var forwardEdges = new List<(int First, int Second, float Capacity)>();
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                var p = new Coord(x, y);
+                int pIdx = (y * width) + x;
+                foreach (GridNeighbor neighbor in GridNeighborhood.Forward8Connected)
+                {
+                    Coord q = p + neighbor.Offset;
+                    if ((uint)q.X >= (uint)width || (uint)q.Y >= (uint)height)
+                        continue;
+
+                    // Create high-capacity vertical bridge crossing horizontal seams at x = 16 and x = 48.
+                    float cap = (p.X == 16 || p.X == 48) && neighbor.Direction == GridDirection.South
+                        ? 25f
+                        : 1f;
+                    solver.SetUndirectedEdgeCapacity(p, neighbor.Direction, cap);
+                    forwardEdges.Add((pIdx, (q.Y * width) + q.X, cap));
+                }
+            }
+        }
+
+        var sourceCaps = new double[width * height];
+        var sinkCaps = new double[width * height];
+        sourceCaps[(0 * width) + 16] = 100.0;
+        sourceCaps[(10 * width) + 48] = 100.0;
+        sinkCaps[((height - 1) * width) + 16] = 100.0;
+        sinkCaps[((height - 10) * width) + 48] = 100.0;
+
+        double singleFlow = solver.Solve(sourceCaps, sinkCaps, maxBands: 1, minParallelPixels: 1);
+        double singleCut = ComputeCutCapacity(solver, forwardEdges, sourceCaps, sinkCaps);
+        Assert.Equal(singleFlow, singleCut, tolerance: 1e-2);
+
+        foreach (int bands in new[] { 2, 4 })
+        {
+            double multiFlow = solver.Solve(sourceCaps, sinkCaps, maxBands: bands, minParallelPixels: 1);
+            double multiCut = ComputeCutCapacity(solver, forwardEdges, sourceCaps, sinkCaps);
+            Assert.Equal(singleFlow, multiFlow, tolerance: 1e-2);
+            Assert.Equal(multiFlow, multiCut, tolerance: 1e-2);
+        }
+    }
+
+    private static double ComputeCutCapacity(
+        GridMinCutSolver solver,
+        List<(int First, int Second, float Capacity)> forwardEdges,
+        double[] sourceCaps,
+        double[] sinkCaps)
+    {
+        double cut = 0.0;
+        for (int i = 0; i < sourceCaps.Length; i++)
+        {
+            bool srcSide = solver.IsSourceSide(i);
+            cut += srcSide ? Math.Max(0.0, sinkCaps[i]) : Math.Max(0.0, sourceCaps[i]);
+        }
+
+        for (int i = 0; i < forwardEdges.Count; i++)
+        {
+            (int u, int v, float cap) = forwardEdges[i];
+            if (solver.IsSourceSide(u) != solver.IsSourceSide(v))
+                cut += cap;
+        }
+
+        return cut;
     }
 }

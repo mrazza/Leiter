@@ -23,6 +23,14 @@ internal readonly record struct SymmetricMatrix3x3(
         YZ + (vector.Y * vector.Z),
         ZZ + (vector.Z * vector.Z));
 
+    public SymmetricMatrix3x3 Add(SymmetricMatrix3x3 other) => new(
+        XX + other.XX,
+        XY + other.XY,
+        XZ + other.XZ,
+        YY + other.YY,
+        YZ + other.YZ,
+        ZZ + other.ZZ);
+
     public static SymmetricMatrix3x3 FromSums(
         Vector3D sumVectors,
         SymmetricMatrix3x3 sumOuterProducts,

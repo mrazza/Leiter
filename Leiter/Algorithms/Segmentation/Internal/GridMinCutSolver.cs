@@ -19,10 +19,85 @@ internal sealed class GridMinCutSolver
         Sink = 2,
     }
 
+    private sealed class BandSearchContext(
+        int startRow,
+        int endRow,
+        int width,
+        byte[] validDirectionMasks,
+        bool[] isActive,
+        int initialTimestamp)
+    {
+        private readonly int topRowEndPixel = (startRow * width) + width;
+        private readonly int bottomRowStartPixel = (endRow * width) - width;
+        private readonly Queue<int> activeQueue = new();
+
+        public int StartRow { get; } = startRow;
+        public int EndRow { get; } = endRow;
+        public int StartPixel { get; } = startRow * width;
+        public int EndPixel { get; } = endRow * width;
+        public Queue<int> OrphanQueue { get; } = new();
+        public int CurrentTimestamp { get; set; } = initialTimestamp;
+        public bool HasActiveNodes => activeQueue.Count > 0;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public byte GetValidDirectionMask(int pixelIndex)
+        {
+            byte mask = validDirectionMasks[pixelIndex];
+            if (pixelIndex < topRowEndPixel)
+                mask &= unchecked((byte)~NorthDirectionsMask);
+            if (pixelIndex >= bottomRowStartPixel)
+                mask &= unchecked((byte)~SouthDirectionsMask);
+            return mask;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int PeekActive() => activeQueue.Peek();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryEnqueueActive(int pixelIndex)
+        {
+            Debug.Assert(pixelIndex >= StartPixel && pixelIndex < EndPixel);
+            if (isActive[pixelIndex])
+                return false;
+
+            isActive[pixelIndex] = true;
+            activeQueue.Enqueue(pixelIndex);
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int DequeueActive()
+        {
+            int pixelIndex = activeQueue.Dequeue();
+            isActive[pixelIndex] = false;
+            return pixelIndex;
+        }
+    }
+
     private const int TerminalParent = -1;
     private const int NoParent = -2;
     private const float CapacityEpsilon = 1e-5f;
     private const int CancellationCheckMask = 1023;
+
+    private const byte NorthDirectionsMask =
+        (1 << (int)GridDirection.North) |
+        (1 << (int)GridDirection.NorthWest) |
+        (1 << (int)GridDirection.NorthEast);
+
+    private const byte SouthDirectionsMask =
+        (1 << (int)GridDirection.South) |
+        (1 << (int)GridDirection.SouthEast) |
+        (1 << (int)GridDirection.SouthWest);
+
+    private const byte WestDirectionsMask =
+        (1 << (int)GridDirection.West) |
+        (1 << (int)GridDirection.NorthWest) |
+        (1 << (int)GridDirection.SouthWest);
+
+    private const byte EastDirectionsMask =
+        (1 << (int)GridDirection.East) |
+        (1 << (int)GridDirection.NorthEast) |
+        (1 << (int)GridDirection.SouthEast);
 
     private readonly Size gridSize;
     private readonly int pixelCount;
@@ -37,11 +112,11 @@ internal sealed class GridMinCutSolver
     private readonly int[] parentPixel;
     private readonly byte[] directionToParent;
 
-    private readonly UniqueIntQueue activeQueue;
-    private readonly Queue<int> orphanQueue;
-    private readonly long[] originTimestamp;
+    private readonly bool[] isActive;
+    private readonly int[] originTimestamp;
     private readonly int[] distanceToTerminal;
-    private long currentTimestamp;
+    private int baseTimestamp;
+    private bool timestampsDirty;
 
     public GridMinCutSolver(int width, int height)
         : this(new Size(width, height))
@@ -68,9 +143,8 @@ internal sealed class GridMinCutSolver
         parentPixel = new int[pixelCount];
         directionToParent = new byte[pixelCount];
 
-        activeQueue = new UniqueIntQueue(pixelCount);
-        orphanQueue = new Queue<int>();
-        originTimestamp = new long[pixelCount];
+        isActive = new bool[pixelCount];
+        originTimestamp = new int[pixelCount];
         distanceToTerminal = new int[pixelCount];
     }
 
@@ -104,33 +178,182 @@ internal sealed class GridMinCutSolver
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (pixelCount < ParallelRunner.DefaultMinParallelCount || gridSize.Height < 64 || Environment.ProcessorCount <= 1)
+            return SolveSingleBand(sourceCapacities, sinkCapacities, cancellationToken);
+
+        return SolveArrays(sourceCapacities.ToArray(), sinkCapacities.ToArray(), cancellationToken);
+    }
+
+    public double SolveArrays(
+        double[] sourceCapacities,
+        double[] sinkCapacities,
+        CancellationToken cancellationToken = default) =>
+        Solve(sourceCapacities, sinkCapacities, Environment.ProcessorCount, cancellationToken);
+
+    internal double Solve(
+        double[] sourceCapacities,
+        double[] sinkCapacities,
+        int maxBands,
+        CancellationToken cancellationToken = default,
+        int minParallelPixels = ParallelRunner.DefaultMinParallelCount)
+    {
+        ArgumentNullException.ThrowIfNull(sourceCapacities);
+        ArgumentNullException.ThrowIfNull(sinkCapacities);
+        if (sourceCapacities.Length != pixelCount)
+            throw new ArgumentException("Source capacity array length must match the grid pixel count.", nameof(sourceCapacities));
+        if (sinkCapacities.Length != pixelCount)
+            throw new ArgumentException("Sink capacity array length must match the grid pixel count.", nameof(sinkCapacities));
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        int bandCount = Math.Min(maxBands, gridSize.Height / 32);
+        if (maxBands <= 1 || bandCount <= 1 || pixelCount < minParallelPixels || gridSize.Height < 64)
+            return SolveSingleBand(sourceCapacities.AsSpan(), sinkCapacities.AsSpan(), cancellationToken);
+
+        return SolveMultiBand(sourceCapacities, sinkCapacities, bandCount, cancellationToken);
+    }
+
+    private double SolveSingleBand(
+        ReadOnlySpan<double> sourceCapacities,
+        ReadOnlySpan<double> sinkCapacities,
+        CancellationToken cancellationToken)
+    {
+        PrepareTimestampsForSolve();
         Array.Copy(baseNeighborCapacities, residualCapacities, residualCapacities.Length);
-        Array.Clear(originTimestamp);
-        activeQueue.Clear();
-        orphanQueue.Clear();
-        currentTimestamp = 0;
 
-        double totalFlow = InitializeTerminalTrees(sourceCapacities, sinkCapacities);
-        SeedBoundaryActiveNodes();
+        var context = new BandSearchContext(0, gridSize.Height, gridSize.Width, validDirectionMasks, isActive, baseTimestamp);
+        double initialFlow = InitializeTerminalTreesBand(sourceCapacities, sinkCapacities, context);
+        SeedBoundaryActiveNodes(context);
+        double totalFlow = initialFlow + RunBoykovKolmogorovBand(context, cancellationToken);
 
+        CommitTimestampsFromSolve(context.CurrentTimestamp);
+        return totalFlow;
+    }
+
+    private double SolveMultiBand(
+        double[] sourceCapacities,
+        double[] sinkCapacities,
+        int bandCount,
+        CancellationToken cancellationToken)
+    {
+        PrepareTimestampsForSolve();
+
+        int width = gridSize.Width;
+        int height = gridSize.Height;
+        var leafContexts = new BandSearchContext[bandCount];
+        var leafFlows = new double[bandCount];
+
+        // Phase 1: Solve each horizontal band independently on disjoint memory ranges.
+        ParallelRunner.For(bandCount, cancellationToken, bandIndex =>
+        {
+            int startRow = (int)((long)bandIndex * height / bandCount);
+            int endRow = (int)((long)(bandIndex + 1) * height / bandCount);
+            var context = new BandSearchContext(startRow, endRow, width, validDirectionMasks, isActive, baseTimestamp);
+
+            int pixelLength = context.EndPixel - context.StartPixel;
+            Array.Copy(baseNeighborCapacities, context.StartPixel << 3, residualCapacities, context.StartPixel << 3, pixelLength << 3);
+
+            double initialFlow = InitializeTerminalTreesBand(
+                sourceCapacities.AsSpan(context.StartPixel, pixelLength),
+                sinkCapacities.AsSpan(context.StartPixel, pixelLength),
+                context);
+
+            SeedBoundaryActiveNodes(context);
+            leafFlows[bandIndex] = initialFlow + RunBoykovKolmogorovBand(context, cancellationToken);
+            leafContexts[bandIndex] = context;
+        });
+
+        double totalFlow = 0.0;
+        for (int i = 0; i < leafFlows.Length; i++)
+            totalFlow += leafFlows[i];
+
+        // Phase 2: Merge adjacent bands bottom-up along shared horizontal seams, reusing existing search trees.
+        BandSearchContext[] activeBands = leafContexts;
+        while (activeBands.Length > 1)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            int pairCount = activeBands.Length / 2;
+            int nextCount = (activeBands.Length + 1) / 2;
+            var nextBands = new BandSearchContext[nextCount];
+            var mergeFlows = new double[pairCount];
+
+            ParallelRunner.For(pairCount, cancellationToken, pairIndex =>
+            {
+                BandSearchContext left = activeBands[pairIndex * 2];
+                BandSearchContext right = activeBands[(pairIndex * 2) + 1];
+                int seamRow = left.EndRow;
+                Debug.Assert(seamRow == right.StartRow);
+
+                var mergedContext = new BandSearchContext(
+                    left.StartRow,
+                    right.EndRow,
+                    width,
+                    validDirectionMasks,
+                    isActive,
+                    Math.Max(left.CurrentTimestamp, right.CurrentTimestamp));
+
+                SeedSeamActiveNodes(seamRow, mergedContext);
+                mergeFlows[pairIndex] = RunBoykovKolmogorovBand(mergedContext, cancellationToken);
+                nextBands[pairIndex] = mergedContext;
+            });
+
+            if ((activeBands.Length & 1) != 0)
+                nextBands[pairCount] = activeBands[^1];
+
+            for (int i = 0; i < mergeFlows.Length; i++)
+                totalFlow += mergeFlows[i];
+
+            activeBands = nextBands;
+        }
+
+        CommitTimestampsFromSolve(activeBands[0].CurrentTimestamp);
+        return totalFlow;
+    }
+
+    private void PrepareTimestampsForSolve()
+    {
+        if (timestampsDirty || baseTimestamp > 1_000_000_000)
+        {
+            Array.Clear(originTimestamp);
+            baseTimestamp = 0;
+        }
+
+        timestampsDirty = true;
+    }
+
+    private void CommitTimestampsFromSolve(int finalTimestamp)
+    {
+        baseTimestamp = finalTimestamp;
+        timestampsDirty = false;
+    }
+
+    private double RunBoykovKolmogorovBand(BandSearchContext context, CancellationToken cancellationToken)
+    {
+        double augmentedFlow = 0.0;
         int augmentationCount = 0;
-        while (TryGrowToAugmentingPath(out int sourceEndpoint, out int sinkEndpoint, out int dirSourceToSink, cancellationToken))
+
+        while (TryGrowToAugmentingPath(context, out int sourceEndpoint, out int sinkEndpoint, out int dirSourceToSink, cancellationToken))
         {
             if ((augmentationCount++ & CancellationCheckMask) == 0)
                 cancellationToken.ThrowIfCancellationRequested();
 
-            totalFlow += AugmentPath(sourceEndpoint, sinkEndpoint, dirSourceToSink);
-            AdoptOrphans(cancellationToken);
+            augmentedFlow += AugmentPath(sourceEndpoint, sinkEndpoint, dirSourceToSink, context);
+            AdoptOrphans(context, cancellationToken);
         }
 
-        return totalFlow;
+        return augmentedFlow;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int DirectedEdgeIndex(int fromPixel, int direction) => (fromPixel << 3) | direction;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int OppositeDirection(int direction) => (int)((GridDirection)direction).Opposite();
+    private static int OppositeDirection(int direction)
+    {
+        Debug.Assert((uint)direction < 8);
+        return direction ^ 4;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private float GetTreeGrowthCapacity(SearchTree tree, int fromPixel, int toPixel, int dirFromTo) =>
@@ -153,34 +376,43 @@ internal sealed class GridMinCutSolver
 
     private static byte[] BuildValidDirectionMasks(Size size)
     {
-        Debug.Assert(GridNeighborhood.All8Connected.Length == 8);
-
+        int width = size.Width;
+        int height = size.Height;
         var masks = new byte[size.Count];
-        for (int y = 0; y < size.Height; y++)
+        Array.Fill(masks, (byte)0xFF);
+
+        int bottomRowBase = (height - 1) * width;
+        for (int x = 0; x < width; x++)
         {
-            for (int x = 0; x < size.Width; x++)
-            {
-                var coord = new Coord(x, y);
-                byte mask = 0;
-                foreach (GridNeighbor neighbor in GridNeighborhood.All8Connected)
-                {
-                    if (size.Contains(coord + neighbor.Offset))
-                        mask |= (byte)(1 << (int)neighbor.Direction);
-                }
-                masks[size.IndexOf(coord)] = mask;
-            }
+            masks[x] &= unchecked((byte)~NorthDirectionsMask);
+            masks[bottomRowBase + x] &= unchecked((byte)~SouthDirectionsMask);
         }
+
+        for (int y = 0; y < height; y++)
+        {
+            int rowBase = y * width;
+            masks[rowBase] &= unchecked((byte)~WestDirectionsMask);
+            masks[rowBase + width - 1] &= unchecked((byte)~EastDirectionsMask);
+        }
+
         return masks;
     }
 
-    private double InitializeTerminalTrees(ReadOnlySpan<double> sourceCapacities, ReadOnlySpan<double> sinkCapacities)
+    private double InitializeTerminalTreesBand(
+        ReadOnlySpan<double> sourceCapacities,
+        ReadOnlySpan<double> sinkCapacities,
+        BandSearchContext context)
     {
         double initialFlow = 0.0;
+        int startPixel = context.StartPixel;
 
-        for (int p = 0; p < pixelCount; p++)
+        for (int offset = 0; offset < sourceCapacities.Length; offset++)
         {
-            double src = Math.Max(0.0, sourceCapacities[p]);
-            double snk = Math.Max(0.0, sinkCapacities[p]);
+            int p = startPixel + offset;
+            isActive[p] = false;
+
+            double src = Math.Max(0.0, sourceCapacities[offset]);
+            double snk = Math.Max(0.0, sinkCapacities[offset]);
             initialFlow += Math.Min(src, snk);
 
             double excess = src - snk;
@@ -206,24 +438,58 @@ internal sealed class GridMinCutSolver
         return initialFlow;
     }
 
-    private void SeedBoundaryActiveNodes()
+    private void SeedBoundaryActiveNodes(BandSearchContext context)
     {
-        for (int p = 0; p < pixelCount; p++)
+        for (int p = context.StartPixel; p < context.EndPixel; p++)
         {
             SearchTree ownTree = treeMembership[p];
             if (ownTree == SearchTree.Free)
                 continue;
 
-            byte validMask = validDirectionMasks[p];
+            byte validMask = context.GetValidDirectionMask(p);
             for (int dir = 0; dir < 8; dir++)
             {
                 if ((validMask & (1 << dir)) == 0)
                     continue;
 
                 int q = p + neighborOffsets[dir];
-                if (treeMembership[q] != ownTree)
+                if (treeMembership[q] != ownTree && GetTreeGrowthCapacity(ownTree, p, q, dir) > CapacityEpsilon)
                 {
-                    activeQueue.Enqueue(p);
+                    context.TryEnqueueActive(p);
+                    break;
+                }
+            }
+        }
+    }
+
+    private void SeedSeamActiveNodes(int seamRow, BandSearchContext context)
+    {
+        int width = gridSize.Width;
+        int topRowStart = (seamRow - 1) * width;
+        int bottomRowStart = seamRow * width;
+
+        SeedSeamRow(topRowStart, topRowStart + width, SouthDirectionsMask, context);
+        SeedSeamRow(bottomRowStart, bottomRowStart + width, NorthDirectionsMask, context);
+    }
+
+    private void SeedSeamRow(int rowStart, int rowEnd, byte seamDirectionMask, BandSearchContext context)
+    {
+        for (int p = rowStart; p < rowEnd; p++)
+        {
+            SearchTree ownTree = treeMembership[p];
+            if (ownTree == SearchTree.Free)
+                continue;
+
+            byte mask = (byte)(context.GetValidDirectionMask(p) & seamDirectionMask);
+            for (int dir = 0; dir < 8; dir++)
+            {
+                if ((mask & (1 << dir)) == 0)
+                    continue;
+
+                int q = p + neighborOffsets[dir];
+                if (treeMembership[q] != ownTree && GetTreeGrowthCapacity(ownTree, p, q, dir) > CapacityEpsilon)
+                {
+                    context.TryEnqueueActive(p);
                     break;
                 }
             }
@@ -231,26 +497,27 @@ internal sealed class GridMinCutSolver
     }
 
     private bool TryGrowToAugmentingPath(
+        BandSearchContext context,
         out int sourceEndpoint,
         out int sinkEndpoint,
         out int dirSourceToSink,
         CancellationToken cancellationToken)
     {
         int stepCount = 0;
-        while (activeQueue.Count > 0)
+        while (context.HasActiveNodes)
         {
             if ((++stepCount & CancellationCheckMask) == 0)
                 cancellationToken.ThrowIfCancellationRequested();
 
-            int p = activeQueue.Peek();
+            int p = context.PeekActive();
             SearchTree tree = treeMembership[p];
             if (tree == SearchTree.Free)
             {
-                activeQueue.Dequeue();
+                context.DequeueActive();
                 continue;
             }
 
-            byte validMask = validDirectionMasks[p];
+            byte validMask = context.GetValidDirectionMask(p);
             for (int dir = 0; dir < 8; dir++)
             {
                 if ((validMask & (1 << dir)) == 0)
@@ -266,7 +533,7 @@ internal sealed class GridMinCutSolver
                     treeMembership[q] = tree;
                     parentPixel[q] = p;
                     directionToParent[q] = (byte)OppositeDirection(dir);
-                    activeQueue.Enqueue(q);
+                    context.TryEnqueueActive(q);
                 }
                 else if (neighborTree != tree)
                 {
@@ -286,7 +553,7 @@ internal sealed class GridMinCutSolver
                 }
             }
 
-            activeQueue.Dequeue();
+            context.DequeueActive();
         }
 
         sourceEndpoint = -1;
@@ -295,10 +562,10 @@ internal sealed class GridMinCutSolver
         return false;
     }
 
-    private double AugmentPath(int sourceEndpoint, int sinkEndpoint, int dirSourceToSink)
+    private double AugmentPath(int sourceEndpoint, int sinkEndpoint, int dirSourceToSink, BandSearchContext context)
     {
         double bottleneck = FindBottleneckCapacity(sourceEndpoint, sinkEndpoint, dirSourceToSink);
-        PushFlowAlongAugmentingPath(sourceEndpoint, sinkEndpoint, dirSourceToSink, bottleneck);
+        PushFlowAlongAugmentingPath(sourceEndpoint, sinkEndpoint, dirSourceToSink, bottleneck, context);
         return bottleneck;
     }
 
@@ -337,7 +604,12 @@ internal sealed class GridMinCutSolver
         return bottleneck;
     }
 
-    private void PushFlowAlongAugmentingPath(int sourceEndpoint, int sinkEndpoint, int dirSourceToSink, double bottleneck)
+    private void PushFlowAlongAugmentingPath(
+        int sourceEndpoint,
+        int sinkEndpoint,
+        int dirSourceToSink,
+        double bottleneck,
+        BandSearchContext context)
     {
         float floatBottleneck = (float)bottleneck;
         PushDirectedFlow(sourceEndpoint, sinkEndpoint, dirSourceToSink, floatBottleneck);
@@ -348,34 +620,34 @@ internal sealed class GridMinCutSolver
             int parent = parentPixel[u];
             int dirParentToChild = OppositeDirection(directionToParent[u]);
             if (!PushDirectedFlow(parent, u, dirParentToChild, floatBottleneck))
-                MarkAsOrphan(u);
+                MarkAsOrphan(u, context);
 
             u = parent;
         }
 
         terminalExcess[u] -= bottleneck;
         if (terminalExcess[u] <= CapacityEpsilon)
-            MarkAsOrphan(u);
+            MarkAsOrphan(u, context);
 
         int v = sinkEndpoint;
         while (parentPixel[v] >= 0)
         {
             int parent = parentPixel[v];
             if (!PushDirectedFlow(v, parent, directionToParent[v], floatBottleneck))
-                MarkAsOrphan(v);
+                MarkAsOrphan(v, context);
 
             v = parent;
         }
 
         terminalExcess[v] += bottleneck;
         if (-terminalExcess[v] <= CapacityEpsilon)
-            MarkAsOrphan(v);
+            MarkAsOrphan(v, context);
     }
 
-    private void MarkAsOrphan(int pixelIndex)
+    private void MarkAsOrphan(int pixelIndex, BandSearchContext context)
     {
         parentPixel[pixelIndex] = NoParent;
-        orphanQueue.Enqueue(pixelIndex);
+        context.OrphanQueue.Enqueue(pixelIndex);
     }
 
     private bool SubtractResidual(int edgeIndex, float flow)
@@ -391,12 +663,19 @@ internal sealed class GridMinCutSolver
         return true;
     }
 
-    private void AdoptOrphans(CancellationToken cancellationToken)
+    private void AdoptOrphans(BandSearchContext context, CancellationToken cancellationToken)
     {
+        Queue<int> orphanQueue = context.OrphanQueue;
         if (orphanQueue.Count == 0)
             return;
 
-        currentTimestamp++;
+        if (context.CurrentTimestamp == int.MaxValue)
+        {
+            originTimestamp.AsSpan(context.StartPixel, context.EndPixel - context.StartPixel).Clear();
+            context.CurrentTimestamp = 0;
+        }
+
+        context.CurrentTimestamp++;
         int stepCount = 0;
         while (orphanQueue.Count > 0)
         {
@@ -404,19 +683,19 @@ internal sealed class GridMinCutSolver
                 cancellationToken.ThrowIfCancellationRequested();
 
             int orphan = orphanQueue.Dequeue();
-            if (!TryFindReplacementParent(orphan))
-                DemoteOrphanToFree(orphan);
+            if (!TryFindReplacementParent(orphan, context))
+                DemoteOrphanToFree(orphan, context);
         }
     }
 
-    private bool TryFindReplacementParent(int orphan)
+    private bool TryFindReplacementParent(int orphan, BandSearchContext context)
     {
         SearchTree tree = treeMembership[orphan];
 
         int bestParent = -1;
         byte bestDir = 0;
         int bestDistance = int.MaxValue;
-        byte validMask = validDirectionMasks[orphan];
+        byte validMask = context.GetValidDirectionMask(orphan);
 
         for (int dir = 0; dir < 8; dir++)
         {
@@ -430,7 +709,7 @@ internal sealed class GridMinCutSolver
             if (GetParentLinkCapacity(tree, orphan, candidate, dir) <= CapacityEpsilon)
                 continue;
 
-            int distance = ComputeDistanceToTerminal(candidate);
+            int distance = ComputeDistanceToTerminal(candidate, context);
             if (distance < bestDistance)
             {
                 bestDistance = distance;
@@ -444,15 +723,15 @@ internal sealed class GridMinCutSolver
 
         parentPixel[orphan] = bestParent;
         directionToParent[orphan] = bestDir;
-        originTimestamp[orphan] = currentTimestamp;
+        originTimestamp[orphan] = context.CurrentTimestamp;
         distanceToTerminal[orphan] = bestDistance + 1;
         return true;
     }
 
-    private void DemoteOrphanToFree(int orphan)
+    private void DemoteOrphanToFree(int orphan, BandSearchContext context)
     {
         SearchTree tree = treeMembership[orphan];
-        byte validMask = validDirectionMasks[orphan];
+        byte validMask = context.GetValidDirectionMask(orphan);
 
         for (int dir = 0; dir < 8; dir++)
         {
@@ -464,10 +743,10 @@ internal sealed class GridMinCutSolver
                 continue;
 
             if (GetParentLinkCapacity(tree, orphan, neighbor, dir) > CapacityEpsilon)
-                activeQueue.Enqueue(neighbor);
+                context.TryEnqueueActive(neighbor);
 
             if (parentPixel[neighbor] == orphan)
-                MarkAsOrphan(neighbor);
+                MarkAsOrphan(neighbor, context);
         }
 
         treeMembership[orphan] = SearchTree.Free;
@@ -475,14 +754,15 @@ internal sealed class GridMinCutSolver
         originTimestamp[orphan] = 0;
     }
 
-    private int ComputeDistanceToTerminal(int startNode)
+    private int ComputeDistanceToTerminal(int startNode, BandSearchContext context)
     {
+        int timestamp = context.CurrentTimestamp;
         int traversedDepth = 0;
         int current = startNode;
 
         while (true)
         {
-            if (originTimestamp[current] == currentTimestamp)
+            if (originTimestamp[current] == timestamp)
             {
                 traversedDepth += distanceToTerminal[current];
                 break;
@@ -503,14 +783,14 @@ internal sealed class GridMinCutSolver
         int trace = startNode;
         while (trace != current)
         {
-            originTimestamp[trace] = currentTimestamp;
+            originTimestamp[trace] = timestamp;
             distanceToTerminal[trace] = remainingDist--;
             trace = parentPixel[trace];
         }
 
-        if (originTimestamp[current] != currentTimestamp)
+        if (originTimestamp[current] != timestamp)
         {
-            originTimestamp[current] = currentTimestamp;
+            originTimestamp[current] = timestamp;
             distanceToTerminal[current] = 0;
         }
 

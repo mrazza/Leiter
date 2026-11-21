@@ -1,9 +1,12 @@
 namespace Leiter.Algorithms.Segmentation.Internal;
 
+using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Leiter.Algorithms.DataStructures;
+using Leiter.Algorithms.Internal;
 using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Leiter.Pixels;
@@ -14,26 +17,17 @@ using Leiter.Pixels;
 /// </summary>
 internal sealed class GrabCutSession
 {
-    private const int SmoothnessEdgeCancellationCheckMask = 4095;
     private readonly record struct TrimapCounts(
         int ForegroundCount,
         int BackgroundCount,
         int HardBackgroundCount);
 
-    private readonly record struct ForwardSmoothnessPair(
-        int PixelIndex,
-        GridDirection Direction,
-        double InverseDistance,
-        double DistanceSquared);
-
-    private sealed class SmoothnessScanState(Size size, Rgb8[] pixels, ForwardSmoothnessPair[] pairs)
-    {
-        public readonly Size Size = size;
-        public readonly Rgb8[] Pixels = pixels;
-        public readonly ForwardSmoothnessPair[] Pairs = pairs;
-        public double SumSquaredDiff;
-        public int Count;
-    }
+    private readonly record struct TrimapChunkResult(
+        int ForegroundCount,
+        int BackgroundCount,
+        int HardBackgroundCount,
+        TrimapLabel InvalidLabel,
+        bool HasInvalidLabel);
 
     private readonly Size imageSize;
     private readonly int pixelCount;
@@ -121,7 +115,7 @@ internal sealed class GrabCutSession
                 RefitGmmsFromSegmentation(fgCount, bgCount, cancellationToken);
 
             ComputeTerminalCapacities(hardWeight, cancellationToken);
-            solver.Solve(sourceCapacities, sinkCapacities, cancellationToken);
+            solver.SolveArrays(sourceCapacities, sinkCapacities, cancellationToken);
 
             bool changed = UpdateSegmentationFromCut(solver, out fgCount);
             bgCount = pixelCount - fgCount;
@@ -138,37 +132,62 @@ internal sealed class GrabCutSession
         Guard.ThrowIfSizeMismatch(imageSize, trimap.Size, nameof(trimap));
         cancellationToken.ThrowIfCancellationRequested();
 
+        int width = imageSize.Width;
+        int minRowParallel = pixelCount >= ParallelRunner.DefaultMinParallelCount ? 2 : imageSize.Height + 1;
+        TrimapLabel[]? rawTrimap = trimap is SequentialMatrix<TrimapLabel> seq ? seq.RawData : null;
+
+        TrimapChunkResult[] chunks = ParallelRunner.MapChunks(
+            imageSize.Height,
+            cancellationToken,
+            (startRow, endRow) =>
+            {
+                int localFg = 0;
+                int localBg = 0;
+                int localHardBg = 0;
+
+                for (int y = startRow; y < endRow; y++)
+                {
+                    int rowBase = y * width;
+                    for (int x = 0; x < width; x++)
+                    {
+                        int p = rowBase + x;
+                        TrimapLabel label = rawTrimap is not null ? rawTrimap[p] : trimap[x, y];
+                        if (!Enum.IsDefined(label))
+                            return new TrimapChunkResult(0, 0, 0, label, HasInvalidLabel: true);
+
+                        trimapLabels[p] = label;
+
+                        bool fg = label is TrimapLabel.Foreground or TrimapLabel.ProbableForeground;
+                        isForeground[p] = fg;
+                        if (fg)
+                        {
+                            localFg++;
+                        }
+                        else
+                        {
+                            localBg++;
+                            if (label == TrimapLabel.Background)
+                                localHardBg++;
+                        }
+                    }
+                }
+
+                return new TrimapChunkResult(localFg, localBg, localHardBg, default, HasInvalidLabel: false);
+            },
+            minParallelCount: minRowParallel);
+
         int fgCount = 0;
         int bgCount = 0;
         int hardBgCount = 0;
-        int width = imageSize.Width;
-
-        for (int y = 0; y < imageSize.Height; y++)
+        for (int i = 0; i < chunks.Length; i++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            TrimapChunkResult chunk = chunks[i];
+            if (chunk.HasInvalidLabel)
+                Guard.ThrowIfUndefinedEnum(chunk.InvalidLabel, nameof(trimap));
 
-            int rowBase = y * width;
-            for (int x = 0; x < width; x++)
-            {
-                TrimapLabel label = trimap[x, y];
-                Guard.ThrowIfUndefinedEnum(label, nameof(trimap));
-
-                int p = rowBase + x;
-                trimapLabels[p] = label;
-
-                bool fg = label is TrimapLabel.Foreground or TrimapLabel.ProbableForeground;
-                isForeground[p] = fg;
-                if (fg)
-                {
-                    fgCount++;
-                }
-                else
-                {
-                    bgCount++;
-                    if (label == TrimapLabel.Background)
-                        hardBgCount++;
-                }
-            }
+            fgCount += chunk.ForegroundCount;
+            bgCount += chunk.BackgroundCount;
+            hardBgCount += chunk.HardBackgroundCount;
         }
 
         return new TrimapCounts(fgCount, bgCount, hardBgCount);
@@ -191,104 +210,132 @@ internal sealed class GrabCutSession
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        foregroundGmm.InitializeAndFit(pixels, fgIndices);
-        cancellationToken.ThrowIfCancellationRequested();
-        backgroundGmm.InitializeAndFit(pixels, bgIndices);
+        if (pixelCount >= ParallelRunner.DefaultMinParallelCount)
+        {
+            try
+            {
+                Parallel.Invoke(
+                    new ParallelOptions { CancellationToken = cancellationToken },
+                    () => foregroundGmm.InitializeAndFit(pixels, fgIndices, cancellationToken),
+                    () => backgroundGmm.InitializeAndFit(pixels, bgIndices, cancellationToken));
+            }
+            catch (AggregateException ex) when (ex.InnerExceptions.All(static inner => inner is OperationCanceledException))
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+        }
+        else
+        {
+            foregroundGmm.InitializeAndFit(pixels, fgIndices, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            backgroundGmm.InitializeAndFit(pixels, bgIndices, cancellationToken);
+        }
     }
 
     private void RefitGmmsFromSegmentation(int fgCount, int bgCount, CancellationToken cancellationToken)
     {
-        void AssignPixel(int p)
-        {
-            Rgb8 pixel = pixels[p];
-            componentAssignments[p] = isForeground[p]
-                ? foregroundGmm.AssignBestComponent(pixel)
-                : backgroundGmm.AssignBestComponent(pixel);
-        }
-
-        if (cancellationToken.CanBeCanceled)
-        {
-            Parallel.For(0, pixelCount, new ParallelOptions { CancellationToken = cancellationToken }, AssignPixel);
-        }
-        else
-        {
-            Parallel.For(0, pixelCount, AssignPixel);
-        }
+        ParallelRunner.ForChunks(
+            pixelCount,
+            cancellationToken,
+            (start, end) =>
+            {
+                for (int p = start; p < end; p++)
+                {
+                    Rgb8 pixel = pixels[p];
+                    componentAssignments[p] = isForeground[p]
+                        ? foregroundGmm.AssignBestComponent(pixel)
+                        : backgroundGmm.AssignBestComponent(pixel);
+                }
+            });
 
         cancellationToken.ThrowIfCancellationRequested();
-        foregroundGmm.FitFromAssignedComponents(pixels, isForeground, targetForeground: true, componentAssignments, fgCount);
+        foregroundGmm.FitFromAssignedComponents(pixels, isForeground, targetForeground: true, componentAssignments, fgCount, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        backgroundGmm.FitFromAssignedComponents(pixels, isForeground, targetForeground: false, componentAssignments, bgCount);
+        backgroundGmm.FitFromAssignedComponents(pixels, isForeground, targetForeground: false, componentAssignments, bgCount, cancellationToken);
     }
 
     private void ComputeTerminalCapacities(double hardWeight, CancellationToken cancellationToken)
     {
-        void ComputePixel(int p)
-        {
-            TrimapLabel label = trimapLabels[p];
-            if (label == TrimapLabel.Foreground)
+        ParallelRunner.ForChunks(
+            pixelCount,
+            cancellationToken,
+            (start, end) =>
             {
-                sourceCapacities[p] = hardWeight;
-                sinkCapacities[p] = 0.0;
-                return;
-            }
+                for (int p = start; p < end; p++)
+                {
+                    TrimapLabel label = trimapLabels[p];
+                    if (label == TrimapLabel.Foreground)
+                    {
+                        sourceCapacities[p] = hardWeight;
+                        sinkCapacities[p] = 0.0;
+                        continue;
+                    }
 
-            if (label == TrimapLabel.Background)
-            {
-                sourceCapacities[p] = 0.0;
-                sinkCapacities[p] = hardWeight;
-                return;
-            }
+                    if (label == TrimapLabel.Background)
+                    {
+                        sourceCapacities[p] = 0.0;
+                        sinkCapacities[p] = hardWeight;
+                        continue;
+                    }
 
-            Rgb8 pixel = pixels[p];
-            double bgNll = backgroundGmm.EvaluateNegativeLogLikelihood(pixel);
-            double fgNll = foregroundGmm.EvaluateNegativeLogLikelihood(pixel);
-            if (bgNll >= fgNll)
-            {
-                sourceCapacities[p] = bgNll - fgNll;
-                sinkCapacities[p] = 0.0;
-            }
-            else
-            {
-                sourceCapacities[p] = 0.0;
-                sinkCapacities[p] = fgNll - bgNll;
-            }
-        }
-
-        if (cancellationToken.CanBeCanceled)
-        {
-            Parallel.For(0, pixelCount, new ParallelOptions { CancellationToken = cancellationToken }, ComputePixel);
-        }
-        else
-        {
-            Parallel.For(0, pixelCount, ComputePixel);
-        }
+                    Rgb8 pixel = pixels[p];
+                    double bgNll = backgroundGmm.EvaluateNegativeLogLikelihood(pixel);
+                    double fgNll = foregroundGmm.EvaluateNegativeLogLikelihood(pixel);
+                    if (bgNll >= fgNll)
+                    {
+                        sourceCapacities[p] = bgNll - fgNll;
+                        sinkCapacities[p] = 0.0;
+                    }
+                    else
+                    {
+                        sourceCapacities[p] = 0.0;
+                        sinkCapacities[p] = fgNll - bgNll;
+                    }
+                }
+            });
     }
 
     private bool UpdateSegmentationFromCut(GridMinCutSolver minCutSolver, out int fgCount)
     {
+        (int FgCount, bool Changed)[] chunks = ParallelRunner.MapChunks(
+            pixelCount,
+            CancellationToken.None,
+            (start, end) =>
+            {
+                int localFg = 0;
+                bool localChanged = false;
+
+                for (int p = start; p < end; p++)
+                {
+                    bool nextFg = trimapLabels[p] switch
+                    {
+                        TrimapLabel.Foreground => true,
+                        TrimapLabel.Background => false,
+                        _ => minCutSolver.IsSourceSide(p),
+                    };
+
+                    if (nextFg != isForeground[p])
+                    {
+                        isForeground[p] = nextFg;
+                        localChanged = true;
+                    }
+
+                    if (nextFg)
+                        localFg++;
+                }
+
+                return (localFg, localChanged);
+            });
+
+        int totalFg = 0;
         bool changed = false;
-        fgCount = 0;
-
-        for (int p = 0; p < pixelCount; p++)
+        for (int i = 0; i < chunks.Length; i++)
         {
-            bool nextFg = trimapLabels[p] switch
-            {
-                TrimapLabel.Foreground => true,
-                TrimapLabel.Background => false,
-                _ => minCutSolver.IsSourceSide(p),
-            };
-
-            if (nextFg != isForeground[p])
-            {
-                isForeground[p] = nextFg;
-                changed = true;
-            }
-
-            if (nextFg)
-                fgCount++;
+            totalFg += chunks[i].FgCount;
+            changed |= chunks[i].Changed;
         }
 
+        fgCount = totalFg;
         return changed;
     }
 
@@ -304,50 +351,145 @@ internal sealed class GrabCutSession
         if (smoothnessWeight == 0.0 || imageSize.IsEmpty)
             return;
 
-        int pairCapacity =
-            ((imageSize.Width - 1) * imageSize.Height) +
-            (imageSize.Width * (imageSize.Height - 1)) +
-            (2 * (imageSize.Width - 1) * (imageSize.Height - 1));
-        if (pairCapacity <= 0)
-            return;
+        int height = imageSize.Height;
+        int minRowParallel = pixels.Length >= ParallelRunner.DefaultMinParallelCount ? 2 : height + 1;
 
-        var state = new SmoothnessScanState(imageSize, pixels, new ForwardSmoothnessPair[pairCapacity]);
-        for (int y = 0; y < imageSize.Height; y++)
+        // Pass 1: Deterministically accumulate total forward squared color differences to compute beta.
+        (double SumSquaredDiff, int Count)[] chunkSums = ParallelRunner.MapChunks(
+            height,
+            cancellationToken,
+            (startRow, endRow) => SumForwardSquaredDifferences(imageSize, pixels, startRow, endRow),
+            minParallelCount: minRowParallel);
+
+        double sumSquaredDiff = 0.0;
+        int pairCount = 0;
+        for (int i = 0; i < chunkSums.Length; i++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            GridNeighborhood.ForEachForwardPairInRow(
-                imageSize,
-                y,
-                GridConnectivity.EightConnected,
-                state,
-                static (first, second, neighbor, s) =>
-                {
-                    int firstIndex = s.Size.IndexOf(first);
-                    int secondIndex = s.Size.IndexOf(second);
-                    double diffSq = s.Pixels[firstIndex].DistanceSquared(s.Pixels[secondIndex]);
-                    s.SumSquaredDiff += diffSq;
-                    s.Pairs[s.Count++] = new ForwardSmoothnessPair(
-                        firstIndex,
-                        neighbor.Direction,
-                        neighbor.InverseDistance,
-                        diffSq);
-                });
+            sumSquaredDiff += chunkSums[i].SumSquaredDiff;
+            pairCount += chunkSums[i].Count;
         }
 
-        Debug.Assert(state.Count == pairCapacity);
+        if (pairCount <= 0)
+            return;
 
-        double meanDiffSq = state.SumSquaredDiff / state.Count;
+        double meanDiffSq = sumSquaredDiff / pairCount;
         double beta = meanDiffSq > 1e-12 ? 1.0 / (2.0 * meanDiffSq) : 0.0;
 
-        ForwardSmoothnessPair[] pairs = state.Pairs;
-        for (int i = 0; i < state.Count; i++)
+        // Pass 2: Even-row then odd-row parity sweeps ensure forward pairs from distinct rows write disjoint memory.
+        if (pixels.Length < ParallelRunner.DefaultMinParallelCount || height < 2)
         {
-            if ((i & SmoothnessEdgeCancellationCheckMask) == 0)
-                cancellationToken.ThrowIfCancellationRequested();
+            for (int y = 0; y < height; y++)
+                SetSmoothnessEdgesForRow(solver, imageSize, pixels, y, smoothnessWeight, beta);
+            return;
+        }
 
-            ref readonly ForwardSmoothnessPair pair = ref pairs[i];
-            double capacity = smoothnessWeight * pair.InverseDistance * Math.Exp(-beta * pair.DistanceSquared);
-            solver.SetUndirectedEdgeCapacity(pair.PixelIndex, (int)pair.Direction, (float)capacity);
+        int evenRowCount = (height + 1) / 2;
+        int oddRowCount = height / 2;
+        ParallelRunner.For(evenRowCount, cancellationToken, i =>
+            SetSmoothnessEdgesForRow(solver, imageSize, pixels, i * 2, smoothnessWeight, beta));
+        ParallelRunner.For(oddRowCount, cancellationToken, i =>
+            SetSmoothnessEdgesForRow(solver, imageSize, pixels, (i * 2) + 1, smoothnessWeight, beta));
+    }
+
+    private static (double SumSquaredDiff, int Count) SumForwardSquaredDifferences(
+        Size imageSize,
+        Rgb8[] pixels,
+        int startRow,
+        int endRow)
+    {
+        int width = imageSize.Width;
+        int height = imageSize.Height;
+        double sum = 0.0;
+        int count = 0;
+
+        for (int y = startRow; y < endRow; y++)
+        {
+            int rowBase = y * width;
+            bool hasSouth = y + 1 < height;
+
+            for (int x = 0; x < width; x++)
+            {
+                int p = rowBase + x;
+                Rgb8 center = pixels[p];
+                bool hasEast = x + 1 < width;
+
+                if (hasEast)
+                {
+                    sum += center.DistanceSquared(pixels[p + 1]);
+                    count++;
+                }
+
+                if (hasSouth)
+                {
+                    int south = p + width;
+                    sum += center.DistanceSquared(pixels[south]);
+                    count++;
+
+                    if (hasEast)
+                    {
+                        sum += center.DistanceSquared(pixels[south + 1]);
+                        count++;
+                    }
+
+                    if (x > 0)
+                    {
+                        sum += center.DistanceSquared(pixels[south - 1]);
+                        count++;
+                    }
+                }
+            }
+        }
+
+        return (sum, count);
+    }
+
+    private static void SetSmoothnessEdgesForRow(
+        GridMinCutSolver solver,
+        Size imageSize,
+        Rgb8[] pixels,
+        int y,
+        double smoothnessWeight,
+        double beta)
+    {
+        int width = imageSize.Width;
+        int rowBase = y * width;
+        bool hasSouth = y + 1 < imageSize.Height;
+        double diagScale = smoothnessWeight * ScalarMath.InvSqrt2;
+
+        for (int x = 0; x < width; x++)
+        {
+            int p = rowBase + x;
+            Rgb8 center = pixels[p];
+            bool hasEast = x + 1 < width;
+
+            if (hasEast)
+            {
+                double diffSq = center.DistanceSquared(pixels[p + 1]);
+                float cap = (float)(smoothnessWeight * Math.Exp(-beta * diffSq));
+                solver.SetUndirectedEdgeCapacity(p, (int)GridDirection.East, cap);
+            }
+
+            if (hasSouth)
+            {
+                int south = p + width;
+                double southDiffSq = center.DistanceSquared(pixels[south]);
+                float southCap = (float)(smoothnessWeight * Math.Exp(-beta * southDiffSq));
+                solver.SetUndirectedEdgeCapacity(p, (int)GridDirection.South, southCap);
+
+                if (hasEast)
+                {
+                    double seDiffSq = center.DistanceSquared(pixels[south + 1]);
+                    float seCap = (float)(diagScale * Math.Exp(-beta * seDiffSq));
+                    solver.SetUndirectedEdgeCapacity(p, (int)GridDirection.SouthEast, seCap);
+                }
+
+                if (x > 0)
+                {
+                    double swDiffSq = center.DistanceSquared(pixels[south - 1]);
+                    float swCap = (float)(diagScale * Math.Exp(-beta * swDiffSq));
+                    solver.SetUndirectedEdgeCapacity(p, (int)GridDirection.SouthWest, swCap);
+                }
+            }
         }
     }
 }
