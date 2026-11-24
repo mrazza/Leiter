@@ -39,17 +39,4 @@ internal static class SplitMix64
                 ^ ((ulong)(uint)y * 0x94D049BB133111EBUL);
         return (Mix(z) >> 11) * (1.0 / 9007199254740992.0);
     }
-
-    /// <summary>
-    /// Deterministically hashes two 2D endpoint coordinate pairs to a 64-bit tie-breaker value.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ulong HashCoordinates(int x1, int y1, int x2, int y2)
-    {
-        ulong z = ((ulong)(uint)x1 * 0x9E3779B97F4A7C15UL)
-                ^ ((ulong)(uint)y1 * 0xBF58476D1CE4E5B9UL)
-                ^ ((ulong)(uint)x2 * 0x94D049BB133111EBUL)
-                ^ ((ulong)(uint)y2 * 0xD6E8FEB86659FD93UL);
-        return Mix(z);
-    }
 }

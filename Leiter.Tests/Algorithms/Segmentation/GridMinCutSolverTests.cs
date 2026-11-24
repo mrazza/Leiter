@@ -1,10 +1,10 @@
-namespace Leiter.Tests.Algorithms.Segmentation.Internal;
+namespace Leiter.Tests.Algorithms.Segmentation;
 
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using Leiter.Algorithms.DataStructures;
-using Leiter.Algorithms.Segmentation.Internal;
+using Leiter.Algorithms.Segmentation;
 using Leiter.Core;
 using Xunit;
 
@@ -14,16 +14,58 @@ using Xunit;
 public class GridMinCutSolverTests
 {
     [Fact]
+    public void Properties_AndConstructorValidation_ShouldMatchDimensionsAndThrowOnNonPositive()
+    {
+        var solverFromInts = new GridMinCutSolver(3, 2);
+        Assert.Equal(new Size(3, 2), solverFromInts.Size);
+        Assert.Equal(6, solverFromInts.PixelCount);
+
+        var solverFromSize = new GridMinCutSolver(new Size(4, 5));
+        Assert.Equal(new Size(4, 5), solverFromSize.Size);
+        Assert.Equal(20, solverFromSize.PixelCount);
+
+        Assert.Throws<ArgumentOutOfRangeException>("width", () => new GridMinCutSolver(0, 2));
+        Assert.Throws<ArgumentOutOfRangeException>("width", () => new GridMinCutSolver(-3, 2));
+        Assert.Throws<ArgumentOutOfRangeException>("height", () => new GridMinCutSolver(2, 0));
+        Assert.Throws<ArgumentOutOfRangeException>("height", () => new GridMinCutSolver(2, -1));
+        Assert.Throws<ArgumentOutOfRangeException>("size", () => new GridMinCutSolver(new Size(0, 2)));
+        Assert.Throws<ArgumentOutOfRangeException>("size", () => new GridMinCutSolver(new Size(2, 0)));
+        Assert.Throws<ArgumentOutOfRangeException>("size", () => new GridMinCutSolver(new Size(-1, 2)));
+    }
+
+    [Fact]
+    public void Validation_InvalidEdgeCapacityAndQueryArguments_ShouldThrowArgumentOutOfRangeException()
+    {
+        var solver = new GridMinCutSolver(3, 2);
+
+        Assert.Throws<ArgumentOutOfRangeException>("pixelIndex", () => solver.SetUndirectedEdgeCapacity(-1, GridDirection.East, 1f));
+        Assert.Throws<ArgumentOutOfRangeException>("pixelIndex", () => solver.SetUndirectedEdgeCapacity(6, GridDirection.East, 1f));
+        Assert.Throws<ArgumentOutOfRangeException>("pixel", () => solver.SetUndirectedEdgeCapacity(new Coord(-1, 0), GridDirection.East, 1f));
+        Assert.Throws<ArgumentOutOfRangeException>("pixel", () => solver.SetUndirectedEdgeCapacity(new Coord(3, 0), GridDirection.West, 1f));
+        Assert.Throws<ArgumentOutOfRangeException>("direction", () => solver.SetUndirectedEdgeCapacity(0, (GridDirection)99, 1f));
+        Assert.Throws<ArgumentOutOfRangeException>("direction", () => solver.SetUndirectedEdgeCapacity(0, GridDirection.North, 1f));
+        Assert.Throws<ArgumentOutOfRangeException>("direction", () => solver.SetUndirectedEdgeCapacity(new Coord(2, 1), GridDirection.East, 1f));
+        Assert.Throws<ArgumentOutOfRangeException>("capacity", () => solver.SetUndirectedEdgeCapacity(0, GridDirection.East, -0.5f));
+        Assert.Throws<ArgumentOutOfRangeException>("capacity", () => solver.SetUndirectedEdgeCapacity(0, GridDirection.East, float.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>("capacity", () => solver.SetUndirectedEdgeCapacity(0, GridDirection.East, float.PositiveInfinity));
+
+        Assert.Throws<ArgumentOutOfRangeException>("pixelIndex", () => solver.IsSourceSide(-1));
+        Assert.Throws<ArgumentOutOfRangeException>("pixelIndex", () => solver.IsSourceSide(6));
+        Assert.Throws<ArgumentOutOfRangeException>("pixel", () => solver.IsSourceSide(new Coord(0, -1)));
+        Assert.Throws<ArgumentOutOfRangeException>("pixel", () => solver.IsSourceSide(new Coord(0, 2)));
+    }
+
+    [Fact]
     public void GridMinCutSolver_KnownNetwork_ShouldComputeExactMaxFlowAndTriggerOrphanAdoption()
     {
         var solver = new GridMinCutSolver(3, 2);
-        solver.SetUndirectedEdgeCapacity(0, 0, 5f);
-        solver.SetUndirectedEdgeCapacity(1, 0, 2f);
-        solver.SetUndirectedEdgeCapacity(0, 1, 2f);
-        solver.SetUndirectedEdgeCapacity(1, 1, 4f);
-        solver.SetUndirectedEdgeCapacity(2, 1, 6f);
-        solver.SetUndirectedEdgeCapacity(3, 0, 3f);
-        solver.SetUndirectedEdgeCapacity(4, 0, 1f);
+        solver.SetUndirectedEdgeCapacity(0, GridDirection.East, 5f);
+        solver.SetUndirectedEdgeCapacity(1, GridDirection.East, 2f);
+        solver.SetUndirectedEdgeCapacity(0, GridDirection.South, 2f);
+        solver.SetUndirectedEdgeCapacity(1, GridDirection.South, 4f);
+        solver.SetUndirectedEdgeCapacity(2, GridDirection.South, 6f);
+        solver.SetUndirectedEdgeCapacity(3, GridDirection.East, 3f);
+        solver.SetUndirectedEdgeCapacity(4, GridDirection.East, 1f);
 
         double[] sourceCaps = [100.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         double[] sinkCaps = [0.0, 0.0, 100.0, 0.0, 0.0, 100.0];
@@ -50,9 +92,9 @@ public class GridMinCutSolverTests
     public void GridMinCutSolver_ShouldExerciseSinkGrowthOrphanDemotionAndExcessPreFlow()
     {
         var solver = new GridMinCutSolver(4, 1);
-        solver.SetUndirectedEdgeCapacity(0, 0, 10f);
-        solver.SetUndirectedEdgeCapacity(1, 0, 10f);
-        solver.SetUndirectedEdgeCapacity(2, 0, 2f);
+        solver.SetUndirectedEdgeCapacity(0, GridDirection.East, 10f);
+        solver.SetUndirectedEdgeCapacity(1, GridDirection.East, 10f);
+        solver.SetUndirectedEdgeCapacity(2, GridDirection.East, 2f);
 
         double[] src = [2.0, 1.0, 0.0, 0.0];
         double[] snk = [0.0, 1.0, 0.0, 10.0];
