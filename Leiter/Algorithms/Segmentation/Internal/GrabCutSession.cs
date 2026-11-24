@@ -310,7 +310,7 @@ internal sealed class GrabCutSession
                     {
                         TrimapLabel.Foreground => true,
                         TrimapLabel.Background => false,
-                        _ => minCutSolver.IsSourceSide(p),
+                        _ => minCutSolver.IsSourceSideUnchecked(p),
                     };
 
                     if (nextFg != isForeground[p])
@@ -464,7 +464,7 @@ internal sealed class GrabCutSession
             {
                 double diffSq = center.DistanceSquared(pixels[p + 1]);
                 float cap = (float)(smoothnessWeight * Math.Exp(-beta * diffSq));
-                solver.SetUndirectedEdgeCapacity(p, (int)GridDirection.East, cap);
+                solver.SetUndirectedEdgeCapacityUnchecked(p, (int)GridDirection.East, cap);
             }
 
             if (hasSouth)
@@ -472,20 +472,20 @@ internal sealed class GrabCutSession
                 int south = p + width;
                 double southDiffSq = center.DistanceSquared(pixels[south]);
                 float southCap = (float)(smoothnessWeight * Math.Exp(-beta * southDiffSq));
-                solver.SetUndirectedEdgeCapacity(p, (int)GridDirection.South, southCap);
+                solver.SetUndirectedEdgeCapacityUnchecked(p, (int)GridDirection.South, southCap);
 
                 if (hasEast)
                 {
                     double seDiffSq = center.DistanceSquared(pixels[south + 1]);
                     float seCap = (float)(diagScale * Math.Exp(-beta * seDiffSq));
-                    solver.SetUndirectedEdgeCapacity(p, (int)GridDirection.SouthEast, seCap);
+                    solver.SetUndirectedEdgeCapacityUnchecked(p, (int)GridDirection.SouthEast, seCap);
                 }
 
                 if (x > 0)
                 {
                     double swDiffSq = center.DistanceSquared(pixels[south - 1]);
                     float swCap = (float)(diagScale * Math.Exp(-beta * swDiffSq));
-                    solver.SetUndirectedEdgeCapacity(p, (int)GridDirection.SouthWest, swCap);
+                    solver.SetUndirectedEdgeCapacityUnchecked(p, (int)GridDirection.SouthWest, swCap);
                 }
             }
         }

@@ -1,4 +1,4 @@
-namespace Leiter.Algorithms.Segmentation.Internal;
+namespace Leiter.Algorithms.Segmentation;
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -10,7 +10,19 @@ using Leiter.Core;
 /// <summary>
 /// Solves 8-connected 2D grid s-t min-cut / max-flow instances using the Boykov–Kolmogorov algorithm.
 /// </summary>
-internal sealed class GridMinCutSolver
+/// <remarks>
+/// <para>
+/// Undirected pairwise edge capacities are configured once via <see cref="SetUndirectedEdgeCapacity(int, GridDirection, float)"/>
+/// or <see cref="SetUndirectedEdgeCapacity(Coord, GridDirection, float)"/> and preserved across multiple
+/// <see cref="Solve(ReadOnlySpan{double}, ReadOnlySpan{double}, CancellationToken)"/> calls
+/// with updated terminal capacities. Non-positive terminal capacities passed to
+/// <see cref="Solve(ReadOnlySpan{double}, ReadOnlySpan{double}, CancellationToken)"/> are clamped to <c>0</c>.
+/// </para>
+/// <para>
+/// This class maintains mutable per-solve buffers and is intended for sequential single-writer execution.
+/// </para>
+/// </remarks>
+public sealed class GridMinCutSolver
 {
     private enum SearchTree : byte
     {
@@ -108,11 +120,32 @@ internal sealed class GridMinCutSolver
     private int baseTimestamp;
     private bool timestampsDirty;
 
+    /// <summary>
+    /// Gets the dimensions of the 2D grid.
+    /// </summary>
+    public Size Size => gridSize;
+
+    /// <summary>
+    /// Gets the total number of grid vertices (<c>Size.Width * Size.Height</c>).
+    /// </summary>
+    public int PixelCount => pixelCount;
+
+    /// <summary>
+    /// Initializes a new <see cref="GridMinCutSolver"/> for a 2D grid of dimensions <paramref name="width"/> by <paramref name="height"/>.
+    /// </summary>
+    /// <param name="width">The positive grid width in pixels.</param>
+    /// <param name="height">The positive grid height in pixels.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="width"/> or <paramref name="height"/> is less than or equal to zero.</exception>
     public GridMinCutSolver(int width, int height)
-        : this(new Size(width, height))
+        : this(ValidateDimensionsToSize(width, height))
     {
     }
 
+    /// <summary>
+    /// Initializes a new <see cref="GridMinCutSolver"/> for a 2D grid of dimensions <paramref name="size"/>.
+    /// </summary>
+    /// <param name="size">The positive grid dimensions.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when either dimension of <paramref name="size"/> is less than or equal to zero.</exception>
     public GridMinCutSolver(Size size)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(size.Width, 0, nameof(size));
@@ -136,24 +169,115 @@ internal sealed class GridMinCutSolver
         distanceToTerminal = new int[pixelCount];
     }
 
-    public void SetUndirectedEdgeCapacity(int pixelIndex, int direction, float capacity)
+    private static Size ValidateDimensionsToSize(int width, int height)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(width, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(height, 0);
+        return new Size(width, height);
+    }
+
+    /// <summary>
+    /// Sets the symmetric undirected pairwise edge capacity between <paramref name="pixelIndex"/> and its neighbor in <paramref name="direction"/>.
+    /// </summary>
+    /// <param name="pixelIndex">The zero-based row-major pixel index in <c>[0, PixelCount)</c>.</param>
+    /// <param name="direction">The 8-connected neighbor direction from <paramref name="pixelIndex"/>.</param>
+    /// <param name="capacity">The finite non-negative undirected edge capacity.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="pixelIndex"/> is out of range, <paramref name="direction"/> is undefined or steps outside the grid,
+    /// or <paramref name="capacity"/> is negative or non-finite.
+    /// </exception>
+    public void SetUndirectedEdgeCapacity(int pixelIndex, GridDirection direction, float capacity)
+    {
+        if ((uint)pixelIndex >= (uint)pixelCount)
+            throw new ArgumentOutOfRangeException(nameof(pixelIndex), pixelIndex, $"Pixel index must be within [0, {pixelCount}).");
+
+        Guard.ThrowIfUndefinedEnum(direction);
+
+        int dir = (int)direction;
+        if ((validDirectionMasks[pixelIndex] & (1 << dir)) == 0)
+            throw new ArgumentOutOfRangeException(nameof(direction), direction, $"Direction {direction} is out of grid bounds for pixel {pixelIndex}.");
+
+        if (!float.IsFinite(capacity) || capacity < 0f)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Edge capacity must be finite and non-negative.");
+
+        SetUndirectedEdgeCapacityUnchecked(pixelIndex, dir, capacity);
+    }
+
+    /// <summary>
+    /// Sets the symmetric undirected pairwise edge capacity between <paramref name="pixel"/> and its neighbor in <paramref name="direction"/>.
+    /// </summary>
+    /// <param name="pixel">The 2D pixel coordinate within <see cref="Size"/>.</param>
+    /// <param name="direction">The 8-connected neighbor direction from <paramref name="pixel"/>.</param>
+    /// <param name="capacity">The finite non-negative undirected edge capacity.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="pixel"/> is outside <see cref="Size"/>, <paramref name="direction"/> is undefined or steps outside the grid,
+    /// or <paramref name="capacity"/> is negative or non-finite.
+    /// </exception>
+    public void SetUndirectedEdgeCapacity(Coord pixel, GridDirection direction, float capacity)
+    {
+        if (!gridSize.Contains(pixel))
+            throw new ArgumentOutOfRangeException(nameof(pixel), pixel, $"Coordinate {pixel} is outside grid dimensions {gridSize}.");
+
+        SetUndirectedEdgeCapacity(gridSize.IndexOf(pixel), direction, capacity);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void SetUndirectedEdgeCapacityUnchecked(int pixelIndex, int direction, float capacity)
     {
         Debug.Assert((uint)pixelIndex < (uint)pixelCount);
         Debug.Assert((uint)direction < 8);
         Debug.Assert((validDirectionMasks[pixelIndex] & (1 << direction)) != 0, $"Direction {direction} is out of grid bounds for pixel {pixelIndex}.");
+        Debug.Assert(float.IsFinite(capacity) && capacity >= 0f);
 
         int neighborIndex = pixelIndex + neighborOffsets[direction];
         baseNeighborCapacities[DirectedEdgeIndex(pixelIndex, direction)] = capacity;
         baseNeighborCapacities[DirectedEdgeIndex(neighborIndex, OppositeDirection(direction))] = capacity;
     }
 
-    public void SetUndirectedEdgeCapacity(Coord pixel, GridDirection direction, float capacity) =>
-        SetUndirectedEdgeCapacity(gridSize.IndexOf(pixel), (int)direction, capacity);
+    /// <summary>
+    /// Returns whether <paramref name="pixelIndex"/> belongs to the source (<c>S</c>) side of the minimum cut computed by the most recent solve.
+    /// </summary>
+    /// <param name="pixelIndex">The zero-based row-major pixel index in <c>[0, PixelCount)</c>.</param>
+    /// <returns><see langword="true"/> if the pixel is assigned to the source side; <see langword="false"/> if it is on the sink side.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="pixelIndex"/> is outside <c>[0, PixelCount)</c>.</exception>
+    public bool IsSourceSide(int pixelIndex)
+    {
+        if ((uint)pixelIndex >= (uint)pixelCount)
+            throw new ArgumentOutOfRangeException(nameof(pixelIndex), pixelIndex, $"Pixel index must be within [0, {pixelCount}).");
 
-    public bool IsSourceSide(int pixelIndex) => treeMembership[pixelIndex] == SearchTree.Source;
+        return treeMembership[pixelIndex] == SearchTree.Source;
+    }
 
-    public bool IsSourceSide(Coord pixel) => IsSourceSide(gridSize.IndexOf(pixel));
+    /// <summary>
+    /// Returns whether <paramref name="pixel"/> belongs to the source (<c>S</c>) side of the minimum cut computed by the most recent solve.
+    /// </summary>
+    /// <param name="pixel">The 2D pixel coordinate within <see cref="Size"/>.</param>
+    /// <returns><see langword="true"/> if the pixel is assigned to the source side; <see langword="false"/> if it is on the sink side.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="pixel"/> is outside <see cref="Size"/>.</exception>
+    public bool IsSourceSide(Coord pixel)
+    {
+        if (!gridSize.Contains(pixel))
+            throw new ArgumentOutOfRangeException(nameof(pixel), pixel, $"Coordinate {pixel} is outside grid dimensions {gridSize}.");
 
+        return treeMembership[gridSize.IndexOf(pixel)] == SearchTree.Source;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool IsSourceSideUnchecked(int pixelIndex)
+    {
+        Debug.Assert((uint)pixelIndex < (uint)pixelCount);
+        return treeMembership[pixelIndex] == SearchTree.Source;
+    }
+
+    /// <summary>
+    /// Computes the minimum s-t cut / maximum flow on the configured grid for the specified terminal capacities.
+    /// </summary>
+    /// <param name="sourceCapacities">Per-pixel capacities from the source terminal (<c>S</c>); length must equal <see cref="PixelCount"/>.</param>
+    /// <param name="sinkCapacities">Per-pixel capacities to the sink terminal (<c>T</c>); length must equal <see cref="PixelCount"/>.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    /// <returns>The total maximum flow / minimum cut capacity.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="sourceCapacities"/> or <paramref name="sinkCapacities"/> length does not equal <see cref="PixelCount"/>.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled.</exception>
     public double Solve(
         ReadOnlySpan<double> sourceCapacities,
         ReadOnlySpan<double> sinkCapacities,
@@ -172,7 +296,7 @@ internal sealed class GridMinCutSolver
         return SolveArrays(sourceCapacities.ToArray(), sinkCapacities.ToArray(), cancellationToken);
     }
 
-    public double SolveArrays(
+    internal double SolveArrays(
         double[] sourceCapacities,
         double[] sinkCapacities,
         CancellationToken cancellationToken = default) =>

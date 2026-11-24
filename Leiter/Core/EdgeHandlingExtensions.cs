@@ -3,7 +3,7 @@ namespace Leiter.Core;
 /// <summary>
 /// Provides coordinate and index resolution helpers for <see cref="EdgeHandling"/> border strategies.
 /// </summary>
-internal static class EdgeHandlingExtensions
+public static class EdgeHandlingExtensions
 {
     /// <summary>
     /// Resolves an integer index against an axis of length <paramref name="length"/> using the specified <paramref name="edgeHandling"/> strategy.

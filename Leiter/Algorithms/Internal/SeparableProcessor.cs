@@ -16,7 +16,7 @@ internal static class SeparableProcessor
     /// <param name="line">The line of SIMD vectors to filter in place.</param>
     internal delegate void LineFilter1D(Span<Vector256<double>> line);
 
-    internal interface ILineOperator
+    private interface ILineOperator
     {
         bool NeedsSeparateSource { get; }
         void ApplyHorizontal(ReadOnlySpan<Vector256<double>> source, Span<Vector256<double>> destination);

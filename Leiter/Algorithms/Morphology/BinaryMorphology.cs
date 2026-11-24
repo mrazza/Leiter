@@ -224,7 +224,7 @@ public static class BinaryMorphology
                         continue;
 
                     if (x + 1 < width && isForeground[p + 1])
-                        forest.Union(p, p + 1);
+                        forest.UnionUnchecked(p, p + 1);
 
                     if (hasSouthInStrip)
                         UnionSouthNeighbors(forest, isForeground, p, x, width, isEightConnected);
@@ -262,8 +262,8 @@ public static class BinaryMorphology
                         if (!isForeground[i])
                             continue;
 
-                        int root = forest.FindReadOnly(i);
-                        int componentSize = forest.GetRootSize(root);
+                        int root = forest.FindReadOnlyUnchecked(i);
+                        int componentSize = forest.GetRootSizeUnchecked(root);
                         if (componentSize > bestSize)
                         {
                             bestSize = componentSize;
@@ -292,7 +292,7 @@ public static class BinaryMorphology
                 {
                     for (int i = start; i < end; i++)
                     {
-                        if (isForeground[i] && forest.FindReadOnly(i) == largestRoot)
+                        if (isForeground[i] && forest.FindReadOnlyUnchecked(i) == largestRoot)
                             filteredData[i] = true;
                     }
                 });
@@ -307,7 +307,7 @@ public static class BinaryMorphology
                 {
                     for (int i = start; i < end; i++)
                     {
-                        if (isForeground[i] && forest.GetRootSize(forest.FindReadOnly(i)) >= minPixels)
+                        if (isForeground[i] && forest.GetRootSizeUnchecked(forest.FindReadOnlyUnchecked(i)) >= minPixels)
                             filteredData[i] = true;
                     }
                 });
@@ -351,15 +351,15 @@ public static class BinaryMorphology
     {
         int south = pixelIndex + width;
         if (isForeground[south])
-            forest.Union(pixelIndex, south);
+            forest.UnionUnchecked(pixelIndex, south);
 
         if (isEightConnected)
         {
             if (x + 1 < width && isForeground[south + 1])
-                forest.Union(pixelIndex, south + 1);
+                forest.UnionUnchecked(pixelIndex, south + 1);
 
             if (x > 0 && isForeground[south - 1])
-                forest.Union(pixelIndex, south - 1);
+                forest.UnionUnchecked(pixelIndex, south - 1);
         }
     }
 

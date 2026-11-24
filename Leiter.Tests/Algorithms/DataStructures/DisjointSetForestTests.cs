@@ -66,4 +66,49 @@ public class DisjointSetForestTests
         for (int i = 0; i < forest.Count; i++)
             Assert.Equal(3, forest.FindReadOnly(i));
     }
+
+    [Fact]
+    public void GetSize_ShouldReturnComponentSizeWithoutPathCompression()
+    {
+        var forest = new DisjointSetForest(5);
+        forest.MergeRootsUnchecked(0, 1, out _); // root 0, size 2
+        forest.MergeRootsUnchecked(2, 0, out _); // 2 -> 0, root 0, size 3
+        forest.Union(3, 4); // root 3, size 2
+
+        Assert.Equal(3, forest.GetSize(0));
+        Assert.Equal(3, forest.GetSize(1));
+        Assert.Equal(3, forest.GetSize(2));
+        Assert.Equal(2, forest.GetSize(3));
+        Assert.Equal(2, forest.GetSize(4));
+
+        // After merging {0,1,2} with {3,4}, all members report size 5.
+        int mergedRoot = forest.Union(2, 4);
+        for (int i = 0; i < forest.Count; i++)
+        {
+            Assert.Equal(5, forest.GetSize(i));
+            Assert.Equal(i == mergedRoot, forest.IsRoot(i));
+        }
+    }
+
+    [Fact]
+    public void Validation_InvalidIndexOrNonRoot_ShouldThrowExpectedExceptions()
+    {
+        var forest = new DisjointSetForest(3);
+        int survivingRoot = forest.Union(0, 1);
+        int nonRoot = survivingRoot == 0 ? 1 : 0;
+
+        Assert.Throws<ArgumentException>("rootIndex", () => forest.GetRootSize(nonRoot));
+
+        int[] invalidIndices = [-1, 3, int.MinValue, int.MaxValue];
+        foreach (int bad in invalidIndices)
+        {
+            Assert.Throws<ArgumentOutOfRangeException>("index", () => forest.IsRoot(bad));
+            Assert.Throws<ArgumentOutOfRangeException>("rootIndex", () => forest.GetRootSize(bad));
+            Assert.Throws<ArgumentOutOfRangeException>("index", () => forest.GetSize(bad));
+            Assert.Throws<ArgumentOutOfRangeException>("index", () => forest.FindReadOnly(bad));
+            Assert.Throws<ArgumentOutOfRangeException>("index", () => forest.Find(bad));
+            Assert.Throws<ArgumentOutOfRangeException>("first", () => forest.Union(bad, 0));
+            Assert.Throws<ArgumentOutOfRangeException>("second", () => forest.Union(0, bad));
+        }
+    }
 }
