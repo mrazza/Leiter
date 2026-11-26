@@ -161,12 +161,44 @@ public sealed record EgbiOptions(
             profile.IsEmpty ? 1.0 : profile.ColorSpreadFactor,
             profile.IsEmpty ? 1.0 : profile.ClutterFactor);
 
+    internal static EgbiOptions ForSizeWithBlurSigmas(
+        Size size,
+        EgbiOptions baseline,
+        double referenceDimension,
+        double fromBlurSigma,
+        double toBlurSigma) =>
+        ScaleCore(
+            size,
+            baseline,
+            referenceDimension,
+            colorSpreadFactor: 1.0,
+            clutterFactor: 1.0,
+            fromBlurSigma,
+            toBlurSigma);
+
+    internal static EgbiOptions ForProfileWithBlurSigmas(
+        in ImageTuningProfile profile,
+        EgbiOptions baseline,
+        double referenceDimension,
+        double fromBlurSigma,
+        double toBlurSigma) =>
+        ScaleCore(
+            profile.ImageSize,
+            baseline,
+            referenceDimension,
+            profile.IsEmpty ? 1.0 : profile.ColorSpreadFactor,
+            profile.IsEmpty ? 1.0 : profile.ClutterFactor,
+            fromBlurSigma,
+            toBlurSigma);
+
     private static EgbiOptions ScaleCore(
         Size size,
         EgbiOptions baseline,
         double referenceDimension,
         double colorSpreadFactor,
-        double clutterFactor)
+        double clutterFactor,
+        double? explicitFromBlurSigma = null,
+        double? explicitToBlurSigma = null)
     {
         var (linearScale, areaScale, totalPixels) = OptionTuning.ComputeScalesUnchecked(size, referenceDimension);
         if (totalPixels == 0)
@@ -174,7 +206,9 @@ public sealed record EgbiOptions(
             return baseline;
         }
 
-        double edgeAttenuation = OptionTuning.ComputeBlurredEdgeAttenuation(linearScale);
+        double fromSigma = explicitFromBlurSigma ?? (OptionTuning.DefaultBaseBlurSigma * (referenceDimension / DefaultReferenceDimension));
+        double toSigma = explicitToBlurSigma ?? (fromSigma * linearScale);
+        double edgeAttenuation = OptionTuning.ComputeBlurredEdgeAttenuationFromSigmas(fromSigma, toSigma);
         double kFactor = OptionTuning.ScaleFiniteNonNegative(baseline.KFactor * areaScale * edgeAttenuation * colorSpreadFactor);
         double epsilonFloor = Math.Min(MinEpsilonFloor, baseline.Epsilon);
         double epsilon = baseline.Epsilon == 0.0

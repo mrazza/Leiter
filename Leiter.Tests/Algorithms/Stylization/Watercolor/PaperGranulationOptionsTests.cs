@@ -107,14 +107,16 @@ public class PaperGranulationOptionsTests : SizeTunableOptionsContractTestsBase<
         PaperGranulationOptions refOpts = PaperGranulationOptions.ForSize(new Size(800, 800));
         Assert.Equal(0.6, refOpts.WarpAmplitude, 6);
         Assert.NotNull(refOpts.GrainNoise);
-        Assert.Equal(0.18, refOpts.GrainNoise!.Frequency, 6);
+        Assert.Equal(0.115, refOpts.GrainNoise!.Frequency, 6);
+        Assert.Equal(2, refOpts.GrainNoise.Octaves);
         Assert.Equal(707, refOpts.GrainNoise.Seed);
+        Assert.True(refOpts.GrainNoise.Frequency * Math.Pow(refOpts.GrainNoise.Lacunarity, refOpts.GrainNoise.Octaves - 1) < 0.5);
         Assert.Equal(refOpts, PaperGranulationOptions.ForSize(new Size(1000, 640)));
 
         PaperGranulationOptions small = PaperGranulationOptions.ForSize(new Size(200, 200));
         PaperGranulationOptions large = PaperGranulationOptions.ForSize(new Size(3200, 2400));
         Assert.Equal(0.15, small.WarpAmplitude, 6);
-        Assert.Equal(0.5, small.GrainNoise!.Frequency, 6); // Clamped to Nyquist limit
+        Assert.Equal(0.46, small.GrainNoise!.Frequency, 6);
         Assert.True(large.WarpAmplitude > refOpts.WarpAmplitude);
         Assert.True(large.GrainNoise!.Frequency < refOpts.GrainNoise.Frequency);
 

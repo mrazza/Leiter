@@ -27,10 +27,10 @@ public sealed record PaperGranulationOptions(
     /// </summary>
     public static PerlinNoiseOptions DefaultGrainNoise { get; } = new(
         Seed: 707,
-        Frequency: 0.18,
-        Octaves: 4,
+        Frequency: 0.115,
+        Octaves: 2,
         Lacunarity: 2.0,
-        Persistence: 0.55);
+        Persistence: 0.5);
 
     /// <summary>
     /// Gets the default <see cref="PaperGranulationOptions"/> instance.

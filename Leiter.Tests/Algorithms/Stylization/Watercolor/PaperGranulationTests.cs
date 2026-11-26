@@ -93,7 +93,7 @@ public class PaperGranulationTests
             for (int x = 0; x < 12; x++)
             {
                 double f = (fractal[x, y].Value + 1.0) * 0.5;
-                double t = 1.0 - turbulence[x, y].Value;
+                double t = 0.5 + (PaperGranulation.ExpectedMeanTurbulence - turbulence[x, y].Value);
                 double expected = Math.Clamp((0.65 * f) + (0.35 * t), 0.0, 1.0);
                 Assert.Equal(expected, map1[x, y].Value, 12);
             }
@@ -101,6 +101,23 @@ public class PaperGranulationTests
 
         MatrixAssert.Equal(map1, map2);
         MatrixAssert.NotEqual(map1, mapOther);
+    }
+
+    /// <summary>
+    /// Verifies that procedural paper height maps are centered near 0.5 so granulation does not globally lighten midtones.
+    /// </summary>
+    [Fact]
+    public void GeneratePaperHeightMap_DefaultGrainNoise_ShouldBeCenteredNearHalf()
+    {
+        Matrix<DoublePixel> heightMap = PaperGranulation.GeneratePaperHeightMap(new Size(256, 256));
+        double sum = 0.0;
+        for (int i = 0; i < heightMap.Count; i++)
+        {
+            sum += heightMap[i].Value;
+        }
+
+        double mean = sum / heightMap.Count;
+        Assert.InRange(mean, 0.48, 0.52);
     }
 
     /// <summary>
@@ -359,10 +376,10 @@ public class PaperGranulationTests
 
         var nonDefaultGrain = new PerlinNoiseOptions(
             Seed: 707,
-            Frequency: 0.045, // 4x lower than DefaultGrainNoise.Frequency (0.18) => warpScale = 4.0
-            Octaves: 4,
+            Frequency: 0.02875, // 4x lower than DefaultGrainNoise.Frequency (0.115) => warpScale = 4.0
+            Octaves: 2,
             Lacunarity: 2.0,
-            Persistence: 0.55);
+            Persistence: 0.5);
         Assert.NotEqual(PaperGranulationOptions.DefaultGrainNoise.Frequency, nonDefaultGrain.Frequency);
 
         var options = new PaperGranulationOptions(

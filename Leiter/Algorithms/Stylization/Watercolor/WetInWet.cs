@@ -21,6 +21,7 @@ public static class WetInWet
 {
     private const double DarkerBoundarySeedAlpha = 0.45;
     private const double DarkerBoundaryInnerRingAlpha = 0.15;
+    private const double MinHueChroma = 0.08;
 
     /// <summary>
     /// Applies wet-in-wet edge bleeding to an image and returns a detailed <see cref="WetInWetResult"/>
@@ -121,10 +122,14 @@ public static class WetInWet
                 continue;
             }
 
-            bool gradRule = (avgGrad[b.First].X >= opts.ColorGradientThreshold && avgGrad[b.First].Y >= opts.ColorGradientThreshold) ||
-                            (avgGrad[b.Second].X >= opts.ColorGradientThreshold && avgGrad[b.Second].Y >= opts.ColorGradientThreshold);
+            bool gradRule = avgGrad[b.First].Length >= opts.ColorGradientThreshold ||
+                            avgGrad[b.Second].Length >= opts.ColorGradientThreshold;
 
-            double hueDiff = ColorMetrics.HueDifferenceDegrees(stats[b.First].MeanHueDegrees, stats[b.Second].MeanHueDegrees);
+            double chromaA = stats[b.First].MeanColor.GetChroma();
+            double chromaB = stats[b.Second].MeanColor.GetChroma();
+            double hueDiff = (chromaA < MinHueChroma || chromaB < MinHueChroma)
+                ? 0.0
+                : ColorMetrics.HueDifferenceDegrees(stats[b.First].MeanHueDegrees, stats[b.Second].MeanHueDegrees);
             bool hueRule = (isSalientA || isSalientB)
                 ? (hueDiff < opts.SalientHueThresholdDegrees)
                 : (hueDiff < opts.NonSalientHueThresholdDegrees);

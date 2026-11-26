@@ -279,6 +279,62 @@ public class WetInWetTests
     }
 
     /// <summary>
+    /// Verifies that a 1D directional color gradient (non-zero along X only) qualifies via gradient magnitude.
+    /// </summary>
+    [Fact]
+    public void ApplyDetailed_OneDimensionalGradient_ShouldQualifyViaGradientMagnitude()
+    {
+        const int width = 8;
+        const int height = 8;
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(width, height, static (x, _) =>
+            x < 4
+                ? new Rgb8((byte)Math.Min(255, 40 + (x * 55)), 10, 10)
+                : new Rgb8(20, (byte)Math.Min(255, 80 + ((x - 4) * 45)), (byte)Math.Min(255, 80 + ((x - 4) * 45))));
+        SequentialMatrix<int> labels = TestMatrices.Create(width, height, static (x, _) => x < 4 ? 0 : 1);
+
+        var graph = RegionGraph.FromLabels(labels);
+        var dist = new SequentialMatrix<DoublePixel>(width, height);
+
+        var options = new WetInWetOptions(
+            ColorGradientThreshold: 0.02,
+            SalientHueThresholdDegrees: 0.0,
+            NonSalientHueThresholdDegrees: 0.0,
+            MinIntensityDifference: 0.01);
+
+        WetInWetResult result = WetInWet.ApplyDetailed(image, graph, dist, options: options);
+
+        Assert.Single(result.QualifyingBoundaries);
+        Assert.True(result.QualifyingBoundaries[0]);
+    }
+
+    /// <summary>
+    /// Verifies that near-neutral gray regions with slight opposing channel tint do not fail the hue rule due to arbitrary hue angles.
+    /// </summary>
+    [Fact]
+    public void ApplyDetailed_NearNeutralRegionsWithSlightOpposingTint_ShouldQualifyViaHueRule()
+    {
+        const int width = 6;
+        const int height = 6;
+        (SequentialMatrix<Rgb8> image, RegionGraph graph) = TestMatrices.VerticalSplitWithGraph(
+            width,
+            height,
+            new Rgb8(30, 31, 32),
+            new Rgb8(220, 219, 218));
+        var dist = new SequentialMatrix<DoublePixel>(width, height);
+
+        var options = new WetInWetOptions(
+            ColorGradientThreshold: 100.0,
+            SalientHueThresholdDegrees: 20.0,
+            NonSalientHueThresholdDegrees: 90.0,
+            MinIntensityDifference: 0.02);
+
+        WetInWetResult result = WetInWet.ApplyDetailed(image, graph, dist, options: options);
+
+        Assert.Single(result.QualifyingBoundaries);
+        Assert.True(result.QualifyingBoundaries[0]);
+    }
+
+    /// <summary>
     /// Verifies that hue threshold differentiates between salient and non-salient regions.
     /// </summary>
     [Fact]

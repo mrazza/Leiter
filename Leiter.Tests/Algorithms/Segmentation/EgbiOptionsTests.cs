@@ -141,6 +141,15 @@ public class EgbiOptionsTests : SizeTunableOptionsContractTestsBase<EgbiOptions>
         hugeScaled.Validate();
         Assert.True(double.IsFinite(hugeScaled.KFactor));
         Assert.True(double.IsFinite(hugeScaled.Epsilon));
+
+        // Two-hop ForSize scaling (800 -> native -> preview) must compose without edge-attenuation drift.
+        Size nativeSize = new(4000, 3000);
+        Size previewSize = new(1024, 768);
+        EgbiOptions nativeOpts = EgbiOptions.ForSize(nativeSize);
+        EgbiOptions previewViaTwoHops = EgbiOptions.ForSize(previewSize, nativeOpts, nativeSize.LinearDimension);
+        EgbiOptions previewDirect = EgbiOptions.ForSize(previewSize);
+        Assert.Equal(previewDirect.KFactor, previewViaTwoHops.KFactor, 10);
+        Assert.Equal(previewDirect.Epsilon, previewViaTwoHops.Epsilon, 10);
     }
 
     /// <summary>

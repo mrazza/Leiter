@@ -19,8 +19,6 @@ using Leiter.Pixels.ColorSpaces;
 /// </summary>
 public static class HandTremor
 {
-    private const int BandTaperWidth = 3;
-
     private enum BoundaryGroup : byte
     {
         WetInWetPreserved = 0,
@@ -158,7 +156,9 @@ public static class HandTremor
         int maxUsefulBandRadius = width + height;
         double rawInnerRadius = Math.Ceiling(opts.Amplitude * (1.0 + Math.Abs(opts.PaperGapBias)));
         int innerRadius = (int)Math.Min(rawInnerRadius, maxUsefulBandRadius);
-        int bandRadius = innerRadius + BandTaperWidth;
+        double rawTaperWidth = Math.Max(1.0, Math.Ceiling(opts.Amplitude));
+        int taperWidth = (int)Math.Min(rawTaperWidth, maxUsefulBandRadius);
+        int bandRadius = (int)Math.Min((long)innerRadius + taperWidth, maxUsefulBandRadius);
         ArgumentOutOfRangeException.ThrowIfLessThan(bandRadius, innerRadius);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -243,7 +243,7 @@ public static class HandTremor
                     }
                     else
                     {
-                        result[x, y] = MatrixResampler.SampleBilinearUnchecked(image, p1.X, p1.Y, EdgeHandling.Extend);
+                        result[x, y] = SampleInRegion(image, regionGraph.Labels, p1, label1, label1, image[x, y]);
                     }
                 }
             }
