@@ -70,8 +70,14 @@ public sealed record WatercolorOptions(
     private const double MinSrcChromaDenominator = 1.0;
     private const double HighChromaGainThreshold = 2.0;
     private const double LowChromaGainThreshold = 0.5;
-    private const double MinAutoTransferStrength = 0.55;
-    private const double MaxAutoTransferStrength = 1.0;
+    private const double MaxAcceptableMeanLShift = 22.0;
+    private const double MinMeanLShiftFactor = 0.84;
+    private const double MinLightnessSpreadRatio = 0.78;
+    private const double MinLightnessSpreadFactor = 0.88;
+    private const double MaxPerAxisChromaGain = 3.2;
+    private const double MinPerAxisChromaFactor = 0.85;
+    private const double MinAutoTransferStrength = 0.62;
+    private const double MaxAutoTransferStrength = 0.78;
 
     /// <summary>
     /// The default reference linear dimension (<c>sqrt(Width * Height)</c>) at which pipeline stage parameters apply unscaled.
@@ -92,6 +98,63 @@ public sealed record WatercolorOptions(
     /// Gets the default <see cref="WatercolorOptions"/> instance.
     /// </summary>
     public static WatercolorOptions Default { get; } = new();
+
+    /// <summary>
+    /// Gets the calibrated photographic baseline used by parameterless <see cref="ForImage(IReadOnlyMatrix{Rgb8}, double, IReadOnlyList{ColorTransferProfile}?)"/>
+    /// and <see cref="ForAnalysis(ImageAnalysis, double, IReadOnlyList{ColorTransferProfile}?)"/> overloads while preserving <see cref="Default"/> paper constants.
+    /// </summary>
+    internal static WatercolorOptions DefaultImageBaseline { get; } = new(
+        SaliencyCut: SaliencyCutOptions.Default with
+        {
+            Mask = SaliencyCutOptions.DefaultMask with
+            {
+                Method = SaliencyThresholdMethod.Fixed,
+                FixedThreshold = 0.42
+            }
+        },
+        MeanShift: new MeanShiftOptions(
+            SpatialRadius: 12,
+            RangeRadius: 9.0,
+            MinRegionSize: 130),
+        LodAbstraction: new LodAbstractionOptions(
+            SalientKernelSize: 4,
+            MinNonSalientKernelSize: 6,
+            MaxNonSalientKernelSize: 13,
+            CrossSegmentColorScale: 0.38),
+        WetInWet: new WetInWetOptions(
+            ColorGradientThreshold: 0.04,
+            SalientHueThresholdDegrees: 18.0,
+            NonSalientHueThresholdDegrees: 95.0,
+            MinIntensityDifference: 0.02,
+            ScatterRadius: 5,
+            SeedProbability: 0.52,
+            EllipticalFilter: new OrientedEllipticalFilterOptions(
+                MajorRadius: 7.5,
+                MinorRadius: 2.8,
+                SigmaScale: 0.55)),
+        HandTremor: new HandTremorOptions(
+            Amplitude: 3.3,
+            SalientAmplitudeScale: 0.52,
+            SimilarHueThresholdDegrees: 36.0,
+            OverlapDarkening: 0.52,
+            MinContrastingChroma: 0.16,
+            PaperGapBias: -0.15,
+            PaperGapOpacity: 0.65),
+        EdgeDarkening: new EdgeDarkeningOptions(
+            Intensity: 2.20,
+            BlurSigma: 0.85),
+        TurbulenceFlow: new TurbulenceFlowOptions(
+            Intensity: 0.42,
+            Noise: TurbulenceFlowOptions.DefaultNoise with { Frequency = 0.014 }),
+        ToneCurve: new PiecewiseToneCurveOptions(
+            MinTone: 0.03,
+            MaxTone: 0.965,
+            ShadowKnee: 0.13,
+            HighlightKnee: 0.86),
+        PaperGranulation: new PaperGranulationOptions(
+            DensityStrength: 0.24,
+            WarpAmplitude: 0.55,
+            GrainNoise: PaperGranulationOptions.DefaultGrainNoise));
 
     /// <summary>
     /// Gets the Stage 2 EGBI over-segmentation options used for regional contrast saliency (defaults to <see cref="DefaultSaliencyEgbi"/>).
@@ -247,9 +310,13 @@ public sealed record WatercolorOptions(
             return baseline;
         }
 
+        double scaledEgbiBlurSigma = baseline.EgbiBlurSigma == 0.0
+            ? 0.0
+            : OptionTuning.ScaleFiniteNonNegative(baseline.EgbiBlurSigma * s);
+
         return baseline with
         {
-            Egbi = EgbiOptions.ForSize(size, baseline.Egbi, referenceDimension),
+            Egbi = EgbiOptions.ForSizeWithBlurSigmas(size, baseline.Egbi, referenceDimension, baseline.EgbiBlurSigma, scaledEgbiBlurSigma),
             SaliencyCut = SaliencyCutOptions.ForSize(size, baseline.SaliencyCut, referenceDimension),
             MeanShift = MeanShiftOptions.ForSize(size, baseline.MeanShift, referenceDimension),
             LodAbstraction = LodAbstractionOptions.ForSizeUnchecked(size, baseline.LodAbstraction, referenceDimension),
@@ -259,7 +326,7 @@ public sealed record WatercolorOptions(
             TurbulenceFlow = TurbulenceFlowOptions.ForSizeUnchecked(size, baseline.TurbulenceFlow, referenceDimension),
             PaperGranulation = PaperGranulationOptions.ForSizeUnchecked(size, baseline.PaperGranulation, referenceDimension),
             Fxaa = FxaaOptions.ForSize(size, baseline.Fxaa, referenceDimension),
-            EgbiBlurSigma = baseline.EgbiBlurSigma == 0.0 ? 0.0 : OptionTuning.ScaleFiniteNonNegative(baseline.EgbiBlurSigma * s)
+            EgbiBlurSigma = scaledEgbiBlurSigma
         };
     }
 
@@ -281,7 +348,7 @@ public sealed record WatercolorOptions(
         IReadOnlyMatrix<Rgb8> image,
         double referenceDimension = DefaultReferenceDimension,
         IReadOnlyList<ColorTransferProfile>? candidatePalettes = null) =>
-        ForImage(image, Default, referenceDimension, candidatePalettes);
+        ForImage(image, DefaultImageBaseline, referenceDimension, candidatePalettes);
 
     /// <summary>
     /// Creates <see cref="WatercolorOptions"/> tuned from <paramref name="baseline"/> for both the dimensions and visual content of <paramref name="image"/>,
@@ -335,7 +402,7 @@ public sealed record WatercolorOptions(
         ImageAnalysis analysis,
         double referenceDimension = DefaultReferenceDimension,
         IReadOnlyList<ColorTransferProfile>? candidatePalettes = null) =>
-        ForAnalysis(analysis, Default, referenceDimension, candidatePalettes);
+        ForAnalysis(analysis, DefaultImageBaseline, referenceDimension, candidatePalettes);
 
     /// <summary>
     /// Creates <see cref="WatercolorOptions"/> tuned from <paramref name="baseline"/> using a cached <see cref="ImageAnalysis"/> profile,
@@ -378,7 +445,8 @@ public sealed record WatercolorOptions(
 
         if (rawProfile.IsEmpty)
         {
-            return baseline with
+            WatercolorOptions emptyBaseline = ReferenceEquals(baseline, DefaultImageBaseline) ? Default : baseline;
+            return emptyBaseline with
             {
                 TargetPalette = selectedPalette
             };
@@ -387,21 +455,47 @@ public sealed record WatercolorOptions(
         double srcChromaStd = double.Hypot(rawProfile.LabStats.StdDevA, rawProfile.LabStats.StdDevB);
         double palChromaStd = double.Hypot(selectedPalette.Statistics.StdDevA, selectedPalette.Statistics.StdDevB);
         double chromaGain = palChromaStd / Math.Max(MinSrcChromaDenominator, srcChromaStd);
-        double autoStrength = chromaGain > HighChromaGainThreshold
-            ? Math.Clamp(HighChromaGainThreshold / chromaGain, MinAutoTransferStrength, MaxAutoTransferStrength)
+        double chromaFactor = chromaGain > HighChromaGainThreshold
+            ? Math.Min(1.0, HighChromaGainThreshold / chromaGain)
             : chromaGain < LowChromaGainThreshold
-                ? Math.Clamp(chromaGain / LowChromaGainThreshold, MinAutoTransferStrength, MaxAutoTransferStrength)
-                : MaxAutoTransferStrength;
+                ? Math.Min(1.0, chromaGain / LowChromaGainThreshold)
+                : 1.0;
+
+        double meanLShift = Math.Abs(selectedPalette.Statistics.MeanL - rawProfile.LabStats.MeanL);
+        double meanLShiftFactor = Math.Clamp(MaxAcceptableMeanLShift / Math.Max(MaxAcceptableMeanLShift, meanLShift), MinMeanLShiftFactor, 1.0);
+
+        double lightnessSpreadRatio = selectedPalette.Statistics.StdDevL / Math.Max(MinSrcChromaDenominator, rawProfile.LabStats.StdDevL);
+        double lightnessSpreadFactor = lightnessSpreadRatio < MinLightnessSpreadRatio
+            ? Math.Clamp(lightnessSpreadRatio / MinLightnessSpreadRatio, MinLightnessSpreadFactor, 1.0)
+            : 1.0;
+
+        double gainA = selectedPalette.Statistics.StdDevA / Math.Max(2.0, rawProfile.LabStats.StdDevA);
+        double gainB = selectedPalette.Statistics.StdDevB / Math.Max(2.0, rawProfile.LabStats.StdDevB);
+        double maxAxisGain = Math.Max(gainA, gainB);
+        double axisGainFactor = maxAxisGain > MaxPerAxisChromaGain
+            ? Math.Clamp(MaxPerAxisChromaGain / maxAxisGain, MinPerAxisChromaFactor, 1.0)
+            : 1.0;
+
+        double autoStrength = Math.Clamp(
+            MaxAutoTransferStrength * chromaFactor * meanLShiftFactor * lightnessSpreadFactor * axisGainFactor,
+            MinAutoTransferStrength,
+            MaxAutoTransferStrength);
         double transferStrength = baseline.ColorTransferStrength * autoStrength;
 
-        ImageTuningProfile postTransferProfile = rawProfile.WithTransferredStatistics(selectedPalette.Statistics, transferStrength);
+        double effectiveTransferStrength = baseline.EnableColorTransfer ? transferStrength : 0.0;
+        ImageTuningProfile postTransferProfile = effectiveTransferStrength > 0.0
+            ? rawProfile.WithTransferredStatistics(selectedPalette.Statistics, effectiveTransferStrength)
+            : rawProfile;
         var (s, _, _) = OptionTuning.ComputeScalesUnchecked(rawProfile.ImageSize, referenceDimension);
+        double scaledEgbiBlurSigma = baseline.EgbiBlurSigma == 0.0
+            ? 0.0
+            : OptionTuning.ScaleFiniteNonNegative(baseline.EgbiBlurSigma * s * Math.Sqrt(postTransferProfile.ClutterFactor));
 
         return baseline with
         {
             TargetPalette = selectedPalette,
             ColorTransferStrength = transferStrength,
-            Egbi = EgbiOptions.ForProfile(in postTransferProfile, baseline.Egbi, referenceDimension),
+            Egbi = EgbiOptions.ForProfileWithBlurSigmas(in postTransferProfile, baseline.Egbi, referenceDimension, baseline.EgbiBlurSigma, scaledEgbiBlurSigma),
             SaliencyCut = SaliencyCutOptions.ForProfile(in postTransferProfile, baseline.SaliencyCut, referenceDimension),
             MeanShift = MeanShiftOptions.ForProfile(in postTransferProfile, baseline.MeanShift, referenceDimension),
             LodAbstraction = LodAbstractionOptions.ForProfile(in postTransferProfile, baseline.LodAbstraction, referenceDimension),
@@ -412,9 +506,7 @@ public sealed record WatercolorOptions(
             ToneCurve = PiecewiseToneCurveOptions.ForProfile(in postTransferProfile, baseline.ToneCurve, referenceDimension),
             PaperGranulation = PaperGranulationOptions.ForSizeUnchecked(postTransferProfile.ImageSize, baseline.PaperGranulation, referenceDimension),
             Fxaa = FxaaOptions.ForProfile(in postTransferProfile, baseline.Fxaa, referenceDimension),
-            EgbiBlurSigma = baseline.EgbiBlurSigma == 0.0
-                ? 0.0
-                : OptionTuning.ScaleFiniteNonNegative(baseline.EgbiBlurSigma * s * Math.Sqrt(postTransferProfile.ClutterFactor))
+            EgbiBlurSigma = scaledEgbiBlurSigma
         };
     }
 
