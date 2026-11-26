@@ -130,6 +130,13 @@ public class OptionTuningTests
 
         double infScale = OptionTuning.ComputeBlurredEdgeAttenuation(double.PositiveInfinity);
         Assert.Equal(0.0, infScale, 12);
+
+        // Telescoping composition across two sigma hops equals a single hop.
+        double hop1 = OptionTuning.ComputeBlurredEdgeAttenuationFromSigmas(0.8, 3.2);
+        double hop2 = OptionTuning.ComputeBlurredEdgeAttenuationFromSigmas(3.2, 0.9);
+        double direct = OptionTuning.ComputeBlurredEdgeAttenuationFromSigmas(0.8, 0.9);
+        Assert.Equal(direct, hop1 * hop2, 12);
+        Assert.Equal(1.0, OptionTuning.ComputeBlurredEdgeAttenuationFromSigmas(0.0, 0.0), 12);
     }
 
     [Fact]

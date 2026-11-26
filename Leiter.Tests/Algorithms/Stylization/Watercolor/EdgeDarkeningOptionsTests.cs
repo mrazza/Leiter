@@ -132,6 +132,15 @@ public class EdgeDarkeningOptionsTests : SizeTunableOptionsContractTestsBase<Edg
         var zeroIntensityBaseline = new EdgeDarkeningOptions(Intensity: 0.0);
         Assert.Equal(0.0, EdgeDarkeningOptions.ForSize(new Size(1600, 1600), zeroIntensityBaseline).Intensity);
 
+        // Two-hop ForSize scaling (800 -> native -> preview) must compose multiplicatively without double-scaling bias.
+        Size nativeSize = new(4000, 3000);
+        Size previewSize = new(1024, 768);
+        EdgeDarkeningOptions nativeOpts = EdgeDarkeningOptions.ForSize(nativeSize);
+        EdgeDarkeningOptions previewViaTwoHops = EdgeDarkeningOptions.ForSize(previewSize, nativeOpts, nativeSize.LinearDimension);
+        EdgeDarkeningOptions previewDirect = EdgeDarkeningOptions.ForSize(previewSize);
+        Assert.Equal(previewDirect.Intensity, previewViaTwoHops.Intensity, 12);
+        Assert.Equal(previewDirect.BlurSigma, previewViaTwoHops.BlurSigma, 12);
+
         Assert.Throws<ArgumentNullException>(() => EdgeDarkeningOptions.ForImage(null!));
         Assert.Throws<ArgumentNullException>(() => EdgeDarkeningOptions.ForImage(flat, null!));
         Assert.Throws<ArgumentNullException>(() => EdgeDarkeningOptions.ForAnalysis(null!));

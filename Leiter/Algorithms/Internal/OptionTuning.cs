@@ -266,17 +266,35 @@ internal static class OptionTuning
             return 1.0;
         }
 
-        double twoPiSigmaSq = 2.0 * Math.PI * baseSigma * baseSigma;
-        double scaledTerm = twoPiSigmaSq * linearScale * linearScale;
-        if (double.IsFinite(scaledTerm))
+        return ComputeBlurredEdgeAttenuationFromSigmas(baseSigma, baseSigma * linearScale);
+    }
+
+    /// <summary>
+    /// Computes the adjacent-pixel edge difference attenuation factor when Gaussian pre-smoothing changes from
+    /// <paramref name="fromSigma"/> to <paramref name="toSigma"/>.
+    /// </summary>
+    public static double ComputeBlurredEdgeAttenuationFromSigmas(double fromSigma, double toSigma)
+    {
+        if (fromSigma == toSigma)
         {
-            return Math.Sqrt((twoPiSigmaSq + 1.0) / (scaledTerm + 1.0));
+            return 1.0;
         }
 
-        double denomScale = Math.Sqrt(2.0 * Math.PI) * Math.Abs(baseSigma) * linearScale;
-        return double.IsFinite(denomScale)
-            ? Math.Sqrt(twoPiSigmaSq + 1.0) / double.Hypot(denomScale, 1.0)
-            : 0.0;
+        double sqrtTwoPi = Math.Sqrt(2.0 * Math.PI);
+        double scaledFrom = sqrtTwoPi * Math.Abs(fromSigma);
+        double scaledTo = sqrtTwoPi * Math.Abs(toSigma);
+
+        if (!double.IsFinite(scaledTo))
+        {
+            return double.IsFinite(scaledFrom) ? 0.0 : 1.0;
+        }
+
+        if (!double.IsFinite(scaledFrom))
+        {
+            return double.PositiveInfinity;
+        }
+
+        return double.Hypot(scaledFrom, 1.0) / double.Hypot(scaledTo, 1.0);
     }
 
     /// <summary>

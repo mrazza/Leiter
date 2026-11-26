@@ -392,6 +392,52 @@ public class HandTremorTests
     }
 
     /// <summary>
+    /// Verifies that the triple-junction fallback samples strictly within the target region rather than blurring across contrasting borders.
+    /// </summary>
+    [Fact]
+    public void Apply_TripleJunctionFallback_ShouldNotBlendAcrossThirdRegionBoundary()
+    {
+        const int width = 24;
+        const int height = 24;
+        // Three distinct flat colors: Red (0), Cyan (1), Green (2)
+        Rgb8 red = new(220, 20, 20);
+        Rgb8 cyan = new(20, 220, 220);
+        Rgb8 green = new(20, 220, 20);
+
+        SequentialMatrix<Rgb8> image = TestMatrices.Create(width, height, (x, y) =>
+            y < 12 ? (x < 12 ? red : cyan) : green);
+        SequentialMatrix<int> labels = TestMatrices.Create(width, height, static (x, y) =>
+            y < 12 ? (x < 12 ? 0 : 1) : 2);
+
+        var graph = RegionGraph.FromLabels(labels);
+        SequentialMatrix<DoublePixel> dist = TestMatrices.Constant(width, height, new DoublePixel(1.0));
+        var options = new HandTremorOptions(
+            Amplitude: 4.0,
+            SimilarHueThresholdDegrees: 30.0,
+            OverlapDarkening: 0.5,
+            PrimaryNoise: HighFreqPrimaryNoise,
+            SecondaryNoise: HighFreqSecondaryNoise);
+
+        Matrix<Rgb8> result = HandTremor.Apply(image, graph, dist, options: options);
+
+        // With flat region colors, sampling within a single region never produces intermediate RGB channels like (120, 120, 120)
+        // except when legitimately pigment-mixing two overlapping regions via MixPigmentsUnchecked (which only darkens).
+        // Specifically, in Region 2 (bottom), where p1 stays in Region 2 and p2 crosses, or at triple junction fallback,
+        // no pixel in Region 2 should contain spurious high Red (> 20) from unconstrained bilinear interpolation across Region 0.
+        for (int y = 13; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                Rgb8 p = result[x, y];
+                if (p != DefaultPaperColor)
+                {
+                    Assert.True(p.R <= 20, $"Unexpected cross-boundary red bleed at ({x},{y}): {p}");
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Verifies that boundaries involving an achromatic or near-neutral region do not produce stark white paper gaps.
     /// </summary>
     [Fact]

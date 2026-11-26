@@ -15,6 +15,12 @@ using Leiter.Pixels;
 public static class PaperGranulation
 {
     /// <summary>
+    /// Expected mean of absolute 2D Ken Perlin gradient noise (<c>E[|sample|]</c>) across all octaves,
+    /// used to center the inverted turbulence component around <c>0.5</c> so the height map is zero-mean relative to <c>0.5</c>.
+    /// </summary>
+    internal const double ExpectedMeanTurbulence = 0.2483;
+
+    /// <summary>
     /// Generates a realistic paper surface height map combining fractal fiber noise and inverted turbulence valleys.
     /// </summary>
     /// <param name="size">The dimensions of the output height map.</param>
@@ -53,7 +59,7 @@ public static class PaperGranulation
                     opts.Lacunarity,
                     opts.Persistence);
                 double f = (fractal + 1.0) * 0.5;
-                double t = 1.0 - turbulence;
+                double t = 0.5 + (ExpectedMeanTurbulence - turbulence);
                 double combined = ScalarMath.ClampUnit((0.65 * f) + (0.35 * t));
                 result[x, y] = new DoublePixel(combined);
             }

@@ -18,7 +18,7 @@ public sealed record EdgeDarkeningOptions(
     GradientOperator GradientOperator = GradientOperator.Sobel) : IProfileTunableOptions<EdgeDarkeningOptions>, ISizeTunableOptions<EdgeDarkeningOptions>
 {
     private const double SobelImpulseVarianceOffset = 0.5;
-    private const double SobelImpulseNormalization = 1.5;
+    private static readonly double SqrtSobelImpulseVarianceOffset = Math.Sqrt(SobelImpulseVarianceOffset);
     private const double MinSpreadDivisor = 0.85;
     private const double MaxSpreadDivisor = 1.20;
 
@@ -75,16 +75,28 @@ public sealed record EdgeDarkeningOptions(
             return baseline;
         }
 
-        double sSquared = s * s;
-        double impulseCompensation = double.IsFinite(sSquared)
-            ? Math.Sqrt((sSquared + SobelImpulseVarianceOffset) / SobelImpulseNormalization)
-            : s / Math.Sqrt(SobelImpulseNormalization);
+        double rawBlurSigma = baseline.BlurSigma * s;
+        double blurSigma = baseline.BlurSigma == 0.0
+            ? 0.0
+            : OptionTuning.ScaleFiniteNonNegative(rawBlurSigma);
+        double impulseCompensation;
+        if (baseline.BlurSigma == 0.0)
+        {
+            impulseCompensation = 1.0;
+        }
+        else if (double.IsFinite(rawBlurSigma))
+        {
+            impulseCompensation = double.Hypot(rawBlurSigma, SqrtSobelImpulseVarianceOffset)
+                / double.Hypot(baseline.BlurSigma, SqrtSobelImpulseVarianceOffset);
+        }
+        else
+        {
+            impulseCompensation = s;
+        }
+
         double intensity = baseline.Intensity == 0.0
             ? 0.0
             : OptionTuning.ScaleFiniteNonNegative(baseline.Intensity * impulseCompensation);
-        double blurSigma = baseline.BlurSigma == 0.0
-            ? 0.0
-            : OptionTuning.ScaleFiniteNonNegative(baseline.BlurSigma * s);
 
         return baseline with
         {
