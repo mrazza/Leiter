@@ -275,6 +275,11 @@ internal static class OptionTuning
     /// </summary>
     public static double ComputeBlurredEdgeAttenuationFromSigmas(double fromSigma, double toSigma)
     {
+        if (double.IsNaN(fromSigma) || double.IsNaN(toSigma))
+        {
+            return double.NaN;
+        }
+
         if (fromSigma == toSigma)
         {
             return 1.0;

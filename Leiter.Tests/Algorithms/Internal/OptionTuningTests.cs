@@ -137,6 +137,9 @@ public class OptionTuningTests
         double direct = OptionTuning.ComputeBlurredEdgeAttenuationFromSigmas(0.8, 0.9);
         Assert.Equal(direct, hop1 * hop2, 12);
         Assert.Equal(1.0, OptionTuning.ComputeBlurredEdgeAttenuationFromSigmas(0.0, 0.0), 12);
+        Assert.True(double.IsNaN(OptionTuning.ComputeBlurredEdgeAttenuationFromSigmas(double.NaN, 0.8)));
+        Assert.True(double.IsNaN(OptionTuning.ComputeBlurredEdgeAttenuationFromSigmas(0.8, double.NaN)));
+        Assert.True(double.IsNaN(OptionTuning.ComputeBlurredEdgeAttenuationFromSigmas(double.NaN, double.NaN)));
     }
 
     [Fact]
