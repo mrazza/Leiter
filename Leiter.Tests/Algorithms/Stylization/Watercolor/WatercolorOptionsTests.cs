@@ -330,7 +330,7 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
 
         WatercolorOptions neutralOpts = WatercolorOptions.ForImage(neutral);
         neutralOpts.Validate();
-        Assert.InRange(neutralOpts.ColorTransferStrength, 0.55, 0.999);
+        Assert.InRange(neutralOpts.ColorTransferStrength, 0.62, 0.779);
 
         SequentialMatrix<Rgb8> largeScene = TestMatrices.Create(800, 600, static (x, y) =>
         {
@@ -359,12 +359,33 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
             new WatercolorOptions(SaliencyDistanceField: new SaliencyDistanceFieldOptions(SmoothingSigma: -1.0)).Validate());
 
         Assert.Equal(smallOpts.TargetPalette, largeOpts.TargetPalette);
-        Assert.Equal(1.0, largeOpts.ColorTransferStrength, 6);
+        Assert.InRange(largeOpts.ColorTransferStrength, 0.62, 0.78);
         Assert.Equal(smallOpts.ColorTransferStrength, largeOpts.ColorTransferStrength, 2);
         Assert.Equal(smallOpts.MeanShift!.RangeRadius, largeOpts.MeanShift!.RangeRadius, 1);
         Assert.True(largeOpts.MeanShift.SpatialRadius >= smallOpts.MeanShift.SpatialRadius * 3);
         Assert.True(largeOpts.HandTremor!.Amplitude >= smallOpts.HandTremor!.Amplitude * 3.5);
         Assert.True(largeOpts.EgbiBlurSigma >= smallOpts.EgbiBlurSigma * 3.5);
+
+        // Parameterless ForImage uses the calibrated painterly baseline while preserving WatercolorOptions.Default.
+        double largeLinearScale = Math.Sqrt(800.0 * 600.0) / 800.0;
+        Assert.Equal(0.42, largeOpts.SaliencyCut.Mask.FixedThreshold, 6);
+        Assert.Equal(3, largeOpts.LodAbstraction.SalientKernelSize);
+        Assert.Equal(0.16, largeOpts.HandTremor.MinContrastingChroma, 6);
+        Assert.Equal(-0.15, largeOpts.HandTremor.PaperGapBias, 6);
+        Assert.Equal(0.65, largeOpts.HandTremor.PaperGapOpacity, 6);
+        Assert.Equal(0.03, largeOpts.ToneCurve.MinTone, 6);
+        Assert.Equal(0.24, largeOpts.PaperGranulation.DensityStrength, 6);
+        Assert.Equal(0.115 / largeLinearScale, largeOpts.PaperGranulation.GrainNoise.Frequency, 6);
+        Assert.Equal(2, largeOpts.PaperGranulation.GrainNoise.Octaves);
+
+        // Dark images with large lightness shift toward bright palettes attenuate ColorTransferStrength further than bright images.
+        SequentialMatrix<Rgb8> darkScene = TestMatrices.Create(64, 64, static (x, y) =>
+            new Rgb8((byte)(12 + (x % 18)), (byte)(18 + (y % 18)), (byte)(24 + ((x + y) % 18))));
+        SequentialMatrix<Rgb8> brightScene = TestMatrices.Create(64, 64, static (x, y) =>
+            new Rgb8((byte)(150 + (x % 30)), (byte)(160 + (y % 30)), (byte)(170 + ((x + y) % 30))));
+        WatercolorOptions darkOpts = WatercolorOptions.ForImage(darkScene, candidatePalettes: [WatercolorPalettes.BalancedWash]);
+        WatercolorOptions brightOpts = WatercolorOptions.ForImage(brightScene, candidatePalettes: [WatercolorPalettes.BalancedWash]);
+        Assert.True(darkOpts.ColorTransferStrength < brightOpts.ColorTransferStrength);
 
         IReadOnlyList<ColorTransferProfile> customSubset = [WatercolorPalettes.CoastalCerulean];
         WatercolorOptions subsetOpts = WatercolorOptions.ForImage(largeScene, candidatePalettes: customSubset);
@@ -372,7 +393,7 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
 
         IReadOnlyList<ColorTransferProfile> lowChromaSubset = [WatercolorPalettes.MistyMonochrome];
         WatercolorOptions mutedOpts = WatercolorOptions.ForImage(largeScene, candidatePalettes: lowChromaSubset);
-        Assert.InRange(mutedOpts.ColorTransferStrength, 0.55, 0.999);
+        Assert.InRange(mutedOpts.ColorTransferStrength, 0.62, 0.779);
 
         Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForImage(null!));
         Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForImage(largeScene, baseline: null!));
@@ -420,6 +441,29 @@ public class WatercolorOptionsTests : SizeTunableOptionsContractTestsBase<Waterc
         Assert.Throws<ArgumentOutOfRangeException>(() => WatercolorOptions.ForAnalysis(largeAnalysis, 0.0));
         Assert.Throws<ArgumentException>(() => WatercolorOptions.ForAnalysis(largeAnalysis, candidatePalettes: []));
         Assert.Throws<ArgumentNullException>(() => WatercolorOptions.ForAnalysis(largeAnalysis, candidatePalettes: [null!]));
+
+        // Two-hop ForSize scaling (800 -> native -> preview) composes cleanly for EdgeDarkening and Egbi.
+        Size nativeSize = new(4000, 3000);
+        Size previewSize = new(1024, 768);
+        WatercolorOptions nativeScaled = WatercolorOptions.ForSize(nativeSize);
+        WatercolorOptions previewTwoHop = WatercolorOptions.ForSize(previewSize, nativeScaled, nativeSize.LinearDimension);
+        WatercolorOptions previewDirect = WatercolorOptions.ForSize(previewSize);
+        Assert.Equal(previewDirect.EdgeDarkening.Intensity, previewTwoHop.EdgeDarkening.Intensity, 10);
+        Assert.Equal(previewDirect.Egbi.KFactor, previewTwoHop.Egbi.KFactor, 10);
+        Assert.Equal(previewDirect.Egbi.Epsilon, previewTwoHop.Egbi.Epsilon, 10);
+
+        // When EnableColorTransfer is false, Stages 2-6 must tune against raw source stats rather than TargetPalette.
+        WatercolorOptions noTransferVibrant = new WatercolorOptions(
+            EnableColorTransfer: false,
+            TargetPalette: WatercolorPalettes.VibrantCarnival);
+        WatercolorOptions noTransferMuted = new WatercolorOptions(
+            EnableColorTransfer: false,
+            TargetPalette: WatercolorPalettes.MistyMonochrome);
+        WatercolorOptions tunedVibrant = WatercolorOptions.ForAnalysis(largeAnalysis, noTransferVibrant);
+        WatercolorOptions tunedMuted = WatercolorOptions.ForAnalysis(largeAnalysis, noTransferMuted);
+        Assert.Equal(tunedVibrant.MeanShift, tunedMuted.MeanShift);
+        Assert.Equal(tunedVibrant.EdgeDarkening, tunedMuted.EdgeDarkening);
+        Assert.Equal(tunedVibrant.ToneCurve, tunedMuted.ToneCurve);
     }
 
     /// <summary>
